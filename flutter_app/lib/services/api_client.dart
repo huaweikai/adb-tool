@@ -138,4 +138,28 @@ class ApiClient {
     if (resp.statusCode != 200) throw Exception(resp.body);
     return true;
   }
+
+  Future<Map<String, dynamic>> screenRecordAction(String serial, String action) async {
+    final resp = await http.get(
+      Uri.parse('$baseUrl/api/screen-record?serial=$serial&action=$action'),
+    );
+    if (resp.statusCode != 200) throw Exception(resp.body);
+    return json.decode(resp.body);
+  }
+
+  Future<Map<String, dynamic>> screenRecordStatus() async {
+    final resp = await http.get(
+      Uri.parse('$baseUrl/api/screen-record?action=status'),
+    );
+    if (resp.statusCode != 200) throw Exception(resp.body);
+    return json.decode(resp.body);
+  }
+
+  Future<List<int>> pullRecordedVideo(String serial) async {
+    final resp = await http.get(
+      Uri.parse('$baseUrl/api/screen-record-video?serial=$serial'),
+    );
+    if (resp.statusCode != 200) throw Exception('pull video failed: ${resp.statusCode}');
+    return resp.bodyBytes.toList();
+  }
 }

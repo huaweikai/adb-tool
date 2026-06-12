@@ -6,6 +6,8 @@ import (
 	"io/fs"
 	"net/http"
 	"path/filepath"
+	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -14,6 +16,10 @@ type Server struct {
 	adb      *AdbManager
 	webFS    fs.FS
 	upgrader websocket.Upgrader
+
+	recordMu        sync.Mutex
+	recordingSerial string
+	recordStarted   time.Time
 }
 
 func New(adbPath string, webFS fs.FS) *Server {
@@ -47,6 +53,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/backend-logs", s.handleBackendLogs)
 	mux.HandleFunc("/api/pull-file", s.handlePullFile)
 	mux.HandleFunc("/api/push-file", s.handlePushFile)
+	mux.HandleFunc("/api/screen-record", s.handleScreenRecord)
+	mux.HandleFunc("/api/screen-record-video", s.handleScreenRecordVideo)
 
 	webFS, err := fs.Sub(s.webFS, "web")
 	if err != nil {
@@ -290,6 +298,86 @@ func (s *Server) handlePushFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleScreenRecordVideo(w http.ResponseWriter, r *http.Request) {
+	serial := r.URL.Query().Get("serial")
+	if serial == "" {
+		http.Error(w, "serial required", http.StatusBadRequest)
+		return
+	}
+	data, err := s.adb.PullRecordedVideo(serial)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	go s.adb.CleanRecordedVideo(serial)
+	w.Header().Set("Content-Type", "video/mp4")
+	w.Header().Set("Content-Disposition", "attachment; filename=\"screen-record.mp4\"")
+	w.Write(data)
+}
+
+func (s *Server) handleScreenRecord(w http.ResponseWriter, r *http.Request) {
+	serial := r.URL.Query().Get("serial")
+	action := r.URL.Query().Get("action")
+
+	switch action {
+	case "start":
+		if serial == "" {
+			http.Error(w, "serial required", http.StatusBadRequest)
+			return
+		}
+		s.recordMu.Lock()
+		defer s.recordMu.Unlock()
+		if s.recordingSerial != "" {
+			writeJSON(w, map[string]interface{}{"error": "already recording on " + s.recordingSerial})
+			return
+		}
+		if err := s.adb.StartScreenRecord(serial); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		s.recordingSerial = serial
+		s.recordStarted = time.Now()
+		writeJSON(w, map[string]interface{}{"status": "recording", "serial": serial})
+
+	case "stop":
+		s.recordMu.Lock()
+		if s.recordingSerial == "" {
+			s.recordMu.Unlock()
+			writeJSON(w, map[string]interface{}{"error": "not recording"})
+			return
+		}
+		s.adb.StopScreenRecord(s.recordingSerial)
+		s.recordingSerial = ""
+		started := s.recordStarted
+		s.recordMu.Unlock()
+
+		elapsed := time.Since(started).Seconds()
+		writeJSON(w, map[string]interface{}{
+			"status":  "stopped",
+			"elapsed": elapsed,
+		})
+
+	case "status":
+		s.recordMu.Lock()
+		if s.recordingSerial == "" {
+			s.recordMu.Unlock()
+			writeJSON(w, map[string]interface{}{"recording": false})
+			return
+		}
+		serial := s.recordingSerial
+		elapsed := time.Since(s.recordStarted).Seconds()
+		s.recordMu.Unlock()
+		writeJSON(w, map[string]interface{}{
+			"recording": true,
+			"serial":    serial,
+			"elapsed":   elapsed,
+		})
+
+	default:
+		writeJSON(w, map[string]string{"error": "action must be start, stop, or status"})
+	}
 }
 
 func writeJSON(w http.ResponseWriter, v interface{}) {

@@ -423,3 +423,26 @@ func (m *AdbManager) UninstallPackage(serial, packageName string) error {
 func (m *AdbManager) Shell(serial, command string) (string, error) {
 	return m.run("-s", serial, "shell", command)
 }
+
+func (m *AdbManager) StartScreenRecord(serial string) error {
+	// enable touch indicator so taps are visible in video
+	m.run("-s", serial, "shell", "settings", "put", "system", "show_touches", "1")
+	cmd := exec.Command(m.adbPath, "-s", serial, "shell",
+		"screenrecord", "--time-limit", "1800", "/sdcard/adb-tool-record.mp4")
+	return cmd.Start() // runs until stopped via pkill
+}
+
+func (m *AdbManager) StopScreenRecord(serial string) error {
+	_, err := m.run("-s", serial, "shell", "pkill", "-INT", "screenrecord")
+	// disable touch indicator
+	m.run("-s", serial, "shell", "settings", "put", "system", "show_touches", "0")
+	return err
+}
+
+func (m *AdbManager) PullRecordedVideo(serial string) ([]byte, error) {
+	return m.runOut("-s", serial, "exec-out", "cat", "/sdcard/adb-tool-record.mp4")
+}
+
+func (m *AdbManager) CleanRecordedVideo(serial string) {
+	m.run("-s", serial, "shell", "rm", "-f", "/sdcard/adb-tool-record.mp4")
+}
