@@ -24,7 +24,7 @@ func main() {
 	fmt.Printf("       ADB ready at: %s\n", adbPath)
 
 	fmt.Println("[2/3] Starting HTTP server on :9876...")
-	srv := server.New(adbPath, webFS)
+	srv := server.New(adbPath, webFS, clipboardHelperApk)
 
 	httpServer := &http.Server{
 		Addr:    ":9876",

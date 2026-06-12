@@ -20,6 +20,8 @@ type Server struct {
 	webFS    fs.FS
 	upgrader websocket.Upgrader
 
+	clipboardApk []byte
+
 	recordMu        sync.Mutex
 	recordingSerial string
 	recordStarted   time.Time
@@ -27,11 +29,12 @@ type Server struct {
 	startedAt time.Time
 }
 
-func New(adbPath string, webFS fs.FS) *Server {
+func New(adbPath string, webFS fs.FS, clipboardApk []byte) *Server {
 	return &Server{
-		adb:   NewAdbManager(adbPath),
-		webFS: webFS,
-		startedAt: time.Now(),
+		adb:          NewAdbManager(adbPath),
+		webFS:        webFS,
+		clipboardApk: clipboardApk,
+		startedAt:    time.Now(),
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool { return true },
 		},
@@ -64,6 +67,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/screen-record-video", s.handleScreenRecordVideo)
 	mux.HandleFunc("/api/identify", s.handleIdentify)
 	mux.HandleFunc("/api/shutdown", s.handleShutdown)
+	mux.HandleFunc("/api/clipboard-check", s.handleClipboardCheck)
+	mux.HandleFunc("/api/clipboard-install", s.handleClipboardInstall)
+	mux.HandleFunc("/api/clipboard-send", s.handleClipboardSend)
+	mux.HandleFunc("/api/clipboard-uninstall", s.handleClipboardUninstall)
 
 	webFS, err := fs.Sub(s.webFS, "web")
 	if err != nil {
@@ -487,4 +494,66 @@ func (s *Server) handleShutdown(w http.ResponseWriter, r *http.Request) {
 func writeJSON(w http.ResponseWriter, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(v)
+}
+
+func (s *Server) handleClipboardCheck(w http.ResponseWriter, r *http.Request) {
+	serial := r.URL.Query().Get("serial")
+	if serial == "" {
+		http.Error(w, "serial required", http.StatusBadRequest)
+		return
+	}
+	installed := s.adb.IsClipboardHelperInstalled(serial)
+	writeJSON(w, map[string]interface{}{"installed": installed})
+}
+
+func (s *Server) handleClipboardInstall(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+	serial := r.URL.Query().Get("serial")
+	if serial == "" {
+		http.Error(w, "serial required", http.StatusBadRequest)
+		return
+	}
+	if err := s.adb.InstallClipboardHelper(serial, s.clipboardApk); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleClipboardSend(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+	serial := r.URL.Query().Get("serial")
+	text := r.URL.Query().Get("text")
+	if serial == "" || text == "" {
+		http.Error(w, "serial and text required", http.StatusBadRequest)
+		return
+	}
+	if err := s.adb.SendClipboard(serial, text); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleClipboardUninstall(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+	serial := r.URL.Query().Get("serial")
+	if serial == "" {
+		http.Error(w, "serial required", http.StatusBadRequest)
+		return
+	}
+	if err := s.adb.UninstallClipboardHelper(serial); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]string{"status": "ok"})
 }

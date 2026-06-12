@@ -175,4 +175,46 @@ class ApiClient {
     if (resp.statusCode != 200) throw Exception('pull video failed: ${resp.statusCode}');
     return resp.bodyBytes.toList();
   }
+
+  Future<bool> checkClipboardInstalled(String serial) async {
+    final resp = await http.get(
+      Uri.parse('$baseUrl/api/clipboard-check?serial=$serial'),
+    );
+    if (resp.statusCode != 200) throw Exception(resp.body);
+    final data = json.decode(resp.body);
+    return data['installed'] == true;
+  }
+
+  Future<bool> installClipboardHelper(String serial) async {
+    final resp = await http.post(
+      Uri.parse('$baseUrl/api/clipboard-install?serial=$serial'),
+    );
+    if (resp.statusCode != 200) {
+      final data = json.decode(resp.body);
+      throw Exception(data['error'] ?? resp.body);
+    }
+    return true;
+  }
+
+  Future<bool> sendClipboard(String serial, String text) async {
+    final uri = Uri.parse('$baseUrl/api/clipboard-send')
+        .replace(queryParameters: {'serial': serial, 'text': text});
+    final resp = await http.post(uri);
+    if (resp.statusCode != 200) {
+      final data = json.decode(resp.body);
+      throw Exception(data['error'] ?? resp.body);
+    }
+    return true;
+  }
+
+  Future<bool> uninstallClipboardHelper(String serial) async {
+    final resp = await http.post(
+      Uri.parse('$baseUrl/api/clipboard-uninstall?serial=$serial'),
+    );
+    if (resp.statusCode != 200) {
+      final data = json.decode(resp.body);
+      throw Exception(data['error'] ?? resp.body);
+    }
+    return true;
+  }
 }

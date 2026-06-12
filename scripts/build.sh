@@ -58,6 +58,23 @@ if [[ "$PLATFORM" == "macos" ]]; then
 
   BACKEND_OUT="$ROOT_DIR/flutter_app/macos/Runner/adb-tool"
 
+  APK_SRC="$ROOT_DIR/adb_tool_app/app/build/outputs/apk/debug/app-debug.apk"
+  APK_DST="$ROOT_DIR/backend/clipboard-helper.apk"
+  if [[ -d "$ROOT_DIR/adb_tool_app" ]]; then
+    echo "==> 编译剪贴板助手 APK..."
+    set +e
+    (cd "$ROOT_DIR/adb_tool_app" && ./gradlew assembleDebug \
+      -x lintVitalAnalyzeRelease -x lintVitalReportRelease -x lintAnalyzeRelease \
+      -x lintVitalRelease -x lintReportRelease 2>&1)
+    set -e
+    if [[ -f "$APK_SRC" ]]; then
+      cp "$APK_SRC" "$APK_DST"
+      echo "APK 已输出到：$APK_DST"
+    else
+      echo "警告: APK 构建失败，使用已有的 $APK_DST"
+    fi
+  fi
+
   echo "==> 编译后端 (GOOS=darwin GOARCH=$GOARCH)"
   (cd "$ROOT_DIR/backend" && GOOS=darwin GOARCH="$GOARCH" go build -ldflags="-s -w" -o "$BACKEND_OUT" .)
   chmod +x "$BACKEND_OUT"

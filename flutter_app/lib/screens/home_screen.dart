@@ -7,15 +7,17 @@ import 'logcat_screen.dart';
 import 'file_browser_screen.dart';
 import 'app_manager_screen.dart';
 import 'device_info_screen.dart';
+import 'clipboard_screen.dart';
 import 'backend_log_screen.dart';
 
-enum NavItem { logcat, files, apps, info }
+enum NavItem { logcat, files, apps, info, clipboard }
 
 const _navConfig = {
-  NavItem.logcat: _NavConfig(Icons.list_alt, 'Logcat', '日志'),
-  NavItem.files:  _NavConfig(Icons.folder_open, 'Files', '文件'),
-  NavItem.apps:   _NavConfig(Icons.android, 'Apps', '应用'),
-  NavItem.info:   _NavConfig(Icons.info_outline, 'Info', '信息'),
+  NavItem.logcat:    _NavConfig(Icons.list_alt, 'Logcat', '日志'),
+  NavItem.files:     _NavConfig(Icons.folder_open, 'Files', '文件'),
+  NavItem.apps:      _NavConfig(Icons.android, 'Apps', '应用'),
+  NavItem.info:      _NavConfig(Icons.info_outline, 'Info', '信息'),
+  NavItem.clipboard: _NavConfig(Icons.content_paste, 'Clipboard', '剪贴板'),
 };
 
 class _NavConfig {
@@ -140,6 +142,11 @@ class _HomeScreenState extends State<HomeScreen> {
           );
         case NavItem.info:
           screen = DeviceInfoScreen(
+            api: widget.api,
+            selectedSerial: serial,
+          );
+        case NavItem.clipboard:
+          screen = ClipboardScreen(
             api: widget.api,
             selectedSerial: serial,
           );
