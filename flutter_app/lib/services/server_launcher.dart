@@ -7,8 +7,7 @@ import 'package:http/http.dart' as http;
 class ServerLauncher {
   Process? _process;
 
-  String get _binaryName =>
-      Platform.isWindows ? 'adb-tool.exe' : 'adb-tool';
+  String get _binaryName => Platform.isWindows ? 'runtime.exe' : 'adb-tool';
 
   Future<String> findServerBinary() async {
     final execDir = File(Platform.resolvedExecutable).parent.path;
@@ -37,7 +36,7 @@ class ServerLauncher {
     }
 
     final buildCmd = Platform.isWindows
-        ? 'cd backend && go build -ldflags="-s -w" -o ../flutter_app/windows/runner/Resources/adb-tool.exe .'
+        ? 'cd backend && go build -ldflags="-s -w" -o ../flutter_app/windows/runner/Resources/runtime.exe .'
         : 'cd backend && go build -ldflags="-s -w" -o ../flutter_app/macos/Runner/adb-tool .';
     throw Exception(
       'Server binary "$_binaryName" not found.\n'

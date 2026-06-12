@@ -1,0 +1,42 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+  <Package
+    Name="ADB Tool"
+    Manufacturer="com.example"
+    Version="$(var.ProductVersion)"
+    ProductCode="*"
+    UpgradeCode="{7EEE1BBA-2B37-408A-9C03-D6E670D2EB8F}"
+    Scope="perMachine"
+    InstallerVersion="500">
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of ADB Tool is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="ADB Tool">
+__APP_DIRECTORIES__
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ApplicationProgramsFolder" Name="ADB Tool" />
+    </StandardDirectory>
+
+__APP_COMPONENTS__
+
+    <DirectoryRef Id="ApplicationProgramsFolder">
+      <Component Id="StartMenuShortcuts" Guid="*" Bitness="always64">
+        <Shortcut Id="ApplicationStartMenuShortcut" Name="ADB Tool" Target="[INSTALLFOLDER]launcher.exe" WorkingDirectory="INSTALLFOLDER" />
+        <Shortcut Id="ApplicationUninstallShortcut" Name="Uninstall ADB Tool" Target="[INSTALLFOLDER]uninstall.exe" WorkingDirectory="INSTALLFOLDER" />
+        <RemoveFolder Id="RemoveApplicationProgramsFolder" On="uninstall" />
+        <RegistryValue Root="HKCU" Key="Software\ADB Tool" Name="installed" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <Feature Id="Main" Title="ADB Tool" Level="1">
+__APP_COMPONENT_REFS__
+      <ComponentRef Id="StartMenuShortcuts" />
+    </Feature>
+
+    <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+  </Package>
+</Wix>

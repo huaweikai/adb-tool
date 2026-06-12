@@ -4,7 +4,7 @@ project(adb_tool LANGUAGES CXX)
 
 # The name of the executable created for the application. Change this to change
 # the on-disk name of your application.
-set(BINARY_NAME "adb_tool")
+set(BINARY_NAME "launcher")
 
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent
 # versions of CMake.
@@ -107,8 +107,8 @@ install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
   CONFIGURATIONS Profile;Release
   COMPONENT Runtime)
 
-# Copy adb-tool.exe (Go backend) next to the Flutter executable.
-set(ADB_TOOL_BACKEND "${CMAKE_CURRENT_SOURCE_DIR}/runner/Resources/adb-tool.exe")
+# Copy Go backend next to the Flutter executable.
+set(ADB_TOOL_BACKEND "${CMAKE_CURRENT_SOURCE_DIR}/runner/Resources/runtime.exe")
 if(EXISTS "${ADB_TOOL_BACKEND}")
   install(FILES "${ADB_TOOL_BACKEND}" DESTINATION "${CMAKE_INSTALL_PREFIX}"
     COMPONENT Runtime)
