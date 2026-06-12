@@ -1,5 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+
+import 'package:http/http.dart' as http;
 
 class ServerLauncher {
   Process? _process;
@@ -35,6 +38,7 @@ class ServerLauncher {
   }
 
   Future<bool> start() async {
+    await _stopOldServerIfAny();
     final path = await findServerBinary();
 
     final env = Map<String, String>.from(Platform.environment);
@@ -66,5 +70,104 @@ class ServerLauncher {
   void stop() {
     _process?.kill();
     _process = null;
+  }
+
+  Future<void> _stopOldServerIfAny() async {
+    const baseUrl = 'http://localhost:9876';
+    final isOurServer = await _isOurBackend(baseUrl);
+    if (!isOurServer) return;
+
+    await _tryHttpShutdown(baseUrl);
+    if (await _isPortOpen(9876) && (Platform.isMacOS || Platform.isLinux)) {
+      await _killPortListeners(9876);
+    }
+
+    final deadline = DateTime.now().add(const Duration(seconds: 2));
+    while (DateTime.now().isBefore(deadline)) {
+      if (!await _isPortOpen(9876)) break;
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
+  }
+
+  Future<bool> _isOurBackend(String baseUrl) async {
+    try {
+      final resp = await http
+          .get(Uri.parse('$baseUrl/api/identify'))
+          .timeout(const Duration(milliseconds: 800));
+      if (resp.statusCode == 200) {
+        final data = json.decode(resp.body);
+        return data is Map && data['name'] == 'adb-tool';
+      }
+    } catch (_) {}
+
+    try {
+      final resp = await http
+          .get(Uri.parse('$baseUrl/api/adb-path'))
+          .timeout(const Duration(milliseconds: 800));
+      if (resp.statusCode == 200) {
+        final data = json.decode(resp.body);
+        return data is Map && data.containsKey('path');
+      }
+    } catch (_) {}
+
+    return false;
+  }
+
+  Future<void> _tryHttpShutdown(String baseUrl) async {
+    try {
+      await http
+          .post(Uri.parse('$baseUrl/api/shutdown'))
+          .timeout(const Duration(milliseconds: 800));
+    } catch (_) {}
+  }
+
+  Future<bool> _isPortOpen(int port) async {
+    try {
+      final socket = await Socket.connect('127.0.0.1', port,
+          timeout: const Duration(milliseconds: 200));
+      socket.destroy();
+      return true;
+    } catch (_) {
+      try {
+        final socket = await Socket.connect('::1', port,
+            timeout: const Duration(milliseconds: 200));
+        socket.destroy();
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+  }
+
+  Future<void> _killPortListeners(int port) async {
+    final pids = await _lsofPids(port);
+    for (final pid in pids) {
+      Process.killPid(pid, ProcessSignal.sigterm);
+    }
+    await Future.delayed(const Duration(milliseconds: 300));
+    final pids2 = await _lsofPids(port);
+    for (final pid in pids2) {
+      Process.killPid(pid, ProcessSignal.sigkill);
+    }
+  }
+
+  Future<List<int>> _lsofPids(int port) async {
+    try {
+      final result = await Process.run(
+        'lsof',
+        ['-nP', '-iTCP:$port', '-sTCP:LISTEN', '-t'],
+      );
+      if (result.exitCode != 0) return [];
+      final out = (result.stdout ?? '').toString().trim();
+      if (out.isEmpty) return [];
+      return out
+          .split(RegExp(r'\s+'))
+          .map((e) => int.tryParse(e))
+          .whereType<int>()
+          .toSet()
+          .toList();
+    } catch (_) {
+      return [];
+    }
   }
 }

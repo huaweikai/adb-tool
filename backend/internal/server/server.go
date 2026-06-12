@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"io"
 	"io/fs"
+	"net"
 	"net/http"
+	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -20,12 +22,15 @@ type Server struct {
 	recordMu        sync.Mutex
 	recordingSerial string
 	recordStarted   time.Time
+
+	startedAt time.Time
 }
 
 func New(adbPath string, webFS fs.FS) *Server {
 	return &Server{
 		adb:   NewAdbManager(adbPath),
 		webFS: webFS,
+		startedAt: time.Now(),
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool { return true },
 		},
@@ -55,6 +60,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/push-file", s.handlePushFile)
 	mux.HandleFunc("/api/screen-record", s.handleScreenRecord)
 	mux.HandleFunc("/api/screen-record-video", s.handleScreenRecordVideo)
+	mux.HandleFunc("/api/identify", s.handleIdentify)
+	mux.HandleFunc("/api/shutdown", s.handleShutdown)
 
 	webFS, err := fs.Sub(s.webFS, "web")
 	if err != nil {
@@ -348,7 +355,11 @@ func (s *Server) handleScreenRecord(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, map[string]interface{}{"error": "not recording"})
 			return
 		}
-		s.adb.StopScreenRecord(s.recordingSerial)
+		if err := s.adb.StopScreenRecord(s.recordingSerial); err != nil {
+			s.recordMu.Unlock()
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 		s.recordingSerial = ""
 		started := s.recordStarted
 		s.recordMu.Unlock()
@@ -378,6 +389,38 @@ func (s *Server) handleScreenRecord(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeJSON(w, map[string]string{"error": "action must be start, stop, or status"})
 	}
+}
+
+func (s *Server) handleIdentify(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, map[string]interface{}{
+		"name":    "adb-tool",
+		"pid":     os.Getpid(),
+		"started": s.startedAt.Format(time.RFC3339),
+	})
+}
+
+func (s *Server) handleShutdown(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		http.Error(w, "bad remote addr", http.StatusForbidden)
+		return
+	}
+	ip := net.ParseIP(host)
+	if ip == nil || !ip.IsLoopback() {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	writeJSON(w, map[string]string{"status": "shutting down"})
+	go func() {
+		time.Sleep(150 * time.Millisecond)
+		os.Exit(0)
+	}()
 }
 
 func writeJSON(w http.ResponseWriter, v interface{}) {

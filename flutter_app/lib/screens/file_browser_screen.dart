@@ -37,6 +37,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   bool _sortAsc = true;
 
   bool _recording = false;
+  bool _recordSaving = false;
   int _recordSeconds = 0;
   Timer? _recordTimer;
 
@@ -245,10 +246,11 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
 
   Future<void> _startRecording() async {
     if (widget.selectedSerial == null) return;
+    if (_recordSaving || _recording) return;
     try {
       await widget.api.screenRecordAction(widget.selectedSerial!, 'start');
       if (!mounted) return;
-      setState(() { _recording = true; _recordSeconds = 0; });
+      setState(() { _recording = true; _recordSaving = false; _recordSeconds = 0; });
       _recordTimer = Timer.periodic(const Duration(seconds: 1), (_) {
         if (mounted) setState(() => _recordSeconds++);
       });
@@ -265,29 +267,30 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
 
   Future<void> _stopRecording() async {
     if (widget.selectedSerial == null) return;
+    if (_recordSaving || !_recording) return;
     _recordTimer?.cancel();
+    setState(() => _recordSaving = true);
     try {
       await widget.api.screenRecordAction(widget.selectedSerial!, 'stop');
-      setState(() => _recording = false);
       if (!mounted) return;
       final location = await getSaveLocation(
         suggestedName: 'screen-record-${DateTime.now().millisecondsSinceEpoch}.mp4',
         confirmButtonText: '保存录屏',
       );
       if (location == null) {
-        setState(() => _recordSeconds = 0);
+        setState(() { _recording = false; _recordSaving = false; _recordSeconds = 0; });
         return;
       }
       final bytes = await widget.api.pullRecordedVideo(widget.selectedSerial!);
       await File(location.path).writeAsBytes(bytes);
       if (!mounted) return;
-      setState(() => _recordSeconds = 0);
+      setState(() { _recording = false; _recordSaving = false; _recordSeconds = 0; });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('录屏已保存到 ${location.path}'), behavior: SnackBarBehavior.floating),
       );
     } catch (e) {
       if (!mounted) return;
-      setState(() { _recording = false; _recordSeconds = 0; });
+      setState(() { _recording = false; _recordSaving = false; _recordSeconds = 0; });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('录屏停止失败: $e'), behavior: SnackBarBehavior.floating),
       );
@@ -476,24 +479,44 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
             tooltip: _gridMode ? '列表模式' : '网格模式',
           ),
           const SizedBox(width: 4),
-          _recording
-              ? _buildRecordingBtn()
-              : FilledButton.tonal(
-                  onPressed: _startRecording,
+          _recordSaving
+              ? FilledButton.tonal(
+                  onPressed: null,
                   style: FilledButton.styleFrom(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     textStyle: const TextStyle(fontSize: 12),
-                    backgroundColor: Colors.red.shade100,
                   ),
                   child: const Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.fiber_manual_record, size: 16, color: Colors.red),
-                      SizedBox(width: 4),
-                      Text('录屏', style: TextStyle(color: Colors.red)),
+                      SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      SizedBox(width: 6),
+                      Text('保存中'),
                     ],
                   ),
-                ),
+                )
+              : _recording
+                  ? _buildRecordingBtn()
+                  : FilledButton.tonal(
+                      onPressed: _startRecording,
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        textStyle: const TextStyle(fontSize: 12),
+                        backgroundColor: Colors.red.shade100,
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.fiber_manual_record, size: 16, color: Colors.red),
+                          SizedBox(width: 4),
+                          Text('录屏', style: TextStyle(color: Colors.red)),
+                        ],
+                      ),
+                    ),
           const SizedBox(width: 4),
           FilledButton.tonal(
             onPressed: _uploadFile,
@@ -552,7 +575,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
 
   Widget _buildRecordingBtn() {
     return FilledButton.tonal(
-      onPressed: _stopRecording,
+      onPressed: _recordSaving ? null : _stopRecording,
       style: FilledButton.styleFrom(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         textStyle: const TextStyle(fontSize: 12),

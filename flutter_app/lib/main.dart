@@ -90,18 +90,37 @@ class ServerBootScreen extends StatefulWidget {
   State<ServerBootScreen> createState() => _ServerBootScreenState();
 }
 
-class _ServerBootScreenState extends State<ServerBootScreen> {
+class _ServerBootScreenState extends State<ServerBootScreen> with WidgetsBindingObserver {
   String _status = 'Starting ...';
   bool _ready = false;
+  ServerLauncher? _launcher;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _boot();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.detached) {
+      _launcher?.stop();
+      _launcher = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _launcher?.stop();
+    _launcher = null;
+    super.dispose();
+  }
+
   Future<void> _boot() async {
-    final launcher = ServerLauncher();
+    _launcher ??= ServerLauncher();
+    final launcher = _launcher!;
     try {
       setState(() => _status = 'Launching backend ...');
       await launcher.start();
@@ -113,8 +132,12 @@ class _ServerBootScreenState extends State<ServerBootScreen> {
           return;
         }
       }
+      launcher.stop();
+      _launcher = null;
       setState(() => _status = 'Server timeout');
     } catch (e) {
+      launcher.stop();
+      _launcher = null;
       setState(() => _status = 'Error: $e');
     }
   }
