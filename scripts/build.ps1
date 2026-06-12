@@ -93,6 +93,33 @@ function ConvertTo-XmlAttribute([string]$Value) {
   return [System.Security.SecurityElement]::Escape($Value)
 }
 
+function Build-ClipboardHelperApk([string]$ProjectDir, [string]$ApkSource, [string]$ApkDestination) {
+  if (-not (Test-Path $ProjectDir)) {
+    Write-Warning "adb_tool_app not found, using existing clipboard helper APK: $ApkDestination"
+    return
+  }
+
+  $gradleWrapper = Join-Path $ProjectDir 'gradlew.bat'
+  if (-not (Test-Path $gradleWrapper)) {
+    Write-Warning "gradlew.bat not found, using existing clipboard helper APK: $ApkDestination"
+    return
+  }
+
+  Write-Host "==> Building clipboard helper APK"
+  Push-Location $ProjectDir
+  & $gradleWrapper @('assembleDebug', '-x', 'lintVitalAnalyzeRelease', '-x', 'lintVitalReportRelease', '-x', 'lintAnalyzeRelease', '-x', 'lintVitalRelease', '-x', 'lintReportRelease')
+  $gradleExitCode = $LASTEXITCODE
+  Pop-Location
+
+  if ($gradleExitCode -eq 0 -and (Test-Path $ApkSource)) {
+    Copy-Item -Force $ApkSource $ApkDestination
+    Write-Host "Clipboard helper APK output: $ApkDestination"
+    return
+  }
+
+  Write-Warning "Clipboard helper APK build failed or output was not found, using existing APK: $ApkDestination"
+}
+
 function New-WixSource([string]$TemplatePath, [string]$SourceDir, [string]$OutputPath) {
   $sourceRoot = (Resolve-Path $SourceDir).Path
   $sourceRootWithSlash = $sourceRoot.TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
@@ -166,6 +193,9 @@ if ($ProductVersion -notmatch '^\d+\.\d+\.\d+(\.\d+)?$') {
 
 $BackendDir = Join-Path $RootDir 'backend'
 $FlutterDir = Join-Path $RootDir 'flutter_app'
+$ClipboardAppDir = Join-Path $RootDir 'adb_tool_app'
+$ClipboardApkSource = Join-Path $ClipboardAppDir 'app\build\outputs\apk\debug\app-debug.apk'
+$ClipboardApkDestination = Join-Path $BackendDir 'clipboard-helper.apk'
 $RunnerResDir = Join-Path $FlutterDir 'windows\runner\Resources'
 $BuildWindowsDir = Join-Path $FlutterDir 'build\windows'
 $DistDir = Join-Path $RootDir 'dist\windows'
@@ -182,6 +212,11 @@ Stop-BuildProcesses
 if (Test-Path $BuildWindowsDir) {
   Write-Host "==> Removing stale Flutter Windows build cache"
   Remove-DirectoryStrict $BuildWindowsDir
+}
+
+Build-ClipboardHelperApk $ClipboardAppDir $ClipboardApkSource $ClipboardApkDestination
+if (-not (Test-Path $ClipboardApkDestination)) {
+  throw "Clipboard helper APK was not found: $ClipboardApkDestination"
 }
 
 Write-Host "==> Building runtime (GOOS=windows GOARCH=$GoArch)"

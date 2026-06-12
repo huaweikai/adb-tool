@@ -361,7 +361,38 @@ class AppPackage {
 
 ## 八、构建流程
 
-### 统一入口: `scripts/build.sh`
+### 环境依赖
+
+| 构建目标 | 必需环境 | 说明 |
+|---|---|---|
+| 通用后端 | Go 1.26.3+ | 根据目标平台设置 `GOOS`/`GOARCH`，后端会嵌入对应平台的 platform-tools ZIP 和 `clipboard-helper.apk` |
+| Flutter 桌面 | Flutter SDK 3.4+ | 需要启用对应桌面平台支持；macOS 使用 `flutter build macos`，Windows 使用 `flutter build windows` |
+| Android 辅助 APK | JDK 11+、Android SDK、Gradle Wrapper | `adb_tool_app/gradlew` 或 `gradlew.bat assembleDebug` 生成 `app-debug.apk`，复制为 `backend/clipboard-helper.apk` 后再编译 Go 后端 |
+| macOS 打包 | macOS、Xcode、CocoaPods（Flutter macOS 依赖需要时） | Xcode 提供 macOS 原生编译链和签名工具；当前脚本输出 `.app`，发布包可再压缩为 ZIP |
+| Windows 打包 | Windows、Visual Studio Build Tools/C++ 桌面工具链、Windows SDK | Flutter Windows runner 依赖 CMake、MSBuild 和 Windows SDK，必须在 Windows 上构建 |
+| Windows MSI | .NET SDK、WiX Toolset 5.0.2、`WixToolset.UI.wixext` 5.0.2 | `scripts/build.ps1` 使用 `wix build` 生成 MSI；不建议使用 WiX 7+，会涉及 OSMF EULA 接受流程 |
+| GitHub Actions | `windows-latest`、`macos-latest` | Windows job 安装 WiX 后执行 `scripts/build.ps1`；macOS job 使用 Xcode 环境构建 `.app` |
+
+#### Windows WiX 安装示例
+
+```powershell
+dotnet tool install --global wix --version 5.0.2
+wix extension add WixToolset.UI.wixext/5.0.2
+```
+
+#### Flutter 桌面平台初始化
+
+```bash
+# macOS
+cd flutter_app
+flutter create --platforms=macos .
+
+# Windows
+cd flutter_app
+flutter create --platforms=windows .
+```
+
+### 主构建脚本: `scripts/build.sh`
 
 支持 `--platform` 和 `--mode` 参数，在 macOS 上构建。
 
@@ -402,24 +433,38 @@ class AppPackage {
 
 ```powershell
 # 用法
-.\scripts\build.ps1 -Mode Release -Platform Windows [-GoArch amd64|arm64]
+.\scripts\build.ps1 -Mode Release -Platform Windows [-GoArch amd64|arm64] [-ProductVersion 1.0.0]
 
 # 示例
 .\scripts\build.ps1 -Mode Debug
-.\scripts\build.ps1 -Mode Release -GoArch amd64
+.\scripts\build.ps1 -Mode Release -GoArch amd64 -ProductVersion 1.0.0
 ```
 
 #### Windows 构建流程
 
 ```
-1. 编译 Go 后端
+1. 编译 Android 剪贴板辅助 APK → backend/clipboard-helper.apk
+     - 仅在 adb_tool_app/ 存在且 gradlew.bat 可用时执行
+     - 执行: gradlew.bat assembleDebug (跳过 lint)
+     - 从 adb_tool_app/app/build/outputs/apk/debug/app-debug.apk 复制
+     - 若 APK 构建失败，则沿用已有 backend/clipboard-helper.apk
+2. 编译 Go 后端 runtime.exe
      - GOOS=windows GOARCH=amd64 (默认)
      - -ldflags="-s -w"
-     - 输出到 flutter_app/windows/runner/Resources/adb-tool.exe (优先)
-     - 回退: flutter_app/adb-tool.exe
-2. 编译 Flutter Windows
+     - 输出: flutter_app/windows/runner/Resources/runtime.exe
+     - 编译时嵌入 Windows platform-tools ZIP 和 clipboard-helper.apk
+3. 编译 Flutter Windows launcher.exe
      - flutter build windows --debug 或 --release
-3. 复制后端 .exe 到构建产物的 runner/{Debug|Release}/adb-tool.exe
+     - CMake 将 runtime.exe 安装到 Flutter 构建输出目录
+4. 编译卸载入口 uninstall.exe
+     - go build ./uninstall/
+     - 通过 MSI UpgradeCode 查找已安装产品并调用 msiexec /x
+5. 生成 WiX 源文件
+     - 扫描 Flutter Windows 输出目录
+     - 生成 dist/windows/installer.generated.wxs
+6. 生成 MSI
+     - wix build -ext WixToolset.UI.wixext
+     - 输出: dist/windows/ADBToolSetup-{ProductVersion}-windows-{GoArch}.msi
 ```
 
 > 注意: 执行前确保 `flutter_app/windows` 目录存在，若不存在需先在 `flutter_app` 目录下执行：
@@ -441,10 +486,10 @@ class AppPackage {
 #### ServerLauncher (server_launcher.dart)
 
 - `findServerBinary()` — Windows 路径支持：
-  1. `<exe_dir>/adb-tool.exe`
-  2. `<exe_dir>/Resources/adb-tool.exe` (Windows runner 输出位置)
-  3. `../Resources/adb-tool.exe` 等相对路径
-  4. `windows/runner/Resources/adb-tool.exe`
+  1. `<exe_dir>/runtime.exe`
+  2. `<exe_dir>/Resources/runtime.exe` (Windows runner 资源位置)
+  3. `../Resources/runtime.exe` 等相对路径
+  4. `windows/runner/Resources/runtime.exe`
 - `start()` — Windows PATH 设置 `%SystemRoot%\System32`
 - `_killPortListeners()` — Windows 使用 `netstat -ano` 查找端口 PID (替代 lsof)
 
@@ -466,8 +511,10 @@ class AppPackage {
 
 ### 构建
 
-- `build.ps1` — 编译 Go 后端 + Flutter Windows，自动复制 .exe 到 runner 输出目录
-- 输出路径: `flutter_app/windows/runner/Resources/adb-tool.exe`
+- `build.ps1` — 编译 Android 辅助 APK、Go 后端 `runtime.exe`、Flutter Windows `launcher.exe`、卸载入口 `uninstall.exe`，并通过 WiX 生成 MSI
+- 后端资源路径: `flutter_app/windows/runner/Resources/runtime.exe`
+- Flutter 构建输出: `flutter_app/build/windows/{x64|arm64}/runner/{Debug|Release}/`
+- MSI 输出路径: `dist/windows/ADBToolSetup-{ProductVersion}-windows-{GoArch}.msi`
 
 ---
 
@@ -475,8 +522,11 @@ class AppPackage {
 
 | 特性 | macOS | Windows |
 |---|---|---|
-| 二进制名称 | `adb-tool` | `adb-tool.exe` |
-| 后端查找路径 | `Contents/MacOS/`、`macos/Runner/` | `Resources/`、`windows/runner/Resources/` |
+| 桌面入口 | `.app` bundle | `launcher.exe` |
+| 后端二进制名称 | `adb-tool` | `runtime.exe` |
+| 后端查找路径 | `Contents/MacOS/`、`macos/Runner/` | 安装目录、`Resources/`、`windows/runner/Resources/` |
+| 打包格式 | `.app` / ZIP | MSI |
+| 打包工具链 | Xcode、Flutter macOS | Visual Studio Build Tools、Windows SDK、WiX |
 | 端口 PID 查找 | `lsof -nP -iTCP:port` | `netstat -ano` |
 | PATH 环境变量 | `/usr/bin:/bin:...` | `%SystemRoot%\System32` |
 | 拖放 MethodChannel | `mac_drop` | `win_drop` |
