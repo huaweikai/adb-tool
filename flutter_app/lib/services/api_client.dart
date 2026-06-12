@@ -4,6 +4,18 @@ import '../models/device.dart';
 import '../models/file_item.dart';
 import '../models/app_package.dart';
 
+class AdbCommandResult {
+  final bool ok;
+  final String output;
+  final String error;
+
+  AdbCommandResult({
+    required this.ok,
+    required this.output,
+    required this.error,
+  });
+}
+
 class ApiClient {
   final String baseUrl;
 
@@ -41,6 +53,20 @@ class ApiClient {
       Uri.parse('$baseUrl/api/clear?serial=$serial'),
     );
     return resp.statusCode == 200;
+  }
+
+  Future<AdbCommandResult> executeAdbCommand(String serial, List<String> args) async {
+    final resp = await http.post(
+      Uri.parse('$baseUrl/api/adb-exec?serial=$serial'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'args': args}),
+    );
+    final data = json.decode(resp.body);
+    return AdbCommandResult(
+      ok: data['ok'] == true,
+      output: data['output']?.toString() ?? '',
+      error: data['error']?.toString() ?? '',
+    );
   }
 
   Future<bool> isReady() async {

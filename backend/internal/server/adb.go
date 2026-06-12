@@ -99,22 +99,30 @@ func FindOrExtractADB(zipData []byte) (string, error) {
 }
 
 func (m *AdbManager) run(args ...string) (string, error) {
+	outStr, err := m.runRaw(args...)
+	if err != nil {
+		return "", err
+	}
+	return outStr, nil
+}
+
+func (m *AdbManager) runRaw(args ...string) (string, error) {
 	start := time.Now()
 	cmdStr := strings.Join(args, " ")
 	cmd := exec.Command(m.adbPath, args...)
 	output, err := cmd.CombinedOutput()
 	elapsed := time.Since(start)
 	outStr := strings.TrimSpace(string(output))
+	logOut := outStr
+	if len(logOut) > 500 {
+		logOut = logOut[:500] + fmt.Sprintf("... (%d bytes)", len(logOut))
+	}
 	if err != nil {
 		errStr := fmt.Sprintf("adb %s: %v\n%s", cmdStr, err, string(output))
-		Log.Add("adb "+cmdStr, "", err, elapsed)
-		return "", fmt.Errorf("%s", errStr)
+		Log.Add("adb "+cmdStr, logOut, err, elapsed)
+		return outStr, fmt.Errorf("%s", errStr)
 	}
-	if len(outStr) > 500 {
-		Log.Add("adb "+cmdStr, outStr[:500]+fmt.Sprintf("... (%d bytes)", len(outStr)), nil, elapsed)
-	} else {
-		Log.Add("adb "+cmdStr, outStr, nil, elapsed)
-	}
+	Log.Add("adb "+cmdStr, logOut, nil, elapsed)
 	return outStr, nil
 }
 
@@ -466,6 +474,12 @@ func extractPackageFromInstallError(output string) string {
 
 func (m *AdbManager) Shell(serial, command string) (string, error) {
 	return m.run("-s", serial, "shell", command)
+}
+
+func (m *AdbManager) Execute(serial string, args []string) (string, error) {
+	fullArgs := []string{"-s", serial}
+	fullArgs = append(fullArgs, args...)
+	return m.runRaw(fullArgs...)
 }
 
 func (m *AdbManager) IsClipboardHelperInstalled(serial string) bool {

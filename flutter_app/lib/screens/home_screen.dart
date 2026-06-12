@@ -9,8 +9,9 @@ import 'app_manager_screen.dart';
 import 'device_info_screen.dart';
 import 'clipboard_screen.dart';
 import 'backend_log_screen.dart';
+import 'adb_command_screen.dart';
 
-enum NavItem { logcat, files, apps, info, clipboard }
+enum NavItem { logcat, files, apps, info, clipboard, command }
 
 const _navConfig = {
   NavItem.logcat:    _NavConfig(Icons.list_alt, 'Logcat', '日志'),
@@ -18,6 +19,7 @@ const _navConfig = {
   NavItem.apps:      _NavConfig(Icons.android, 'Apps', '应用'),
   NavItem.info:      _NavConfig(Icons.info_outline, 'Info', '信息'),
   NavItem.clipboard: _NavConfig(Icons.content_paste, 'Clipboard', '剪贴板'),
+  NavItem.command:   _NavConfig(Icons.terminal, 'Command', '指令'),
 };
 
 class _NavConfig {
@@ -155,6 +157,11 @@ class _HomeScreenState extends State<HomeScreen> {
           );
         case NavItem.clipboard:
           screen = ClipboardScreen(
+            api: widget.api,
+            selectedSerial: serial,
+          );
+        case NavItem.command:
+          screen = AdbCommandScreen(
             api: widget.api,
             selectedSerial: serial,
           );

@@ -71,6 +71,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/clipboard-install", s.handleClipboardInstall)
 	mux.HandleFunc("/api/clipboard-send", s.handleClipboardSend)
 	mux.HandleFunc("/api/clipboard-uninstall", s.handleClipboardUninstall)
+	mux.HandleFunc("/api/adb-exec", s.handleAdbExec)
 
 	webFS, err := fs.Sub(s.webFS, "web")
 	if err != nil {
@@ -332,6 +333,43 @@ func (s *Server) handleBackendLogs(w http.ResponseWriter, r *http.Request) {
 		entries = []LogEntry{}
 	}
 	writeJSON(w, map[string]interface{}{"logs": entries})
+}
+
+func (s *Server) handleAdbExec(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+	serial := r.URL.Query().Get("serial")
+	if serial == "" {
+		http.Error(w, "serial required", http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+	var req struct {
+		Args []string `json:"args"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if len(req.Args) == 0 {
+		http.Error(w, "args required", http.StatusBadRequest)
+		return
+	}
+	for _, arg := range req.Args {
+		if strings.TrimSpace(arg) == "" {
+			http.Error(w, "empty argument not allowed", http.StatusBadRequest)
+			return
+		}
+	}
+	output, err := s.adb.Execute(serial, req.Args)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		writeJSON(w, map[string]interface{}{"ok": false, "output": output, "error": err.Error()})
+		return
+	}
+	writeJSON(w, map[string]interface{}{"ok": true, "output": output})
 }
 
 func (s *Server) handlePullFile(w http.ResponseWriter, r *http.Request) {
