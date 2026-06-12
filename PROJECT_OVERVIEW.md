@@ -429,25 +429,56 @@ class AppPackage {
 
 ---
 
-## 九、Windows 扩展待办
+## 九、Windows 平台特定代码
 
-### 需要新增/修改的文件
+### Go 后端
 
-#### Go 后端 — 已就绪 ✅
-- `embed_windows.go` — 已存在，嵌入 Windows ADB 包
-- `platform-tools-latest-windows.zip` — 已存在
-- `build.bat` — 已存在
+- `embed_windows.go` — `//go:build windows`，嵌入 Windows ADB 包
+- `adb.go` — 运行时 `runtime.GOOS` 选择 `adb.exe` 后缀
 
-#### Flutter 前端
-- `server_launcher.dart` — 需增加 Windows 二进制查找逻辑
-- **新增** `win_drop.dart` — Windows 拖放平台通道（替代 mac_drop.dart）
-- 各页面中 `platform.isMacOS` 判断需扩展为跨平台判断
+### Flutter
 
-#### Windows 原生层
-- 需创建 `flutter_app/windows/` 目录及 Flutter Windows 项目文件
-  - 执行 `flutter create --platforms=windows .` 生成
-- Windows 拖放原生实现（类似 MainFlutterWindow.swift 的 DropOverlayView）
-- 窗口配置
+#### ServerLauncher (server_launcher.dart)
 
-#### 构建 — 已就绪 ✅
-- `scripts/build.ps1` — 已存在，Windows 构建脚本
+- `findServerBinary()` — Windows 路径支持：
+  1. `<exe_dir>/adb-tool.exe`
+  2. `<exe_dir>/Resources/adb-tool.exe` (Windows runner 输出位置)
+  3. `../Resources/adb-tool.exe` 等相对路径
+  4. `windows/runner/Resources/adb-tool.exe`
+- `start()` — Windows PATH 设置 `%SystemRoot%\System32`
+- `_killPortListeners()` — Windows 使用 `netstat -ano` 查找端口 PID (替代 lsof)
+
+#### 拖放支持
+
+- `win_drop.dart` — MethodChannel `win_drop`，`WinDropTarget` Widget (同 mac_drop API)
+- `drop_target.dart` — 统一 `DropTarget` Widget，内部包装 MacDropTarget + WinDropTarget
+
+### Windows 原生 (C++)
+
+- `flutter_window.h/cpp` — 集成 `DropTarget` (IDropTarget COM)，`OleRegisterDragDrop`
+- `drop_target.h/cpp` — IDropTarget COM 实现，MethodChannel `win_drop` 双向通信
+- `main.cpp` — `OleInitialize` 替代 `CoInitializeEx`
+- 文件拖放事件流程：
+  ```
+  IDropTarget::DragEnter → MethodChannel "dragEntered" → Flutter → onDragEntered
+  IDropTarget::Drop      → MethodChannel "dragDone"    → Flutter → onDragDone (XFile[])
+  ```
+
+### 构建
+
+- `build.ps1` — 编译 Go 后端 + Flutter Windows，自动复制 .exe 到 runner 输出目录
+- 输出路径: `flutter_app/windows/runner/Resources/adb-tool.exe`
+
+---
+
+## 十、跨平台差异说明
+
+| 特性 | macOS | Windows |
+|---|---|---|
+| 二进制名称 | `adb-tool` | `adb-tool.exe` |
+| 后端查找路径 | `Contents/MacOS/`、`macos/Runner/` | `Resources/`、`windows/runner/Resources/` |
+| 端口 PID 查找 | `lsof -nP -iTCP:port` | `netstat -ano` |
+| PATH 环境变量 | `/usr/bin:/bin:...` | `%SystemRoot%\System32` |
+| 拖放 MethodChannel | `mac_drop` | `win_drop` |
+| 拖放原生实现 | NSView + NSDraggingInfo (Swift) | IDropTarget COM (C++) |
+| COM 初始化 | 无 | `OleInitialize()` |

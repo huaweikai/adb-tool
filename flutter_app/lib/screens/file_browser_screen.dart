@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:file_selector/file_selector.dart';
-import '../services/mac_drop.dart';
+import '../services/drop_target.dart';
 import '../models/file_item.dart';
 import '../services/api_client.dart';
 
@@ -343,7 +343,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
 
-  Future<void> _onDropFile(MacDropDoneDetails details) async {
+  Future<void> _onDropFile(DropDoneDetails details) async {
     if (widget.selectedSerial == null) return;
     if (mounted) setState(() => _dragOver = false);
     for (final file in details.files) {
@@ -392,7 +392,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       return _buildFileViewer();
     }
 
-    return MacDropTarget(
+    return DropTarget(
       onDragEntered: () => setState(() => _dragOver = true),
       onDragExited: () => setState(() => _dragOver = false),
       onDragDone: _onDropFile,
