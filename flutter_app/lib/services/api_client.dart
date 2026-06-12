@@ -112,6 +112,19 @@ class ApiClient {
     return true;
   }
 
+  Future<String> installPackage(String serial, List<int> apkBytes) async {
+    final resp = await http.post(
+      Uri.parse('$baseUrl/api/install-package?serial=$serial'),
+      body: apkBytes,
+      headers: {'Content-Type': 'application/octet-stream'},
+    );
+    final data = json.decode(resp.body);
+    if (resp.statusCode != 200) {
+      throw Exception(data['error'] ?? '安装失败');
+    }
+    return data['status'] ?? 'ok';
+  }
+
   Future<String> readFileContent(String serial, String path) async {
     final resp = await http.get(
       Uri.parse('$baseUrl/api/file-content?serial=$serial&path=${Uri.encodeComponent(path)}'),

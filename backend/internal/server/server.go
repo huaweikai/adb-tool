@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -55,6 +56,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/device-detail", s.handleDeviceDetail)
 	mux.HandleFunc("/api/screenshot", s.handleScreenshot)
 	mux.HandleFunc("/api/uninstall-package", s.handleUninstallPackage)
+	mux.HandleFunc("/api/install-package", s.handleInstallPackage)
 	mux.HandleFunc("/api/backend-logs", s.handleBackendLogs)
 	mux.HandleFunc("/api/pull-file", s.handlePullFile)
 	mux.HandleFunc("/api/push-file", s.handlePushFile)
@@ -256,6 +258,65 @@ func (s *Server) handleUninstallPackage(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleInstallPackage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+	serial := r.URL.Query().Get("serial")
+	if serial == "" {
+		http.Error(w, "serial required", http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+
+	tmpFile, err := os.CreateTemp("", "adb-tool-install-*.apk")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer os.Remove(tmpFile.Name())
+	defer tmpFile.Close()
+
+	if _, err := io.Copy(tmpFile, r.Body); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	tmpFile.Close()
+
+	output, err := s.adb.InstallPackage(serial, tmpFile.Name())
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		msg := parseInstallError(output)
+		writeJSON(w, map[string]string{"error": msg, "raw": output})
+		return
+	}
+	writeJSON(w, map[string]string{"status": "ok", "output": output})
+}
+
+func parseInstallError(output string) string {
+	output = strings.TrimSpace(output)
+	switch {
+	case strings.Contains(output, "INSTALL_FAILED_VERSION_DOWNGRADE"):
+		return "版本低于已安装版本，请先卸载原应用后再安装"
+	case strings.Contains(output, "INSTALL_FAILED_ALREADY_EXISTS"):
+		return "应用已存在，请先卸载后再安装"
+	case strings.Contains(output, "INSTALL_FAILED_UPDATE_INCOMPATIBLE"):
+		return "签名不一致，请先卸载原应用后再安装"
+	case strings.Contains(output, "INSTALL_FAILED_INSUFFICIENT_STORAGE"):
+		return "存储空间不足"
+	case strings.Contains(output, "INSTALL_FAILED_INVALID_APK"):
+		return "APK 文件无效或已损坏"
+	case strings.Contains(output, "INSTALL_PARSE_FAILED"):
+		return "APK 解析失败，文件可能已损坏"
+	default:
+		if output != "" {
+			return "安装失败: " + output
+		}
+		return "安装失败"
+	}
 }
 
 func (s *Server) handleBackendLogs(w http.ResponseWriter, r *http.Request) {

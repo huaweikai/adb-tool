@@ -365,7 +365,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
         if (isExpanded)
-          ...NavItem.values.map((item) => _buildFunctionItem(context, d, item, theme)),
+          ...NavItem.values.where((item) => item != NavItem.info).map((item) => _buildFunctionItem(context, d, item, theme)),
       ],
     );
   }

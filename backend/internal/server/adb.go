@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strconv"
@@ -422,6 +423,44 @@ func (m *AdbManager) PushFile(serial string, data []byte, remotePath string) err
 func (m *AdbManager) UninstallPackage(serial, packageName string) error {
 	_, err := m.run("-s", serial, "uninstall", packageName)
 	return err
+}
+
+var installPkgRe = regexp.MustCompile(`Package\s+(\S+)`)
+
+func (m *AdbManager) InstallPackage(serial, apkPath string) (string, error) {
+	output, err := m.run("-s", serial, "install", "-r", "-d", apkPath)
+	if err == nil {
+		return output, nil
+	}
+
+	if !strings.Contains(output, "INSTALL_FAILED_UPDATE_INCOMPATIBLE") {
+		return output, err
+	}
+
+	pkg := extractPackageFromInstallError(output)
+	if pkg == "" {
+		return output, fmt.Errorf("签名不一致，但无法解析包名\n%s", output)
+	}
+
+	uninstallOut, uninstallErr := m.run("-s", serial, "uninstall", pkg)
+	if uninstallErr != nil {
+		return output, fmt.Errorf("签名不一致，卸载旧版本(%s)也失败: %s\n原错误: %s", pkg, uninstallOut, output)
+	}
+
+	output, err = m.run("-s", serial, "install", apkPath)
+	if err != nil {
+		return output, fmt.Errorf("已卸载旧版本(%s)，但安装新版本仍然失败: %s", pkg, output)
+	}
+
+	return "已卸载旧版本(" + pkg + ")并重新安装成功\n" + output, nil
+}
+
+func extractPackageFromInstallError(output string) string {
+	m := installPkgRe.FindStringSubmatch(output)
+	if len(m) > 1 {
+		return m[1]
+	}
+	return ""
 }
 
 func (m *AdbManager) Shell(serial, command string) (string, error) {

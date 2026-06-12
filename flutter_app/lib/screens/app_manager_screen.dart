@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:desktop_drop/desktop_drop.dart';
 import '../models/app_package.dart';
 import '../services/api_client.dart';
 
@@ -20,6 +21,8 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
   List<AppPackage> _allPackages = [];
   List<AppPackage> _filteredPackages = [];
   bool _loading = false;
+  bool _dragOver = false;
+  bool _installing = false;
   String? _error;
   final TextEditingController _searchCtrl = TextEditingController();
 
@@ -115,6 +118,74 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
     }
   }
 
+  Future<void> _onDropApk(DropDoneDetails details) async {
+    if (widget.selectedSerial == null) return;
+    for (final file in details.files) {
+      if (!file.name.toLowerCase().endsWith('.apk')) continue;
+      setState(() => _installing = true);
+      try {
+        final bytes = await file.readAsBytes();
+        if (!mounted) return;
+        final result = await widget.api.installPackage(widget.selectedSerial!, bytes);
+        if (!mounted) return;
+        final successMsg = result.contains('已卸载') ? result : '${file.name} 安装成功';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(successMsg)),
+        );
+        _loadPackages();
+      } catch (e) {
+        if (!mounted) return;
+        _showInstallError(file.name, e.toString());
+      } finally {
+        if (mounted) setState(() => _installing = false);
+      }
+    }
+  }
+
+  void _showInstallError(String fileName, String error) {
+    final needsUninstall = error.contains('INSTALL_FAILED') || error.contains('卸载');
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(children: [
+          const Icon(Icons.error_outline, color: Colors.red, size: 24),
+          const SizedBox(width: 8),
+          const Text('安装失败'),
+        ]),
+        content: SizedBox(
+          width: 400,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(fileName, style: const TextStyle(fontWeight: FontWeight.w500)),
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.withAlpha(15),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: SelectableText(error,
+                    style: const TextStyle(fontSize: 12, fontFamily: 'Menlo')),
+              ),
+              if (needsUninstall) ...[
+                const SizedBox(height: 14),
+                const Text('提示：版本降级或签名不一致导致的失败已自动尝试卸载重装；'
+                    '如果仍然失败，请手动卸载后重试。',
+                    style: TextStyle(fontSize: 12, color: Colors.grey)),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('关闭')),
+        ],
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _searchCtrl.dispose();
@@ -136,29 +207,40 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
       );
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _buildToolbar(context),
-        if (_loading)
-          const Expanded(child: Center(child: CircularProgressIndicator()))
-        else if (_error != null)
-          Expanded(child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.error_outline, size: 48, color: Colors.red),
-                const SizedBox(height: 8),
-                Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 12)),
-                const SizedBox(height: 12),
-                FilledButton.tonal(onPressed: _loadPackages, child: const Text('重试')),
-              ],
-            ),
-          ))
-        else
-          Expanded(child: _buildPackageList(context)),
-        _buildStatusBar(context),
-      ],
+    return DropTarget(
+      onDragEntered: (_) => setState(() => _dragOver = true),
+      onDragExited: (_) => setState(() => _dragOver = false),
+      onDragDone: _onDropApk,
+      child: Stack(
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildToolbar(context),
+              if (_loading || _installing)
+                const Expanded(child: Center(child: CircularProgressIndicator()))
+              else if (_error != null)
+                Expanded(child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                      const SizedBox(height: 8),
+                      Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 12)),
+                      const SizedBox(height: 12),
+                      FilledButton.tonal(onPressed: _loadPackages, child: const Text('重试')),
+                    ],
+                  ),
+                ))
+              else
+                Expanded(child: _buildPackageList(context)),
+              _buildStatusBar(context),
+            ],
+          ),
+          if (_dragOver) _buildDragOverlay(),
+          if (_installing) _buildInstallingOverlay(),
+        ],
+      ),
     );
   }
 
@@ -220,6 +302,12 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
 
   Widget _buildPackageRow(BuildContext context, AppPackage pkg) {
     final theme = Theme.of(context);
+    final initials = pkg.shortName.isNotEmpty ? pkg.shortName[0].toUpperCase() : '?';
+    final colors = [
+      Colors.blue, Colors.green, Colors.orange, Colors.purple,
+      Colors.teal, Colors.deepOrange, Colors.indigo, Colors.pink,
+    ];
+    final color = colors[pkg.packageName.hashCode.abs() % colors.length];
     return InkWell(
       onTap: () => _showPackageDetail(context, pkg),
       child: Padding(
@@ -227,12 +315,15 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
         child: Row(
           children: [
             Container(
-              width: 32, height: 32,
+              width: 36, height: 36,
               decoration: BoxDecoration(
-                color: theme.colorScheme.primaryContainer,
-                borderRadius: BorderRadius.circular(8),
+                color: color.withAlpha(40),
+                borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(Icons.android, size: 18, color: theme.colorScheme.primary),
+              child: Center(
+                child: Text(initials,
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: color)),
+              ),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -333,6 +424,51 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
         if (_allPackages.length != _filteredPackages.length)
           Text(' (共 ${_allPackages.length})', style: const TextStyle(fontSize: 11, color: Colors.grey)),
       ]),
+    );
+  }
+
+  Widget _buildDragOverlay() {
+    final theme = Theme.of(context);
+    return Positioned.fill(
+      child: Container(
+        color: theme.colorScheme.primary.withAlpha(30),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.file_upload, size: 64, color: theme.colorScheme.primary),
+              const SizedBox(height: 12),
+              Text('释放 APK 文件以安装',
+                  style: TextStyle(fontSize: 16, color: theme.colorScheme.primary)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInstallingOverlay() {
+    final theme = Theme.of(context);
+    return Positioned.fill(
+      child: Container(
+        color: Colors.black26,
+        child: Center(
+          child: Card(
+            child: Padding(
+              padding: const EdgeInsets.all(32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: 16),
+                  Text('正在安装 APK...',
+                      style: TextStyle(fontSize: 14, color: theme.colorScheme.onSurface)),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
