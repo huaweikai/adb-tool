@@ -353,11 +353,11 @@
 			outputFileListPaths = (
 			);
 			outputPaths = (
-				"$(CONTENTS_FOLDER_PATH)/MacOS/adb-tool",
+				"$(CODESIGNING_FOLDER_PATH)/Contents/MacOS/adb-tool",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "SRC=\"$SRCROOT/Runner/adb-tool\"\nDST=\"$CONTENTS_FOLDER_PATH/MacOS/adb-tool\"\nif [ -f \"$SRC\" ]; then\n  cp \"$SRC\" \"$DST\"\n  chmod +x \"$DST\"\n  echo \"Copied adb-tool to $DST\"\nelse\n  echo \"Warning: adb-tool not found at $SRC\"\nfi\n";
+			shellScript = "SRC=\"$SRCROOT/Runner/adb-tool\"\nDST=\"$CODESIGNING_FOLDER_PATH/Contents/MacOS/adb-tool\"\nif [ -f \"$SRC\" ]; then\n  cp \"$SRC\" \"$DST\"\n  chmod +x \"$DST\"\n  echo \"Copied adb-tool to $DST\"\nelse\n  echo \"Warning: adb-tool not found at $SRC\"\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

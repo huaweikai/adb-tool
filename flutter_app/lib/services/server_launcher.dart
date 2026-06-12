@@ -13,7 +13,7 @@ class ServerLauncher {
     final candidates = <String>[];
 
     if (Platform.isMacOS) {
-      final bundleRoot = '${execDir}${Platform.pathSeparator}..${Platform.pathSeparator}..';
+      final bundleRoot = '$execDir${Platform.pathSeparator}..${Platform.pathSeparator}..';
       candidates.add('$bundleRoot${Platform.pathSeparator}$_binaryName');
       candidates.add('$execDir${Platform.pathSeparator}$_binaryName');
     }

@@ -4,7 +4,7 @@ import '../models/device.dart';
 import '../services/api_client.dart';
 import '../services/log_stream.dart';
 
-const _L = {
+const _loc = {
   'zh': {
     'title': 'ADB 工具',
     'devices': '设备',
@@ -92,7 +92,7 @@ class _HomeScreenState extends State<HomeScreen> {
   late final TextEditingController _kwCtrl;
   late final TextEditingController _pkgCtrl;
 
-  String tr(String key) => _L[_lang]?[key] ?? key;
+  String tr(String key) => _loc[_lang]?[key] ?? key;
 
   @override
   void initState() {
@@ -253,6 +253,7 @@ class _HomeScreenState extends State<HomeScreen> {
           _buildSidebar(context),
           Expanded(
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _buildToolbar(context),
                 Expanded(child: _buildLogList(context, entries)),
@@ -406,27 +407,40 @@ class _HomeScreenState extends State<HomeScreen> {
         color: theme.colorScheme.surfaceContainerLow,
         border: Border(bottom: BorderSide(color: theme.dividerColor)),
       ),
-      child: Wrap(
-        spacing: 6, runSpacing: 6,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          _btn(tr('start'), Icons.play_arrow,
-              !_isStreaming, _selectedSerial == null ? null : _startLogs, true),
-          _btn(tr('stop'), Icons.stop, _isStreaming, _stopLogs, false),
-          _btn(tr('pause'), Icons.pause, _isStreaming && !_isPaused, _pauseLogs, false),
-          _btn(tr('resume'), Icons.play_arrow, _isPaused, _resumeLogs, false),
-          _btn(tr('clear'), Icons.delete_outline,
-              _isStreaming || _allEntries.isNotEmpty, _clearLogs, false),
-          const SizedBox(width: 4),
-          _sep(),
-          _buildTagFilter(),
-          _buildPriortyFilter(),
-          _buildKeywordFilter(),
-          _sep(),
-          _buildPackageFilter(),
-          _sep(),
-          _buildAutoScrollToggle(),
-        ],
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            _btn(tr('start'), Icons.play_arrow,
+                !_isStreaming, _selectedSerial == null ? null : _startLogs, true),
+            const SizedBox(width: 4),
+            _btn(tr('stop'), Icons.stop, _isStreaming, _stopLogs, false),
+            const SizedBox(width: 4),
+            _btn(tr('pause'), Icons.pause, _isStreaming && !_isPaused, _pauseLogs, false),
+            const SizedBox(width: 4),
+            _btn(tr('resume'), Icons.play_arrow, _isPaused, _resumeLogs, false),
+            const SizedBox(width: 4),
+            _btn(tr('clear'), Icons.delete_outline,
+                _isStreaming || _allEntries.isNotEmpty, _clearLogs, false),
+            const SizedBox(width: 12),
+            _sep(),
+            const SizedBox(width: 12),
+            _buildTagFilter(),
+            const SizedBox(width: 8),
+            _buildPriortyFilter(),
+            const SizedBox(width: 8),
+            _buildKeywordFilter(),
+            const SizedBox(width: 16),
+            _sep(),
+            const SizedBox(width: 12),
+            _buildPackageFilter(),
+            const SizedBox(width: 12),
+            _sep(),
+            const SizedBox(width: 12),
+            _buildAutoScrollToggle(),
+          ],
+        ),
       ),
     );
   }
@@ -475,7 +489,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return SizedBox(
       width: 85,
       child: DropdownButtonFormField<String>(
-        value: _priority,
+        initialValue: _priority,
         decoration: InputDecoration(
           labelText: tr('level'),
           labelStyle: const TextStyle(fontSize: 11),
@@ -605,7 +619,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildLogEntry(BuildContext context, LogEntry entry) {
     final theme = Theme.of(context);
-    final mono = const TextStyle(fontFamily: 'Menlo', height: 1.5);
+    const mono = TextStyle(fontFamily: 'Menlo', height: 1.5);
 
     if (entry.isContinuation) {
       return Padding(
