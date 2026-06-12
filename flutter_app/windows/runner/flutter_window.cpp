@@ -1,7 +1,8 @@
+#include <ole2.h>
+
 #include "flutter_window.h"
 
 #include <optional>
-#include <flutter/plugin_registrar.h>
 
 #include "flutter/generated_plugin_registrant.h"
 #include "drop_target.h"
@@ -26,12 +27,12 @@ bool FlutterWindow::OnCreate() {
   RegisterPlugins(flutter_controller_->engine());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
-  auto* registrar =
-      flutter_controller_->engine()->GetRegistrarForPlugin("win_drop");
-  drop_target_ = new DropTarget(GetHandle(), registrar);
-  OleRegisterDragDrop(GetHandle(), drop_target_);
+  auto* messenger =
+      flutter_controller_->engine()->messenger();
+  drop_target_ = new DropTarget(GetHandle(), messenger);
+  RegisterDragDrop(GetHandle(), drop_target_);
 
-  flutter_controller_->engine()->SetNextFrameCallback([&]() {
+  flutter_controller_->engine()->SetNextFrameCallback([this]() {
     this->Show();
   });
 
@@ -42,7 +43,7 @@ bool FlutterWindow::OnCreate() {
 
 void FlutterWindow::OnDestroy() {
   if (drop_target_) {
-    OleRevokeDragDrop(GetHandle());
+    RevokeDragDrop(GetHandle());
     drop_target_->Release();
     drop_target_ = nullptr;
   }

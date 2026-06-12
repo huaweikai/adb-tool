@@ -12,27 +12,25 @@ class ServerLauncher {
 
   Future<String> findServerBinary() async {
     final execDir = File(Platform.resolvedExecutable).parent.path;
+    final sep = Platform.pathSeparator;
 
-    final candidates = <String>[];
+    final candidates = <String>[
+      '$execDir$sep$_binaryName',
+    ];
 
     if (Platform.isMacOS) {
-      final bundleRoot = '$execDir${Platform.pathSeparator}..${Platform.pathSeparator}..';
-      candidates.add('$bundleRoot${Platform.pathSeparator}$_binaryName');
-      candidates.add('$execDir${Platform.pathSeparator}$_binaryName');
+      final bundleRoot = '$execDir${sep}..${sep}..';
+      candidates.add('$bundleRoot${sep}$_binaryName');
+      candidates.add('$execDir${sep}..${sep}Resources${sep}$_binaryName');
     }
 
     if (Platform.isWindows) {
-      candidates.add('$execDir${Platform.pathSeparator}$_binaryName');
-      candidates.add('$execDir${Platform.pathSeparator}Resources${Platform.pathSeparator}$_binaryName');
-      candidates.add('$execDir${Platform.pathSeparator}..${Platform.pathSeparator}Resources${Platform.pathSeparator}$_binaryName');
-      candidates.add('$execDir${Platform.pathSeparator}..${Platform.pathSeparator}..${Platform.pathSeparator}Resources${Platform.pathSeparator}$_binaryName');
+      candidates.add('$execDir${sep}Resources${sep}$_binaryName');
+      candidates.add('$execDir${sep}..${sep}Resources${sep}$_binaryName');
     }
 
-    candidates.add('${Directory.current.path}${Platform.pathSeparator}$_binaryName');
-    candidates.add('${Directory.current.path}${Platform.pathSeparator}build${Platform.pathSeparator}$_binaryName');
-    candidates.add('${Directory.current.path}${Platform.pathSeparator}macos${Platform.pathSeparator}Runner${Platform.pathSeparator}$_binaryName');
-    candidates.add('${Directory.current.path}${Platform.pathSeparator}windows${Platform.pathSeparator}runner${Platform.pathSeparator}Resources${Platform.pathSeparator}$_binaryName');
-    candidates.add('${Directory.current.parent.path}${Platform.pathSeparator}build${Platform.pathSeparator}$_binaryName');
+    candidates.add('${Directory.current.path}${sep}$_binaryName');
+    candidates.add('${Directory.current.path}${sep}..${sep}backend${sep}$_binaryName');
 
     for (final p in candidates) {
       if (await File(p).exists()) return p;
@@ -54,7 +52,7 @@ class ServerLauncher {
 
     final env = Map<String, String>.from(Platform.environment);
     if (Platform.isWindows) {
-      env['PATH'] = '${Platform.environment['SystemRoot'] ?? 'C:\\\\Windows'}\\System32;${env['PATH'] ?? ''}';
+      env['PATH'] = '${Platform.environment['SystemRoot'] ?? 'C:\\Windows'}\\System32;${env['PATH'] ?? ''}';
     } else {
       env['PATH'] = '/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:${env['PATH'] ?? ''}';
     }

@@ -1,7 +1,7 @@
 #pragma once
 #include <windows.h>
 #include <ole2.h>
-#include <flutter/plugin_registrar.h>
+#include <flutter/binary_messenger.h>
 #include <flutter/method_channel.h>
 #include <flutter/standard_method_codec.h>
 #include <atomic>
@@ -11,7 +11,7 @@
 
 class DropTarget : public IDropTarget {
  public:
-  DropTarget(HWND hwnd, FlutterDesktopPluginRegistrarRef registrar);
+  DropTarget(HWND hwnd, flutter::BinaryMessenger* messenger);
   ~DropTarget();
 
   void SetActive(bool active);

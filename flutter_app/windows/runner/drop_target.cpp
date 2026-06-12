@@ -2,18 +2,9 @@
 
 #include <shellapi.h>
 #include <shlobj.h>
+#include <flutter/standard_method_codec.h>
 
 namespace {
-
-std::wstring Utf8ToWide(const std::string& str) {
-  if (str.empty()) return {};
-  int size = MultiByteToWideChar(CP_UTF8, 0, str.c_str(),
-                                 static_cast<int>(str.size()), nullptr, 0);
-  std::wstring result(size, 0);
-  MultiByteToWideChar(CP_UTF8, 0, str.c_str(), static_cast<int>(str.size()),
-                      result.data(), size);
-  return result;
-}
 
 std::string WideToUtf8(const std::wstring& wstr) {
   if (wstr.empty()) return {};
@@ -28,9 +19,8 @@ std::string WideToUtf8(const std::wstring& wstr) {
 
 }  // namespace
 
-DropTarget::DropTarget(HWND hwnd, FlutterDesktopPluginRegistrarRef registrar)
+DropTarget::DropTarget(HWND hwnd, flutter::BinaryMessenger* messenger)
     : hwnd_(hwnd) {
-  auto messenger = FlutterDesktopPluginRegistrarGetMessenger(registrar);
   channel_ = std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
       messenger, "win_drop",
       &flutter::StandardMethodCodec::GetInstance());

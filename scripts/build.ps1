@@ -1,4 +1,4 @@
-param(
+﻿param(
   [ValidateSet('Debug', 'Release')][string]$Mode = 'Release',
   [ValidateSet('Windows')][string]$Platform = 'Windows',
   [ValidateSet('amd64', 'arm64')][string]$GoArch = 'amd64'
@@ -6,9 +6,11 @@ param(
 
 $RootDir = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
 function Require-Command([string]$Name) {
   if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
-    throw "找不到命令：$Name"
+    throw "Command not found: $Name"
   }
 }
 
@@ -16,7 +18,7 @@ Require-Command go
 Require-Command flutter
 
 if ($Platform -ne 'Windows') {
-  throw "该脚本仅用于 Windows 构建"
+  throw "This script is for Windows build only"
 }
 
 $BackendDir = Join-Path $RootDir 'backend'
@@ -29,21 +31,21 @@ if (Test-Path $RunnerResDir) {
   $BackendOut = Join-Path $RunnerResDir 'adb-tool.exe'
 }
 
-Write-Host "==> 编译后端 (GOOS=windows GOARCH=$GoArch)"
+Write-Host "==> Building Go backend (GOOS=windows GOARCH=$GoArch)"
 Push-Location $BackendDir
 $env:GOOS = 'windows'
 $env:GOARCH = $GoArch
 go build -ldflags="-s -w" -o $BackendOut .
 Pop-Location
-Write-Host "后端已输出：$BackendOut"
+Write-Host "Backend output: $BackendOut"
 
 if (-not (Test-Path (Join-Path $FlutterDir 'windows'))) {
-  throw "flutter_app/windows 不存在。请先在 flutter_app 目录执行：flutter create --platforms=windows ."
+  throw "flutter_app/windows not found. Run in flutter_app: flutter create --platforms=windows ."
 }
 
 $FlutterFlag = if ($Mode -eq 'Release') { '--release' } else { '--debug' }
 
-Write-Host "==> 编译 Flutter Windows ($Mode)"
+Write-Host "==> Building Flutter Windows ($Mode)"
 Push-Location $FlutterDir
 flutter build windows $FlutterFlag
 Pop-Location
@@ -51,17 +53,21 @@ Pop-Location
 $BuildWindowsDir = Join-Path $FlutterDir 'build\windows'
 if (Test-Path $BuildWindowsDir) {
   $RunnerOutDir = Get-ChildItem -Path $BuildWindowsDir -Directory -Recurse -ErrorAction SilentlyContinue |
-    Where-Object { $_.FullName -match "\\runner\\$Mode$" } |
+    Where-Object { $_.FullName -match "\\runner\\[^\\]*$" } |
     Select-Object -First 1
 
   if ($RunnerOutDir) {
     $Dst = Join-Path $RunnerOutDir.FullName 'adb-tool.exe'
-    Copy-Item -Force $BackendOut $Dst
-    Write-Host "已确保后端写入产物目录：$Dst"
-    Write-Host "产物目录：$($RunnerOutDir.FullName)"
+    if (-not (Test-Path $Dst)) {
+      Copy-Item -Force $BackendOut $Dst
+      Write-Host "Backend binary copied to build output: $Dst"
+    } else {
+      Write-Host "Backend binary already in build output (CMake installed it)"
+    }
+    Write-Host "Output directory: $($RunnerOutDir.FullName)"
   } else {
-    Write-Host "未找到 runner 输出目录，跳过拷贝：$BuildWindowsDir"
+    Write-Host "Runner output directory not found, skipping copy: $BuildWindowsDir"
   }
 } else {
-  Write-Host "未找到构建目录：$BuildWindowsDir"
+  Write-Host "Build directory not found: $BuildWindowsDir"
 }
