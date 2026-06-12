@@ -7,33 +7,41 @@ import 'package:http/http.dart' as http;
 class ServerLauncher {
   Process? _process;
 
-  String get _binaryName =>
-      Platform.isWindows ? 'adb-tool.exe' : 'adb-tool';
+  String get _binaryName => Platform.isWindows ? 'runtime.exe' : 'adb-tool';
 
   Future<String> findServerBinary() async {
     final execDir = File(Platform.resolvedExecutable).parent.path;
+    final sep = Platform.pathSeparator;
 
-    final candidates = <String>[];
+    final candidates = <String>[
+      '$execDir$sep$_binaryName',
+    ];
 
     if (Platform.isMacOS) {
-      final bundleRoot = '$execDir${Platform.pathSeparator}..${Platform.pathSeparator}..';
-      candidates.add('$bundleRoot${Platform.pathSeparator}$_binaryName');
-      candidates.add('$execDir${Platform.pathSeparator}$_binaryName');
+      final bundleRoot = '$execDir${sep}..${sep}..';
+      candidates.add('$bundleRoot${sep}$_binaryName');
+      candidates.add('$execDir${sep}..${sep}Resources${sep}$_binaryName');
     }
 
-    candidates.add('${Directory.current.path}${Platform.pathSeparator}$_binaryName');
-    candidates.add('${Directory.current.path}${Platform.pathSeparator}build${Platform.pathSeparator}$_binaryName');
-    candidates.add('${Directory.current.path}${Platform.pathSeparator}macos${Platform.pathSeparator}Runner${Platform.pathSeparator}$_binaryName');
-    candidates.add('${Directory.current.parent.path}${Platform.pathSeparator}build${Platform.pathSeparator}$_binaryName');
+    if (Platform.isWindows) {
+      candidates.add('$execDir${sep}Resources${sep}$_binaryName');
+      candidates.add('$execDir${sep}..${sep}Resources${sep}$_binaryName');
+    }
+
+    candidates.add('${Directory.current.path}${sep}$_binaryName');
+    candidates.add('${Directory.current.path}${sep}..${sep}backend${sep}$_binaryName');
 
     for (final p in candidates) {
       if (await File(p).exists()) return p;
     }
 
+    final buildCmd = Platform.isWindows
+        ? 'cd backend && go build -ldflags="-s -w" -o ../flutter_app/windows/runner/Resources/runtime.exe .'
+        : 'cd backend && go build -ldflags="-s -w" -o ../flutter_app/macos/Runner/adb-tool .';
     throw Exception(
       'Server binary "$_binaryName" not found.\n'
       'Search paths:\n  ${candidates.join('\n  ')}\n'
-      'Build it: cd backend && go build -ldflags="-s -w" -o ../flutter_app/macos/Runner/adb-tool ./cmd/adb-tool',
+      'Build it: $buildCmd',
     );
   }
 
@@ -42,7 +50,11 @@ class ServerLauncher {
     final path = await findServerBinary();
 
     final env = Map<String, String>.from(Platform.environment);
-    env['PATH'] = '/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:${env['PATH'] ?? ''}';
+    if (Platform.isWindows) {
+      env['PATH'] = '${Platform.environment['SystemRoot'] ?? 'C:\\Windows'}\\System32;${env['PATH'] ?? ''}';
+    } else {
+      env['PATH'] = '/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:${env['PATH'] ?? ''}';
+    }
 
     _process = await Process.start(
       path,
@@ -78,7 +90,7 @@ class ServerLauncher {
     if (!isOurServer) return;
 
     await _tryHttpShutdown(baseUrl);
-    if (await _isPortOpen(9876) && (Platform.isMacOS || Platform.isLinux)) {
+    if (await _isPortOpen(9876)) {
       await _killPortListeners(9876);
     }
 
@@ -140,32 +152,50 @@ class ServerLauncher {
   }
 
   Future<void> _killPortListeners(int port) async {
-    final pids = await _lsofPids(port);
+    final pids = await _getPortPids(port);
     for (final pid in pids) {
       Process.killPid(pid, ProcessSignal.sigterm);
     }
     await Future.delayed(const Duration(milliseconds: 300));
-    final pids2 = await _lsofPids(port);
+    final pids2 = await _getPortPids(port);
     for (final pid in pids2) {
       Process.killPid(pid, ProcessSignal.sigkill);
     }
   }
 
-  Future<List<int>> _lsofPids(int port) async {
+  Future<List<int>> _getPortPids(int port) async {
     try {
-      final result = await Process.run(
-        'lsof',
-        ['-nP', '-iTCP:$port', '-sTCP:LISTEN', '-t'],
-      );
-      if (result.exitCode != 0) return [];
-      final out = (result.stdout ?? '').toString().trim();
-      if (out.isEmpty) return [];
-      return out
-          .split(RegExp(r'\s+'))
-          .map((e) => int.tryParse(e))
-          .whereType<int>()
-          .toSet()
-          .toList();
+      if (Platform.isWindows) {
+        final result = await Process.run('netstat', ['-ano']);
+        if (result.exitCode != 0) return [];
+        final out = (result.stdout ?? '').toString();
+        final pids = <int>{};
+        for (final line in out.split('\n')) {
+          final trimmed = line.trim();
+          if (trimmed.contains(':9876') && trimmed.contains('LISTENING')) {
+            final parts = trimmed.split(RegExp(r'\s+'));
+            if (parts.isNotEmpty) {
+              final pid = int.tryParse(parts.last);
+              if (pid != null && pid > 0) pids.add(pid);
+            }
+          }
+        }
+        return pids.toList();
+      } else {
+        final result = await Process.run(
+          'lsof',
+          ['-nP', '-iTCP:$port', '-sTCP:LISTEN', '-t'],
+        );
+        if (result.exitCode != 0) return [];
+        final out = (result.stdout ?? '').toString().trim();
+        if (out.isEmpty) return [];
+        return out
+            .split(RegExp(r'\s+'))
+            .map((e) => int.tryParse(e))
+            .whereType<int>()
+            .toSet()
+            .toList();
+      }
     } catch (_) {
       return [];
     }

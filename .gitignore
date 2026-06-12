@@ -16,3 +16,9 @@ flutter_app/macos/Podfile.lock
 
 # Go workspace
 backend/adb-tool
+backend/adb-tool.exe
+flutter_app/windows/runner/Resources/*.exe
+flutter_app/windows/runner/resources/*.exe
+dist/
+.wix/
+.idea/

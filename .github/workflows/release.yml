@@ -1,0 +1,104 @@
+name: Build Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          check-latest: true
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: Install WiX Toolset
+        run: |
+          dotnet tool install --global wix --version 5.0.2
+          echo "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Add WiX UI extension
+        run: wix extension add WixToolset.UI.wixext/5.0.2
+
+      - name: Flutter pub get
+        working-directory: flutter_app
+        run: flutter pub get
+
+      - name: Build Windows MSI
+        run: |
+          $version = "${{ github.ref_name }}"
+          $version = $version.TrimStart('v')
+          .\scripts\build.ps1 -Mode Release -ProductVersion $version
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: adb-tool-windows
+          path: dist/windows/*.msi
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          check-latest: true
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: Build Go backend
+        run: |
+          cd backend
+          GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o ../flutter_app/macos/Runner/adb-tool .
+          chmod +x ../flutter_app/macos/Runner/adb-tool
+
+      - name: Flutter pub get
+        working-directory: flutter_app
+        run: flutter pub get
+
+      - name: Flutter build macOS
+        working-directory: flutter_app
+        run: flutter build macos --release
+
+      - name: Embed backend into .app bundle
+        run: |
+          APP="$(find flutter_app/build/macos/Build/Products/Release -name '*.app' -maxdepth 1 | head -1)"
+          cp flutter_app/macos/Runner/adb-tool "$APP/Contents/MacOS/"
+          chmod +x "$APP/Contents/MacOS/adb-tool"
+          echo "APP_PATH=$APP" >> $GITHUB_ENV
+
+      - name: Package artifacts
+        run: |
+          ditto -c -k --keepParent "$APP_PATH" adb-tool-macos-arm64.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: adb-tool-macos-arm64
+          path: adb-tool-macos-arm64.zip
+
+  create-release:
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            adb-tool-windows/*.msi
+            adb-tool-macos-arm64/adb-tool-macos-arm64.zip
+          generate_release_notes: true

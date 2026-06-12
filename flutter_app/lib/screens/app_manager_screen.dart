@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../services/mac_drop.dart';
+import '../services/drop_target.dart';
 import '../models/app_package.dart';
 import '../services/api_client.dart';
 
@@ -118,7 +118,7 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
     }
   }
 
-  Future<void> _onDropApk(MacDropDoneDetails details) async {
+  Future<void> _onDropApk(DropDoneDetails details) async {
     if (widget.selectedSerial == null) return;
     if (mounted) setState(() => _dragOver = false);
     for (final file in details.files) {
@@ -208,7 +208,7 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
       );
     }
 
-    return MacDropTarget(
+    return DropTarget(
       onDragEntered: () => setState(() => _dragOver = true),
       onDragExited: () => setState(() => _dragOver = false),
       onDragDone: _onDropApk,
