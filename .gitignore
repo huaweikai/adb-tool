@@ -12,6 +12,7 @@ flutter_app/macos/Pods/
 flutter_app/macos/Flutter/ephemeral/
 flutter_app/macos/Runner.xcworkspace/xcuserdata/
 flutter_app/macos/Runner/adb-tool
+flutter_app/macos/Podfile.lock
 
 # Go workspace
 backend/adb-tool

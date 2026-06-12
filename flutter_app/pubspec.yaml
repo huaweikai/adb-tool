@@ -11,6 +11,8 @@ dependencies:
     sdk: flutter
   web_socket_channel: ^3.0.0
   http: ^1.2.0
+  file_selector: ^1.0.0
+  desktop_drop: ^0.4.0
 
 dev_dependencies:
   flutter_test:

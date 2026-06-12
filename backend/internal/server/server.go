@@ -2,8 +2,10 @@ package server
 
 import (
 	"encoding/json"
+	"io"
 	"io/fs"
 	"net/http"
+	"path/filepath"
 
 	"github.com/gorilla/websocket"
 )
@@ -34,6 +36,17 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/running-packages", s.handleRunningPackages)
 	mux.HandleFunc("/ws/logs", s.handleLogStream)
 	mux.HandleFunc("/api/adb-path", s.handleAdbPath)
+
+	// New APIs
+	mux.HandleFunc("/api/files", s.handleFiles)
+	mux.HandleFunc("/api/file-content", s.handleFileContent)
+	mux.HandleFunc("/api/packages", s.handlePackages)
+	mux.HandleFunc("/api/device-detail", s.handleDeviceDetail)
+	mux.HandleFunc("/api/screenshot", s.handleScreenshot)
+	mux.HandleFunc("/api/uninstall-package", s.handleUninstallPackage)
+	mux.HandleFunc("/api/backend-logs", s.handleBackendLogs)
+	mux.HandleFunc("/api/pull-file", s.handlePullFile)
+	mux.HandleFunc("/api/push-file", s.handlePushFile)
 
 	webFS, err := fs.Sub(s.webFS, "web")
 	if err != nil {
@@ -128,6 +141,155 @@ func (s *Server) handleLogStream(w http.ResponseWriter, r *http.Request) {
 
 	session := NewLogSession(conn, s.adb)
 	session.Run()
+}
+
+func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
+	serial := r.URL.Query().Get("serial")
+	path := r.URL.Query().Get("path")
+	if serial == "" || path == "" {
+		http.Error(w, `{"error":"serial and path required"}`, http.StatusBadRequest)
+		return
+	}
+	entries, err := s.adb.ListFiles(serial, path)
+	if err != nil {
+		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
+	if entries == nil {
+		entries = []FileEntry{}
+	}
+	writeJSON(w, map[string]interface{}{"files": entries})
+}
+
+func (s *Server) handleFileContent(w http.ResponseWriter, r *http.Request) {
+	serial := r.URL.Query().Get("serial")
+	path := r.URL.Query().Get("path")
+	if serial == "" || path == "" {
+		http.Error(w, "serial and path required", http.StatusBadRequest)
+		return
+	}
+	content, err := s.adb.ReadFile(serial, path)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]string{"content": content})
+}
+
+func (s *Server) handlePackages(w http.ResponseWriter, r *http.Request) {
+	serial := r.URL.Query().Get("serial")
+	if serial == "" {
+		http.Error(w, "serial required", http.StatusBadRequest)
+		return
+	}
+	pkgs, err := s.adb.InstalledPackages(serial)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if pkgs == nil {
+		pkgs = []PackageInfo{}
+	}
+	writeJSON(w, map[string]interface{}{"packages": pkgs})
+}
+
+func (s *Server) handleDeviceDetail(w http.ResponseWriter, r *http.Request) {
+	serial := r.URL.Query().Get("serial")
+	if serial == "" {
+		http.Error(w, "serial required", http.StatusBadRequest)
+		return
+	}
+	props, err := s.adb.DeviceDetail(serial)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if props == nil {
+		props = map[string]string{}
+	}
+	writeJSON(w, map[string]interface{}{"props": props})
+}
+
+func (s *Server) handleScreenshot(w http.ResponseWriter, r *http.Request) {
+	serial := r.URL.Query().Get("serial")
+	if serial == "" {
+		http.Error(w, "serial required", http.StatusBadRequest)
+		return
+	}
+	data, err := s.adb.Screenshot(serial)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "image/png")
+	w.Write(data)
+}
+
+func (s *Server) handleUninstallPackage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+	serial := r.URL.Query().Get("serial")
+	packageName := r.URL.Query().Get("package")
+	if serial == "" || packageName == "" {
+		http.Error(w, "serial and package required", http.StatusBadRequest)
+		return
+	}
+	if err := s.adb.UninstallPackage(serial, packageName); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleBackendLogs(w http.ResponseWriter, r *http.Request) {
+	entries := Log.Snapshot()
+	if entries == nil {
+		entries = []LogEntry{}
+	}
+	writeJSON(w, map[string]interface{}{"logs": entries})
+}
+
+func (s *Server) handlePullFile(w http.ResponseWriter, r *http.Request) {
+	serial := r.URL.Query().Get("serial")
+	path := r.URL.Query().Get("path")
+	if serial == "" || path == "" {
+		http.Error(w, "serial and path required", http.StatusBadRequest)
+		return
+	}
+	data, err := s.adb.PullFile(serial, path)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+filepath.Base(path)+"\"")
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Write(data)
+}
+
+func (s *Server) handlePushFile(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+	serial := r.URL.Query().Get("serial")
+	path := r.URL.Query().Get("path")
+	if serial == "" || path == "" {
+		http.Error(w, "serial and path required", http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+	data, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := s.adb.PushFile(serial, data, path); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]string{"status": "ok"})
 }
 
 func writeJSON(w http.ResponseWriter, v interface{}) {

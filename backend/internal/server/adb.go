@@ -10,7 +10,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 )
 
 type Device struct {
@@ -98,12 +100,37 @@ func FindOrExtractADB(darwinZip, windowsZip []byte) (string, error) {
 }
 
 func (m *AdbManager) run(args ...string) (string, error) {
+	start := time.Now()
+	cmdStr := strings.Join(args, " ")
 	cmd := exec.Command(m.adbPath, args...)
 	output, err := cmd.CombinedOutput()
+	elapsed := time.Since(start)
+	outStr := strings.TrimSpace(string(output))
 	if err != nil {
-		return "", fmt.Errorf("adb %s: %w\n%s", strings.Join(args, " "), err, string(output))
+		errStr := fmt.Sprintf("adb %s: %v\n%s", cmdStr, err, string(output))
+		Log.Add("adb "+cmdStr, "", err, elapsed)
+		return "", fmt.Errorf("%s", errStr)
 	}
-	return strings.TrimSpace(string(output)), nil
+	if len(outStr) > 500 {
+		Log.Add("adb "+cmdStr, outStr[:500]+fmt.Sprintf("... (%d bytes)", len(outStr)), nil, elapsed)
+	} else {
+		Log.Add("adb "+cmdStr, outStr, nil, elapsed)
+	}
+	return outStr, nil
+}
+
+func (m *AdbManager) runOut(args ...string) ([]byte, error) {
+	start := time.Now()
+	cmdStr := strings.Join(args, " ")
+	cmd := exec.Command(m.adbPath, args...)
+	output, err := cmd.Output()
+	elapsed := time.Since(start)
+	if err != nil {
+		Log.Add("adb "+cmdStr, "", err, elapsed)
+	} else {
+		Log.Add("adb "+cmdStr, fmt.Sprintf("<%d bytes binary>", len(output)), nil, elapsed)
+	}
+	return output, err
 }
 
 func (m *AdbManager) Devices() ([]Device, error) {
@@ -234,6 +261,169 @@ func (m *AdbManager) GetRunningPackages(serial string) ([]string, error) {
 
 func (m *AdbManager) ClearLogcat(serial string) error {
 	_, err := m.run("-s", serial, "logcat", "-c")
+	return err
+}
+
+type FileEntry struct {
+	Name        string `json:"name"`
+	Path        string `json:"path"`
+	Size        int64  `json:"size"`
+	IsDir       bool   `json:"isDir"`
+	Permissions string `json:"permissions"`
+	Modified    string `json:"modified"`
+}
+
+type PackageInfo struct {
+	PackageName string `json:"packageName"`
+	SourceDir   string `json:"sourceDir"`
+}
+
+func (m *AdbManager) ListFiles(serial, path string) ([]FileEntry, error) {
+	path = strings.TrimRight(path, "/")
+	out, err := m.run("-s", serial, "shell", "ls", "-la", path)
+	if err != nil {
+		return nil, err
+	}
+	return parseLsOutput(out, path), nil
+}
+
+func parseLsOutput(out, basePath string) []FileEntry {
+	lines := strings.Split(out, "\n")
+	var entries []FileEntry
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "total ") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 8 {
+			continue
+		}
+		perms := fields[0]
+		if len(perms) < 10 {
+			continue
+		}
+
+		var size int64
+		if s, err := strconv.ParseInt(fields[4], 10, 64); err == nil {
+			size = s
+		}
+		name := strings.Join(fields[7:], " ")
+		if name == "." || name == ".." {
+			continue
+		}
+		// strip symlink target " -> /path" from name
+		if idx := strings.Index(name, " -> "); idx > 0 {
+			name = name[:idx]
+		}
+
+		fullPath := basePath + "/" + name
+
+		entries = append(entries, FileEntry{
+			Name:        name,
+			Path:        fullPath,
+			Size:        size,
+			IsDir:       perms[0] == 'd' || perms[0] == 'l',
+			Permissions: perms,
+			Modified:    fields[5] + " " + fields[6],
+		})
+	}
+	return entries
+}
+
+func (m *AdbManager) ReadFile(serial, path string) (string, error) {
+	return m.run("-s", serial, "shell", "cat", path)
+}
+
+func (m *AdbManager) InstalledPackages(serial string) ([]PackageInfo, error) {
+	out, err := m.run("-s", serial, "shell", "pm", "list", "packages", "-f")
+	if err != nil {
+		out, err = m.run("-s", serial, "shell", "pm", "list", "packages")
+		if err != nil {
+			return nil, err
+		}
+		// fallback: no -f flag, parse package names only
+		lines := strings.Split(out, "\n")
+		var packages []PackageInfo
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if !strings.HasPrefix(line, "package:") {
+				continue
+			}
+			pkgName := strings.TrimPrefix(line, "package:")
+			packages = append(packages, PackageInfo{
+				PackageName: pkgName,
+				SourceDir:   "",
+			})
+		}
+		return packages, nil
+	}
+
+	lines := strings.Split(out, "\n")
+	var packages []PackageInfo
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "package:") {
+			continue
+		}
+		content := strings.TrimPrefix(line, "package:")
+		idx := strings.LastIndex(content, "=")
+		if idx < 0 {
+			continue
+		}
+		sourceDir := content[:idx]
+		pkgName := content[idx+1:]
+		packages = append(packages, PackageInfo{
+			PackageName: pkgName,
+			SourceDir:   sourceDir,
+		})
+	}
+	return packages, nil
+}
+
+func (m *AdbManager) DeviceDetail(serial string) (map[string]string, error) {
+	out, err := m.run("-s", serial, "shell", "getprop")
+	if err != nil {
+		return nil, err
+	}
+
+	props := make(map[string]string)
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || !strings.HasPrefix(line, "[") {
+			continue
+		}
+		parts := strings.SplitN(line, "]: [", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimPrefix(parts[0], "[")
+		val := strings.TrimSuffix(parts[1], "]")
+		props[key] = val
+	}
+	return props, nil
+}
+
+func (m *AdbManager) Screenshot(serial string) ([]byte, error) {
+	return m.runOut("-s", serial, "exec-out", "screencap", "-p")
+}
+
+func (m *AdbManager) PullFile(serial, remotePath string) ([]byte, error) {
+	return m.runOut("-s", serial, "exec-out", "cat", remotePath)
+}
+
+func (m *AdbManager) PushFile(serial string, data []byte, remotePath string) error {
+	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("adb-tool-push-%d", time.Now().UnixNano()))
+	if err := os.WriteFile(tmpFile, data, 0644); err != nil {
+		return err
+	}
+	defer os.Remove(tmpFile)
+	_, err := m.run("-s", serial, "push", tmpFile, remotePath)
+	return err
+}
+
+func (m *AdbManager) UninstallPackage(serial, packageName string) error {
+	_, err := m.run("-s", serial, "uninstall", packageName)
 	return err
 }
 
