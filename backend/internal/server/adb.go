@@ -43,7 +43,7 @@ func NewAdbManager(adbPath string) *AdbManager {
 	return &AdbManager{adbPath: adbPath}
 }
 
-func FindOrExtractADB(darwinZip, windowsZip []byte) (string, error) {
+func FindOrExtractADB(zipData []byte) (string, error) {
 	adbName := "adb"
 	if runtime.GOOS == "windows" {
 		adbName = "adb.exe"
@@ -58,13 +58,6 @@ func FindOrExtractADB(darwinZip, windowsZip []byte) (string, error) {
 	}
 
 	os.MkdirAll(cacheDir, 0755)
-
-	var zipData []byte
-	if runtime.GOOS == "windows" {
-		zipData = windowsZip
-	} else {
-		zipData = darwinZip
-	}
 
 	reader, err := zip.NewReader(bytes.NewReader(zipData), int64(len(zipData)))
 	if err != nil {

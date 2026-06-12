@@ -12,18 +12,12 @@ import (
 	"adb-tool/backend/internal/server"
 )
 
-//go:embed platform-tools-latest-darwin.zip
-var adbDarwinZip []byte
-
-//go:embed platform-tools-latest-windows.zip
-var adbWindowsZip []byte
-
 //go:embed web
 var webFS embed.FS
 
 func main() {
 	fmt.Println("[1/3] Extracting ADB platform-tools...")
-	adbPath, err := server.FindOrExtractADB(adbDarwinZip, adbWindowsZip)
+	adbPath, err := server.FindOrExtractADB(adbPlatformToolsZip)
 	if err != nil {
 		log.Fatalf("Failed to extract ADB: %v", err)
 	}
