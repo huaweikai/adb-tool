@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:file_selector/file_selector.dart';
-import 'package:desktop_drop/desktop_drop.dart';
+import '../services/mac_drop.dart';
 import '../models/file_item.dart';
 import '../services/api_client.dart';
 
@@ -343,8 +343,9 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
 
-  Future<void> _onDropFile(DropDoneDetails details) async {
+  Future<void> _onDropFile(MacDropDoneDetails details) async {
     if (widget.selectedSerial == null) return;
+    if (mounted) setState(() => _dragOver = false);
     for (final file in details.files) {
       final bytes = await file.readAsBytes();
       final remotePath = _currentPath.endsWith('/')
@@ -391,44 +392,45 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       return _buildFileViewer();
     }
 
-    return DropTarget(
-      onDragEntered: (_) => setState(() => _dragOver = true),
-      onDragExited: (_) => setState(() => _dragOver = false),
+    return MacDropTarget(
+      onDragEntered: () => setState(() => _dragOver = true),
+      onDragExited: () => setState(() => _dragOver = false),
       onDragDone: _onDropFile,
       child: Stack(
         children: [
-          Container(
-            decoration: _dragOver
-                ? BoxDecoration(
-                    border: Border.all(color: Theme.of(context).colorScheme.primary, width: 3),
-                  )
-                : null,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _buildPathBar(),
-                if (_loading)
-                  const Expanded(child: Center(child: CircularProgressIndicator()))
-                else if (_error != null)
-                  Expanded(child: Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.error_outline, size: 48, color: Colors.red),
-                        const SizedBox(height: 8),
-                        Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 12)),
-                        const SizedBox(height: 12),
-                        FilledButton.tonal(onPressed: _loadFiles, child: const Text('重试')),
-                      ],
-                    ),
-                  ))
-                else
-                  Expanded(child: _gridMode ? _buildGridView() : _buildFileList()),
-              ],
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildPathBar(),
+              if (_loading)
+                const Expanded(child: Center(child: CircularProgressIndicator()))
+              else if (_error != null)
+                Expanded(child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                      const SizedBox(height: 8),
+                      Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 12)),
+                      const SizedBox(height: 12),
+                      FilledButton.tonal(onPressed: _loadFiles, child: const Text('重试')),
+                    ],
+                  ),
+                ))
+              else
+                Expanded(child: _gridMode ? _buildGridView() : _buildFileList()),
+            ],
+          ),
+          Positioned.fill(
+            child: IgnorePointer(
+              ignoring: !_dragOver,
+              child: AnimatedOpacity(
+                opacity: _dragOver ? 1.0 : 0.0,
+                duration: const Duration(milliseconds: 200),
+                child: _buildDragOverlay(),
+              ),
             ),
           ),
-          if (_dragOver)
-            _buildDragOverlay(),
         ],
       ),
     );
@@ -436,7 +438,10 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
 
   Widget _buildDragOverlay() {
     final theme = Theme.of(context);
-    return Positioned.fill(
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: theme.colorScheme.primary, width: 3),
+      ),
       child: Container(
         color: theme.colorScheme.primary.withAlpha(30),
         child: Center(
@@ -445,7 +450,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
             children: [
               Icon(Icons.cloud_upload, size: 64, color: theme.colorScheme.primary),
               const SizedBox(height: 12),
-              Text('释放文件以上传到 ${_currentPath}',
+              Text('释放文件以上传到 $_currentPath',
                   style: TextStyle(fontSize: 16, color: theme.colorScheme.primary)),
             ],
           ),

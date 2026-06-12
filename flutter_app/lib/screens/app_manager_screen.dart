@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:desktop_drop/desktop_drop.dart';
+import '../services/mac_drop.dart';
 import '../models/app_package.dart';
 import '../services/api_client.dart';
 
@@ -118,8 +118,9 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
     }
   }
 
-  Future<void> _onDropApk(DropDoneDetails details) async {
+  Future<void> _onDropApk(MacDropDoneDetails details) async {
     if (widget.selectedSerial == null) return;
+    if (mounted) setState(() => _dragOver = false);
     for (final file in details.files) {
       if (!file.name.toLowerCase().endsWith('.apk')) continue;
       setState(() => _installing = true);
@@ -207,9 +208,9 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
       );
     }
 
-    return DropTarget(
-      onDragEntered: (_) => setState(() => _dragOver = true),
-      onDragExited: (_) => setState(() => _dragOver = false),
+    return MacDropTarget(
+      onDragEntered: () => setState(() => _dragOver = true),
+      onDragExited: () => setState(() => _dragOver = false),
       onDragDone: _onDropApk,
       child: Stack(
         children: [
@@ -234,11 +235,20 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
                 ))
               else
                 Expanded(child: _buildPackageList(context)),
-              _buildStatusBar(context),
-            ],
+            _buildStatusBar(context),
+          ],
+        ),
+        Positioned.fill(
+          child: IgnorePointer(
+            ignoring: !_dragOver,
+            child: AnimatedOpacity(
+              opacity: _dragOver ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 200),
+              child: _buildDragOverlay(),
+            ),
           ),
-          if (_dragOver) _buildDragOverlay(),
-          if (_installing) _buildInstallingOverlay(),
+        ),
+        if (_installing) _buildInstallingOverlay(),
         ],
       ),
     );
@@ -429,7 +439,10 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
 
   Widget _buildDragOverlay() {
     final theme = Theme.of(context);
-    return Positioned.fill(
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: theme.colorScheme.primary, width: 3),
+      ),
       child: Container(
         color: theme.colorScheme.primary.withAlpha(30),
         child: Center(
