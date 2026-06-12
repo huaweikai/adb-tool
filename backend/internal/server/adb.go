@@ -3,6 +3,7 @@ package server
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -107,9 +108,13 @@ func (m *AdbManager) run(args ...string) (string, error) {
 }
 
 func (m *AdbManager) runRaw(args ...string) (string, error) {
+	return m.runRawContext(context.Background(), args...)
+}
+
+func (m *AdbManager) runRawContext(ctx context.Context, args ...string) (string, error) {
 	start := time.Now()
 	cmdStr := strings.Join(args, " ")
-	cmd := exec.Command(m.adbPath, args...)
+	cmd := exec.CommandContext(ctx, m.adbPath, args...)
 	output, err := cmd.CombinedOutput()
 	elapsed := time.Since(start)
 	outStr := strings.TrimSpace(string(output))
@@ -118,6 +123,10 @@ func (m *AdbManager) runRaw(args ...string) (string, error) {
 		logOut = logOut[:500] + fmt.Sprintf("... (%d bytes)", len(logOut))
 	}
 	if err != nil {
+		if ctx.Err() != nil {
+			Log.Add("adb "+cmdStr, logOut, ctx.Err(), elapsed)
+			return outStr, ctx.Err()
+		}
 		errStr := fmt.Sprintf("adb %s: %v\n%s", cmdStr, err, string(output))
 		Log.Add("adb "+cmdStr, logOut, err, elapsed)
 		return outStr, fmt.Errorf("%s", errStr)
@@ -419,13 +428,30 @@ func (m *AdbManager) PullFile(serial, remotePath string) ([]byte, error) {
 	return m.runOut("-s", serial, "exec-out", "cat", remotePath)
 }
 
+func (m *AdbManager) PullFileToPath(serial, remotePath, localPath string) error {
+	return m.PullFileToPathContext(context.Background(), serial, remotePath, localPath)
+}
+
+func (m *AdbManager) PullFileToPathContext(ctx context.Context, serial, remotePath, localPath string) error {
+	_, err := m.runRawContext(ctx, "-s", serial, "pull", remotePath, localPath)
+	return err
+}
+
 func (m *AdbManager) PushFile(serial string, data []byte, remotePath string) error {
 	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("adb-tool-push-%d", time.Now().UnixNano()))
 	if err := os.WriteFile(tmpFile, data, 0644); err != nil {
 		return err
 	}
 	defer os.Remove(tmpFile)
-	_, err := m.run("-s", serial, "push", tmpFile, remotePath)
+	return m.PushFileFromPath(serial, tmpFile, remotePath)
+}
+
+func (m *AdbManager) PushFileFromPath(serial, localPath, remotePath string) error {
+	return m.PushFileFromPathContext(context.Background(), serial, localPath, remotePath)
+}
+
+func (m *AdbManager) PushFileFromPathContext(ctx context.Context, serial, localPath, remotePath string) error {
+	_, err := m.runRawContext(ctx, "-s", serial, "push", localPath, remotePath)
 	return err
 }
 
@@ -437,12 +463,16 @@ func (m *AdbManager) UninstallPackage(serial, packageName string) error {
 var installPkgRe = regexp.MustCompile(`Package\s+(\S+)`)
 
 func (m *AdbManager) InstallPackage(serial, apkPath string) (string, error) {
-	output, err := m.run("-s", serial, "install", "-r", "-d", apkPath)
+	return m.InstallPackageContext(context.Background(), serial, apkPath)
+}
+
+func (m *AdbManager) InstallPackageContext(ctx context.Context, serial, apkPath string) (string, error) {
+	output, err := m.runRawContext(ctx, "-s", serial, "install", "-r", "-d", apkPath)
 	if err == nil {
 		return output, nil
 	}
 
-	if !strings.Contains(output, "INSTALL_FAILED_UPDATE_INCOMPATIBLE") {
+	if ctx.Err() != nil || !strings.Contains(output, "INSTALL_FAILED_UPDATE_INCOMPATIBLE") {
 		return output, err
 	}
 
@@ -451,12 +481,12 @@ func (m *AdbManager) InstallPackage(serial, apkPath string) (string, error) {
 		return output, fmt.Errorf("签名不一致，但无法解析包名\n%s", output)
 	}
 
-	uninstallOut, uninstallErr := m.run("-s", serial, "uninstall", pkg)
+	uninstallOut, uninstallErr := m.runRawContext(ctx, "-s", serial, "uninstall", pkg)
 	if uninstallErr != nil {
 		return output, fmt.Errorf("签名不一致，卸载旧版本(%s)也失败: %s\n原错误: %s", pkg, uninstallOut, output)
 	}
 
-	output, err = m.run("-s", serial, "install", apkPath)
+	output, err = m.runRawContext(ctx, "-s", serial, "install", apkPath)
 	if err != nil {
 		return output, fmt.Errorf("已卸载旧版本(%s)，但安装新版本仍然失败: %s", pkg, output)
 	}

@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 import '../models/device.dart';
 import '../models/file_item.dart';
@@ -14,6 +16,44 @@ class AdbCommandResult {
     required this.output,
     required this.error,
   });
+}
+
+class TransferProgress {
+  final int sent;
+  final int total;
+
+  const TransferProgress(this.sent, this.total);
+
+  double? get ratio => total > 0 ? sent / total : null;
+}
+
+typedef TransferProgressCallback = void Function(TransferProgress progress);
+
+class TransferCanceledException implements Exception {
+  @override
+  String toString() => '操作已取消';
+}
+
+class TransferCancelToken {
+  bool _canceled = false;
+  http.Client? _client;
+
+  bool get canceled => _canceled;
+
+  void bind(http.Client client) {
+    _client = client;
+    if (_canceled) client.close();
+  }
+
+  void cancel() {
+    if (_canceled) return;
+    _canceled = true;
+    _client?.close();
+  }
+
+  void throwIfCanceled() {
+    if (_canceled) throw TransferCanceledException();
+  }
 }
 
 class ApiClient {
@@ -151,6 +191,22 @@ class ApiClient {
     return data['status'] ?? 'ok';
   }
 
+  Future<String> installLocalPackage(
+    String serial,
+    String apkPath, {
+    TransferProgressCallback? onProgress,
+    TransferCancelToken? cancelToken,
+  }) async {
+    final body = await _postLocalFile(
+      Uri.parse('$baseUrl/api/install-package?serial=$serial'),
+      apkPath,
+      onProgress: onProgress,
+      cancelToken: cancelToken,
+    );
+    final data = json.decode(body);
+    return data['status'] ?? 'ok';
+  }
+
   Future<String> readFileContent(String serial, String path) async {
     final resp = await http.get(
       Uri.parse('$baseUrl/api/file-content?serial=$serial&path=${Uri.encodeComponent(path)}'),
@@ -168,6 +224,49 @@ class ApiClient {
     return resp.bodyBytes.toList();
   }
 
+  Future<void> downloadFileToPath(
+    String serial,
+    String remotePath,
+    String localPath, {
+    int totalBytes = 0,
+    TransferProgressCallback? onProgress,
+    TransferCancelToken? cancelToken,
+  }) async {
+    final client = http.Client();
+    cancelToken?.bind(client);
+    final request = http.Request(
+      'GET',
+      Uri.parse('$baseUrl/api/pull-file?serial=$serial&path=${Uri.encodeComponent(remotePath)}'),
+    );
+    try {
+      cancelToken?.throwIfCanceled();
+      final response = await client.send(request);
+      cancelToken?.throwIfCanceled();
+      if (response.statusCode != 200) {
+        final body = await response.stream.bytesToString();
+        throw Exception(body.isNotEmpty ? body : 'pull failed: ${response.statusCode}');
+      }
+
+      final file = File(localPath);
+      final sink = file.openWrite();
+      var received = 0;
+      final expected = totalBytes > 0 ? totalBytes : response.contentLength ?? 0;
+      try {
+        await for (final chunk in response.stream) {
+          cancelToken?.throwIfCanceled();
+          received += chunk.length;
+          sink.add(chunk);
+          onProgress?.call(TransferProgress(received, expected));
+        }
+      } finally {
+        await sink.close();
+      }
+      onProgress?.call(TransferProgress(received, expected));
+    } finally {
+      client.close();
+    }
+  }
+
   Future<bool> pushFile(String serial, String path, List<int> bytes) async {
     final resp = await http.post(
       Uri.parse('$baseUrl/api/push-file?serial=$serial&path=${Uri.encodeComponent(path)}'),
@@ -176,6 +275,73 @@ class ApiClient {
     );
     if (resp.statusCode != 200) throw Exception(resp.body);
     return true;
+  }
+
+  Future<bool> pushLocalFile(
+    String serial,
+    String remotePath,
+    String localPath, {
+    TransferProgressCallback? onProgress,
+    TransferCancelToken? cancelToken,
+  }) async {
+    await _postLocalFile(
+      Uri.parse('$baseUrl/api/push-file?serial=$serial&path=${Uri.encodeComponent(remotePath)}'),
+      localPath,
+      onProgress: onProgress,
+      cancelToken: cancelToken,
+    );
+    return true;
+  }
+
+  Future<String> _postLocalFile(
+    Uri uri,
+    String localPath, {
+    TransferProgressCallback? onProgress,
+    TransferCancelToken? cancelToken,
+  }) async {
+    cancelToken?.throwIfCanceled();
+    final file = File(localPath);
+    final total = await file.length();
+    final request = http.StreamedRequest('POST', uri);
+    request.headers['Content-Type'] = 'application/octet-stream';
+    request.contentLength = total;
+
+    var sent = 0;
+    unawaited(() async {
+      try {
+        await for (final chunk in file.openRead()) {
+          cancelToken?.throwIfCanceled();
+          sent += chunk.length;
+          request.sink.add(chunk);
+          onProgress?.call(TransferProgress(sent, total));
+        }
+        await request.sink.close();
+      } catch (e) {
+        request.sink.addError(e);
+        await request.sink.close();
+      }
+    }());
+
+    final client = http.Client();
+    cancelToken?.bind(client);
+    try {
+      cancelToken?.throwIfCanceled();
+      final response = await client.send(request);
+      cancelToken?.throwIfCanceled();
+      final body = await response.stream.bytesToString();
+      if (response.statusCode != 200) {
+        var message = body;
+        try {
+          final data = json.decode(body);
+          message = data['error']?.toString() ?? body;
+        } catch (_) {}
+        throw Exception(message);
+      }
+      onProgress?.call(TransferProgress(total, total));
+      return body;
+    } finally {
+      client.close();
+    }
   }
 
   Future<Map<String, dynamic>> screenRecordAction(String serial, String action) async {

@@ -3,6 +3,24 @@ import '../services/drop_target.dart';
 import '../models/app_package.dart';
 import '../services/api_client.dart';
 
+class _InstallState {
+  final String fileName;
+  final int sent;
+  final int total;
+  final String phase;
+
+  const _InstallState({
+    required this.fileName,
+    required this.sent,
+    required this.total,
+    required this.phase,
+  });
+
+  bool get waitingForAdb => phase.startsWith('设备');
+
+  double? get progress => total > 0 && !waitingForAdb ? sent / total : null;
+}
+
 class AppManagerScreen extends StatefulWidget {
   final ApiClient api;
   final String? selectedSerial;
@@ -22,8 +40,11 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
   List<AppPackage> _filteredPackages = [];
   bool _loading = false;
   bool _dragOver = false;
-  bool _installing = false;
+  _InstallState? _installState;
+  TransferCancelToken? _installCancelToken;
   String? _error;
+
+  bool get _installing => _installState != null;
   final TextEditingController _searchCtrl = TextEditingController();
 
   @override
@@ -41,6 +62,7 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
   }
 
   Future<void> _loadPackages() async {
+    if (_installing) return;
     if (widget.selectedSerial == null) {
       setState(() {
         _allPackages = [];
@@ -71,6 +93,7 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
   }
 
   void _onSearch(String query) {
+    if (_installing) return;
     setState(() {
       if (query.isEmpty) {
         _filteredPackages = List.from(_allPackages);
@@ -84,6 +107,7 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
   }
 
   Future<void> _uninstallPackage(AppPackage pkg) async {
+    if (_installing) return;
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -119,16 +143,42 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
   }
 
   Future<void> _onDropApk(DropDoneDetails details) async {
+    if (_installing) return;
     if (widget.selectedSerial == null) return;
     if (mounted) setState(() => _dragOver = false);
     for (final file in details.files) {
       if (!file.name.toLowerCase().endsWith('.apk')) continue;
-      setState(() => _installing = true);
+      final totalBytes = await file.length();
+      final cancelToken = TransferCancelToken();
       try {
-        final bytes = await file.readAsBytes();
+        _installCancelToken = cancelToken;
+        setState(() {
+          _installState = _InstallState(
+            fileName: file.name,
+            sent: 0,
+            total: totalBytes,
+            phase: '准备上传 APK...',
+          );
+        });
+        final result = await widget.api.installLocalPackage(
+          widget.selectedSerial!,
+          file.path,
+          cancelToken: cancelToken,
+          onProgress: (progress) {
+            if (!mounted) return;
+            setState(() {
+              _installState = _InstallState(
+                fileName: file.name,
+                sent: progress.sent,
+                total: progress.total,
+                phase: progress.total > 0 && progress.sent >= progress.total ? '设备安装中...' : '正在上传 APK...',
+              );
+            });
+          },
+        );
         if (!mounted) return;
-        final result = await widget.api.installPackage(widget.selectedSerial!, bytes);
-        if (!mounted) return;
+        _installCancelToken = null;
+        setState(() => _installState = null);
         final successMsg = result.contains('已卸载') ? result : '${file.name} 安装成功';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(successMsg)),
@@ -136,11 +186,23 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
         _loadPackages();
       } catch (e) {
         if (!mounted) return;
+        if (e is TransferCanceledException || cancelToken.canceled) {
+          _installCancelToken = null;
+          setState(() => _installState = null);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('${file.name} 安装已取消')),
+          );
+          break;
+        }
+        _installCancelToken = null;
+        setState(() => _installState = null);
         _showInstallError(file.name, e.toString());
-      } finally {
-        if (mounted) setState(() => _installing = false);
       }
     }
+  }
+
+  void _cancelInstall() {
+    _installCancelToken?.cancel();
   }
 
   void _showInstallError(String fileName, String error) {
@@ -189,6 +251,7 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
 
   @override
   void dispose() {
+    _installCancelToken?.cancel();
     _searchCtrl.dispose();
     super.dispose();
   }
@@ -209,8 +272,14 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
     }
 
     return DropTarget(
-      onDragEntered: () => setState(() => _dragOver = true),
-      onDragExited: () => setState(() => _dragOver = false),
+      onDragEntered: () {
+        if (_installing) return;
+        setState(() => _dragOver = true);
+      },
+      onDragExited: () {
+        if (_installing) return;
+        setState(() => _dragOver = false);
+      },
       onDragDone: _onDropApk,
       child: Stack(
         children: [
@@ -218,7 +287,7 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _buildToolbar(context),
-              if (_loading || _installing)
+              if (_loading)
                 const Expanded(child: Center(child: CircularProgressIndicator()))
               else if (_error != null)
                 Expanded(child: Center(
@@ -248,7 +317,7 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
             ),
           ),
         ),
-        if (_installing) _buildInstallingOverlay(),
+        if (_installState != null) _buildInstallingOverlay(_installState!),
         ],
       ),
     );
@@ -268,6 +337,7 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
             width: 300,
             child: TextField(
               controller: _searchCtrl,
+              enabled: !_installing,
               onChanged: _onSearch,
               decoration: InputDecoration(
                 hintText: '搜索应用包名...',
@@ -281,7 +351,7 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
           ),
           const SizedBox(width: 12),
           FilledButton.tonal(
-            onPressed: _loadPackages,
+            onPressed: _installing ? null : _loadPackages,
             style: FilledButton.styleFrom(
               padding: const EdgeInsets.symmetric(horizontal: 12),
               textStyle: const TextStyle(fontSize: 12),
@@ -319,7 +389,7 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
     ];
     final color = colors[pkg.packageName.hashCode.abs() % colors.length];
     return InkWell(
-      onTap: () => _showPackageDetail(context, pkg),
+      onTap: _installing ? null : () => _showPackageDetail(context, pkg),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         child: Row(
@@ -354,6 +424,7 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
               ),
             ),
             PopupMenuButton<String>(
+              enabled: !_installing,
               onSelected: (v) {
                 if (v == 'uninstall') _uninstallPackage(pkg);
               },
@@ -460,22 +531,91 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
     );
   }
 
-  Widget _buildInstallingOverlay() {
+  Widget _buildInstallingOverlay(_InstallState state) {
     final theme = Theme.of(context);
+    final progress = state.progress;
+    final percent = progress == null ? '处理中' : '${(progress * 100).clamp(0, 100).toStringAsFixed(1)}%';
     return Positioned.fill(
-      child: Container(
-        color: Colors.black26,
-        child: Center(
-          child: Card(
-            child: Padding(
-              padding: const EdgeInsets.all(32),
+      child: AbsorbPointer(
+        absorbing: false,
+        child: Container(
+          color: theme.colorScheme.scrim.withAlpha(80),
+          child: Center(
+            child: Container(
+              width: 420,
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surface,
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withAlpha(40),
+                    blurRadius: 24,
+                    offset: const Offset(0, 12),
+                  ),
+                ],
+              ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const CircularProgressIndicator(),
-                  const SizedBox(height: 16),
-                  Text('正在安装 APK...',
-                      style: TextStyle(fontSize: 14, color: theme.colorScheme.onSurface)),
+                  Row(
+                    children: [
+                      Icon(Icons.android, color: theme.colorScheme.primary),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          '正在安装 APK',
+                          style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      Text(percent, style: const TextStyle(fontFamily: 'Menlo', fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    state.fileName,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontFamily: 'Menlo', fontSize: 12),
+                  ),
+                  const SizedBox(height: 12),
+                  progress == null
+                      ? const LinearProgressIndicator()
+                      : LinearProgressIndicator(value: progress.clamp(0.0, 1.0).toDouble()),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          state.phase,
+                          style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
+                        ),
+                      ),
+                      Text(
+                        '${_formatBytes(state.sent)} / ${state.total > 0 ? _formatBytes(state.total) : '未知大小'}',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontFamily: 'Menlo',
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'APK 安装中，请等待完成后再进行应用管理操作。',
+                    style: TextStyle(fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
+                  ),
+                  const SizedBox(height: 14),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: FilledButton.tonalIcon(
+                      onPressed: _cancelInstall,
+                      icon: const Icon(Icons.close, size: 16),
+                      label: const Text('取消'),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -483,5 +623,17 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
         ),
       ),
     );
+  }
+
+  String _formatBytes(int bytes) {
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    var value = bytes.toDouble();
+    var unit = 0;
+    while (value >= 1024 && unit < units.length - 1) {
+      value /= 1024;
+      unit++;
+    }
+    if (unit == 0) return '$bytes ${units[unit]}';
+    return '${value.toStringAsFixed(value >= 100 ? 0 : 1)} ${units[unit]}';
   }
 }

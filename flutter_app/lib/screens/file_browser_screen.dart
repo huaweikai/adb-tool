@@ -9,6 +9,28 @@ import '../services/api_client.dart';
 
 enum _SortKey { name, date, size }
 
+enum _TransferMode { upload, download }
+
+class _TransferState {
+  final _TransferMode mode;
+  final String fileName;
+  final int sent;
+  final int total;
+  final String phase;
+
+  const _TransferState({
+    required this.mode,
+    required this.fileName,
+    required this.sent,
+    required this.total,
+    required this.phase,
+  });
+
+  bool get waitingForAdb => phase.startsWith('设备');
+
+  double? get progress => total > 0 && !waitingForAdb ? sent / total : null;
+}
+
 class FileBrowserScreen extends StatefulWidget {
   final ApiClient api;
   final String? selectedSerial;
@@ -42,6 +64,10 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   int _recordSeconds = 0;
   Timer? _recordTimer;
   bool _screenshotting = false;
+  _TransferState? _transfer;
+  TransferCancelToken? _transferCancelToken;
+
+  bool get _isTransferring => _transfer != null;
 
   static const _quickPaths = [
     ('/', '根'),
@@ -94,6 +120,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   }
 
   void _navigateTo(String path) {
+    if (_isTransferring) return;
     setState(() {
       _history.add(_currentPath);
       _currentPath = path;
@@ -102,6 +129,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   }
 
   Future<void> _loadFiles() async {
+    if (_isTransferring) return;
     if (widget.selectedSerial == null) {
       setState(() {
         _files = [];
@@ -132,6 +160,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   }
 
   Future<void> _enterDir(FileItem dir) async {
+    if (_isTransferring) return;
     if (widget.selectedSerial == null) return;
     final prevPath = _currentPath;
     setState(() {
@@ -163,6 +192,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   }
 
   void _goUp() {
+    if (_isTransferring) return;
     if (_history.isEmpty) return;
     setState(() {
       _currentPath = _history.removeLast();
@@ -171,6 +201,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   }
 
   void _goHome() {
+    if (_isTransferring) return;
     setState(() {
       _history.clear();
       _currentPath = '/';
@@ -179,6 +210,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   }
 
   Future<void> _viewFile(FileItem file) async {
+    if (_isTransferring) return;
     if (widget.selectedSerial == null) return;
     setState(() {
       _loading = true;
@@ -202,21 +234,71 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   }
 
   Future<void> _downloadFile(FileItem file) async {
+    if (_isTransferring) return;
     if (widget.selectedSerial == null) return;
+    TransferCancelToken? cancelToken;
+    String? localPath;
     try {
       final location = await getSaveLocation(
         suggestedName: file.name,
         confirmButtonText: '保存',
       );
       if (location == null) return;
-      final bytes = await widget.api.pullFile(widget.selectedSerial!, file.path);
-      await File(location.path).writeAsBytes(bytes);
+      localPath = location.path;
+      cancelToken = TransferCancelToken();
+      _transferCancelToken = cancelToken;
+      setState(() {
+        _transfer = _TransferState(
+          mode: _TransferMode.download,
+          fileName: file.name,
+          sent: 0,
+          total: 0,
+          phase: '设备读取中...',
+        );
+      });
+      await widget.api.downloadFileToPath(
+        widget.selectedSerial!,
+        file.path,
+        location.path,
+        totalBytes: file.size,
+        cancelToken: cancelToken!,
+        onProgress: (progress) {
+          if (!mounted) return;
+          setState(() {
+            _transfer = _TransferState(
+              mode: _TransferMode.download,
+              fileName: file.name,
+              sent: progress.sent,
+              total: progress.total,
+              phase: progress.total > 0 && progress.sent >= progress.total ? '写入文件中...' : '正在下载...',
+            );
+          });
+        },
+      );
       if (!mounted) return;
+      _transferCancelToken = null;
+      setState(() => _transfer = null);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('已保存到 ${location.path}'), behavior: SnackBarBehavior.floating),
       );
     } catch (e) {
       if (!mounted) return;
+      if (e is TransferCanceledException || cancelToken?.canceled == true) {
+        try {
+          if (localPath != null) {
+            final partial = File(localPath);
+            if (await partial.exists()) await partial.delete();
+          }
+        } catch (_) {}
+        _transferCancelToken = null;
+        setState(() => _transfer = null);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('下载已取消'), behavior: SnackBarBehavior.floating),
+        );
+        return;
+      }
+      _transferCancelToken = null;
+      setState(() => _transfer = null);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('下载失败: $e'), behavior: SnackBarBehavior.floating),
       );
@@ -224,26 +306,71 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   }
 
   Future<void> _uploadFile() async {
+    if (_isTransferring) return;
     if (widget.selectedSerial == null) return;
     final result = await openFile(confirmButtonText: '上传');
     if (result == null) return;
-    final bytes = await result.readAsBytes();
     final remotePath = _currentPath.endsWith('/')
         ? '$_currentPath${result.name}'
         : '$_currentPath/${result.name}';
+    final totalBytes = await result.length();
+    final cancelToken = TransferCancelToken();
     try {
-      await widget.api.pushFile(widget.selectedSerial!, remotePath, bytes);
+      _transferCancelToken = cancelToken;
+      setState(() {
+        _transfer = _TransferState(
+          mode: _TransferMode.upload,
+          fileName: result.name,
+          sent: 0,
+          total: totalBytes,
+          phase: '准备上传...',
+        );
+      });
+      await widget.api.pushLocalFile(
+        widget.selectedSerial!,
+        remotePath,
+        result.path,
+        cancelToken: cancelToken,
+        onProgress: (progress) {
+          if (!mounted) return;
+          setState(() {
+            _transfer = _TransferState(
+              mode: _TransferMode.upload,
+              fileName: result.name,
+              sent: progress.sent,
+              total: progress.total,
+              phase: progress.total > 0 && progress.sent >= progress.total ? '设备写入中...' : '正在上传...',
+            );
+          });
+        },
+      );
       if (!mounted) return;
+      _transferCancelToken = null;
+      setState(() => _transfer = null);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('已上传到 $remotePath'), behavior: SnackBarBehavior.floating),
       );
       _loadFiles();
     } catch (e) {
       if (!mounted) return;
+      if (e is TransferCanceledException || cancelToken.canceled) {
+        _transferCancelToken = null;
+        setState(() => _transfer = null);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('上传已取消'), behavior: SnackBarBehavior.floating),
+        );
+        return;
+      }
+      _transferCancelToken = null;
+      setState(() => _transfer = null);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('上传失败: $e'), behavior: SnackBarBehavior.floating),
       );
     }
+  }
+
+  void _cancelTransfer() {
+    _transferCancelToken?.cancel();
   }
 
   Future<void> _startRecording() async {
@@ -343,17 +470,60 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
 
+  String _formatBytes(int bytes) {
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    var value = bytes.toDouble();
+    var unit = 0;
+    while (value >= 1024 && unit < units.length - 1) {
+      value /= 1024;
+      unit++;
+    }
+    if (unit == 0) return '$bytes ${units[unit]}';
+    return '${value.toStringAsFixed(value >= 100 ? 0 : 1)} ${units[unit]}';
+  }
+
   Future<void> _onDropFile(DropDoneDetails details) async {
+    if (_isTransferring) return;
     if (widget.selectedSerial == null) return;
     if (mounted) setState(() => _dragOver = false);
     for (final file in details.files) {
-      final bytes = await file.readAsBytes();
       final remotePath = _currentPath.endsWith('/')
           ? '$_currentPath${file.name}'
           : '$_currentPath/${file.name}';
+      final totalBytes = await file.length();
+      final cancelToken = TransferCancelToken();
       try {
-        await widget.api.pushFile(widget.selectedSerial!, remotePath, bytes);
+        _transferCancelToken = cancelToken;
+        setState(() {
+          _transfer = _TransferState(
+            mode: _TransferMode.upload,
+            fileName: file.name,
+            sent: 0,
+            total: totalBytes,
+            phase: '准备上传...',
+          );
+        });
+        await widget.api.pushLocalFile(
+          widget.selectedSerial!,
+          remotePath,
+          file.path,
+          cancelToken: cancelToken,
+          onProgress: (progress) {
+            if (!mounted) return;
+            setState(() {
+              _transfer = _TransferState(
+                mode: _TransferMode.upload,
+                fileName: file.name,
+                sent: progress.sent,
+                total: progress.total,
+                phase: progress.total > 0 && progress.sent >= progress.total ? '设备写入中...' : '正在上传...',
+              );
+            });
+          },
+        );
         if (!mounted) return;
+        _transferCancelToken = null;
+        setState(() => _transfer = null);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('已上传 ${file.name} 到 $remotePath'),
@@ -362,6 +532,19 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         );
       } catch (e) {
         if (!mounted) return;
+        if (e is TransferCanceledException || cancelToken.canceled) {
+          _transferCancelToken = null;
+          setState(() => _transfer = null);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('${file.name} 上传已取消'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+          break;
+        }
+        _transferCancelToken = null;
+        setState(() => _transfer = null);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('上传 ${file.name} 失败: $e'),
@@ -393,8 +576,14 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     }
 
     return DropTarget(
-      onDragEntered: () => setState(() => _dragOver = true),
-      onDragExited: () => setState(() => _dragOver = false),
+      onDragEntered: () {
+        if (_isTransferring) return;
+        setState(() => _dragOver = true);
+      },
+      onDragExited: () {
+        if (_isTransferring) return;
+        setState(() => _dragOver = false);
+      },
       onDragDone: _onDropFile,
       child: Stack(
         children: [
@@ -431,6 +620,10 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
               ),
             ),
           ),
+          if (_transfer != null)
+            Positioned.fill(
+              child: _buildTransferOverlay(_transfer!),
+            ),
         ],
       ),
     );
@@ -459,6 +652,99 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     );
   }
 
+  Widget _buildTransferOverlay(_TransferState transfer) {
+    final theme = Theme.of(context);
+    final isUpload = transfer.mode == _TransferMode.upload;
+    final progress = transfer.progress;
+    final percent = progress == null ? '处理中' : '${(progress * 100).clamp(0, 100).toStringAsFixed(1)}%';
+    return AbsorbPointer(
+      absorbing: false,
+      child: Container(
+        color: theme.colorScheme.scrim.withAlpha(80),
+        child: Center(
+          child: Container(
+            width: 420,
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surface,
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withAlpha(40),
+                  blurRadius: 24,
+                  offset: const Offset(0, 12),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Icon(isUpload ? Icons.upload_file : Icons.download, color: theme.colorScheme.primary),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        isUpload ? '正在上传文件' : '正在下载文件',
+                        style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    Text(percent, style: const TextStyle(fontFamily: 'Menlo', fontWeight: FontWeight.w600)),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  transfer.fileName,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontFamily: 'Menlo', fontSize: 12),
+                ),
+                const SizedBox(height: 12),
+                progress == null
+                    ? const LinearProgressIndicator()
+                    : LinearProgressIndicator(value: progress.clamp(0.0, 1.0).toDouble()),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        transfer.phase,
+                        style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
+                      ),
+                    ),
+                    Text(
+                      '${_formatBytes(transfer.sent)} / ${transfer.total > 0 ? _formatBytes(transfer.total) : '未知大小'}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontFamily: 'Menlo',
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '文件传输中，请等待完成后再进行其它文件操作。',
+                  style: TextStyle(fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
+                ),
+                const SizedBox(height: 14),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: FilledButton.tonalIcon(
+                    onPressed: _cancelTransfer,
+                    icon: const Icon(Icons.close, size: 16),
+                    label: const Text('取消'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildPathBar() {
     final theme = Theme.of(context);
     final parts = _currentPath.split('/').where((p) => p.isNotEmpty).toList();
@@ -472,14 +758,14 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         children: [
           IconButton(
             icon: const Icon(Icons.home, size: 20),
-            onPressed: _goHome,
+            onPressed: _isTransferring ? null : _goHome,
             tooltip: '根目录',
           ),
           const SizedBox(width: 4),
           if (_history.isNotEmpty)
             IconButton(
               icon: const Icon(Icons.arrow_upward, size: 20),
-              onPressed: _goUp,
+              onPressed: _isTransferring ? null : _goUp,
               tooltip: '上级目录',
             ),
           const SizedBox(width: 4),
@@ -494,7 +780,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
                   for (int i = 0; i < parts.length; i++) ...[
                     if (i > 0) const Icon(Icons.chevron_right, size: 14, color: Colors.grey),
                     GestureDetector(
-                      onTap: i < parts.length - 1 ? () {
+                      onTap: !_isTransferring && i < parts.length - 1 ? () {
                         final path = '/' + parts.sublist(0, i + 1).join('/');
                         _navigateTo(path);
                       } : null,
@@ -520,7 +806,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
           const SizedBox(width: 4),
           IconButton(
             icon: Icon(_gridMode ? Icons.list : Icons.grid_view, size: 20),
-            onPressed: () => setState(() => _gridMode = !_gridMode),
+            onPressed: _isTransferring ? null : () => setState(() => _gridMode = !_gridMode),
             tooltip: _gridMode ? '列表模式' : '网格模式',
           ),
           const SizedBox(width: 4),
@@ -547,7 +833,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
               : _recording
                   ? _buildRecordingBtn()
                   : FilledButton.tonal(
-                      onPressed: _startRecording,
+                      onPressed: _isTransferring ? null : _startRecording,
                       style: FilledButton.styleFrom(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                         textStyle: const TextStyle(fontSize: 12),
@@ -564,7 +850,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
                     ),
           const SizedBox(width: 4),
           FilledButton.tonal(
-            onPressed: _screenshotting ? null : _takeScreenshot,
+            onPressed: _screenshotting || _isTransferring ? null : _takeScreenshot,
             style: FilledButton.styleFrom(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               textStyle: const TextStyle(fontSize: 12),
@@ -583,7 +869,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
           ),
           const SizedBox(width: 4),
           FilledButton.tonal(
-            onPressed: _uploadFile,
+            onPressed: _isTransferring ? null : _uploadFile,
             style: FilledButton.styleFrom(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               textStyle: const TextStyle(fontSize: 12),
@@ -600,7 +886,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
           const SizedBox(width: 4),
           IconButton(
             icon: const Icon(Icons.refresh, size: 20),
-            onPressed: _loadFiles,
+            onPressed: _isTransferring ? null : _loadFiles,
             tooltip: '刷新',
           ),
         ],
@@ -617,7 +903,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         borderRadius: BorderRadius.circular(4),
         child: InkWell(
           borderRadius: BorderRadius.circular(4),
-          onTap: isActive ? null : () => _navigateTo(path),
+          onTap: isActive || _isTransferring ? null : () => _navigateTo(path),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
@@ -634,6 +920,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   @override
   void dispose() {
     _recordTimer?.cancel();
+    _transferCancelToken?.cancel();
     super.dispose();
   }
 
@@ -719,13 +1006,15 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     final isText = _isTextFile(file.name);
 
     return InkWell(
-      onTap: () {
-        if (file.isDir) {
-          _enterDir(file);
-        } else if (isText) {
-          _viewFile(file);
-        }
-      },
+      onTap: _isTransferring
+          ? null
+          : () {
+              if (file.isDir) {
+                _enterDir(file);
+              } else if (isText) {
+                _viewFile(file);
+              }
+            },
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
         child: Row(
@@ -761,11 +1050,11 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
               ),
             if (!file.isDir) ...[
               const SizedBox(width: 4),
-              _iconBtn(Icons.download, '下载到 Mac', () => _downloadFile(file)),
+              _iconBtn(Icons.download, '下载到 Mac', _isTransferring ? null : () => _downloadFile(file)),
             ],
             if (file.isDir) ...[
               const SizedBox(width: 4),
-              _iconBtn(Icons.upload, '上传到此目录', _uploadFile),
+              _iconBtn(Icons.upload, '上传到此目录', _isTransferring ? null : _uploadFile),
             ],
           ],
         ),
@@ -773,7 +1062,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     );
   }
 
-  Widget _iconBtn(IconData icon, String tooltip, VoidCallback onTap) {
+  Widget _iconBtn(IconData icon, String tooltip, VoidCallback? onTap) {
     return IconButton(
       icon: Icon(icon, size: 16),
       onPressed: onTap,
@@ -809,14 +1098,16 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       color: theme.colorScheme.surfaceContainer,
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: () {
-          if (file.isDir) {
-            _enterDir(file);
-          } else if (isText) {
-            _viewFile(file);
-          }
-        },
-        onLongPress: () => _showFileMenu(context, file),
+        onTap: _isTransferring
+            ? null
+            : () {
+                if (file.isDir) {
+                  _enterDir(file);
+                } else if (isText) {
+                  _viewFile(file);
+                }
+              },
+        onLongPress: _isTransferring ? null : () => _showFileMenu(context, file),
         child: Padding(
           padding: const EdgeInsets.all(8),
           child: Column(

@@ -294,8 +294,13 @@ func (s *Server) handleInstallPackage(w http.ResponseWriter, r *http.Request) {
 	}
 	tmpFile.Close()
 
-	output, err := s.adb.InstallPackage(serial, tmpFile.Name())
+	output, err := s.adb.InstallPackageContext(r.Context(), serial, tmpFile.Name())
 	if err != nil {
+		if r.Context().Err() != nil {
+			w.WriteHeader(499)
+			writeJSON(w, map[string]string{"error": "操作已取消"})
+			return
+		}
 		w.WriteHeader(http.StatusBadRequest)
 		msg := parseInstallError(output)
 		writeJSON(w, map[string]string{"error": msg, "raw": output})
@@ -379,14 +384,19 @@ func (s *Server) handlePullFile(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "serial and path required", http.StatusBadRequest)
 		return
 	}
-	data, err := s.adb.PullFile(serial, path)
-	if err != nil {
+	tmpFile := filepath.Join(os.TempDir(), "adb-tool-pull-"+time.Now().Format("20060102150405.000000000"))
+	defer os.Remove(tmpFile)
+	if err := s.adb.PullFileToPathContext(r.Context(), serial, path, tmpFile); err != nil {
+		if r.Context().Err() != nil {
+			http.Error(w, "操作已取消", 499)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Disposition", "attachment; filename=\""+filepath.Base(path)+"\"")
 	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Write(data)
+	http.ServeFile(w, r, tmpFile)
 }
 
 func (s *Server) handlePushFile(w http.ResponseWriter, r *http.Request) {
@@ -401,12 +411,27 @@ func (s *Server) handlePushFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer r.Body.Close()
-	data, err := io.ReadAll(r.Body)
+	tmpFile := filepath.Join(os.TempDir(), "adb-tool-push-"+time.Now().Format("20060102150405.000000000"))
+	defer os.Remove(tmpFile)
+	out, err := os.Create(tmpFile)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if err := s.adb.PushFile(serial, data, path); err != nil {
+	if _, err := io.Copy(out, r.Body); err != nil {
+		out.Close()
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := out.Close(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := s.adb.PushFileFromPathContext(r.Context(), serial, tmpFile, path); err != nil {
+		if r.Context().Err() != nil {
+			http.Error(w, "操作已取消", 499)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
