@@ -38,6 +38,8 @@ const _loc = {
     'refresh': '刷新', 'theme': '主题', 'lang': '语言',
     'welcome': '请选择左侧设备和功能',
     'backendLogs': '后端日志',
+    'restart': '重启服务',
+    'shutdown': '关闭服务',
   },
   'en': {
     'title': 'ADB Tool',
@@ -49,6 +51,8 @@ const _loc = {
     'refresh': 'Refresh', 'theme': 'Theme', 'lang': 'Lang',
     'welcome': 'Select a device and function from the sidebar',
     'backendLogs': 'Backend Logs',
+    'restart': 'Restart',
+    'shutdown': 'Shutdown',
   },
 };
 
@@ -59,6 +63,8 @@ class HomeScreen extends StatefulWidget {
   final LogStreamService logStream;
   final ValueChanged<bool> onThemeToggle;
   final bool isDark;
+  final VoidCallback? onShutdown;
+  final VoidCallback? onRestart;
 
   const HomeScreen({
     super.key,
@@ -66,6 +72,8 @@ class HomeScreen extends StatefulWidget {
     required this.logStream,
     required this.onThemeToggle,
     required this.isDark,
+    this.onShutdown,
+    this.onRestart,
   });
 
   @override
@@ -235,6 +243,38 @@ class _HomeScreenState extends State<HomeScreen> {
               style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
           const Spacer(),
           IconButton(
+            icon: const Icon(Icons.sync, size: 16),
+            onPressed: _refreshDevices,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            tooltip: tr('refresh'),
+          ),
+          if (widget.onRestart != null) ...[
+            const SizedBox(width: 4),
+            IconButton(
+              icon: const Icon(Icons.refresh, size: 14),
+              onPressed: () {
+                widget.onRestart!();
+                _clearAllState();
+              },
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              tooltip: tr('restart'),
+            ),
+          ],
+          if (widget.onShutdown != null) ...[
+            const SizedBox(width: 6),
+            IconButton(
+              icon: Icon(Icons.power_settings_new, size: 14,
+                  color: theme.colorScheme.error),
+              onPressed: () => _confirmShutdown(context),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              tooltip: tr('shutdown'),
+            ),
+            const SizedBox(width: 6),
+          ],
+          IconButton(
             icon: const Icon(Icons.brightness_6, size: 16),
             onPressed: () => widget.onThemeToggle(!widget.isDark),
             padding: EdgeInsets.zero,
@@ -253,6 +293,40 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Text(_lang == 'zh' ? 'EN' : '文',
                   style: const TextStyle(fontSize: 10)),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _clearAllState() {
+    _refreshTimer?.cancel();
+    _screens.clear();
+    _expandedSerials.clear();
+    _activeKey = null;
+    setState(() => _devices = []);
+  }
+
+  void _confirmShutdown(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(_lang == 'zh' ? '确认关闭' : 'Confirm Shutdown'),
+        content: Text(_lang == 'zh' ? '关闭后端服务后，需要手动重启应用或点击重启按钮' : 'After shutdown, you need to manually restart the app or click restart button'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(_lang == 'zh' ? '取消' : 'Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _clearAllState();
+              widget.onShutdown!();
+            },
+            style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(ctx).colorScheme.error),
+            child: Text(_lang == 'zh' ? '关闭' : 'Shutdown'),
           ),
         ],
       ),

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:file_selector/file_selector.dart';
@@ -40,6 +41,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   bool _recordSaving = false;
   int _recordSeconds = 0;
   Timer? _recordTimer;
+  bool _screenshotting = false;
 
   static const _quickPaths = [
     ('/', '根'),
@@ -297,6 +299,44 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     }
   }
 
+  Future<void> _takeScreenshot() async {
+    if (widget.selectedSerial == null || _screenshotting) return;
+    setState(() => _screenshotting = true);
+    try {
+      final b64 = await widget.api.takeScreenshot(widget.selectedSerial!);
+      if (b64 == null) {
+        if (!mounted) return;
+        setState(() => _screenshotting = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('截屏失败'), behavior: SnackBarBehavior.floating),
+        );
+        return;
+      }
+      if (!mounted) return;
+      final location = await getSaveLocation(
+        suggestedName: 'screenshot-${DateTime.now().millisecondsSinceEpoch}.png',
+        confirmButtonText: '保存截屏',
+      );
+      if (location == null) {
+        setState(() => _screenshotting = false);
+        return;
+      }
+      final bytes = base64Decode(b64);
+      await File(location.path).writeAsBytes(bytes);
+      if (!mounted) return;
+      setState(() => _screenshotting = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('截屏已保存到 ${location.path}'), behavior: SnackBarBehavior.floating),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _screenshotting = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('截屏失败: $e'), behavior: SnackBarBehavior.floating),
+      );
+    }
+  }
+
   String _formatSeconds(int total) {
     final m = total ~/ 60;
     final s = total % 60;
@@ -517,6 +557,25 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
                         ],
                       ),
                     ),
+          const SizedBox(width: 4),
+          FilledButton.tonal(
+            onPressed: _screenshotting ? null : _takeScreenshot,
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              textStyle: const TextStyle(fontSize: 12),
+            ),
+            child: _screenshotting
+                ? const SizedBox(width: 16, height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.camera_alt, size: 16),
+                      SizedBox(width: 4),
+                      Text('截屏'),
+                    ],
+                  ),
+          ),
           const SizedBox(width: 4),
           FilledButton.tonal(
             onPressed: _uploadFile,

@@ -93,6 +93,7 @@ class ServerBootScreen extends StatefulWidget {
 class _ServerBootScreenState extends State<ServerBootScreen> with WidgetsBindingObserver {
   String _status = 'Starting ...';
   bool _ready = false;
+  bool _stoppedByUser = false;
   ServerLauncher? _launcher;
 
   @override
@@ -122,7 +123,10 @@ class _ServerBootScreenState extends State<ServerBootScreen> with WidgetsBinding
     _launcher ??= ServerLauncher();
     final launcher = _launcher!;
     try {
-      setState(() => _status = 'Launching backend ...');
+      setState(() {
+        _status = 'Launching backend ...';
+        _stoppedByUser = false;
+      });
       await launcher.start();
       setState(() => _status = 'Waiting for server ...');
       for (int i = 0; i < 30; i++) {
@@ -142,6 +146,27 @@ class _ServerBootScreenState extends State<ServerBootScreen> with WidgetsBinding
     }
   }
 
+  Future<void> _shutdownServer() async {
+    _launcher?.stop();
+    _launcher = null;
+    setState(() {
+      _ready = false;
+      _stoppedByUser = true;
+      _status = '服务器已关闭';
+    });
+  }
+
+  Future<void> _restartServer() async {
+    _launcher?.stop();
+    _launcher = null;
+    setState(() {
+      _ready = false;
+      _stoppedByUser = false;
+      _status = 'Restarting ...';
+    });
+    await _boot();
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_ready) {
@@ -150,6 +175,8 @@ class _ServerBootScreenState extends State<ServerBootScreen> with WidgetsBinding
         logStream: logStream,
         onThemeToggle: widget.onThemeToggle,
         isDark: widget.isDark,
+        onShutdown: _shutdownServer,
+        onRestart: _restartServer,
       );
     }
 
@@ -160,11 +187,21 @@ class _ServerBootScreenState extends State<ServerBootScreen> with WidgetsBinding
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const SizedBox(width: 48, height: 48, child: CircularProgressIndicator(strokeWidth: 3)),
-            const SizedBox(height: 24),
+            if (!_stoppedByUser) ...[
+              const SizedBox(width: 48, height: 48, child: CircularProgressIndicator(strokeWidth: 3)),
+              const SizedBox(height: 24),
+            ],
             Text('ADB Tool', style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600)),
             const SizedBox(height: 12),
             Text(_status, style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+            if (_stoppedByUser) ...[
+              const SizedBox(height: 20),
+              FilledButton.icon(
+                onPressed: _restartServer,
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('重新启动服务'),
+              ),
+            ],
           ],
         ),
       ),
