@@ -1,0 +1,17 @@
+# macOS
+.DS_Store
+
+# Flutter build
+flutter_app/build/
+flutter_app/.dart_tool/
+flutter_app/.idea/
+flutter_app/pubspec.lock
+
+# Flutter macOS
+flutter_app/macos/Pods/
+flutter_app/macos/Flutter/ephemeral/
+flutter_app/macos/Runner.xcworkspace/xcuserdata/
+flutter_app/macos/Runner/adb-tool
+
+# Go workspace
+backend/adb-tool
