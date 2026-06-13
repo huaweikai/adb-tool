@@ -72,6 +72,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/clipboard-send", s.handleClipboardSend)
 	mux.HandleFunc("/api/clipboard-uninstall", s.handleClipboardUninstall)
 	mux.HandleFunc("/api/adb-exec", s.handleAdbExec)
+	mux.HandleFunc("/api/adb-wireless-pair", s.handleAdbWirelessPair)
+	mux.HandleFunc("/api/adb-wireless-connect", s.handleAdbWirelessConnect)
 
 	webFS, err := fs.Sub(s.webFS, "web")
 	if err != nil {
@@ -369,6 +371,62 @@ func (s *Server) handleAdbExec(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	output, err := s.adb.Execute(serial, req.Args)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		writeJSON(w, map[string]interface{}{"ok": false, "output": output, "error": err.Error()})
+		return
+	}
+	writeJSON(w, map[string]interface{}{"ok": true, "output": output})
+}
+
+func (s *Server) handleAdbWirelessPair(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+	defer r.Body.Close()
+	var req struct {
+		Address string `json:"address"`
+		Code    string `json:"code"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	req.Address = strings.TrimSpace(req.Address)
+	req.Code = strings.TrimSpace(req.Code)
+	if req.Address == "" || req.Code == "" {
+		http.Error(w, "address and code required", http.StatusBadRequest)
+		return
+	}
+	output, err := s.adb.WirelessPair(req.Address, req.Code)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		writeJSON(w, map[string]interface{}{"ok": false, "output": output, "error": err.Error()})
+		return
+	}
+	writeJSON(w, map[string]interface{}{"ok": true, "output": output})
+}
+
+func (s *Server) handleAdbWirelessConnect(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+	defer r.Body.Close()
+	var req struct {
+		Address string `json:"address"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	req.Address = strings.TrimSpace(req.Address)
+	if req.Address == "" {
+		http.Error(w, "address required", http.StatusBadRequest)
+		return
+	}
+	output, err := s.adb.WirelessConnect(req.Address)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		writeJSON(w, map[string]interface{}{"ok": false, "output": output, "error": err.Error()})

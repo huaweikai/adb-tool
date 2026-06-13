@@ -95,11 +95,40 @@ class ApiClient {
     return resp.statusCode == 200;
   }
 
-  Future<AdbCommandResult> executeAdbCommand(String serial, List<String> args) async {
+  Future<AdbCommandResult> executeAdbCommand(
+      String serial, List<String> args) async {
     final resp = await http.post(
       Uri.parse('$baseUrl/api/adb-exec?serial=$serial'),
       headers: {'Content-Type': 'application/json'},
       body: json.encode({'args': args}),
+    );
+    final data = json.decode(resp.body);
+    return AdbCommandResult(
+      ok: data['ok'] == true,
+      output: data['output']?.toString() ?? '',
+      error: data['error']?.toString() ?? '',
+    );
+  }
+
+  Future<AdbCommandResult> pairWirelessAdb(String address, String code) async {
+    final resp = await http.post(
+      Uri.parse('$baseUrl/api/adb-wireless-pair'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'address': address, 'code': code}),
+    );
+    final data = json.decode(resp.body);
+    return AdbCommandResult(
+      ok: data['ok'] == true,
+      output: data['output']?.toString() ?? '',
+      error: data['error']?.toString() ?? '',
+    );
+  }
+
+  Future<AdbCommandResult> connectWirelessAdb(String address) async {
+    final resp = await http.post(
+      Uri.parse('$baseUrl/api/adb-wireless-connect'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'address': address}),
     );
     final data = json.decode(resp.body);
     return AdbCommandResult(
@@ -122,7 +151,8 @@ class ApiClient {
 
   Future<List<FileItem>> listFiles(String serial, String path) async {
     final resp = await http.get(
-      Uri.parse('$baseUrl/api/files?serial=$serial&path=${Uri.encodeComponent(path)}'),
+      Uri.parse(
+          '$baseUrl/api/files?serial=$serial&path=${Uri.encodeComponent(path)}'),
     );
     if (resp.statusCode != 200) {
       final body = resp.body.isNotEmpty ? resp.body : 'HTTP ${resp.statusCode}';
@@ -135,7 +165,8 @@ class ApiClient {
 
   Future<String> readFile(String serial, String path) async {
     final resp = await http.get(
-      Uri.parse('$baseUrl/api/file-content?serial=$serial&path=${Uri.encodeComponent(path)}'),
+      Uri.parse(
+          '$baseUrl/api/file-content?serial=$serial&path=${Uri.encodeComponent(path)}'),
     );
     if (resp.statusCode != 200) throw Exception(resp.body);
     final data = json.decode(resp.body);
@@ -172,7 +203,8 @@ class ApiClient {
 
   Future<bool> uninstallPackage(String serial, String packageName) async {
     final resp = await http.post(
-      Uri.parse('$baseUrl/api/uninstall-package?serial=$serial&package=$packageName'),
+      Uri.parse(
+          '$baseUrl/api/uninstall-package?serial=$serial&package=$packageName'),
     );
     if (resp.statusCode != 200) throw Exception(resp.body);
     return true;
@@ -209,7 +241,8 @@ class ApiClient {
 
   Future<String> readFileContent(String serial, String path) async {
     final resp = await http.get(
-      Uri.parse('$baseUrl/api/file-content?serial=$serial&path=${Uri.encodeComponent(path)}'),
+      Uri.parse(
+          '$baseUrl/api/file-content?serial=$serial&path=${Uri.encodeComponent(path)}'),
     );
     if (resp.statusCode != 200) throw Exception(resp.body);
     final data = json.decode(resp.body);
@@ -218,9 +251,11 @@ class ApiClient {
 
   Future<List<int>> pullFile(String serial, String path) async {
     final resp = await http.get(
-      Uri.parse('$baseUrl/api/pull-file?serial=$serial&path=${Uri.encodeComponent(path)}'),
+      Uri.parse(
+          '$baseUrl/api/pull-file?serial=$serial&path=${Uri.encodeComponent(path)}'),
     );
-    if (resp.statusCode != 200) throw Exception('pull failed: ${resp.statusCode}');
+    if (resp.statusCode != 200)
+      throw Exception('pull failed: ${resp.statusCode}');
     return resp.bodyBytes.toList();
   }
 
@@ -236,7 +271,8 @@ class ApiClient {
     cancelToken?.bind(client);
     final request = http.Request(
       'GET',
-      Uri.parse('$baseUrl/api/pull-file?serial=$serial&path=${Uri.encodeComponent(remotePath)}'),
+      Uri.parse(
+          '$baseUrl/api/pull-file?serial=$serial&path=${Uri.encodeComponent(remotePath)}'),
     );
     try {
       cancelToken?.throwIfCanceled();
@@ -244,13 +280,15 @@ class ApiClient {
       cancelToken?.throwIfCanceled();
       if (response.statusCode != 200) {
         final body = await response.stream.bytesToString();
-        throw Exception(body.isNotEmpty ? body : 'pull failed: ${response.statusCode}');
+        throw Exception(
+            body.isNotEmpty ? body : 'pull failed: ${response.statusCode}');
       }
 
       final file = File(localPath);
       final sink = file.openWrite();
       var received = 0;
-      final expected = totalBytes > 0 ? totalBytes : response.contentLength ?? 0;
+      final expected =
+          totalBytes > 0 ? totalBytes : response.contentLength ?? 0;
       try {
         await for (final chunk in response.stream) {
           cancelToken?.throwIfCanceled();
@@ -269,7 +307,8 @@ class ApiClient {
 
   Future<bool> pushFile(String serial, String path, List<int> bytes) async {
     final resp = await http.post(
-      Uri.parse('$baseUrl/api/push-file?serial=$serial&path=${Uri.encodeComponent(path)}'),
+      Uri.parse(
+          '$baseUrl/api/push-file?serial=$serial&path=${Uri.encodeComponent(path)}'),
       body: bytes,
       headers: {'Content-Type': 'application/octet-stream'},
     );
@@ -285,7 +324,8 @@ class ApiClient {
     TransferCancelToken? cancelToken,
   }) async {
     await _postLocalFile(
-      Uri.parse('$baseUrl/api/push-file?serial=$serial&path=${Uri.encodeComponent(remotePath)}'),
+      Uri.parse(
+          '$baseUrl/api/push-file?serial=$serial&path=${Uri.encodeComponent(remotePath)}'),
       localPath,
       onProgress: onProgress,
       cancelToken: cancelToken,
@@ -344,7 +384,8 @@ class ApiClient {
     }
   }
 
-  Future<Map<String, dynamic>> screenRecordAction(String serial, String action) async {
+  Future<Map<String, dynamic>> screenRecordAction(
+      String serial, String action) async {
     final resp = await http.get(
       Uri.parse('$baseUrl/api/screen-record?serial=$serial&action=$action'),
     );
@@ -364,7 +405,8 @@ class ApiClient {
     final resp = await http.get(
       Uri.parse('$baseUrl/api/screen-record-video?serial=$serial'),
     );
-    if (resp.statusCode != 200) throw Exception('pull video failed: ${resp.statusCode}');
+    if (resp.statusCode != 200)
+      throw Exception('pull video failed: ${resp.statusCode}');
     return resp.bodyBytes.toList();
   }
 

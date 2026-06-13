@@ -14,12 +14,12 @@ import 'adb_command_screen.dart';
 enum NavItem { logcat, files, apps, info, clipboard, command }
 
 const _navConfig = {
-  NavItem.logcat:    _NavConfig(Icons.list_alt, 'Logcat', '日志'),
-  NavItem.files:     _NavConfig(Icons.folder_open, 'Files', '文件'),
-  NavItem.apps:      _NavConfig(Icons.android, 'Apps', '应用'),
-  NavItem.info:      _NavConfig(Icons.info_outline, 'Info', '信息'),
+  NavItem.logcat: _NavConfig(Icons.list_alt, 'Logcat', '日志'),
+  NavItem.files: _NavConfig(Icons.folder_open, 'Files', '文件'),
+  NavItem.apps: _NavConfig(Icons.android, 'Apps', '应用'),
+  NavItem.info: _NavConfig(Icons.info_outline, 'Info', '信息'),
   NavItem.clipboard: _NavConfig(Icons.content_paste, 'Clipboard', '剪贴板'),
-  NavItem.command:   _NavConfig(Icons.terminal, 'Command', '指令'),
+  NavItem.command: _NavConfig(Icons.terminal, 'Command', '指令'),
 };
 
 class _NavConfig {
@@ -36,12 +36,22 @@ const _loc = {
     'noDevices': '没有连接的设备',
     'noDevicesHint': '通过 USB 或 WiFi 连接设备',
     'unknown': '未知',
-    'online': '在线', 'offline': '离线',
-    'refresh': '刷新', 'theme': '主题', 'lang': '语言',
+    'online': '在线',
+    'offline': '离线',
+    'refresh': '刷新',
+    'theme': '主题',
+    'lang': '语言',
     'welcome': '请选择左侧设备和功能',
     'backendLogs': '后端日志',
     'restart': '重启服务',
     'shutdown': '关闭服务',
+    'wirelessAdb': '无线 ADB',
+    'pair': '配对',
+    'connect': '连接',
+    'pairAddress': '配对地址，例如 192.168.1.10:37123',
+    'connectAddress': '连接地址，例如 192.168.1.10:5555',
+    'pairCode': '配对码',
+    'running': '执行中...',
   },
   'en': {
     'title': 'ADB Tool',
@@ -49,12 +59,22 @@ const _loc = {
     'noDevices': 'No devices',
     'noDevicesHint': 'Connect via USB or WiFi',
     'unknown': 'Unknown',
-    'online': 'Online', 'offline': 'Offline',
-    'refresh': 'Refresh', 'theme': 'Theme', 'lang': 'Lang',
+    'online': 'Online',
+    'offline': 'Offline',
+    'refresh': 'Refresh',
+    'theme': 'Theme',
+    'lang': 'Lang',
     'welcome': 'Select a device and function from the sidebar',
     'backendLogs': 'Backend Logs',
     'restart': 'Restart',
     'shutdown': 'Shutdown',
+    'wirelessAdb': 'Wireless ADB',
+    'pair': 'Pair',
+    'connect': 'Connect',
+    'pairAddress': 'Pair address, e.g. 192.168.1.10:37123',
+    'connectAddress': 'Connect address, e.g. 192.168.1.10:5555',
+    'pairCode': 'Pair code',
+    'running': 'Running...',
   },
 };
 
@@ -95,7 +115,8 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _refreshDevices();
-    _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) => _refreshDevices());
+    _refreshTimer =
+        Timer.periodic(const Duration(seconds: 5), (_) => _refreshDevices());
   }
 
   @override
@@ -197,7 +218,8 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.android, size: 64,
+            Icon(Icons.android,
+                size: 64,
                 color: theme.colorScheme.onSurfaceVariant.withAlpha(60)),
             const SizedBox(height: 16),
             Text(tr('welcome'),
@@ -241,67 +263,107 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildHeader(ThemeData theme) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      child: Row(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Icon(Icons.adb, size: 20, color: theme.colorScheme.primary),
-          const SizedBox(width: 8),
-          Text('ADB Tool',
-              style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
-          const Spacer(),
-          IconButton(
-            icon: const Icon(Icons.sync, size: 16),
-            onPressed: _refreshDevices,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-            tooltip: tr('refresh'),
-          ),
-          if (widget.onRestart != null) ...[
-            const SizedBox(width: 4),
-            IconButton(
-              icon: const Icon(Icons.refresh, size: 14),
-              onPressed: () {
-                widget.onRestart!();
-                _clearAllState();
-              },
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(),
-              tooltip: tr('restart'),
-            ),
-          ],
-          if (widget.onShutdown != null) ...[
-            const SizedBox(width: 6),
-            IconButton(
-              icon: Icon(Icons.power_settings_new, size: 14,
-                  color: theme.colorScheme.error),
-              onPressed: () => _confirmShutdown(context),
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(),
-              tooltip: tr('shutdown'),
-            ),
-            const SizedBox(width: 6),
-          ],
-          IconButton(
-            icon: const Icon(Icons.brightness_6, size: 16),
-            onPressed: () => widget.onThemeToggle(!widget.isDark),
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-            tooltip: tr('theme'),
-          ),
-          const SizedBox(width: 4),
-          GestureDetector(
-            onTap: () => setState(() => _lang = _lang == 'zh' ? 'en' : 'zh'),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                border: Border.all(color: theme.dividerColor),
-                borderRadius: BorderRadius.circular(4),
+          Row(
+            children: [
+              Icon(Icons.adb, size: 20, color: theme.colorScheme.primary),
+              const SizedBox(width: 8),
+              Text('ADB Tool',
+                  style: theme.textTheme.titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w600)),
+              const Spacer(),
+              GestureDetector(
+                onTap: () =>
+                    setState(() => _lang = _lang == 'zh' ? 'en' : 'zh'),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: theme.dividerColor),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(_lang == 'zh' ? 'EN' : '文',
+                      style: const TextStyle(fontSize: 10)),
+                ),
               ),
-              child: Text(_lang == 'zh' ? 'EN' : '文',
-                  style: const TextStyle(fontSize: 10)),
-            ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _headerAction(
+                theme,
+                icon: Icons.sync,
+                label: tr('refresh'),
+                onTap: _refreshDevices,
+              ),
+              _headerAction(
+                theme,
+                icon: Icons.wifi_tethering,
+                label: tr('wirelessAdb'),
+                onTap: _showWirelessAdbDialog,
+              ),
+              if (widget.onRestart != null)
+                _headerAction(
+                  theme,
+                  icon: Icons.refresh,
+                  label: tr('restart'),
+                  onTap: () {
+                    widget.onRestart!();
+                    _clearAllState();
+                  },
+                ),
+              if (widget.onShutdown != null)
+                _headerAction(
+                  theme,
+                  icon: Icons.power_settings_new,
+                  label: tr('shutdown'),
+                  color: theme.colorScheme.error,
+                  onTap: () => _confirmShutdown(context),
+                ),
+              _headerAction(
+                theme,
+                icon: Icons.brightness_6,
+                label: tr('theme'),
+                onTap: () => widget.onThemeToggle(!widget.isDark),
+              ),
+            ],
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _headerAction(
+    ThemeData theme, {
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    Color? color,
+  }) {
+    final foreground = color ?? theme.colorScheme.onSurfaceVariant;
+    return Material(
+      color: theme.colorScheme.surfaceContainerHighest.withAlpha(120),
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 14, color: foreground),
+              const SizedBox(width: 5),
+              Text(label, style: TextStyle(fontSize: 11, color: foreground)),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -314,12 +376,166 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() => _devices = []);
   }
 
+  Future<void> _showWirelessAdbDialog() async {
+    final pairAddressCtrl = TextEditingController();
+    final pairCodeCtrl = TextEditingController();
+    final connectAddressCtrl = TextEditingController();
+    var running = false;
+    String? result;
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (dialogContext, setDialogState) {
+            Future<void> runAction(
+                Future<AdbCommandResult> Function() action) async {
+              setDialogState(() {
+                running = true;
+                result = null;
+              });
+              try {
+                final res = await action();
+                setDialogState(() {
+                  result = res.ok
+                      ? (res.output.isEmpty ? 'OK' : res.output)
+                      : (res.error.isEmpty ? res.output : res.error);
+                });
+                if (res.ok) _refreshDevices();
+              } catch (e) {
+                setDialogState(() => result = e.toString());
+              } finally {
+                setDialogState(() => running = false);
+              }
+            }
+
+            return AlertDialog(
+              title: Row(
+                children: [
+                  const Icon(Icons.wifi_tethering, size: 22),
+                  const SizedBox(width: 8),
+                  Text(tr('wirelessAdb')),
+                ],
+              ),
+              content: SizedBox(
+                width: 420,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    TextField(
+                      controller: pairAddressCtrl,
+                      enabled: !running,
+                      decoration: InputDecoration(
+                        labelText: tr('pairAddress'),
+                        border: const OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: pairCodeCtrl,
+                      enabled: !running,
+                      decoration: InputDecoration(
+                        labelText: tr('pairCode'),
+                        border: const OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: FilledButton.tonalIcon(
+                        onPressed: running
+                            ? null
+                            : () => runAction(() => widget.api.pairWirelessAdb(
+                                  pairAddressCtrl.text.trim(),
+                                  pairCodeCtrl.text.trim(),
+                                )),
+                        icon: const Icon(Icons.link, size: 16),
+                        label: Text(tr('pair')),
+                      ),
+                    ),
+                    const Divider(height: 28),
+                    TextField(
+                      controller: connectAddressCtrl,
+                      enabled: !running,
+                      decoration: InputDecoration(
+                        labelText: tr('connectAddress'),
+                        border: const OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: FilledButton.icon(
+                        onPressed: running
+                            ? null
+                            : () =>
+                                runAction(() => widget.api.connectWirelessAdb(
+                                      connectAddressCtrl.text.trim(),
+                                    )),
+                        icon: const Icon(Icons.wifi, size: 16),
+                        label: Text(tr('connect')),
+                      ),
+                    ),
+                    if (running) ...[
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(tr('running')),
+                        ],
+                      ),
+                    ],
+                    if (result != null) ...[
+                      const SizedBox(height: 14),
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: SelectableText(
+                          result!,
+                          style: const TextStyle(
+                              fontSize: 12, fontFamily: 'Menlo'),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed:
+                      running ? null : () => Navigator.pop(dialogContext),
+                  child: Text(_lang == 'zh' ? '关闭' : 'Close'),
+                ),
+              ],
+            );
+          },
+        ),
+      );
+    } finally {
+      pairAddressCtrl.dispose();
+      pairCodeCtrl.dispose();
+      connectAddressCtrl.dispose();
+    }
+  }
+
   void _confirmShutdown(BuildContext context) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(_lang == 'zh' ? '确认关闭' : 'Confirm Shutdown'),
-        content: Text(_lang == 'zh' ? '关闭后端服务后，需要手动重启应用或点击重启按钮' : 'After shutdown, you need to manually restart the app or click restart button'),
+        content: Text(_lang == 'zh'
+            ? '关闭后端服务后，需要手动重启应用或点击重启按钮'
+            : 'After shutdown, you need to manually restart the app or click restart button'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -350,15 +566,20 @@ class _HomeScreenState extends State<HomeScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           child: Row(
             children: [
-              Icon(Icons.terminal, size: 16,
-                  color: isActive ? theme.colorScheme.primary : theme.colorScheme.onSurfaceVariant),
+              Icon(Icons.terminal,
+                  size: 16,
+                  color: isActive
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.onSurfaceVariant),
               const SizedBox(width: 10),
               Text(
                 tr('backendLogs'),
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
-                  color: isActive ? theme.colorScheme.primary : theme.colorScheme.onSurface,
+                  color: isActive
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.onSurface,
                 ),
               ),
               const Spacer(),
@@ -385,7 +606,8 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.phone_android, size: 40,
+              Icon(Icons.phone_android,
+                  size: 40,
                   color: theme.colorScheme.onSurfaceVariant.withAlpha(100)),
               const SizedBox(height: 8),
               Text(tr('noDevices'),
@@ -393,8 +615,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
               const SizedBox(height: 4),
               Text(tr('noDevicesHint'),
-                  style: TextStyle(fontSize: 10,
-                      color: theme.colorScheme.onSurfaceVariant.withAlpha(150))),
+                  style: TextStyle(
+                      fontSize: 10,
+                      color:
+                          theme.colorScheme.onSurfaceVariant.withAlpha(150))),
             ],
           ),
         ),
@@ -403,19 +627,23 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 4),
-      children: _devices.map((d) => _buildDeviceNode(context, d, theme)).toList(),
+      children:
+          _devices.map((d) => _buildDeviceNode(context, d, theme)).toList(),
     );
   }
 
   Widget _buildDeviceNode(BuildContext context, Device d, ThemeData theme) {
     final isExpanded = _expandedSerials.contains(d.serial);
-    final hasActiveScreen = _screens.keys.any((k) => k.startsWith('${d.serial}_'));
+    final hasActiveScreen =
+        _screens.keys.any((k) => k.startsWith('${d.serial}_'));
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Material(
-          color: hasActiveScreen ? theme.colorScheme.primaryContainer.withAlpha(80) : Colors.transparent,
+          color: hasActiveScreen
+              ? theme.colorScheme.primaryContainer.withAlpha(80)
+              : Colors.transparent,
           child: InkWell(
             onTap: () => _toggleExpand(d.serial),
             child: Padding(
@@ -429,7 +657,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   const SizedBox(width: 4),
                   Container(
-                    width: 8, height: 8,
+                    width: 8,
+                    height: 8,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: d.isOnline ? Colors.green : Colors.red,
@@ -439,13 +668,17 @@ class _HomeScreenState extends State<HomeScreen> {
                   Expanded(
                     child: Text(
                       d.displayName,
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                      style: const TextStyle(
+                          fontSize: 12, fontWeight: FontWeight.w500),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   Text(
-                    d.serial.length > 12 ? '...${d.serial.substring(d.serial.length - 8)}' : d.serial,
-                    style: TextStyle(fontSize: 9, color: theme.colorScheme.onSurfaceVariant),
+                    d.serial.length > 12
+                        ? '...${d.serial.substring(d.serial.length - 8)}'
+                        : d.serial,
+                    style: TextStyle(
+                        fontSize: 9, color: theme.colorScheme.onSurfaceVariant),
                   ),
                 ],
               ),
@@ -453,12 +686,15 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
         if (isExpanded)
-          ...NavItem.values.where((item) => item != NavItem.info).map((item) => _buildFunctionItem(context, d, item, theme)),
+          ...NavItem.values
+              .where((item) => item != NavItem.info)
+              .map((item) => _buildFunctionItem(context, d, item, theme)),
       ],
     );
   }
 
-  Widget _buildFunctionItem(BuildContext context, Device d, NavItem item, ThemeData theme) {
+  Widget _buildFunctionItem(
+      BuildContext context, Device d, NavItem item, ThemeData theme) {
     final key = '${d.serial}_${item.name}';
     final c = _navConfig[item]!;
     final isActive = _activeKey == key;
@@ -468,18 +704,24 @@ class _HomeScreenState extends State<HomeScreen> {
       child: InkWell(
         onTap: () => _navigateTo(d.serial, item),
         child: Padding(
-          padding: const EdgeInsets.only(left: 42, right: 12, top: 6, bottom: 6),
+          padding:
+              const EdgeInsets.only(left: 42, right: 12, top: 6, bottom: 6),
           child: Row(
             children: [
-              Icon(c.icon, size: 16,
-                  color: isActive ? theme.colorScheme.primary : theme.colorScheme.onSurfaceVariant),
+              Icon(c.icon,
+                  size: 16,
+                  color: isActive
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.onSurfaceVariant),
               const SizedBox(width: 10),
               Text(
                 navLabel(item),
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
-                  color: isActive ? theme.colorScheme.primary : theme.colorScheme.onSurface,
+                  color: isActive
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.onSurface,
                 ),
               ),
             ],

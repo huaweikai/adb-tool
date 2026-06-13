@@ -512,6 +512,14 @@ func (m *AdbManager) Execute(serial string, args []string) (string, error) {
 	return m.runRaw(fullArgs...)
 }
 
+func (m *AdbManager) WirelessPair(address, code string) (string, error) {
+	return m.runRaw("pair", address, code)
+}
+
+func (m *AdbManager) WirelessConnect(address string) (string, error) {
+	return m.runRaw("connect", address)
+}
+
 func (m *AdbManager) IsClipboardHelperInstalled(serial string) bool {
 	out, err := m.run("-s", serial, "shell", "pm", "list", "packages", "com.adbtool.clipboard")
 	if err != nil {
