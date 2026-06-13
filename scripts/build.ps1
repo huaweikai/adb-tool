@@ -94,15 +94,29 @@ function ConvertTo-XmlAttribute([string]$Value) {
 }
 
 function Build-ClipboardHelperApk([string]$ProjectDir, [string]$ApkSource, [string]$ApkDestination) {
+  if ([string]::IsNullOrWhiteSpace($env:ANDROID_HOME)) {
+    if (Test-Path $ApkDestination) {
+      Write-Warning "ANDROID_HOME is not set, using existing clipboard helper APK: $ApkDestination"
+      return
+    }
+    throw "ANDROID_HOME is not set and existing clipboard helper APK was not found: $ApkDestination. Please set ANDROID_HOME to your Android SDK path."
+  }
+
   if (-not (Test-Path $ProjectDir)) {
-    Write-Warning "adb_tool_app not found, using existing clipboard helper APK: $ApkDestination"
-    return
+    if (Test-Path $ApkDestination) {
+      Write-Warning "adb_tool_app not found, using existing clipboard helper APK: $ApkDestination"
+      return
+    }
+    throw "adb_tool_app not found and existing clipboard helper APK was not found: $ApkDestination"
   }
 
   $gradleWrapper = Join-Path $ProjectDir 'gradlew.bat'
   if (-not (Test-Path $gradleWrapper)) {
-    Write-Warning "gradlew.bat not found, using existing clipboard helper APK: $ApkDestination"
-    return
+    if (Test-Path $ApkDestination) {
+      Write-Warning "gradlew.bat not found, using existing clipboard helper APK: $ApkDestination"
+      return
+    }
+    throw "gradlew.bat not found and existing clipboard helper APK was not found: $ApkDestination"
   }
 
   Write-Host "==> Building clipboard helper APK"
@@ -117,7 +131,12 @@ function Build-ClipboardHelperApk([string]$ProjectDir, [string]$ApkSource, [stri
     return
   }
 
-  Write-Warning "Clipboard helper APK build failed or output was not found, using existing APK: $ApkDestination"
+  if (Test-Path $ApkDestination) {
+    Write-Warning "Clipboard helper APK build failed or output was not found, using existing APK: $ApkDestination"
+    return
+  }
+
+  throw "Clipboard helper APK build failed and existing APK was not found: $ApkDestination. Please set ANDROID_HOME to a valid Android SDK path and rebuild."
 }
 
 function New-WixSource([string]$TemplatePath, [string]$SourceDir, [string]$OutputPath) {

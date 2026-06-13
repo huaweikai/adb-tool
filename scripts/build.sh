@@ -60,7 +60,15 @@ if [[ "$PLATFORM" == "macos" ]]; then
 
   APK_SRC="$ROOT_DIR/adb_tool_app/app/build/outputs/apk/debug/app-debug.apk"
   APK_DST="$ROOT_DIR/backend/clipboard-helper.apk"
-  if [[ -d "$ROOT_DIR/adb_tool_app" ]]; then
+  if [[ -z "${ANDROID_HOME:-}" ]]; then
+    if [[ -f "$APK_DST" ]]; then
+      echo "警告: 未设置 ANDROID_HOME，使用已有剪贴板助手 APK：$APK_DST"
+    else
+      echo "错误: 未设置 ANDROID_HOME，且找不到已有剪贴板助手 APK：$APK_DST"
+      echo "请将 ANDROID_HOME 设置为本机 Android SDK 路径后重试。"
+      exit 1
+    fi
+  elif [[ -d "$ROOT_DIR/adb_tool_app" ]]; then
     echo "==> 编译剪贴板助手 APK..."
     set +e
     (cd "$ROOT_DIR/adb_tool_app" && ./gradlew assembleDebug \
@@ -70,9 +78,18 @@ if [[ "$PLATFORM" == "macos" ]]; then
     if [[ -f "$APK_SRC" ]]; then
       cp "$APK_SRC" "$APK_DST"
       echo "APK 已输出到：$APK_DST"
-    else
+    elif [[ -f "$APK_DST" ]]; then
       echo "警告: APK 构建失败，使用已有的 $APK_DST"
+    else
+      echo "错误: APK 构建失败，且找不到已有剪贴板助手 APK：$APK_DST"
+      echo "请检查 ANDROID_HOME 是否指向有效 Android SDK。"
+      exit 1
     fi
+  elif [[ -f "$APK_DST" ]]; then
+    echo "警告: 未找到 adb_tool_app，使用已有剪贴板助手 APK：$APK_DST"
+  else
+    echo "错误: 未找到 adb_tool_app，且找不到已有剪贴板助手 APK：$APK_DST"
+    exit 1
   fi
 
   echo "==> 编译后端 (GOOS=darwin GOARCH=$GOARCH)"

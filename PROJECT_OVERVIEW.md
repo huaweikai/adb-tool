@@ -101,6 +101,27 @@
 | applicationId | com.adbtool.clipboard |
 | Java | 11 |
 
+### Android SDK 与剪贴板助手 APK 构建规则
+
+`adb_tool_app/local.properties` 不提交到仓库。构建脚本不猜测本机 SDK 路径，只读取系统环境变量 `ANDROID_HOME`。
+
+规则：
+1. 如果设置了 `ANDROID_HOME`，构建脚本会尝试执行 `adb_tool_app/gradlew assembleDebug`，重新构建剪贴板助手 APK。
+2. 如果没有设置 `ANDROID_HOME`，构建脚本不会调用 Gradle，直接使用仓库内已有的 `backend/clipboard-helper.apk`。
+3. 如果没有设置 `ANDROID_HOME`，并且 `backend/clipboard-helper.apk` 也不存在，构建脚本会直接报错，提示用户设置 `ANDROID_HOME`。
+
+`ANDROID_HOME` 应指向本机 Android SDK 根目录，例如：
+
+```powershell
+$env:ANDROID_HOME = "D:\\Android\\Sdk"
+```
+
+```bash
+export ANDROID_HOME="$HOME/Library/Android/sdk"
+```
+
+本项目不依赖自动路径反推，避免不同设备、不同安装目录导致不可预期行为。
+
 ---
 
 ## 四、Go 后端 (`backend`)
@@ -440,14 +461,25 @@ flutter create --platforms=windows .
 .\scripts\build.ps1 -Mode Release -GoArch amd64 -ProductVersion 1.0.0
 ```
 
+#### IDEA 一键打包配置
+
+项目根目录的 `.run` 目录提供可共享的 JetBrains/IDEA 运行配置：
+
+| 配置名 | 执行内容 |
+|---|---|
+| Package Debug | 调用 `scripts/idea-build.ps1 -Mode Debug -Platform Windows` |
+| Package Release | 调用 `scripts/idea-build.ps1 -Mode Release -Platform Windows` |
+
+在 IDEA 顶部运行配置下拉框选择 `Package Debug` 或 `Package Release` 后即可一键打包。实际打包逻辑仍复用 `scripts/build.ps1`，避免 IDEA 配置和命令行构建流程分叉。
+
 #### Windows 构建流程
 
 ```
-1. 编译 Android 剪贴板辅助 APK → backend/clipboard-helper.apk
-     - 仅在 adb_tool_app/ 存在且 gradlew.bat 可用时执行
-     - 执行: gradlew.bat assembleDebug (跳过 lint)
+1. 准备 Android 剪贴板辅助 APK → backend/clipboard-helper.apk
+     - 设置了 ANDROID_HOME 时执行 gradlew.bat assembleDebug (跳过 lint)
      - 从 adb_tool_app/app/build/outputs/apk/debug/app-debug.apk 复制
-     - 若 APK 构建失败，则沿用已有 backend/clipboard-helper.apk
+     - 未设置 ANDROID_HOME 时跳过 Gradle，使用已有 backend/clipboard-helper.apk
+     - 未设置 ANDROID_HOME 且已有 APK 不存在时直接报错
 2. 编译 Go 后端 runtime.exe
      - GOOS=windows GOARCH=amd64 (默认)
      - -ldflags="-s -w"
