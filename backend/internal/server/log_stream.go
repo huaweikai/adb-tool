@@ -21,8 +21,9 @@ type WsCommand struct {
 }
 
 type WsMessage struct {
-	Type string `json:"type"`
-	Data string `json:"data"`
+	Type  string   `json:"type"`
+	Data  string   `json:"data,omitempty"`
+	Lines []string `json:"lines,omitempty"`
 }
 
 type LogSession struct {
@@ -105,6 +106,11 @@ func (s *LogSession) Run() {
 	}
 }
 
+const (
+	logBatchMaxLines = 120
+	logBatchInterval = 50 * time.Millisecond
+)
+
 func (s *LogSession) startLogcat(cmd WsCommand) {
 	s.mu.Lock()
 	if s.cancel != nil {
@@ -169,11 +175,26 @@ func (s *LogSession) startLogcat(cmd WsCommand) {
 		}
 	}()
 
+	ticker := time.NewTicker(logBatchInterval)
+	defer ticker.Stop()
+	batch := make([]string, 0, logBatchMaxLines)
+	flush := func() {
+		if len(batch) == 0 {
+			return
+		}
+		s.sendLogs(batch)
+		batch = batch[:0]
+	}
+
 	for {
 		select {
 		case <-s.ctx.Done():
+			flush()
 			return
+		case <-ticker.C:
+			flush()
 		case err := <-doneCh:
+			flush()
 			if err != nil {
 				s.sendMsg("error", "logcat read error: "+err.Error())
 			}
@@ -200,7 +221,10 @@ func (s *LogSession) startLogcat(cmd WsCommand) {
 				continue
 			}
 
-			s.sendMsg("log", line)
+			batch = append(batch, line)
+			if len(batch) >= logBatchMaxLines {
+				flush()
+			}
 		}
 	}
 }
@@ -234,7 +258,7 @@ func (s *LogSession) flushBuffer() {
 	s.buffer = s.buffer[:0]
 	s.mu.Unlock()
 
-	batch := make([]string, 0, 64)
+	batch := make([]string, 0, logBatchMaxLines)
 	for _, line := range buf {
 		s.mu.Lock()
 		f := s.filters
@@ -243,10 +267,12 @@ func (s *LogSession) flushBuffer() {
 			continue
 		}
 		batch = append(batch, line)
+		if len(batch) >= logBatchMaxLines {
+			s.sendLogs(batch)
+			batch = batch[:0]
+		}
 	}
-	for _, line := range batch {
-		s.sendMsg("log", line)
-	}
+	s.sendLogs(batch)
 }
 
 func (s *LogSession) matchFiltersLine(line string, f LogFilter) bool {
@@ -282,7 +308,19 @@ func extractTag(line string) string {
 }
 
 func (s *LogSession) sendMsg(msgType, data string) {
-	msg := WsMessage{Type: msgType, Data: data}
+	s.writeJSON(WsMessage{Type: msgType, Data: data})
+}
+
+func (s *LogSession) sendLogs(lines []string) {
+	if len(lines) == 0 {
+		return
+	}
+	copied := make([]string, len(lines))
+	copy(copied, lines)
+	s.writeJSON(WsMessage{Type: "logs", Lines: copied})
+}
+
+func (s *LogSession) writeJSON(msg WsMessage) {
 	payload, err := json.Marshal(msg)
 	if err != nil {
 		log.Printf("json marshal error: %v", err)

@@ -30,15 +30,24 @@ class _LogcatScreenState extends State<LogcatScreen> {
   String _packageName = '';
 
   final List<LogEntry> _allEntries = [];
-  StreamSubscription<LogEntry>? _logSub;
+  final List<LogEntry> _displayedEntries = [];
+  final List<LogEntry> _pendingEntries = [];
+  Timer? _flushTimer;
+  StreamSubscription<List<LogEntry>>? _logSub;
   StreamSubscription<bool>? _connSub;
   bool _isStreaming = false;
   bool _isPaused = false;
   bool _wsConnected = false;
 
+  bool get _hasLogs =>
+      _allEntries.isNotEmpty ||
+      _displayedEntries.isNotEmpty ||
+      _pendingEntries.isNotEmpty;
+
   final ScrollController _scrollCtrl = ScrollController();
   bool _autoScroll = true;
-  DateTime _lastScrollTime = DateTime.now();
+  bool _stickToBottomScheduled = false;
+  bool _autoScrollSuspendedByUser = false;
 
   late final TextEditingController _tagCtrl;
   late final TextEditingController _kwCtrl;
@@ -66,10 +75,20 @@ class _LogcatScreenState extends State<LogcatScreen> {
   }
 
   void _onUserScroll() {
-    if (!_autoScroll || !_scrollCtrl.hasClients) return;
-    if (_scrollCtrl.position.pixels <
-        _scrollCtrl.position.maxScrollExtent - 50) {
-      setState(() => _autoScroll = false);
+    if (!_scrollCtrl.hasClients) return;
+    final distanceFromBottom =
+        _scrollCtrl.position.maxScrollExtent - _scrollCtrl.position.pixels;
+    if (distanceFromBottom > 80 && _autoScroll) {
+      setState(() {
+        _autoScroll = false;
+        _autoScrollSuspendedByUser = true;
+      });
+    } else if (distanceFromBottom <= 24 && _autoScrollSuspendedByUser) {
+      setState(() {
+        _autoScroll = true;
+        _autoScrollSuspendedByUser = false;
+      });
+      _stickToBottom();
     }
   }
 
@@ -96,16 +115,20 @@ class _LogcatScreenState extends State<LogcatScreen> {
 
   void _restartIfNeeded() {
     if (_isStreaming) {
+      _flushPendingEntries();
       _stopAndStart();
     }
   }
 
   void _stopAndStart() {
     _logSub?.cancel();
+    _flushTimer?.cancel();
     widget.logStream.stop();
     setState(() {
       _isStreaming = false;
       _allEntries.clear();
+      _displayedEntries.clear();
+      _pendingEntries.clear();
     });
     Future.delayed(const Duration(milliseconds: 200), () {
       if (!mounted) return;
@@ -116,10 +139,12 @@ class _LogcatScreenState extends State<LogcatScreen> {
   void _startLogs() {
     if (widget.selectedSerial == null) return;
     _allEntries.clear();
+    _displayedEntries.clear();
+    _pendingEntries.clear();
+    _flushTimer?.cancel();
     _logSub?.cancel();
 
     final filter = _buildFilter();
-    _lastScrollTime = DateTime.now();
     widget.logStream.connect(widget.selectedSerial!, filter);
     _connSub?.cancel();
     _connSub = widget.logStream.connectionState.listen(
@@ -128,14 +153,17 @@ class _LogcatScreenState extends State<LogcatScreen> {
         setState(() => _wsConnected = connected);
       },
     );
+    _flushTimer = Timer.periodic(
+      const Duration(milliseconds: 80),
+      (_) => _flushPendingEntries(),
+    );
     _logSub = widget.logStream.logStream.listen(
-      (entry) {
-        if (!mounted) return;
-        if (_allEntries.length >= 5000) {
-          _allEntries.removeRange(0, 500);
+      (entries) {
+        if (!mounted || entries.isEmpty) return;
+        _pendingEntries.addAll(entries);
+        if (_pendingEntries.length >= 300) {
+          _flushPendingEntries();
         }
-        setState(() => _allEntries.add(entry));
-        _tryAutoScroll();
       },
     );
 
@@ -145,21 +173,75 @@ class _LogcatScreenState extends State<LogcatScreen> {
     });
   }
 
-  void _tryAutoScroll() {
-    if (!_autoScroll) return;
-    final now = DateTime.now();
-    if (now.difference(_lastScrollTime).inMilliseconds < 50) return;
-    _lastScrollTime = now;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_scrollCtrl.hasClients) return;
-      final max = _scrollCtrl.position.maxScrollExtent;
-      if (max > 0) _scrollCtrl.jumpTo(max);
+  void _flushPendingEntries() {
+    if (!mounted || _pendingEntries.isEmpty) return;
+    final entries = List<LogEntry>.from(_pendingEntries);
+    _pendingEntries.clear();
+    setState(() {
+      _allEntries.addAll(entries);
+      _displayedEntries.addAll(entries);
+      if (_allEntries.length > 5000) {
+        final extra = _allEntries.length - 5000;
+        final removed = _allEntries.sublist(0, extra);
+        _allEntries.removeRange(0, extra);
+        for (final entry in removed) {
+          final index = _displayedEntries.indexOf(entry);
+          if (index >= 0) {
+            _displayedEntries.removeAt(index);
+          }
+        }
+      }
+    });
+    _tryAutoScroll();
+  }
+
+  void _refreshDisplayedEntries() {
+    final filter = _buildFilter();
+    setState(() {
+      _displayedEntries
+        ..clear()
+        ..addAll(_allEntries.where((e) => e.matchesFilter(filter)));
     });
   }
 
+  void _tryAutoScroll() {
+    if (!_autoScroll) return;
+    _stickToBottom();
+  }
+
+  void _stickToBottom() {
+    if (_stickToBottomScheduled) return;
+    _stickToBottomScheduled = true;
+    void jumpAfterFrame(int remainingFrames) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) {
+          _stickToBottomScheduled = false;
+          return;
+        }
+        if (!_autoScroll || !_scrollCtrl.hasClients) {
+          _stickToBottomScheduled = false;
+          return;
+        }
+        final max = _scrollCtrl.position.maxScrollExtent;
+        if (max > 0) {
+          _scrollCtrl.jumpTo(max);
+        }
+        if (remainingFrames > 0) {
+          jumpAfterFrame(remainingFrames - 1);
+        } else {
+          _stickToBottomScheduled = false;
+        }
+      });
+    }
+
+    jumpAfterFrame(2);
+  }
+
   void _stopLogs() {
+    _flushPendingEntries();
     widget.logStream.stop();
     _logSub?.cancel();
+    _flushTimer?.cancel();
     setState(() {
       _isStreaming = false;
       _isPaused = false;
@@ -177,19 +259,22 @@ class _LogcatScreenState extends State<LogcatScreen> {
   }
 
   void _clearLogs() {
-    widget.logStream.clear();
+    setState(() {
+      _allEntries.clear();
+      _displayedEntries.clear();
+      _pendingEntries.clear();
+    });
+    if (_isStreaming) {
+      widget.logStream.clear();
+    }
     if (widget.selectedSerial != null) {
       widget.api.clearLogcat(widget.selectedSerial!);
     }
-    setState(() => _allEntries.clear());
-  }
-
-  List<LogEntry> get _displayedEntries {
-    return _allEntries.where((e) => e.matchesFilter(_buildFilter())).toList();
   }
 
   @override
   void dispose() {
+    _flushTimer?.cancel();
     _tagCtrl.dispose();
     _kwCtrl.dispose();
     _pkgCtrl.dispose();
@@ -201,13 +286,12 @@ class _LogcatScreenState extends State<LogcatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final entries = _displayedEntries;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _buildToolbar(context),
-        Expanded(child: _buildLogList(context, entries)),
-        _buildStatusBar(context, entries),
+        Expanded(child: _buildLogList(context, _displayedEntries)),
+        _buildStatusBar(context, _displayedEntries),
       ],
     );
   }
@@ -235,8 +319,8 @@ class _LogcatScreenState extends State<LogcatScreen> {
             const SizedBox(width: 4),
             _btn(tr('resume'), Icons.play_arrow, _isPaused, _resumeLogs, false),
             const SizedBox(width: 4),
-            _btn(tr('clear'), Icons.delete_outline,
-                _isStreaming || _allEntries.isNotEmpty, _clearLogs, false),
+            _btn(tr('clear'), Icons.delete_outline, _isStreaming || _hasLogs,
+                _clearLogs, false),
             const SizedBox(width: 12),
             _sep(),
             const SizedBox(width: 12),
@@ -294,7 +378,11 @@ class _LogcatScreenState extends State<LogcatScreen> {
       width: 120,
       child: TextField(
         controller: _tagCtrl,
-        onChanged: (v) => setState(() => _tag = v),
+        onChanged: (v) {
+          _tag = v;
+          _refreshDisplayedEntries();
+          if (_isStreaming) widget.logStream.updateFilter(_buildFilter());
+        },
         decoration: InputDecoration(
           labelText: tr('tag'),
           labelStyle: const TextStyle(fontSize: 11),
@@ -337,7 +425,10 @@ class _LogcatScreenState extends State<LogcatScreen> {
         onChanged: (v) {
           final old = _priority;
           setState(() => _priority = v ?? '');
-          if (old != _priority) _restartIfNeeded();
+          if (old != _priority) {
+            _flushPendingEntries();
+            _restartIfNeeded();
+          }
         },
       ),
     );
@@ -348,7 +439,11 @@ class _LogcatScreenState extends State<LogcatScreen> {
       width: 130,
       child: TextField(
         controller: _kwCtrl,
-        onChanged: (v) => setState(() => _keyword = v),
+        onChanged: (v) {
+          _keyword = v;
+          _refreshDisplayedEntries();
+          if (_isStreaming) widget.logStream.updateFilter(_buildFilter());
+        },
         decoration: InputDecoration(
           labelText: tr('keyword'),
           labelStyle: const TextStyle(fontSize: 11),
@@ -402,12 +497,12 @@ class _LogcatScreenState extends State<LogcatScreen> {
           child: Checkbox(
             value: _autoScroll,
             onChanged: (v) {
-              setState(() => _autoScroll = v ?? true);
-              if (_autoScroll && _scrollCtrl.hasClients) {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  final max = _scrollCtrl.position.maxScrollExtent;
-                  if (max > 0) _scrollCtrl.jumpTo(max);
-                });
+              setState(() {
+                _autoScroll = v ?? true;
+                _autoScrollSuspendedByUser = false;
+              });
+              if (_autoScroll) {
+                _stickToBottom();
               }
             },
             materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -441,9 +536,12 @@ class _LogcatScreenState extends State<LogcatScreen> {
         ),
       );
     }
-    return NotificationListener<ScrollUpdateNotification>(
+    return NotificationListener<ScrollNotification>(
       onNotification: (n) {
-        if (n.dragDetails != null) _onUserScroll();
+        if (n is UserScrollNotification ||
+            (n is ScrollUpdateNotification && n.dragDetails != null)) {
+          _onUserScroll();
+        }
         return false;
       },
       child: ListView.builder(
