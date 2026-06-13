@@ -138,6 +138,20 @@ class ApiClient {
     );
   }
 
+  Future<AdbCommandResult> disconnectWirelessAdb(String serial) async {
+    final resp = await http.post(
+      Uri.parse('$baseUrl/api/adb-wireless-disconnect'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'serial': serial}),
+    );
+    final data = json.decode(resp.body);
+    return AdbCommandResult(
+      ok: data['ok'] == true,
+      output: data['output']?.toString() ?? '',
+      error: data['error']?.toString() ?? '',
+    );
+  }
+
   Future<bool> isReady() async {
     try {
       final resp = await http

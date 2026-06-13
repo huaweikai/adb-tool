@@ -191,9 +191,12 @@ func (m *AdbManager) Devices() ([]Device, error) {
 
 	var devices []Device
 	lines := strings.Split(out, "\n")
-	for _, line := range lines[1:] {
+	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "*") || strings.HasPrefix(line, "List of devices") {
 			continue
 		}
 		fields := strings.Fields(line)
@@ -554,6 +557,10 @@ func (m *AdbManager) WirelessPair(address, code string) (string, error) {
 
 func (m *AdbManager) WirelessConnect(address string) (string, error) {
 	return m.runRaw("connect", address)
+}
+
+func (m *AdbManager) WirelessDisconnect(serial string) (string, error) {
+	return m.runRaw("disconnect", serial)
 }
 
 func (m *AdbManager) IsClipboardHelperInstalled(serial string) bool {

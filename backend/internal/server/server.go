@@ -89,6 +89,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/adb-exec", s.handleAdbExec)
 	mux.HandleFunc("/api/adb-wireless-pair", s.handleAdbWirelessPair)
 	mux.HandleFunc("/api/adb-wireless-connect", s.handleAdbWirelessConnect)
+	mux.HandleFunc("/api/adb-wireless-disconnect", s.handleAdbWirelessDisconnect)
 
 	webFS, err := fs.Sub(s.webFS, "web")
 	if err != nil {
@@ -452,6 +453,33 @@ func (s *Server) handleAdbWirelessConnect(w http.ResponseWriter, r *http.Request
 		return
 	}
 	output, err := s.adb.WirelessConnect(req.Address)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		writeJSON(w, map[string]interface{}{"ok": false, "output": output, "error": err.Error()})
+		return
+	}
+	writeJSON(w, map[string]interface{}{"ok": true, "output": output})
+}
+
+func (s *Server) handleAdbWirelessDisconnect(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+	defer r.Body.Close()
+	var req struct {
+		Serial string `json:"serial"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	req.Serial = strings.TrimSpace(req.Serial)
+	if req.Serial == "" {
+		http.Error(w, "serial required", http.StatusBadRequest)
+		return
+	}
+	output, err := s.adb.WirelessDisconnect(req.Serial)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		writeJSON(w, map[string]interface{}{"ok": false, "output": output, "error": err.Error()})

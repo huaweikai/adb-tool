@@ -677,6 +677,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     style: TextStyle(
                         fontSize: 9, color: theme.colorScheme.onSurfaceVariant),
                   ),
+                  if (d.isOnline &&
+                      (d.serial.contains(':') || d.serial.contains('_tcp')))
+                    _disconnectButton(context, d),
                 ],
               ),
             ),
@@ -688,6 +691,61 @@ class _HomeScreenState extends State<HomeScreen> {
               .map((item) => _buildFunctionItem(context, d, item, theme)),
       ],
     );
+  }
+
+  Widget _disconnectButton(BuildContext context, Device d) {
+    return Tooltip(
+      message: tr('disconnect'),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(4),
+        onTap: () => _disconnect(context, d),
+        child: const Padding(
+          padding: EdgeInsets.only(left: 4),
+          child: Icon(Icons.close, size: 14),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _disconnect(BuildContext context, Device d) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(tr('disconnectConfirm')),
+        content: Text(tr('disconnectConfirmBody', {'name': d.displayName})),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(tr('cancel')),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(tr('disconnect')),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final result = await widget.api.disconnectWirelessAdb(d.serial);
+    if (!mounted || !context.mounted) return;
+    if (result.ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(tr('disconnectSuccess', {'name': d.displayName})),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result.error.isNotEmpty
+              ? result.error
+              : tr('disconnectFailed', {'name': d.displayName})),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+    _refreshDevices();
   }
 
   Widget _buildFunctionItem(
