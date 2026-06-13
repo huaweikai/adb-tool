@@ -6,11 +6,13 @@ import '../models/device.dart';
 class LogStreamService {
   WebSocketChannel? _channel;
   final _controller = StreamController<LogEntry>.broadcast();
+  final _connectionController = StreamController<bool>.broadcast();
   StreamSubscription? _subscription;
   String _serial = '';
   LogFilter? _filter;
 
   Stream<LogEntry> get logStream => _controller.stream;
+  Stream<bool> get connectionState => _connectionController.stream;
   String get serial => _serial;
 
   void connect(String serial, LogFilter filter) {
@@ -29,6 +31,7 @@ class LogStreamService {
         'serial': serial,
         'filters': filter.toJson(),
       });
+      _connectionController.add(true);
     });
 
     _subscription = _channel!.stream.listen(
@@ -45,8 +48,11 @@ class LogStreamService {
       },
       onError: (e) {
         _controller.addError(e);
+        _connectionController.add(false);
       },
-      onDone: () {},
+      onDone: () {
+        _connectionController.add(false);
+      },
     );
   }
 
@@ -78,5 +84,6 @@ class LogStreamService {
     _subscription?.cancel();
     _channel?.sink.close();
     _controller.close();
+    _connectionController.close();
   }
 }

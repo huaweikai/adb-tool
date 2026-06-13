@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 
 class ServerLauncher {
   Process? _process;
+  Future<void>? _stopFuture;
 
   String get _binaryName => Platform.isWindows ? 'runtime.exe' : 'adb-tool';
 
@@ -29,7 +30,8 @@ class ServerLauncher {
     }
 
     candidates.add('${Directory.current.path}${sep}$_binaryName');
-    candidates.add('${Directory.current.path}${sep}..${sep}backend${sep}$_binaryName');
+    candidates.add(
+        '${Directory.current.path}${sep}..${sep}backend${sep}$_binaryName');
 
     for (final p in candidates) {
       if (await File(p).exists()) return p;
@@ -46,14 +48,18 @@ class ServerLauncher {
   }
 
   Future<bool> start() async {
+    _stopFuture = null;
     await _stopOldServerIfAny();
     final path = await findServerBinary();
 
     final env = Map<String, String>.from(Platform.environment);
+    env['ADB_TOOL_PARENT_PID'] = pid.toString();
     if (Platform.isWindows) {
-      env['PATH'] = '${Platform.environment['SystemRoot'] ?? 'C:\\Windows'}\\System32;${env['PATH'] ?? ''}';
+      env['PATH'] =
+          '${Platform.environment['SystemRoot'] ?? 'C:\\Windows'}\\System32;${env['PATH'] ?? ''}';
     } else {
-      env['PATH'] = '/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:${env['PATH'] ?? ''}';
+      env['PATH'] =
+          '/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:${env['PATH'] ?? ''}';
     }
 
     _process = await Process.start(
@@ -79,9 +85,30 @@ class ServerLauncher {
     return true;
   }
 
-  void stop() {
-    _process?.kill();
+  Future<void> stop() {
+    return _stopFuture ??= _stop();
+  }
+
+  Future<void> _stop() async {
+    final process = _process;
     _process = null;
+    await _tryHttpShutdown('http://localhost:9876');
+    if (process == null) return;
+
+    try {
+      final code = await process.exitCode.timeout(const Duration(seconds: 3));
+      if (code != 0) {
+        stderr.writeln('Server exited with code $code');
+      }
+      return;
+    } catch (_) {}
+
+    process.kill();
+    try {
+      await process.exitCode.timeout(const Duration(seconds: 1));
+    } catch (_) {
+      process.kill(ProcessSignal.sigkill);
+    }
   }
 
   Future<void> _stopOldServerIfAny() async {

@@ -50,6 +50,19 @@ func NewAdbManager(adbPath string) *AdbManager {
 	return &AdbManager{adbPath: adbPath}
 }
 
+func (m *AdbManager) Close() {
+	m.recordMu.Lock()
+	cmd := m.recordCmd
+	m.recordCmd = nil
+	m.recordSerial = ""
+	m.recordMu.Unlock()
+	if cmd != nil && cmd.Process != nil {
+		cmd.Process.Kill()
+		waitCommandExit(cmd, 2*time.Second)
+	}
+	m.runRaw("kill-server")
+}
+
 func FindOrExtractADB(zipData []byte) (string, error) {
 	adbName := "adb"
 	if runtime.GOOS == "windows" {

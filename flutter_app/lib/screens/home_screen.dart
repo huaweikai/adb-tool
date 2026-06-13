@@ -52,6 +52,9 @@ const _loc = {
     'connectAddress': '连接地址，例如 192.168.1.10:5555',
     'pairCode': '配对码',
     'running': '执行中...',
+    'backendOffline': '后端服务已断开，请检查 Go 服务是否运行',
+    'backendOnline': '后端服务已恢复',
+    'dismiss': '忽略',
   },
   'en': {
     'title': 'ADB Tool',
@@ -75,6 +78,9 @@ const _loc = {
     'connectAddress': 'Connect address, e.g. 192.168.1.10:5555',
     'pairCode': 'Pair code',
     'running': 'Running...',
+    'backendOffline': 'Backend disconnected. Check if Go server is running',
+    'backendOnline': 'Backend reconnected',
+    'dismiss': 'Dismiss',
   },
 };
 
@@ -105,6 +111,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   String _lang = 'zh';
   List<Device> _devices = [];
+  bool _backendOnline = true;
   Timer? _refreshTimer;
 
   final Set<String> _expandedSerials = {};
@@ -132,9 +139,23 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _refreshDevices() async {
-    final devices = await widget.api.getDevices();
-    if (!mounted) return;
-    setState(() => _devices = devices);
+    try {
+      final devices = await widget.api.getDevices();
+      if (!mounted) return;
+      setState(() {
+        _devices = devices;
+        _backendOnline = true;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      if (_backendOnline) {
+        _expandedSerials.clear();
+      }
+      setState(() {
+        _backendOnline = false;
+        _devices = [];
+      });
+    }
   }
 
   void _toggleExpand(String serial) {
@@ -202,10 +223,17 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Row(
+      body: Column(
         children: [
-          _buildSidebar(context),
-          Expanded(child: _buildContent()),
+          if (!_backendOnline) _buildOfflineBanner(context),
+          Expanded(
+            child: Row(
+              children: [
+                _buildSidebar(context),
+                Expanded(child: _buildContent()),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -365,6 +393,30 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildOfflineBanner(BuildContext context) {
+    final theme = Theme.of(context);
+    return MaterialBanner(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      backgroundColor: theme.colorScheme.errorContainer,
+      leading: Icon(Icons.cloud_off, color: theme.colorScheme.onErrorContainer),
+      content: Text(
+        tr('backendOffline'),
+        style: TextStyle(
+          fontSize: 12,
+          color: theme.colorScheme.onErrorContainer,
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _refreshDevices,
+          child: Text(tr('refresh'),
+              style: TextStyle(
+                  fontSize: 12, color: theme.colorScheme.onErrorContainer)),
+        ),
+      ],
     );
   }
 

@@ -16,7 +16,9 @@ void main() {
 }
 
 String get _prefsPath {
-  final home = Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'] ?? '.';
+  final home = Platform.environment['HOME'] ??
+      Platform.environment['USERPROFILE'] ??
+      '.';
   return '$home/.adb_tool_prefs.json';
 }
 
@@ -71,7 +73,8 @@ class _AdbToolAppState extends State<AdbToolApp> {
       ),
       home: ServerBootScreen(
         onThemeToggle: (isDark) {
-          setState(() => _themeMode = isDark ? ThemeMode.dark : ThemeMode.light);
+          setState(
+              () => _themeMode = isDark ? ThemeMode.dark : ThemeMode.light);
           _saveTheme(isDark);
         },
         isDark: _themeMode == ThemeMode.dark,
@@ -84,13 +87,15 @@ class ServerBootScreen extends StatefulWidget {
   final ValueChanged<bool> onThemeToggle;
   final bool isDark;
 
-  const ServerBootScreen({super.key, required this.onThemeToggle, required this.isDark});
+  const ServerBootScreen(
+      {super.key, required this.onThemeToggle, required this.isDark});
 
   @override
   State<ServerBootScreen> createState() => _ServerBootScreenState();
 }
 
-class _ServerBootScreenState extends State<ServerBootScreen> with WidgetsBindingObserver {
+class _ServerBootScreenState extends State<ServerBootScreen>
+    with WidgetsBindingObserver {
   String _status = 'Starting ...';
   bool _ready = false;
   bool _stoppedByUser = false;
@@ -106,7 +111,7 @@ class _ServerBootScreenState extends State<ServerBootScreen> with WidgetsBinding
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.detached) {
-      _launcher?.stop();
+      unawaited(_launcher?.stop() ?? Future.value());
       _launcher = null;
     }
   }
@@ -114,7 +119,7 @@ class _ServerBootScreenState extends State<ServerBootScreen> with WidgetsBinding
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _launcher?.stop();
+    unawaited(_launcher?.stop() ?? Future.value());
     _launcher = null;
     super.dispose();
   }
@@ -136,19 +141,20 @@ class _ServerBootScreenState extends State<ServerBootScreen> with WidgetsBinding
           return;
         }
       }
-      launcher.stop();
+      await launcher.stop();
       _launcher = null;
       setState(() => _status = 'Server timeout');
     } catch (e) {
-      launcher.stop();
+      await launcher.stop();
       _launcher = null;
       setState(() => _status = 'Error: $e');
     }
   }
 
   Future<void> _shutdownServer() async {
-    _launcher?.stop();
+    final launcher = _launcher;
     _launcher = null;
+    await launcher?.stop();
     setState(() {
       _ready = false;
       _stoppedByUser = true;
@@ -157,8 +163,9 @@ class _ServerBootScreenState extends State<ServerBootScreen> with WidgetsBinding
   }
 
   Future<void> _restartServer() async {
-    _launcher?.stop();
+    final launcher = _launcher;
     _launcher = null;
+    await launcher?.stop();
     setState(() {
       _ready = false;
       _stoppedByUser = false;
@@ -188,12 +195,19 @@ class _ServerBootScreenState extends State<ServerBootScreen> with WidgetsBinding
           mainAxisSize: MainAxisSize.min,
           children: [
             if (!_stoppedByUser) ...[
-              const SizedBox(width: 48, height: 48, child: CircularProgressIndicator(strokeWidth: 3)),
+              const SizedBox(
+                  width: 48,
+                  height: 48,
+                  child: CircularProgressIndicator(strokeWidth: 3)),
               const SizedBox(height: 24),
             ],
-            Text('ADB Tool', style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600)),
+            Text('ADB Tool',
+                style: theme.textTheme.headlineSmall
+                    ?.copyWith(fontWeight: FontWeight.w600)),
             const SizedBox(height: 12),
-            Text(_status, style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+            Text(_status,
+                style: theme.textTheme.bodyMedium
+                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
             if (_stoppedByUser) ...[
               const SizedBox(height: 20),
               FilledButton.icon(

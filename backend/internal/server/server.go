@@ -26,7 +26,9 @@ type Server struct {
 	recordingSerial string
 	recordStarted   time.Time
 
-	startedAt time.Time
+	startedAt  time.Time
+	onShutdown func()
+	closeOnce  sync.Once
 }
 
 func New(adbPath string, webFS fs.FS, clipboardApk []byte) *Server {
@@ -39,6 +41,19 @@ func New(adbPath string, webFS fs.FS, clipboardApk []byte) *Server {
 			CheckOrigin: func(r *http.Request) bool { return true },
 		},
 	}
+}
+
+func (s *Server) SetShutdownFunc(fn func()) {
+	s.onShutdown = fn
+}
+
+func (s *Server) Close() {
+	s.closeOnce.Do(func() {
+		s.recordMu.Lock()
+		s.recordingSerial = ""
+		s.recordMu.Unlock()
+		s.adb.Close()
+	})
 }
 
 func (s *Server) Handler() http.Handler {
@@ -608,6 +623,11 @@ func (s *Server) handleShutdown(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]string{"status": "shutting down"})
 	go func() {
 		time.Sleep(150 * time.Millisecond)
+		if s.onShutdown != nil {
+			s.onShutdown()
+			return
+		}
+		s.Close()
 		os.Exit(0)
 	}()
 }

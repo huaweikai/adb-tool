@@ -6,24 +6,44 @@ import '../services/log_stream.dart';
 
 const _loc = {
   'zh': {
-    'start': '开始', 'stop': '停止', 'pause': '暂停',
-    'resume': '继续', 'clear': '清空',
-    'tag': '标签', 'package': '包名', 'level': '级别',
-    'keyword': '关键词', 'autoScroll': '自动滚动',
-    'status': '状态', 'lines': '行数', 'pid': '进程',
-    'idle': '空闲', 'streaming': '采集中', 'paused': '已暂停',
+    'start': '开始',
+    'stop': '停止',
+    'pause': '暂停',
+    'resume': '继续',
+    'clear': '清空',
+    'tag': '标签',
+    'package': '包名',
+    'level': '级别',
+    'keyword': '关键词',
+    'autoScroll': '自动滚动',
+    'status': '状态',
+    'lines': '行数',
+    'pid': '进程',
+    'idle': '空闲',
+    'streaming': '采集中',
+    'paused': '已暂停',
     'stopped': '已停止',
     'selectDevice': '选择设备后点击开始查看日志',
     'logsHint': '日志将实时显示在这里',
     'all': '全部',
   },
   'en': {
-    'start': 'Start', 'stop': 'Stop', 'pause': 'Pause',
-    'resume': 'Resume', 'clear': 'Clear',
-    'tag': 'Tag', 'package': 'Package', 'level': 'Level',
-    'keyword': 'Keyword', 'autoScroll': 'Auto-scroll',
-    'status': 'Status', 'lines': 'Lines', 'pid': 'PID',
-    'idle': 'Idle', 'streaming': 'Streaming', 'paused': 'Paused',
+    'start': 'Start',
+    'stop': 'Stop',
+    'pause': 'Pause',
+    'resume': 'Resume',
+    'clear': 'Clear',
+    'tag': 'Tag',
+    'package': 'Package',
+    'level': 'Level',
+    'keyword': 'Keyword',
+    'autoScroll': 'Auto-scroll',
+    'status': 'Status',
+    'lines': 'Lines',
+    'pid': 'PID',
+    'idle': 'Idle',
+    'streaming': 'Streaming',
+    'paused': 'Paused',
     'stopped': 'Stopped',
     'selectDevice': 'Select a device and click Start',
     'logsHint': 'Logs will appear here in real-time',
@@ -58,8 +78,10 @@ class _LogcatScreenState extends State<LogcatScreen> {
 
   final List<LogEntry> _allEntries = [];
   StreamSubscription<LogEntry>? _logSub;
+  StreamSubscription<bool>? _connSub;
   bool _isStreaming = false;
   bool _isPaused = false;
+  bool _wsConnected = false;
 
   final ScrollController _scrollCtrl = ScrollController();
   bool _autoScroll = true;
@@ -94,18 +116,19 @@ class _LogcatScreenState extends State<LogcatScreen> {
 
   void _onUserScroll() {
     if (!_autoScroll || !_scrollCtrl.hasClients) return;
-    if (_scrollCtrl.position.pixels < _scrollCtrl.position.maxScrollExtent - 50) {
+    if (_scrollCtrl.position.pixels <
+        _scrollCtrl.position.maxScrollExtent - 50) {
       setState(() => _autoScroll = false);
     }
   }
 
   LogFilter _buildFilter() => LogFilter(
-    tag: _tag,
-    priority: _priority,
-    keyword: _keyword,
-    packageName: _packageName,
-    packagePid: _packagePid ?? '',
-  );
+        tag: _tag,
+        priority: _priority,
+        keyword: _keyword,
+        packageName: _packageName,
+        packagePid: _packagePid ?? '',
+      );
 
   Future<void> _resolvePackage() async {
     if (_packageName.isEmpty || widget.selectedSerial == null) {
@@ -113,7 +136,8 @@ class _LogcatScreenState extends State<LogcatScreen> {
       _restartIfNeeded();
       return;
     }
-    final pid = await widget.api.getPackagePid(widget.selectedSerial!, _packageName);
+    final pid =
+        await widget.api.getPackagePid(widget.selectedSerial!, _packageName);
     if (!mounted) return;
     setState(() => _packagePid = pid);
     _restartIfNeeded();
@@ -146,6 +170,13 @@ class _LogcatScreenState extends State<LogcatScreen> {
     final filter = _buildFilter();
     _lastScrollTime = DateTime.now();
     widget.logStream.connect(widget.selectedSerial!, filter);
+    _connSub?.cancel();
+    _connSub = widget.logStream.connectionState.listen(
+      (connected) {
+        if (!mounted) return;
+        setState(() => _wsConnected = connected);
+      },
+    );
     _logSub = widget.logStream.logStream.listen(
       (entry) {
         if (!mounted) return;
@@ -196,14 +227,13 @@ class _LogcatScreenState extends State<LogcatScreen> {
 
   void _clearLogs() {
     widget.logStream.clear();
-    if (widget.selectedSerial != null) widget.api.clearLogcat(widget.selectedSerial!);
+    if (widget.selectedSerial != null)
+      widget.api.clearLogcat(widget.selectedSerial!);
     setState(() => _allEntries.clear());
   }
 
   List<LogEntry> get _displayedEntries {
-    return _allEntries
-        .where((e) => e.matchesFilter(_buildFilter()))
-        .toList();
+    return _allEntries.where((e) => e.matchesFilter(_buildFilter())).toList();
   }
 
   @override
@@ -213,6 +243,7 @@ class _LogcatScreenState extends State<LogcatScreen> {
     _pkgCtrl.dispose();
     _scrollCtrl.dispose();
     _logSub?.cancel();
+    _connSub?.cancel();
     super.dispose();
   }
 
@@ -242,12 +273,13 @@ class _LogcatScreenState extends State<LogcatScreen> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            _btn(tr('start'), Icons.play_arrow,
-                !_isStreaming, widget.selectedSerial == null ? null : _startLogs, true),
+            _btn(tr('start'), Icons.play_arrow, !_isStreaming,
+                widget.selectedSerial == null ? null : _startLogs, true),
             const SizedBox(width: 4),
             _btn(tr('stop'), Icons.stop, _isStreaming, _stopLogs, false),
             const SizedBox(width: 4),
-            _btn(tr('pause'), Icons.pause, _isStreaming && !_isPaused, _pauseLogs, false),
+            _btn(tr('pause'), Icons.pause, _isStreaming && !_isPaused,
+                _pauseLogs, false),
             const SizedBox(width: 4),
             _btn(tr('resume'), Icons.play_arrow, _isPaused, _resumeLogs, false),
             const SizedBox(width: 4),
@@ -275,23 +307,31 @@ class _LogcatScreenState extends State<LogcatScreen> {
     );
   }
 
-  Widget _sep() => Container(width: 1, height: 20, color: Theme.of(context).dividerColor);
+  Widget _sep() =>
+      Container(width: 1, height: 20, color: Theme.of(context).dividerColor);
 
-  Widget _btn(String label, IconData icon, bool enabled, VoidCallback? onTap, bool primary) {
+  Widget _btn(String label, IconData icon, bool enabled, VoidCallback? onTap,
+      bool primary) {
     final child = Row(mainAxisSize: MainAxisSize.min, children: [
-      Icon(icon, size: 16), const SizedBox(width: 4), Text(label),
+      Icon(icon, size: 16),
+      const SizedBox(width: 4),
+      Text(label),
     ]);
     return SizedBox(
       height: 32,
       child: primary
           ? FilledButton(
               onPressed: enabled ? onTap : null,
-              style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 12), textStyle: const TextStyle(fontSize: 12)),
+              style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  textStyle: const TextStyle(fontSize: 12)),
               child: child,
             )
           : FilledButton.tonal(
               onPressed: enabled ? onTap : null,
-              style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 12), textStyle: const TextStyle(fontSize: 12)),
+              style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  textStyle: const TextStyle(fontSize: 12)),
               child: child,
             ),
     );
@@ -306,8 +346,10 @@ class _LogcatScreenState extends State<LogcatScreen> {
         decoration: InputDecoration(
           labelText: tr('tag'),
           labelStyle: const TextStyle(fontSize: 11),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-          border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(6))),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+          border: const OutlineInputBorder(
+              borderRadius: BorderRadius.all(Radius.circular(6))),
         ),
         style: const TextStyle(fontSize: 12),
       ),
@@ -323,16 +365,23 @@ class _LogcatScreenState extends State<LogcatScreen> {
         decoration: InputDecoration(
           labelText: tr('level'),
           labelStyle: const TextStyle(fontSize: 11),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-          border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(6))),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+          border: const OutlineInputBorder(
+              borderRadius: BorderRadius.all(Radius.circular(6))),
         ),
-        style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface),
+        style: TextStyle(
+            fontSize: 12, color: Theme.of(context).colorScheme.onSurface),
         dropdownColor: Theme.of(context).colorScheme.surface,
-        items: levels.map((l) => DropdownMenuItem(
-              value: l,
-              child: Text(l.isEmpty ? tr('all') : l,
-                  style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface)),
-            )).toList(),
+        items: levels
+            .map((l) => DropdownMenuItem(
+                  value: l,
+                  child: Text(l.isEmpty ? tr('all') : l,
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.onSurface)),
+                ))
+            .toList(),
         onChanged: (v) {
           final old = _priority;
           setState(() => _priority = v ?? '');
@@ -351,8 +400,10 @@ class _LogcatScreenState extends State<LogcatScreen> {
         decoration: InputDecoration(
           labelText: tr('keyword'),
           labelStyle: const TextStyle(fontSize: 11),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-          border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(6))),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+          border: const OutlineInputBorder(
+              borderRadius: BorderRadius.all(Radius.circular(6))),
         ),
         style: const TextStyle(fontSize: 12),
       ),
@@ -371,13 +422,16 @@ class _LogcatScreenState extends State<LogcatScreen> {
         decoration: InputDecoration(
           labelText: tr('package'),
           labelStyle: const TextStyle(fontSize: 11),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-          border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(6))),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+          border: const OutlineInputBorder(
+              borderRadius: BorderRadius.all(Radius.circular(6))),
           suffixIcon: _packagePid != null
               ? Padding(
                   padding: const EdgeInsets.only(top: 12, right: 4),
                   child: Text('PID:$_packagePid',
-                      style: TextStyle(fontSize: 9, color: Colors.green.shade300)),
+                      style:
+                          TextStyle(fontSize: 9, color: Colors.green.shade300)),
                 )
               : null,
         ),
@@ -391,7 +445,8 @@ class _LogcatScreenState extends State<LogcatScreen> {
       mainAxisSize: MainAxisSize.min,
       children: [
         SizedBox(
-          height: 24, width: 24,
+          height: 24,
+          width: 24,
           child: Checkbox(
             value: _autoScroll,
             onChanged: (v) {
@@ -419,7 +474,8 @@ class _LogcatScreenState extends State<LogcatScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.article_outlined, size: 48,
+            Icon(Icons.article_outlined,
+                size: 48,
                 color: theme.colorScheme.onSurfaceVariant.withAlpha(80)),
             const SizedBox(height: 12),
             Text(tr('selectDevice'),
@@ -427,8 +483,8 @@ class _LogcatScreenState extends State<LogcatScreen> {
                     ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
             const SizedBox(height: 4),
             Text(tr('logsHint'),
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant.withAlpha(150))),
+                style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant.withAlpha(150))),
           ],
         ),
       );
@@ -455,15 +511,25 @@ class _LogcatScreenState extends State<LogcatScreen> {
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
         child: Row(children: [
-          Text('│ ', style: mono.copyWith(fontSize: 12, color: theme.dividerColor)),
-          Expanded(child: Text(entry.message, style: mono.copyWith(fontSize: 12, color: theme.colorScheme.onSurfaceVariant), maxLines: 1, overflow: TextOverflow.ellipsis)),
+          Text('│ ',
+              style: mono.copyWith(fontSize: 12, color: theme.dividerColor)),
+          Expanded(
+              child: Text(entry.message,
+                  style: mono.copyWith(
+                      fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis)),
         ]),
       );
     }
     if (entry.time.isEmpty) {
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Text(entry.raw, style: mono.copyWith(fontSize: 12, color: theme.colorScheme.onSurface), maxLines: 1, overflow: TextOverflow.ellipsis),
+        child: Text(entry.raw,
+            style:
+                mono.copyWith(fontSize: 12, color: theme.colorScheme.onSurface),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis),
       );
     }
 
@@ -471,36 +537,68 @@ class _LogcatScreenState extends State<LogcatScreen> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(children: [
-        SizedBox(width: 130, child: Text(entry.time, style: mono.copyWith(fontSize: 11, color: theme.colorScheme.onSurfaceVariant))),
-        SizedBox(width: 70, child: Text('${entry.pid} ${entry.tid}', style: mono.copyWith(fontSize: 11, color: Colors.green.shade300))),
+        SizedBox(
+            width: 130,
+            child: Text(entry.time,
+                style: mono.copyWith(
+                    fontSize: 11, color: theme.colorScheme.onSurfaceVariant))),
+        SizedBox(
+            width: 70,
+            child: Text('${entry.pid} ${entry.tid}',
+                style:
+                    mono.copyWith(fontSize: 11, color: Colors.green.shade300))),
         Container(
-          width: 24, alignment: Alignment.center,
-          decoration: BoxDecoration(color: prioColor.withAlpha(30), borderRadius: BorderRadius.circular(3)),
-          child: Text(entry.priority, style: mono.copyWith(fontSize: 11, fontWeight: FontWeight.w700, color: prioColor)),
+          width: 24,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+              color: prioColor.withAlpha(30),
+              borderRadius: BorderRadius.circular(3)),
+          child: Text(entry.priority,
+              style: mono.copyWith(
+                  fontSize: 11, fontWeight: FontWeight.w700, color: prioColor)),
         ),
         const SizedBox(width: 4),
-        Text(entry.tag, style: mono.copyWith(fontSize: 11, color: theme.colorScheme.primary)),
+        Text(entry.tag,
+            style:
+                mono.copyWith(fontSize: 11, color: theme.colorScheme.primary)),
         const SizedBox(width: 4),
-        Expanded(child: Text(entry.message, style: mono.copyWith(fontSize: 11, color: theme.colorScheme.onSurface), maxLines: 1, overflow: TextOverflow.ellipsis)),
+        Expanded(
+            child: Text(entry.message,
+                style: mono.copyWith(
+                    fontSize: 11, color: theme.colorScheme.onSurface),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis)),
       ]),
     );
   }
 
   Color _prioColor(String prio, ThemeData theme) {
     switch (prio) {
-      case 'V': return theme.colorScheme.onSurfaceVariant;
-      case 'D': return Colors.blue;
-      case 'I': return Colors.green;
-      case 'W': return Colors.orange;
-      case 'E': return Colors.red;
-      case 'F': return Colors.purple;
-      default:  return theme.colorScheme.onSurfaceVariant;
+      case 'V':
+        return theme.colorScheme.onSurfaceVariant;
+      case 'D':
+        return Colors.blue;
+      case 'I':
+        return Colors.green;
+      case 'W':
+        return Colors.orange;
+      case 'E':
+        return Colors.red;
+      case 'F':
+        return Colors.purple;
+      default:
+        return theme.colorScheme.onSurfaceVariant;
     }
   }
 
   Widget _buildStatusBar(BuildContext context, List<LogEntry> entries) {
     final theme = Theme.of(context);
-    final statusStr = _isPaused ? tr('paused') : _isStreaming ? tr('streaming') : tr('idle');
+    final statusStr = _isPaused
+        ? tr('paused')
+        : _isStreaming
+            ? tr('streaming')
+            : tr('idle');
+    final wsColor = _wsConnected ? Colors.green : Colors.red;
     return Container(
       height: 28,
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -509,12 +607,21 @@ class _LogcatScreenState extends State<LogcatScreen> {
         border: Border(top: BorderSide(color: theme.dividerColor)),
       ),
       child: Row(children: [
-        Text('${tr('status')}: $statusStr', style: const TextStyle(fontSize: 11)),
+        Text('${tr('status')}: $statusStr',
+            style: const TextStyle(fontSize: 11)),
         const SizedBox(width: 16),
-        Text('${tr('lines')}: ${entries.length}', style: const TextStyle(fontSize: 11)),
+        Text('${tr('lines')}: ${entries.length}',
+            style: const TextStyle(fontSize: 11)),
+        const SizedBox(width: 16),
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(shape: BoxShape.circle, color: wsColor),
+        ),
         if (_packagePid != null) ...[
           const Spacer(),
-          Text('${tr('pid')}: $_packagePid', style: TextStyle(fontSize: 11, color: theme.colorScheme.primary)),
+          Text('${tr('pid')}: $_packagePid',
+              style: TextStyle(fontSize: 11, color: theme.colorScheme.primary)),
         ],
       ]),
     );
