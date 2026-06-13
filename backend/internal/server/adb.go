@@ -199,12 +199,10 @@ func (m *AdbManager) Devices() ([]Device, error) {
 		if strings.HasPrefix(line, "*") || strings.HasPrefix(line, "List of devices") {
 			continue
 		}
-		fields := strings.Fields(line)
-		if len(fields) < 2 {
+		serial, state, ok := parseDeviceLine(line)
+		if !ok {
 			continue
 		}
-		serial := fields[0]
-		state := fields[1]
 
 		device := Device{Serial: serial, State: state}
 
@@ -219,6 +217,24 @@ func (m *AdbManager) Devices() ([]Device, error) {
 	}
 
 	return devices, nil
+}
+
+func parseDeviceLine(line string) (string, string, bool) {
+	fields := strings.Fields(line)
+	for _, state := range []string{"device", "offline", "unauthorized", "recovery", "sideload", "bootloader", "host", "no permissions"} {
+		marker := "\t" + state
+		if idx := strings.Index(line, marker); idx > 0 {
+			return strings.TrimSpace(line[:idx]), state, true
+		}
+		marker = " " + state
+		if idx := strings.Index(line, marker); idx > 0 {
+			return strings.TrimSpace(line[:idx]), state, true
+		}
+	}
+	if len(fields) >= 2 {
+		return fields[0], fields[1], true
+	}
+	return "", "", false
 }
 
 func (m *AdbManager) deviceProps(serial string) (map[string]string, error) {
