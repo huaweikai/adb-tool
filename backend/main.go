@@ -47,7 +47,8 @@ func main() {
 
 	go func() {
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Server error: %v", err)
+			log.Printf("Server error: %v", err)
+			requestShutdown()
 		}
 	}()
 
@@ -65,7 +66,9 @@ func main() {
 
 	fmt.Println("\nShutting down...")
 	srv.Close()
-	httpServer.Close()
+	if err := httpServer.Close(); err != nil && err != http.ErrServerClosed {
+		log.Printf("HTTP server close error: %v", err)
+	}
 }
 
 func watchParentProcess(onExit func()) {

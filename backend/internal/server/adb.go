@@ -57,10 +57,16 @@ func (m *AdbManager) Close() {
 	m.recordSerial = ""
 	m.recordMu.Unlock()
 	if cmd != nil && cmd.Process != nil {
-		cmd.Process.Kill()
-		waitCommandExit(cmd, 2*time.Second)
+		if err := cmd.Process.Kill(); err != nil {
+			Log.Add("screenrecord kill", "", err, 0)
+		}
+		if _, err := waitCommandExit(cmd, 2*time.Second); err != nil {
+			Log.Add("screenrecord wait", "", err, 0)
+		}
 	}
-	m.runRaw("kill-server")
+	if _, err := m.runRaw("kill-server"); err != nil {
+		Log.Add("adb kill-server", "", err, 0)
+	}
 }
 
 func FindOrExtractADB(zipData []byte) (string, error) {
@@ -73,11 +79,15 @@ func FindOrExtractADB(zipData []byte) (string, error) {
 	adbPath := filepath.Join(cacheDir, adbName)
 
 	if _, err := os.Stat(adbPath); err == nil {
-		os.Chmod(adbPath, 0755)
+		if err := os.Chmod(adbPath, 0755); err != nil {
+			return "", fmt.Errorf("failed to chmod adb binary: %w", err)
+		}
 		return adbPath, nil
 	}
 
-	os.MkdirAll(cacheDir, 0755)
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create adb cache directory: %w", err)
+	}
 
 	reader, err := zip.NewReader(bytes.NewReader(zipData), int64(len(zipData)))
 	if err != nil {
@@ -91,20 +101,31 @@ func FindOrExtractADB(zipData []byte) (string, error) {
 			if err != nil {
 				return "", fmt.Errorf("failed to open adb in zip: %w", err)
 			}
-			defer rc.Close()
 
-			dst, err := os.OpenFile(adbPath, os.O_CREATE|os.O_WRONLY, 0755)
+			dst, err := os.OpenFile(adbPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
 			if err != nil {
+				if closeErr := rc.Close(); closeErr != nil {
+					return "", fmt.Errorf("failed to create adb binary: %w; also failed to close adb zip entry: %v", err, closeErr)
+				}
 				return "", fmt.Errorf("failed to create adb binary: %w", err)
 			}
-			defer dst.Close()
 
-			_, err = io.Copy(dst, rc)
-			if err != nil {
-				return "", fmt.Errorf("failed to extract adb: %w", err)
+			_, copyErr := io.Copy(dst, rc)
+			closeDstErr := dst.Close()
+			closeSrcErr := rc.Close()
+			if copyErr != nil {
+				return "", fmt.Errorf("failed to extract adb: %w", copyErr)
+			}
+			if closeDstErr != nil {
+				return "", fmt.Errorf("failed to close adb binary: %w", closeDstErr)
+			}
+			if closeSrcErr != nil {
+				return "", fmt.Errorf("failed to close adb zip entry: %w", closeSrcErr)
 			}
 
-			os.Chmod(adbPath, 0755)
+			if err := os.Chmod(adbPath, 0755); err != nil {
+				return "", fmt.Errorf("failed to chmod adb binary: %w", err)
+			}
 			return adbPath, nil
 		}
 	}
@@ -220,7 +241,9 @@ func (m *AdbManager) deviceProps(serial string) (map[string]string, error) {
 }
 
 func (m *AdbManager) StartLogcat(serial string, filter LogFilter) (*exec.Cmd, io.ReadCloser, error) {
-	m.ClearLogcat(serial)
+	if err := m.ClearLogcat(serial); err != nil {
+		Log.Add("adb logcat -c", "", err, 0)
+	}
 
 	args := []string{"-s", serial, "logcat", "-v", "threadtime"}
 
@@ -571,9 +594,13 @@ func (m *AdbManager) StartScreenRecord(serial string) error {
 	}
 
 	stopMarker := "/sdcard/adb-tool-stop"
-	m.run("-s", serial, "shell", "rm", "-f", "/sdcard/adb-tool-record.mp4", stopMarker)
+	if _, err := m.run("-s", serial, "shell", "rm", "-f", "/sdcard/adb-tool-record.mp4", stopMarker); err != nil {
+		Log.Add("screenrecord cleanup", "", err, 0)
+	}
 
-	m.run("-s", serial, "shell", "settings", "put", "system", "show_touches", "1")
+	if _, err := m.run("-s", serial, "shell", "settings", "put", "system", "show_touches", "1"); err != nil {
+		Log.Add("screenrecord show_touches on", "", err, 0)
+	}
 
 	script := fmt.Sprintf(
 		`screenrecord --time-limit 1800 /sdcard/adb-tool-record.mp4 & SRPID=$!; while ! [ -f %s ]; do sleep 0.3; done; kill -2 $SRPID; wait $SRPID; sync; rm -f %s`,
@@ -589,10 +616,16 @@ func (m *AdbManager) StartScreenRecord(serial string) error {
 }
 
 func (m *AdbManager) StopScreenRecord(serial string) error {
-	defer m.run("-s", serial, "shell", "settings", "put", "system", "show_touches", "0")
+	defer func() {
+		if _, err := m.run("-s", serial, "shell", "settings", "put", "system", "show_touches", "0"); err != nil {
+			Log.Add("screenrecord show_touches off", "", err, 0)
+		}
+	}()
 
 	stopMarker := "/sdcard/adb-tool-stop"
-	m.run("-s", serial, "shell", "touch", stopMarker)
+	if _, err := m.run("-s", serial, "shell", "touch", stopMarker); err != nil {
+		Log.Add("screenrecord touch marker", "", err, 0)
+	}
 
 	cmd := m.getRecordCmd(serial)
 	if cmd != nil {
@@ -618,7 +651,9 @@ func (m *AdbManager) PullRecordedVideo(serial string) ([]byte, error) {
 }
 
 func (m *AdbManager) CleanRecordedVideo(serial string) {
-	m.run("-s", serial, "shell", "rm", "-f", "/sdcard/adb-tool-record.mp4")
+	if _, err := m.run("-s", serial, "shell", "rm", "-f", "/sdcard/adb-tool-record.mp4"); err != nil {
+		Log.Add("screenrecord clean remote video", "", err, 0)
+	}
 }
 
 func (m *AdbManager) getRecordCmd(serial string) *exec.Cmd {

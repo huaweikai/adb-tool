@@ -88,7 +88,10 @@ func (s *LogSession) Run() {
 			s.buffer = s.buffer[:0]
 			s.mu.Unlock()
 			if s.serial != "" {
-				s.adb.ClearLogcat(s.serial)
+				if err := s.adb.ClearLogcat(s.serial); err != nil {
+					s.sendMsg("error", "failed to clear logcat: "+err.Error())
+					continue
+				}
 			}
 			s.sendMsg("status", "cleared")
 		case "filter":
@@ -108,10 +111,14 @@ func (s *LogSession) startLogcat(cmd WsCommand) {
 		s.cancel()
 	}
 	if s.cmd != nil && s.cmd.Process != nil {
-		s.cmd.Process.Kill()
+		if err := s.cmd.Process.Kill(); err != nil {
+			Log.Add("logcat kill", "", err, 0)
+		}
 	}
 	if s.stdout != nil {
-		s.stdout.Close()
+		if err := s.stdout.Close(); err != nil {
+			Log.Add("logcat stdout close", "", err, 0)
+		}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	s.ctx = ctx
@@ -206,11 +213,15 @@ func (s *LogSession) stopLogcat() {
 		s.cancel()
 	}
 	if s.cmd != nil && s.cmd.Process != nil {
-		s.cmd.Process.Kill()
+		if err := s.cmd.Process.Kill(); err != nil {
+			Log.Add("logcat kill", "", err, 0)
+		}
 		s.cmd = nil
 	}
 	if s.stdout != nil {
-		s.stdout.Close()
+		if err := s.stdout.Close(); err != nil {
+			Log.Add("logcat stdout close", "", err, 0)
+		}
 		s.stdout = nil
 	}
 	s.sendMsg("status", "stopped")
@@ -281,7 +292,10 @@ func (s *LogSession) sendMsg(msgType, data string) {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 
-	s.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+	if err := s.conn.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		log.Printf("websocket deadline error: %v", err)
+		return
+	}
 	if err := s.conn.WriteMessage(websocket.TextMessage, payload); err != nil {
 		log.Printf("websocket write error: %v", err)
 	}

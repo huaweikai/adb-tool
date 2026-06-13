@@ -92,9 +92,12 @@ func (s *Server) Handler() http.Handler {
 
 	webFS, err := fs.Sub(s.webFS, "web")
 	if err != nil {
-		panic("web directory not found in embedded FS: " + err.Error())
+		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "web assets unavailable: "+err.Error(), http.StatusInternalServerError)
+		})
+	} else {
+		mux.Handle("/", http.FileServer(http.FS(webFS)))
 	}
-	mux.Handle("/", http.FileServer(http.FS(webFS)))
 
 	return mux
 }
@@ -264,7 +267,9 @@ func (s *Server) handleScreenshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "image/png")
-	w.Write(data)
+	if _, err := w.Write(data); err != nil {
+		Log.Add("http screenshot response", "", err, 0)
+	}
 }
 
 func (s *Server) handleUninstallPackage(w http.ResponseWriter, r *http.Request) {
@@ -303,13 +308,18 @@ func (s *Server) handleInstallPackage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer os.Remove(tmpFile.Name())
-	defer tmpFile.Close()
 
 	if _, err := io.Copy(tmpFile, r.Body); err != nil {
+		if closeErr := tmpFile.Close(); closeErr != nil {
+			Log.Add("install temp close", "", closeErr, 0)
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	tmpFile.Close()
+	if err := tmpFile.Close(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	output, err := s.adb.InstallPackageContext(r.Context(), serial, tmpFile.Name())
 	if err != nil {
@@ -492,7 +502,9 @@ func (s *Server) handlePushFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := io.Copy(out, r.Body); err != nil {
-		out.Close()
+		if closeErr := out.Close(); closeErr != nil {
+			Log.Add("push temp close", "", closeErr, 0)
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -525,7 +537,9 @@ func (s *Server) handleScreenRecordVideo(w http.ResponseWriter, r *http.Request)
 	go s.adb.CleanRecordedVideo(serial)
 	w.Header().Set("Content-Type", "video/mp4")
 	w.Header().Set("Content-Disposition", "attachment; filename=\"screen-record.mp4\"")
-	w.Write(data)
+	if _, err := w.Write(data); err != nil {
+		Log.Add("http screen-record response", "", err, 0)
+	}
 }
 
 func (s *Server) handleScreenRecord(w http.ResponseWriter, r *http.Request) {
@@ -628,13 +642,14 @@ func (s *Server) handleShutdown(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.Close()
-		os.Exit(0)
 	}()
 }
 
 func writeJSON(w http.ResponseWriter, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(v)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		Log.Add("http json response", "", err, 0)
+	}
 }
 
 func (s *Server) handleClipboardCheck(w http.ResponseWriter, r *http.Request) {
