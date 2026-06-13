@@ -1,7 +1,5 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import '../services/api_client.dart';
 import '../i18n.dart';
 
@@ -69,12 +67,7 @@ class _BackendLogScreenState extends State<BackendLogScreen> {
 
   Future<void> _fetch() async {
     try {
-      final resp = await http
-          .get(Uri.parse('${widget.api.baseUrl}/api/backend-logs'))
-          .timeout(const Duration(seconds: 3));
-      if (resp.statusCode != 200) return;
-      final data = json.decode(resp.body);
-      final list = data['logs'] as List? ?? [];
+      final list = await widget.api.getBackendLogs();
       final logs = list.map((e) => BackendLogEntry.fromJson(e)).toList();
       if (!mounted) return;
       final wasAtBottom = _scrollCtrl.hasClients &&

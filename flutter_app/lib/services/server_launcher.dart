@@ -1,10 +1,16 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
-import 'package:http/http.dart' as http;
+import 'package:dio/dio.dart';
 
 class ServerLauncher {
+  final Dio _dio = Dio(
+    BaseOptions(
+      connectTimeout: const Duration(milliseconds: 800),
+      receiveTimeout: const Duration(milliseconds: 800),
+      validateStatus: (_) => true,
+    ),
+  );
   Process? _process;
   Future<void>? _stopFuture;
 
@@ -130,21 +136,17 @@ class ServerLauncher {
 
   Future<bool> _isOurBackend(String baseUrl) async {
     try {
-      final resp = await http
-          .get(Uri.parse('$baseUrl/api/identify'))
-          .timeout(const Duration(milliseconds: 800));
+      final resp = await _dio.get('$baseUrl/api/identify');
       if (resp.statusCode == 200) {
-        final data = json.decode(resp.body);
+        final data = resp.data;
         return data is Map && data['name'] == 'adb-tool';
       }
     } catch (_) {}
 
     try {
-      final resp = await http
-          .get(Uri.parse('$baseUrl/api/adb-path'))
-          .timeout(const Duration(milliseconds: 800));
+      final resp = await _dio.get('$baseUrl/api/adb-path');
       if (resp.statusCode == 200) {
-        final data = json.decode(resp.body);
+        final data = resp.data;
         return data is Map && data.containsKey('path');
       }
     } catch (_) {}
@@ -154,9 +156,7 @@ class ServerLauncher {
 
   Future<void> _tryHttpShutdown(String baseUrl) async {
     try {
-      await http
-          .post(Uri.parse('$baseUrl/api/shutdown'))
-          .timeout(const Duration(milliseconds: 800));
+      await _dio.post('$baseUrl/api/shutdown');
     } catch (_) {}
   }
 

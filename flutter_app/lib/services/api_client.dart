@@ -1,10 +1,11 @@
-import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'package:http/http.dart' as http;
+
+import 'package:dio/dio.dart';
+
+import '../models/app_package.dart';
 import '../models/device.dart';
 import '../models/file_item.dart';
-import '../models/app_package.dart';
 
 class AdbCommandResult {
   final bool ok;
@@ -36,19 +37,17 @@ class TransferCanceledException implements Exception {
 
 class TransferCancelToken {
   bool _canceled = false;
-  http.Client? _client;
+  final CancelToken _cancelToken = CancelToken();
 
   bool get canceled => _canceled;
-
-  void bind(http.Client client) {
-    _client = client;
-    if (_canceled) client.close();
-  }
+  CancelToken get dioToken => _cancelToken;
 
   void cancel() {
     if (_canceled) return;
     _canceled = true;
-    _client?.close();
+    if (!_cancelToken.isCancelled) {
+      _cancelToken.cancel(TransferCanceledException());
+    }
   }
 
   void throwIfCanceled() {
@@ -58,180 +57,175 @@ class TransferCancelToken {
 
 class ApiClient {
   final String baseUrl;
+  final Dio _dio;
 
-  ApiClient(this.baseUrl);
+  ApiClient(this.baseUrl, {Dio? dio})
+      : _dio = dio ??
+            Dio(
+              BaseOptions(
+                baseUrl: baseUrl,
+                connectTimeout: const Duration(seconds: 5),
+                validateStatus: (_) => true,
+              ),
+            );
 
   Future<List<Device>> getDevices() async {
-    final resp = await http.get(Uri.parse('$baseUrl/api/devices'));
-    if (resp.statusCode != 200) return [];
-    final list = json.decode(resp.body) as List;
-    return list.map((e) => Device.fromJson(e)).toList();
+    final resp = await _dio.get('/api/devices');
+    if (!_isOk(resp)) return [];
+    final list = _asList(resp.data);
+    return list.map((e) => Device.fromJson(_asMap(e))).toList();
   }
 
   Future<List<String>> getRunningPackages(String serial) async {
-    final resp = await http.get(
-      Uri.parse('$baseUrl/api/running-packages?serial=$serial'),
+    final resp = await _dio.get(
+      '/api/running-packages',
+      queryParameters: {'serial': serial},
     );
-    if (resp.statusCode != 200) return [];
-    final data = json.decode(resp.body);
+    if (!_isOk(resp)) return [];
+    final data = _asMap(resp.data);
     final list = data['packages'] as List? ?? [];
     return list.map((e) => e.toString()).toList();
   }
 
   Future<String?> getPackagePid(String serial, String package) async {
-    final resp = await http.get(
-      Uri.parse('$baseUrl/api/package-pid?serial=$serial&package=$package'),
+    final resp = await _dio.get(
+      '/api/package-pid',
+      queryParameters: {'serial': serial, 'package': package},
     );
-    if (resp.statusCode != 200) return null;
-    final data = json.decode(resp.body);
+    if (!_isOk(resp)) return null;
+    final data = _asMap(resp.data);
     final pid = data['pid'] as String?;
     return (pid != null && pid.isNotEmpty) ? pid : null;
   }
 
   Future<bool> clearLogcat(String serial) async {
-    final resp = await http.get(
-      Uri.parse('$baseUrl/api/clear?serial=$serial'),
+    final resp = await _dio.get(
+      '/api/clear',
+      queryParameters: {'serial': serial},
     );
-    return resp.statusCode == 200;
+    return _isOk(resp);
   }
 
   Future<AdbCommandResult> executeAdbCommand(
       String serial, List<String> args) async {
-    final resp = await http.post(
-      Uri.parse('$baseUrl/api/adb-exec?serial=$serial'),
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode({'args': args}),
+    final resp = await _dio.post(
+      '/api/adb-exec',
+      queryParameters: {'serial': serial},
+      data: {'args': args},
+      options: Options(contentType: Headers.jsonContentType),
     );
-    final data = json.decode(resp.body);
-    return AdbCommandResult(
-      ok: data['ok'] == true,
-      output: data['output']?.toString() ?? '',
-      error: data['error']?.toString() ?? '',
-    );
+    final data = _asMap(resp.data);
+    return _adbCommandResult(data);
   }
 
   Future<AdbCommandResult> pairWirelessAdb(String address, String code) async {
-    final resp = await http.post(
-      Uri.parse('$baseUrl/api/adb-wireless-pair'),
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode({'address': address, 'code': code}),
+    final resp = await _dio.post(
+      '/api/adb-wireless-pair',
+      data: {'address': address, 'code': code},
+      options: Options(contentType: Headers.jsonContentType),
     );
-    final data = json.decode(resp.body);
-    return AdbCommandResult(
-      ok: data['ok'] == true,
-      output: data['output']?.toString() ?? '',
-      error: data['error']?.toString() ?? '',
-    );
+    return _adbCommandResult(_asMap(resp.data));
   }
 
   Future<AdbCommandResult> connectWirelessAdb(String address) async {
-    final resp = await http.post(
-      Uri.parse('$baseUrl/api/adb-wireless-connect'),
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode({'address': address}),
+    final resp = await _dio.post(
+      '/api/adb-wireless-connect',
+      data: {'address': address},
+      options: Options(contentType: Headers.jsonContentType),
     );
-    final data = json.decode(resp.body);
-    return AdbCommandResult(
-      ok: data['ok'] == true,
-      output: data['output']?.toString() ?? '',
-      error: data['error']?.toString() ?? '',
-    );
+    return _adbCommandResult(_asMap(resp.data));
   }
 
   Future<AdbCommandResult> disconnectWirelessAdb(String serial) async {
-    final resp = await http.post(
-      Uri.parse('$baseUrl/api/adb-wireless-disconnect'),
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode({'serial': serial}),
+    final resp = await _dio.post(
+      '/api/adb-wireless-disconnect',
+      data: {'serial': serial},
+      options: Options(contentType: Headers.jsonContentType),
     );
-    final data = json.decode(resp.body);
-    return AdbCommandResult(
-      ok: data['ok'] == true,
-      output: data['output']?.toString() ?? '',
-      error: data['error']?.toString() ?? '',
-    );
+    return _adbCommandResult(_asMap(resp.data));
   }
 
   Future<bool> isReady() async {
     try {
-      final resp = await http
-          .get(Uri.parse('$baseUrl/api/adb-path'))
-          .timeout(const Duration(seconds: 2));
-      return resp.statusCode == 200;
+      final resp =
+          await _dio.get('/api/adb-path').timeout(const Duration(seconds: 2));
+      return _isOk(resp);
     } catch (_) {
       return false;
     }
   }
 
   Future<List<FileItem>> listFiles(String serial, String path) async {
-    final resp = await http.get(
-      Uri.parse(
-          '$baseUrl/api/files?serial=$serial&path=${Uri.encodeComponent(path)}'),
+    final resp = await _dio.get(
+      '/api/files',
+      queryParameters: {'serial': serial, 'path': path},
     );
-    if (resp.statusCode != 200) {
-      final body = resp.body.isNotEmpty ? resp.body : 'HTTP ${resp.statusCode}';
-      throw Exception(body);
-    }
-    final data = json.decode(resp.body);
+    _throwIfNotOk(resp);
+    final data = _asMap(resp.data);
     final list = data['files'] as List? ?? [];
-    return list.map((e) => FileItem.fromJson(e)).toList();
+    return list.map((e) => FileItem.fromJson(_asMap(e))).toList();
   }
 
   Future<String> readFile(String serial, String path) async {
-    final resp = await http.get(
-      Uri.parse(
-          '$baseUrl/api/file-content?serial=$serial&path=${Uri.encodeComponent(path)}'),
+    final resp = await _dio.get(
+      '/api/file-content',
+      queryParameters: {'serial': serial, 'path': path},
     );
-    if (resp.statusCode != 200) throw Exception(resp.body);
-    final data = json.decode(resp.body);
+    _throwIfNotOk(resp);
+    final data = _asMap(resp.data);
     return data['content'] ?? '';
   }
 
   Future<List<AppPackage>> getInstalledPackages(String serial) async {
-    final resp = await http.get(
-      Uri.parse('$baseUrl/api/packages?serial=$serial'),
+    final resp = await _dio.get(
+      '/api/packages',
+      queryParameters: {'serial': serial},
     );
-    if (resp.statusCode != 200) throw Exception(resp.body);
-    final data = json.decode(resp.body);
+    _throwIfNotOk(resp);
+    final data = _asMap(resp.data);
     final list = data['packages'] as List? ?? [];
-    return list.map((e) => AppPackage.fromJson(e)).toList();
+    return list.map((e) => AppPackage.fromJson(_asMap(e))).toList();
   }
 
   Future<Map<String, String>> getDeviceDetail(String serial) async {
-    final resp = await http.get(
-      Uri.parse('$baseUrl/api/device-detail?serial=$serial'),
+    final resp = await _dio.get(
+      '/api/device-detail',
+      queryParameters: {'serial': serial},
     );
-    if (resp.statusCode != 200) throw Exception(resp.body);
-    final data = json.decode(resp.body);
-    final props = data['props'] as Map<String, dynamic>? ?? {};
+    _throwIfNotOk(resp);
+    final data = _asMap(resp.data);
+    final props = _asMap(data['props']);
     return props.map((k, v) => MapEntry(k, v.toString()));
   }
 
   Future<String?> takeScreenshot(String serial) async {
-    final resp = await http.get(
-      Uri.parse('$baseUrl/api/screenshot?serial=$serial'),
+    final resp = await _dio.get<List<int>>(
+      '/api/screenshot',
+      queryParameters: {'serial': serial},
+      options: Options(responseType: ResponseType.bytes),
     );
-    if (resp.statusCode != 200) return null;
-    return base64Encode(resp.bodyBytes);
+    if (!_isOk(resp)) return null;
+    return base64Encode(resp.data ?? []);
   }
 
   Future<bool> uninstallPackage(String serial, String packageName) async {
-    final resp = await http.post(
-      Uri.parse(
-          '$baseUrl/api/uninstall-package?serial=$serial&package=$packageName'),
+    final resp = await _dio.post(
+      '/api/uninstall-package',
+      queryParameters: {'serial': serial, 'package': packageName},
     );
-    if (resp.statusCode != 200) throw Exception(resp.body);
+    _throwIfNotOk(resp);
     return true;
   }
 
   Future<String> installPackage(String serial, List<int> apkBytes) async {
-    final resp = await http.post(
-      Uri.parse('$baseUrl/api/install-package?serial=$serial'),
-      body: apkBytes,
-      headers: {'Content-Type': 'application/octet-stream'},
+    final resp = await _dio.post(
+      '/api/install-package',
+      queryParameters: {'serial': serial},
+      data: apkBytes,
+      options: Options(contentType: 'application/octet-stream'),
     );
-    final data = json.decode(resp.body);
-    if (resp.statusCode != 200) {
+    final data = _asMap(resp.data);
+    if (!_isOk(resp)) {
       throw Exception(data['error'] ?? 'Install failed');
     }
     return data['status'] ?? 'ok';
@@ -243,35 +237,36 @@ class ApiClient {
     TransferProgressCallback? onProgress,
     TransferCancelToken? cancelToken,
   }) async {
-    final body = await _postLocalFile(
-      Uri.parse('$baseUrl/api/install-package?serial=$serial'),
+    final data = await _postLocalFile(
+      '/api/install-package',
       apkPath,
+      queryParameters: {'serial': serial},
       onProgress: onProgress,
       cancelToken: cancelToken,
     );
-    final data = json.decode(body);
     return data['status'] ?? 'ok';
   }
 
   Future<String> readFileContent(String serial, String path) async {
-    final resp = await http.get(
-      Uri.parse(
-          '$baseUrl/api/file-content?serial=$serial&path=${Uri.encodeComponent(path)}'),
+    final resp = await _dio.get(
+      '/api/file-content',
+      queryParameters: {'serial': serial, 'path': path},
     );
-    if (resp.statusCode != 200) throw Exception(resp.body);
-    final data = json.decode(resp.body);
+    _throwIfNotOk(resp);
+    final data = _asMap(resp.data);
     return data['content'] ?? '';
   }
 
   Future<List<int>> pullFile(String serial, String path) async {
-    final resp = await http.get(
-      Uri.parse(
-          '$baseUrl/api/pull-file?serial=$serial&path=${Uri.encodeComponent(path)}'),
+    final resp = await _dio.get<List<int>>(
+      '/api/pull-file',
+      queryParameters: {'serial': serial, 'path': path},
+      options: Options(responseType: ResponseType.bytes),
     );
-    if (resp.statusCode != 200) {
+    if (!_isOk(resp)) {
       throw Exception('pull failed: ${resp.statusCode}');
     }
-    return resp.bodyBytes.toList();
+    return resp.data ?? [];
   }
 
   Future<void> downloadFileToPath(
@@ -282,52 +277,38 @@ class ApiClient {
     TransferProgressCallback? onProgress,
     TransferCancelToken? cancelToken,
   }) async {
-    final client = http.Client();
-    cancelToken?.bind(client);
-    final request = http.Request(
-      'GET',
-      Uri.parse(
-          '$baseUrl/api/pull-file?serial=$serial&path=${Uri.encodeComponent(remotePath)}'),
-    );
     try {
       cancelToken?.throwIfCanceled();
-      final response = await client.send(request);
-      cancelToken?.throwIfCanceled();
-      if (response.statusCode != 200) {
-        final body = await response.stream.bytesToString();
-        throw Exception(
-            body.isNotEmpty ? body : 'pull failed: ${response.statusCode}');
-      }
-
-      final file = File(localPath);
-      final sink = file.openWrite();
-      var received = 0;
-      final expected =
-          totalBytes > 0 ? totalBytes : response.contentLength ?? 0;
-      try {
-        await for (final chunk in response.stream) {
-          cancelToken?.throwIfCanceled();
-          received += chunk.length;
-          sink.add(chunk);
+      final response = await _dio.download(
+        '/api/pull-file',
+        localPath,
+        queryParameters: {'serial': serial, 'path': remotePath},
+        cancelToken: cancelToken?.dioToken,
+        onReceiveProgress: (received, total) {
+          final expected = totalBytes > 0 ? totalBytes : total;
           onProgress?.call(TransferProgress(received, expected));
-        }
-      } finally {
-        await sink.close();
+        },
+      );
+      cancelToken?.throwIfCanceled();
+      if (!_isOk(response)) {
+        final file = File(localPath);
+        if (await file.exists()) await file.delete();
+        throw Exception('pull failed: ${response.statusCode}');
       }
-      onProgress?.call(TransferProgress(received, expected));
-    } finally {
-      client.close();
+    } on DioException catch (e) {
+      if (_isCancelError(e)) throw TransferCanceledException();
+      rethrow;
     }
   }
 
   Future<bool> pushFile(String serial, String path, List<int> bytes) async {
-    final resp = await http.post(
-      Uri.parse(
-          '$baseUrl/api/push-file?serial=$serial&path=${Uri.encodeComponent(path)}'),
-      body: bytes,
-      headers: {'Content-Type': 'application/octet-stream'},
+    final resp = await _dio.post(
+      '/api/push-file',
+      queryParameters: {'serial': serial, 'path': path},
+      data: bytes,
+      options: Options(contentType: 'application/octet-stream'),
     );
-    if (resp.statusCode != 200) throw Exception(resp.body);
+    _throwIfNotOk(resp);
     return true;
   }
 
@@ -339,132 +320,190 @@ class ApiClient {
     TransferCancelToken? cancelToken,
   }) async {
     await _postLocalFile(
-      Uri.parse(
-          '$baseUrl/api/push-file?serial=$serial&path=${Uri.encodeComponent(remotePath)}'),
+      '/api/push-file',
       localPath,
+      queryParameters: {'serial': serial, 'path': remotePath},
       onProgress: onProgress,
       cancelToken: cancelToken,
     );
     return true;
   }
 
-  Future<String> _postLocalFile(
-    Uri uri,
+  Future<Map<String, dynamic>> _postLocalFile(
+    String path,
     String localPath, {
+    Map<String, dynamic>? queryParameters,
     TransferProgressCallback? onProgress,
     TransferCancelToken? cancelToken,
   }) async {
-    cancelToken?.throwIfCanceled();
-    final file = File(localPath);
-    final total = await file.length();
-    final request = http.StreamedRequest('POST', uri);
-    request.headers['Content-Type'] = 'application/octet-stream';
-    request.contentLength = total;
-
-    var sent = 0;
-    unawaited(() async {
-      try {
-        await for (final chunk in file.openRead()) {
-          cancelToken?.throwIfCanceled();
-          sent += chunk.length;
-          request.sink.add(chunk);
-          onProgress?.call(TransferProgress(sent, total));
-        }
-        await request.sink.close();
-      } catch (e) {
-        request.sink.addError(e);
-        await request.sink.close();
-      }
-    }());
-
-    final client = http.Client();
-    cancelToken?.bind(client);
     try {
       cancelToken?.throwIfCanceled();
-      final response = await client.send(request);
+      final file = File(localPath);
+      final total = await file.length();
+      final response = await _dio.post(
+        path,
+        queryParameters: queryParameters,
+        data: file.openRead(),
+        cancelToken: cancelToken?.dioToken,
+        options: Options(
+          contentType: 'application/octet-stream',
+          headers: {Headers.contentLengthHeader: total},
+        ),
+        onSendProgress: (sent, _) {
+          onProgress?.call(TransferProgress(sent, total));
+        },
+      );
       cancelToken?.throwIfCanceled();
-      final body = await response.stream.bytesToString();
-      if (response.statusCode != 200) {
-        var message = body;
-        try {
-          final data = json.decode(body);
-          message = data['error']?.toString() ?? body;
-        } catch (_) {}
-        throw Exception(message);
+      if (!_isOk(response)) {
+        throw Exception(_errorMessage(response));
       }
       onProgress?.call(TransferProgress(total, total));
-      return body;
-    } finally {
-      client.close();
+      return _asMap(response.data);
+    } on DioException catch (e) {
+      if (_isCancelError(e)) throw TransferCanceledException();
+      rethrow;
     }
   }
 
   Future<Map<String, dynamic>> screenRecordAction(
       String serial, String action) async {
-    final resp = await http.get(
-      Uri.parse('$baseUrl/api/screen-record?serial=$serial&action=$action'),
+    final resp = await _dio.get(
+      '/api/screen-record',
+      queryParameters: {'serial': serial, 'action': action},
     );
-    if (resp.statusCode != 200) throw Exception(resp.body);
-    return json.decode(resp.body);
+    _throwIfNotOk(resp);
+    return _asMap(resp.data);
   }
 
   Future<Map<String, dynamic>> screenRecordStatus() async {
-    final resp = await http.get(
-      Uri.parse('$baseUrl/api/screen-record?action=status'),
+    final resp = await _dio.get(
+      '/api/screen-record',
+      queryParameters: {'action': 'status'},
     );
-    if (resp.statusCode != 200) throw Exception(resp.body);
-    return json.decode(resp.body);
+    _throwIfNotOk(resp);
+    return _asMap(resp.data);
   }
 
   Future<List<int>> pullRecordedVideo(String serial) async {
-    final resp = await http.get(
-      Uri.parse('$baseUrl/api/screen-record-video?serial=$serial'),
+    final resp = await _dio.get<List<int>>(
+      '/api/screen-record-video',
+      queryParameters: {'serial': serial},
+      options: Options(responseType: ResponseType.bytes),
     );
-    if (resp.statusCode != 200) {
+    if (!_isOk(resp)) {
       throw Exception('pull video failed: ${resp.statusCode}');
     }
-    return resp.bodyBytes.toList();
+    return resp.data ?? [];
   }
 
   Future<bool> checkClipboardInstalled(String serial) async {
-    final resp = await http.get(
-      Uri.parse('$baseUrl/api/clipboard-check?serial=$serial'),
+    final resp = await _dio.get(
+      '/api/clipboard-check',
+      queryParameters: {'serial': serial},
     );
-    if (resp.statusCode != 200) throw Exception(resp.body);
-    final data = json.decode(resp.body);
+    _throwIfNotOk(resp);
+    final data = _asMap(resp.data);
     return data['installed'] == true;
   }
 
   Future<bool> installClipboardHelper(String serial) async {
-    final resp = await http.post(
-      Uri.parse('$baseUrl/api/clipboard-install?serial=$serial'),
+    final resp = await _dio.post(
+      '/api/clipboard-install',
+      queryParameters: {'serial': serial},
     );
-    if (resp.statusCode != 200) {
-      final data = json.decode(resp.body);
-      throw Exception(data['error'] ?? resp.body);
-    }
+    _throwIfNotOk(resp);
     return true;
   }
 
   Future<bool> sendClipboard(String serial, String text) async {
-    final uri = Uri.parse('$baseUrl/api/clipboard-send')
-        .replace(queryParameters: {'serial': serial, 'text': text});
-    final resp = await http.post(uri);
-    if (resp.statusCode != 200) {
-      final data = json.decode(resp.body);
-      throw Exception(data['error'] ?? resp.body);
-    }
+    final resp = await _dio.post(
+      '/api/clipboard-send',
+      queryParameters: {'serial': serial, 'text': text},
+    );
+    _throwIfNotOk(resp);
     return true;
   }
 
   Future<bool> uninstallClipboardHelper(String serial) async {
-    final resp = await http.post(
-      Uri.parse('$baseUrl/api/clipboard-uninstall?serial=$serial'),
+    final resp = await _dio.post(
+      '/api/clipboard-uninstall',
+      queryParameters: {'serial': serial},
     );
-    if (resp.statusCode != 200) {
-      final data = json.decode(resp.body);
-      throw Exception(data['error'] ?? resp.body);
-    }
+    _throwIfNotOk(resp);
     return true;
+  }
+
+  Future<List<Map<String, dynamic>>> getBackendLogs() async {
+    final resp =
+        await _dio.get('/api/backend-logs').timeout(const Duration(seconds: 3));
+    if (!_isOk(resp)) return [];
+    final data = _asMap(resp.data);
+    final list = data['logs'] as List? ?? [];
+    return list.map((e) => _asMap(e)).toList();
+  }
+
+  AdbCommandResult _adbCommandResult(Map<String, dynamic> data) {
+    return AdbCommandResult(
+      ok: data['ok'] == true,
+      output: data['output']?.toString() ?? '',
+      error: data['error']?.toString() ?? '',
+    );
+  }
+
+  void _throwIfNotOk(Response response) {
+    if (_isOk(response)) return;
+    throw Exception(_errorMessage(response));
+  }
+
+  bool _isOk(Response response) => response.statusCode == 200;
+
+  String _errorMessage(Response response) {
+    final data = response.data;
+    if (data is Map) {
+      return data['error']?.toString() ??
+          data['message']?.toString() ??
+          '$data';
+    }
+    if (data is List<int>) {
+      return utf8.decode(data, allowMalformed: true);
+    }
+    final text = data?.toString() ?? '';
+    if (text.isEmpty) return 'HTTP ${response.statusCode}';
+    try {
+      final decoded = json.decode(text);
+      if (decoded is Map) {
+        return decoded['error']?.toString() ??
+            decoded['message']?.toString() ??
+            text;
+      }
+    } catch (_) {}
+    return text;
+  }
+
+  Map<String, dynamic> _asMap(dynamic data) {
+    if (data is Map<String, dynamic>) return data;
+    if (data is Map) return data.map((k, v) => MapEntry(k.toString(), v));
+    if (data is String && data.isNotEmpty) {
+      final decoded = json.decode(data);
+      if (decoded is Map<String, dynamic>) return decoded;
+      if (decoded is Map) {
+        return decoded.map((k, v) => MapEntry(k.toString(), v));
+      }
+    }
+    return <String, dynamic>{};
+  }
+
+  List<dynamic> _asList(dynamic data) {
+    if (data is List) return data;
+    if (data is String && data.isNotEmpty) {
+      final decoded = json.decode(data);
+      if (decoded is List) return decoded;
+    }
+    return <dynamic>[];
+  }
+
+  bool _isCancelError(DioException error) {
+    return error.type == DioExceptionType.cancel ||
+        error.error is TransferCanceledException;
   }
 }

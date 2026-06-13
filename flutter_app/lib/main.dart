@@ -100,6 +100,8 @@ class _ServerBootScreenState extends State<ServerBootScreen>
   String _status = 'Starting ...';
   bool _ready = false;
   bool _stoppedByUser = false;
+  bool _disposed = false;
+  Timer? _bootDelayTimer;
   ServerLauncher? _launcher;
 
   @override
@@ -120,6 +122,8 @@ class _ServerBootScreenState extends State<ServerBootScreen>
 
   @override
   void dispose() {
+    _disposed = true;
+    _bootDelayTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     unawaited(_launcher?.stop() ?? Future.value());
     _launcher = null;
@@ -130,27 +134,42 @@ class _ServerBootScreenState extends State<ServerBootScreen>
     _launcher ??= ServerLauncher();
     final launcher = _launcher!;
     try {
+      if (!mounted || _disposed) return;
       setState(() {
         _status = tr('launchingBackend');
         _stoppedByUser = false;
       });
       await launcher.start();
+      if (!mounted || _disposed) return;
       setState(() => _status = tr('waitingForServer'));
       for (int i = 0; i < 30; i++) {
-        await Future.delayed(const Duration(milliseconds: 500));
+        await _waitForBootRetry();
+        if (!mounted || _disposed) return;
         if (await api.isReady()) {
+          if (!mounted || _disposed) return;
           setState(() => _ready = true);
           return;
         }
       }
       await launcher.stop();
+      if (!mounted || _disposed) return;
       _launcher = null;
       setState(() => _status = tr('serverTimeout'));
     } catch (e) {
       await launcher.stop();
+      if (!mounted || _disposed) return;
       _launcher = null;
       setState(() => _status = '${tr('serverError')}: $e');
     }
+  }
+
+  Future<void> _waitForBootRetry() {
+    _bootDelayTimer?.cancel();
+    final completer = Completer<void>();
+    _bootDelayTimer = Timer(const Duration(milliseconds: 500), () {
+      if (!completer.isCompleted) completer.complete();
+    });
+    return completer.future;
   }
 
   Future<void> _shutdownServer() async {
