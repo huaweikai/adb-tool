@@ -62,12 +62,77 @@ function Ensure-WixExtension([string]$ExtensionName, [string]$ExtensionVersion) 
   }
 }
 
-function Stop-BuildProcesses {
-  $names = @('launcher', 'runtime', 'adb-tool', 'adb_tool', 'adb_tool_server', 'adb_tool_ui')
-  foreach ($name in $names) {
-    Get-Process -Name $name -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+function Get-ProcessPathSafe($Process) {
+  try {
+    return $Process.Path
+  } catch {
+    return $null
   }
-  Start-Sleep -Milliseconds 500
+}
+
+function Stop-ProcessTree([int]$ProcessId) {
+  if ($IsWindows -or $env:OS -eq 'Windows_NT') {
+    & taskkill.exe /PID $ProcessId /T /F 2>$null | Out-Null
+    return
+  }
+  Stop-Process -Id $ProcessId -Force -ErrorAction SilentlyContinue
+}
+
+function Stop-ProcessesByName([string[]]$Names) {
+  foreach ($name in $Names) {
+    Get-Process -Name $name -ErrorAction SilentlyContinue | ForEach-Object {
+      Stop-ProcessTree $_.Id
+    }
+  }
+}
+
+function Stop-ProcessesUnderPath([string[]]$Paths) {
+  $resolvedPaths = @()
+  foreach ($path in $Paths) {
+    if (Test-Path $path) {
+      $resolvedPaths += (Resolve-Path $path).Path.TrimEnd('\', '/')
+    }
+  }
+  if ($resolvedPaths.Count -eq 0) {
+    return
+  }
+
+  $currentPid = $PID
+  foreach ($process in Get-Process -ErrorAction SilentlyContinue) {
+    if ($process.Id -eq $currentPid) {
+      continue
+    }
+    $processPath = Get-ProcessPathSafe $process
+    if ([string]::IsNullOrWhiteSpace($processPath)) {
+      continue
+    }
+    foreach ($root in $resolvedPaths) {
+      if ($processPath.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase)) {
+        Write-Host "Stopping process holding build output: $($process.ProcessName) ($($process.Id))"
+        Stop-ProcessTree $process.Id
+        break
+      }
+    }
+  }
+}
+
+function Stop-BuildProcesses([string[]]$Paths) {
+  $names = @('launcher', 'runtime', 'adb', 'adb-tool', 'adb_tool', 'adb_tool_server', 'adb_tool_ui')
+  Stop-ProcessesByName $names
+  Stop-ProcessesUnderPath $Paths
+  Start-Sleep -Milliseconds 1000
+}
+
+function Get-ProcessesUnderPath([string]$Path) {
+  if (-not (Test-Path $Path)) {
+    return @()
+  }
+  $resolvedPath = (Resolve-Path $Path).Path.TrimEnd('\', '/')
+  return @(Get-Process -ErrorAction SilentlyContinue | Where-Object {
+    $processPath = Get-ProcessPathSafe $_
+    -not [string]::IsNullOrWhiteSpace($processPath) -and
+      $processPath.StartsWith($resolvedPath, [System.StringComparison]::OrdinalIgnoreCase)
+  })
 }
 
 function Remove-DirectoryStrict([string]$Path) {
@@ -75,10 +140,29 @@ function Remove-DirectoryStrict([string]$Path) {
     return
   }
 
-  Remove-Item $Path -Recurse -Force -ErrorAction Stop
-  if (Test-Path $Path) {
-    throw "Failed to remove directory: $Path"
+  $lastError = $null
+  for ($attempt = 1; $attempt -le 5; $attempt++) {
+    try {
+      Remove-Item $Path -Recurse -Force -ErrorAction Stop
+      if (-not (Test-Path $Path)) {
+        return
+      }
+    } catch {
+      $lastError = $_
+    }
+    Start-Sleep -Milliseconds (300 * $attempt)
   }
+
+  $holders = Get-ProcessesUnderPath $Path
+  if ($holders.Count -gt 0) {
+    $holderText = ($holders | ForEach-Object {
+      $processPath = Get-ProcessPathSafe $_
+      "  $($_.ProcessName) ($($_.Id)): $processPath"
+    }) -join "`n"
+    throw "Failed to remove directory: $Path`nPossible locking processes:`n$holderText`nLast error: $lastError"
+  }
+
+  throw "Failed to remove directory: $Path`nLast error: $lastError"
 }
 
 function ConvertTo-WixId([string]$Value) {
@@ -221,12 +305,13 @@ $DistDir = Join-Path $RootDir 'dist\windows'
 $InstallerSource = Join-Path $RootDir 'scripts\installer.wxs'
 $GeneratedInstallerSource = Join-Path $DistDir 'installer.generated.wxs'
 $BackendOut = Join-Path $RunnerResDir 'runtime.exe'
+$AdbCacheDir = Join-Path ([System.IO.Path]::GetTempPath()) 'adb-tool-cache'
 
 New-Item -ItemType Directory -Force -Path $RunnerResDir | Out-Null
 New-Item -ItemType Directory -Force -Path $DistDir | Out-Null
 
 Write-Host "==> Stopping running build outputs"
-Stop-BuildProcesses
+Stop-BuildProcesses -Paths @($BuildWindowsDir, $RunnerResDir, $DistDir, $AdbCacheDir)
 
 if (Test-Path $BuildWindowsDir) {
   Write-Host "==> Removing stale Flutter Windows build cache"
