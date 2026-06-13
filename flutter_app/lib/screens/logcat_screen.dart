@@ -24,7 +24,7 @@ class LogcatScreen extends StatefulWidget {
 class _LogcatScreenState extends State<LogcatScreen> {
   String? _packagePid;
 
-  String _priority = 'W';
+  String _priority = 'D';
   String _tag = '';
   String _keyword = '';
   String _packageName = '';
