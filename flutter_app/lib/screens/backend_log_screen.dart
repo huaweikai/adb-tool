@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../services/api_client.dart';
+import '../i18n.dart';
 
 class BackendLogEntry {
   final String time;
@@ -77,7 +78,8 @@ class _BackendLogScreenState extends State<BackendLogScreen> {
       final logs = list.map((e) => BackendLogEntry.fromJson(e)).toList();
       if (!mounted) return;
       final wasAtBottom = _scrollCtrl.hasClients &&
-          _scrollCtrl.position.pixels >= _scrollCtrl.position.maxScrollExtent - 30;
+          _scrollCtrl.position.pixels >=
+              _scrollCtrl.position.maxScrollExtent - 30;
       setState(() => _logs = logs);
       if (_autoScroll && wasAtBottom) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -134,12 +136,12 @@ class _BackendLogScreenState extends State<BackendLogScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 12),
               textStyle: const TextStyle(fontSize: 12),
             ),
-            child: const Row(
+            child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.refresh, size: 16),
-                SizedBox(width: 4),
-                Text('刷新'),
+                const Icon(Icons.refresh, size: 16),
+                const SizedBox(width: 4),
+                Text(tr('refresh')),
               ],
             ),
           ),
@@ -150,11 +152,13 @@ class _BackendLogScreenState extends State<BackendLogScreen> {
               controller: _filterCtrl,
               onChanged: (v) => setState(() => _filterQuery = v),
               decoration: InputDecoration(
-                hintText: '过滤命令...',
+                hintText: tr('filterCommand'),
                 hintStyle: const TextStyle(fontSize: 11),
                 prefixIcon: const Icon(Icons.search, size: 16),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(6))),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                border: const OutlineInputBorder(
+                    borderRadius: BorderRadius.all(Radius.circular(6))),
                 isDense: true,
               ),
               style: const TextStyle(fontSize: 12),
@@ -165,15 +169,18 @@ class _BackendLogScreenState extends State<BackendLogScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               SizedBox(
-                height: 24, width: 24,
+                height: 24,
+                width: 24,
                 child: Checkbox(
                   value: _showErrorsOnly,
-                  onChanged: (v) => setState(() => _showErrorsOnly = v ?? false),
+                  onChanged: (v) =>
+                      setState(() => _showErrorsOnly = v ?? false),
                   materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
               ),
               const SizedBox(width: 4),
-              Text('仅错误', style: TextStyle(fontSize: 11, color: Colors.red.shade300)),
+              Text(tr('errorsOnly'),
+                  style: TextStyle(fontSize: 11, color: Colors.red.shade300)),
             ],
           ),
           const Spacer(),
@@ -181,7 +188,8 @@ class _BackendLogScreenState extends State<BackendLogScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               SizedBox(
-                height: 24, width: 24,
+                height: 24,
+                width: 24,
                 child: Checkbox(
                   value: _autoScroll,
                   onChanged: (v) => setState(() => _autoScroll = v ?? true),
@@ -189,7 +197,7 @@ class _BackendLogScreenState extends State<BackendLogScreen> {
                 ),
               ),
               const SizedBox(width: 4),
-              const Text('自动滚动', style: TextStyle(fontSize: 11)),
+              Text(tr('autoScroll'), style: const TextStyle(fontSize: 11)),
             ],
           ),
         ],
@@ -199,16 +207,16 @@ class _BackendLogScreenState extends State<BackendLogScreen> {
 
   Widget _buildLogList(BuildContext context, List<BackendLogEntry> entries) {
     if (entries.isEmpty) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.terminal, size: 48, color: Colors.grey),
-            SizedBox(height: 12),
-            Text('没有日志记录', style: TextStyle(color: Colors.grey)),
-            SizedBox(height: 4),
-            Text('切换回文件/应用等页面操作后日志会显示在这里',
-                style: TextStyle(fontSize: 11, color: Colors.grey)),
+            const Icon(Icons.terminal, size: 48, color: Colors.grey),
+            const SizedBox(height: 12),
+            Text(tr('noLogs'), style: const TextStyle(color: Colors.grey)),
+            const SizedBox(height: 4),
+            Text(tr('backendLogsHint'),
+                style: const TextStyle(fontSize: 11, color: Colors.grey)),
           ],
         ),
       );
@@ -238,19 +246,26 @@ class _BackendLogScreenState extends State<BackendLogScreen> {
             SizedBox(
               width: 80,
               child: Text(entry.time,
-                  style: TextStyle(fontSize: 10, fontFamily: 'Menlo',
+                  style: TextStyle(
+                      fontSize: 10,
+                      fontFamily: 'Menlo',
                       color: theme.colorScheme.onSurfaceVariant)),
             ),
             SizedBox(
               width: 50,
               child: Text(entry.elapsed,
-                  style: TextStyle(fontSize: 10, fontFamily: 'Menlo',
-                      color: entry.elapsed.startsWith('-') ? Colors.red : Colors.green.shade300)),
+                  style: TextStyle(
+                      fontSize: 10,
+                      fontFamily: 'Menlo',
+                      color: entry.elapsed.startsWith('-')
+                          ? Colors.red
+                          : Colors.green.shade300)),
             ),
             if (entry.isError)
               const SizedBox(
                 width: 40,
-                child: Text('ERROR', style: TextStyle(fontSize: 9, color: Colors.red)),
+                child: Text('ERROR',
+                    style: TextStyle(fontSize: 9, color: Colors.red)),
               ),
             Expanded(
               child: Text(
@@ -258,7 +273,8 @@ class _BackendLogScreenState extends State<BackendLogScreen> {
                 style: TextStyle(
                   fontSize: 11,
                   fontFamily: 'Menlo',
-                  color: entry.isError ? Colors.red : theme.colorScheme.onSurface,
+                  color:
+                      entry.isError ? Colors.red : theme.colorScheme.onSurface,
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -282,9 +298,11 @@ class _BackendLogScreenState extends State<BackendLogScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Row(children: [
-                Text(entry.time, style: const TextStyle(fontSize: 11, fontFamily: 'Menlo')),
+                Text(entry.time,
+                    style: const TextStyle(fontSize: 11, fontFamily: 'Menlo')),
                 const Spacer(),
-                Text(entry.elapsed, style: const TextStyle(fontSize: 11, fontFamily: 'Menlo')),
+                Text(entry.elapsed,
+                    style: const TextStyle(fontSize: 11, fontFamily: 'Menlo')),
                 const SizedBox(width: 8),
                 IconButton(
                   icon: const Icon(Icons.close, size: 18),
@@ -295,7 +313,7 @@ class _BackendLogScreenState extends State<BackendLogScreen> {
               ]),
               const Divider(),
               const SizedBox(height: 4),
-              Text('命令', style: Theme.of(ctx).textTheme.labelSmall),
+              Text(tr('command'), style: Theme.of(ctx).textTheme.labelSmall),
               const SizedBox(height: 4),
               Container(
                 width: double.infinity,
@@ -311,7 +329,11 @@ class _BackendLogScreenState extends State<BackendLogScreen> {
               ),
               if (entry.isError) ...[
                 const SizedBox(height: 8),
-                Text('错误', style: Theme.of(ctx).textTheme.labelSmall?.copyWith(color: Colors.red)),
+                Text(tr('error'),
+                    style: Theme.of(ctx)
+                        .textTheme
+                        .labelSmall
+                        ?.copyWith(color: Colors.red)),
                 const SizedBox(height: 4),
                 Container(
                   width: double.infinity,
@@ -322,13 +344,14 @@ class _BackendLogScreenState extends State<BackendLogScreen> {
                   ),
                   child: SelectableText(
                     entry.err,
-                    style: const TextStyle(fontFamily: 'Menlo', fontSize: 11, color: Colors.red),
+                    style: const TextStyle(
+                        fontFamily: 'Menlo', fontSize: 11, color: Colors.red),
                   ),
                 ),
               ],
               if (entry.result.isNotEmpty && !entry.isError) ...[
                 const SizedBox(height: 8),
-                Text('输出', style: Theme.of(ctx).textTheme.labelSmall),
+                Text(tr('output'), style: Theme.of(ctx).textTheme.labelSmall),
                 const SizedBox(height: 4),
                 Expanded(
                   child: Container(
@@ -341,7 +364,8 @@ class _BackendLogScreenState extends State<BackendLogScreen> {
                     child: SingleChildScrollView(
                       child: SelectableText(
                         entry.result,
-                        style: const TextStyle(fontFamily: 'Menlo', fontSize: 11),
+                        style:
+                            const TextStyle(fontFamily: 'Menlo', fontSize: 11),
                       ),
                     ),
                   ),
@@ -365,9 +389,12 @@ class _BackendLogScreenState extends State<BackendLogScreen> {
         border: Border(top: BorderSide(color: theme.dividerColor)),
       ),
       child: Row(children: [
-        Text('日志: ${entries.length}', style: const TextStyle(fontSize: 11)),
+        Text(tr('logCount', {'count': entries.length.toString()}),
+            style: const TextStyle(fontSize: 11)),
         if (entries.length != _logs.length)
-          Text(' (共 ${_logs.length})', style: TextStyle(fontSize: 11, color: theme.colorScheme.onSurfaceVariant)),
+          Text(tr('totalCountLogs', {'total': _logs.length.toString()}),
+              style: TextStyle(
+                  fontSize: 11, color: theme.colorScheme.onSurfaceVariant)),
       ]),
     );
   }

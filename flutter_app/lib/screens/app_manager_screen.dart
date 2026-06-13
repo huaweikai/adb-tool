@@ -2,21 +2,22 @@ import 'package:flutter/material.dart';
 import '../services/drop_target.dart';
 import '../models/app_package.dart';
 import '../services/api_client.dart';
+import '../i18n.dart';
 
 class _InstallState {
   final String fileName;
   final int sent;
   final int total;
-  final String phase;
+  final String phaseKey;
 
   const _InstallState({
     required this.fileName,
     required this.sent,
     required this.total,
-    required this.phase,
+    required this.phaseKey,
   });
 
-  bool get waitingForAdb => phase.startsWith('设备');
+  bool get waitingForAdb => phaseKey == 'deviceInstalling';
 
   double? get progress => total > 0 && !waitingForAdb ? sent / total : null;
 }
@@ -67,7 +68,7 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
       setState(() {
         _allPackages = [];
         _filteredPackages = [];
-        _error = '请先选择设备';
+        _error = tr('selectDevice');
       });
       return;
     }
@@ -76,7 +77,8 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
       _error = null;
     });
     try {
-      final pkgs = await widget.api.getInstalledPackages(widget.selectedSerial!);
+      final pkgs =
+          await widget.api.getInstalledPackages(widget.selectedSerial!);
       if (!mounted) return;
       setState(() {
         _allPackages = pkgs;
@@ -100,7 +102,9 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
       } else {
         final q = query.toLowerCase();
         _filteredPackages = _allPackages
-            .where((p) => p.packageName.toLowerCase().contains(q) || p.shortName.toLowerCase().contains(q))
+            .where((p) =>
+                p.packageName.toLowerCase().contains(q) ||
+                p.shortName.toLowerCase().contains(q))
             .toList();
       }
     });
@@ -111,33 +115,40 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('确认卸载'),
-        content: Text('确定要卸载 ${pkg.packageName} 吗？'),
+        title: Text(tr('confirmUninstall')),
+        content: Text(tr('uninstallConfirm', {'pkg': pkg.packageName})),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('卸载')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(tr('cancel'))),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(tr('uninstall'))),
         ],
       ),
     );
     if (confirm != true) return;
 
     try {
-      final ok = await widget.api.uninstallPackage(widget.selectedSerial!, pkg.packageName);
+      final ok = await widget.api
+          .uninstallPackage(widget.selectedSerial!, pkg.packageName);
       if (!mounted) return;
       if (ok) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('卸载 ${pkg.packageName} 成功')),
+          SnackBar(
+              content: Text(tr('uninstallSuccess', {'pkg': pkg.packageName}))),
         );
         _loadPackages();
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('卸载 ${pkg.packageName} 失败')),
+          SnackBar(
+              content: Text(tr('uninstallFailed', {'pkg': pkg.packageName}))),
         );
       }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('卸载失败: $e')),
+        SnackBar(content: Text('${tr('uninstallFailedMsg')}: $e')),
       );
     }
   }
@@ -157,7 +168,7 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
             fileName: file.name,
             sent: 0,
             total: totalBytes,
-            phase: '准备上传 APK...',
+            phaseKey: 'preparing',
           );
         });
         final result = await widget.api.installLocalPackage(
@@ -171,7 +182,9 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
                 fileName: file.name,
                 sent: progress.sent,
                 total: progress.total,
-                phase: progress.total > 0 && progress.sent >= progress.total ? '设备安装中...' : '正在上传 APK...',
+                phaseKey: progress.total > 0 && progress.sent >= progress.total
+                    ? 'deviceInstalling'
+                    : 'uploading',
               );
             });
           },
@@ -179,7 +192,9 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
         if (!mounted) return;
         _installCancelToken = null;
         setState(() => _installState = null);
-        final successMsg = result.contains('已卸载') ? result : '${file.name} 安装成功';
+        final successMsg = result.contains('已卸载')
+            ? result
+            : tr('installSuccess', {'name': file.name});
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(successMsg)),
         );
@@ -190,7 +205,8 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
           _installCancelToken = null;
           setState(() => _installState = null);
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('${file.name} 安装已取消')),
+            SnackBar(
+                content: Text(tr('installCancelled', {'name': file.name}))),
           );
           break;
         }
@@ -206,14 +222,13 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
   }
 
   void _showInstallError(String fileName, String error) {
-    final needsUninstall = error.contains('INSTALL_FAILED') || error.contains('卸载');
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Row(children: [
           const Icon(Icons.error_outline, color: Colors.red, size: 24),
           const SizedBox(width: 8),
-          const Text('安装失败'),
+          Text(tr('installFailed')),
         ]),
         content: SizedBox(
           width: 400,
@@ -221,7 +236,8 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(fileName, style: const TextStyle(fontWeight: FontWeight.w500)),
+              Text(fileName,
+                  style: const TextStyle(fontWeight: FontWeight.w500)),
               const SizedBox(height: 12),
               Container(
                 width: double.infinity,
@@ -233,17 +249,15 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
                 child: SelectableText(error,
                     style: const TextStyle(fontSize: 12, fontFamily: 'Menlo')),
               ),
-              if (needsUninstall) ...[
-                const SizedBox(height: 14),
-                const Text('提示：版本降级或签名不一致导致的失败已自动尝试卸载重装；'
-                    '如果仍然失败，请手动卸载后重试。',
-                    style: TextStyle(fontSize: 12, color: Colors.grey)),
-              ],
+              const SizedBox(height: 14),
+              Text(tr('installHint'),
+                  style: const TextStyle(fontSize: 12, color: Colors.grey)),
             ],
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('关闭')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: Text(tr('close'))),
         ],
       ),
     );
@@ -259,13 +273,14 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
   @override
   Widget build(BuildContext context) {
     if (widget.selectedSerial == null) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.android, size: 48, color: Colors.grey),
-            SizedBox(height: 12),
-            Text('请先在侧边栏选择设备', style: TextStyle(color: Colors.grey)),
+            const Icon(Icons.android, size: 48, color: Colors.grey),
+            const SizedBox(height: 12),
+            Text(tr('selectDeviceSidebar'),
+                style: const TextStyle(color: Colors.grey)),
           ],
         ),
       );
@@ -288,36 +303,42 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
             children: [
               _buildToolbar(context),
               if (_loading)
-                const Expanded(child: Center(child: CircularProgressIndicator()))
+                const Expanded(
+                    child: Center(child: CircularProgressIndicator()))
               else if (_error != null)
-                Expanded(child: Center(
+                Expanded(
+                    child: Center(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                      const Icon(Icons.error_outline,
+                          size: 48, color: Colors.red),
                       const SizedBox(height: 8),
-                      Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 12)),
+                      Text(_error!,
+                          style:
+                              const TextStyle(color: Colors.red, fontSize: 12)),
                       const SizedBox(height: 12),
-                      FilledButton.tonal(onPressed: _loadPackages, child: const Text('重试')),
+                      FilledButton.tonal(
+                          onPressed: _loadPackages, child: Text(tr('retry'))),
                     ],
                   ),
                 ))
               else
                 Expanded(child: _buildPackageList(context)),
-            _buildStatusBar(context),
-          ],
-        ),
-        Positioned.fill(
-          child: IgnorePointer(
-            ignoring: !_dragOver,
-            child: AnimatedOpacity(
-              opacity: _dragOver ? 1.0 : 0.0,
-              duration: const Duration(milliseconds: 200),
-              child: _buildDragOverlay(),
+              _buildStatusBar(context),
+            ],
+          ),
+          Positioned.fill(
+            child: IgnorePointer(
+              ignoring: !_dragOver,
+              child: AnimatedOpacity(
+                opacity: _dragOver ? 1.0 : 0.0,
+                duration: const Duration(milliseconds: 200),
+                child: _buildDragOverlay(),
+              ),
             ),
           ),
-        ),
-        if (_installState != null) _buildInstallingOverlay(_installState!),
+          if (_installState != null) _buildInstallingOverlay(_installState!),
         ],
       ),
     );
@@ -340,11 +361,13 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
               enabled: !_installing,
               onChanged: _onSearch,
               decoration: InputDecoration(
-                hintText: '搜索应用包名...',
+                hintText: tr('searchHint'),
                 hintStyle: const TextStyle(fontSize: 12),
                 prefixIcon: const Icon(Icons.search, size: 18),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-                border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(6))),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                border: const OutlineInputBorder(
+                    borderRadius: BorderRadius.all(Radius.circular(6))),
               ),
               style: const TextStyle(fontSize: 12),
             ),
@@ -356,12 +379,12 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 12),
               textStyle: const TextStyle(fontSize: 12),
             ),
-            child: const Row(
+            child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.refresh, size: 16),
-                SizedBox(width: 4),
-                Text('刷新'),
+                const Icon(Icons.refresh, size: 16),
+                const SizedBox(width: 4),
+                Text(tr('refresh')),
               ],
             ),
           ),
@@ -372,7 +395,9 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
 
   Widget _buildPackageList(BuildContext context) {
     if (_filteredPackages.isEmpty) {
-      return const Center(child: Text('没有找到应用', style: TextStyle(color: Colors.grey)));
+      return Center(
+          child:
+              Text(tr('noApps'), style: const TextStyle(color: Colors.grey)));
     }
     return ListView.builder(
       itemCount: _filteredPackages.length,
@@ -382,10 +407,17 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
 
   Widget _buildPackageRow(BuildContext context, AppPackage pkg) {
     final theme = Theme.of(context);
-    final initials = pkg.shortName.isNotEmpty ? pkg.shortName[0].toUpperCase() : '?';
+    final initials =
+        pkg.shortName.isNotEmpty ? pkg.shortName[0].toUpperCase() : '?';
     final colors = [
-      Colors.blue, Colors.green, Colors.orange, Colors.purple,
-      Colors.teal, Colors.deepOrange, Colors.indigo, Colors.pink,
+      Colors.blue,
+      Colors.green,
+      Colors.orange,
+      Colors.purple,
+      Colors.teal,
+      Colors.deepOrange,
+      Colors.indigo,
+      Colors.pink,
     ];
     final color = colors[pkg.packageName.hashCode.abs() % colors.length];
     return InkWell(
@@ -395,14 +427,18 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
         child: Row(
           children: [
             Container(
-              width: 36, height: 36,
+              width: 36,
+              height: 36,
               decoration: BoxDecoration(
                 color: color.withAlpha(40),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Center(
                 child: Text(initials,
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: color)),
+                    style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: color)),
               ),
             ),
             const SizedBox(width: 12),
@@ -412,12 +448,16 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
                 children: [
                   Text(
                     pkg.shortName,
-                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                    style: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w500),
                   ),
                   const SizedBox(height: 2),
                   Text(
                     pkg.packageName,
-                    style: TextStyle(fontSize: 11, color: theme.colorScheme.onSurfaceVariant, fontFamily: 'Menlo'),
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: theme.colorScheme.onSurfaceVariant,
+                        fontFamily: 'Menlo'),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ],
@@ -429,9 +469,17 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
                 if (v == 'uninstall') _uninstallPackage(pkg);
               },
               itemBuilder: (ctx) => [
-                const PopupMenuItem(value: 'uninstall', child: Row(
-                  children: [Icon(Icons.delete_outline, size: 18, color: Colors.red), SizedBox(width: 8), Text('卸载', style: TextStyle(color: Colors.red))],
-                )),
+                PopupMenuItem(
+                    value: 'uninstall',
+                    child: Row(
+                      children: [
+                        const Icon(Icons.delete_outline,
+                            size: 18, color: Colors.red),
+                        const SizedBox(width: 8),
+                        Text(tr('uninstall'),
+                            style: const TextStyle(color: Colors.red))
+                      ],
+                    )),
               ],
             ),
           ],
@@ -451,8 +499,8 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
           children: [
             Text(pkg.shortName, style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 16),
-            _detailRow('包名', pkg.packageName),
-            _detailRow('路径', pkg.sourceDir),
+            _detailRow(tr('packageName'), pkg.packageName),
+            _detailRow(tr('path'), pkg.sourceDir),
             const SizedBox(height: 24),
             SizedBox(
               width: double.infinity,
@@ -462,7 +510,7 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
                   _uninstallPackage(pkg);
                 },
                 icon: const Icon(Icons.delete_outline, size: 18),
-                label: const Text('卸载此应用'),
+                label: Text(tr('uninstallApp')),
                 style: FilledButton.styleFrom(foregroundColor: Colors.red),
               ),
             ),
@@ -481,10 +529,12 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
         children: [
           SizedBox(
             width: 60,
-            child: Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+            child: Text(label,
+                style: const TextStyle(fontSize: 12, color: Colors.grey)),
           ),
           Expanded(
-            child: Text(value, style: const TextStyle(fontSize: 12, fontFamily: 'Menlo')),
+            child: Text(value,
+                style: const TextStyle(fontSize: 12, fontFamily: 'Menlo')),
           ),
         ],
       ),
@@ -501,9 +551,11 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
         border: Border(top: BorderSide(color: theme.dividerColor)),
       ),
       child: Row(children: [
-        Text('应用数: ${_filteredPackages.length}', style: const TextStyle(fontSize: 11)),
+        Text(tr('appCount', {'count': _filteredPackages.length.toString()}),
+            style: const TextStyle(fontSize: 11)),
         if (_allPackages.length != _filteredPackages.length)
-          Text(' (共 ${_allPackages.length})', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+          Text(tr('totalCount', {'total': _allPackages.length.toString()}),
+              style: const TextStyle(fontSize: 11, color: Colors.grey)),
       ]),
     );
   }
@@ -520,10 +572,12 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.file_upload, size: 64, color: theme.colorScheme.primary),
+              Icon(Icons.file_upload,
+                  size: 64, color: theme.colorScheme.primary),
               const SizedBox(height: 12),
-              Text('释放 APK 文件以安装',
-                  style: TextStyle(fontSize: 16, color: theme.colorScheme.primary)),
+              Text(tr('dropHintApk'),
+                  style: TextStyle(
+                      fontSize: 16, color: theme.colorScheme.primary)),
             ],
           ),
         ),
@@ -534,7 +588,12 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
   Widget _buildInstallingOverlay(_InstallState state) {
     final theme = Theme.of(context);
     final progress = state.progress;
-    final percent = progress == null ? '处理中' : '${(progress * 100).clamp(0, 100).toStringAsFixed(1)}%';
+    final percent = progress == null
+        ? tr('processing')
+        : '${(progress * 100).clamp(0, 100).toStringAsFixed(1)}%';
+    final phaseKeyCapitalized =
+        'phase${state.phaseKey[0].toUpperCase()}${state.phaseKey.substring(1)}';
+    final phaseText = tr(phaseKeyCapitalized);
     return Positioned.fill(
       child: AbsorbPointer(
         absorbing: false,
@@ -565,11 +624,15 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
-                          '正在安装 APK',
-                          style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                          tr('installingApk'),
+                          style: theme.textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w600),
                         ),
                       ),
-                      Text(percent, style: const TextStyle(fontFamily: 'Menlo', fontWeight: FontWeight.w600)),
+                      Text(percent,
+                          style: const TextStyle(
+                              fontFamily: 'Menlo',
+                              fontWeight: FontWeight.w600)),
                     ],
                   ),
                   const SizedBox(height: 14),
@@ -582,18 +645,21 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
                   const SizedBox(height: 12),
                   progress == null
                       ? const LinearProgressIndicator()
-                      : LinearProgressIndicator(value: progress.clamp(0.0, 1.0).toDouble()),
+                      : LinearProgressIndicator(
+                          value: progress.clamp(0.0, 1.0).toDouble()),
                   const SizedBox(height: 10),
                   Row(
                     children: [
                       Expanded(
                         child: Text(
-                          state.phase,
-                          style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
+                          phaseText,
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: theme.colorScheme.onSurfaceVariant),
                         ),
                       ),
                       Text(
-                        '${_formatBytes(state.sent)} / ${state.total > 0 ? _formatBytes(state.total) : '未知大小'}',
+                        '${_formatBytes(state.sent)} / ${state.total > 0 ? _formatBytes(state.total) : tr('unknownSize')}',
                         style: TextStyle(
                           fontSize: 11,
                           fontFamily: 'Menlo',
@@ -604,8 +670,10 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'APK 安装中，请等待完成后再进行应用管理操作。',
-                    style: TextStyle(fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
+                    tr('installingWarning'),
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: theme.colorScheme.onSurfaceVariant),
                   ),
                   const SizedBox(height: 14),
                   Align(
@@ -613,7 +681,7 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
                     child: FilledButton.tonalIcon(
                       onPressed: _cancelInstall,
                       icon: const Icon(Icons.close, size: 16),
-                      label: const Text('取消'),
+                      label: Text(tr('cancel')),
                     ),
                   ),
                 ],

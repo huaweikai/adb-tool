@@ -6,6 +6,7 @@ import 'package:file_selector/file_selector.dart';
 import '../services/drop_target.dart';
 import '../models/file_item.dart';
 import '../services/api_client.dart';
+import '../i18n.dart';
 
 enum _SortKey { name, date, size }
 
@@ -16,17 +17,18 @@ class _TransferState {
   final String fileName;
   final int sent;
   final int total;
-  final String phase;
+  final String phaseKey;
 
   const _TransferState({
     required this.mode,
     required this.fileName,
     required this.sent,
     required this.total,
-    required this.phase,
+    required this.phaseKey,
   });
 
-  bool get waitingForAdb => phase.startsWith('设备');
+  bool get waitingForAdb =>
+      phaseKey == 'deviceReading' || phaseKey == 'deviceWriting';
 
   double? get progress => total > 0 && !waitingForAdb ? sent / total : null;
 }
@@ -46,6 +48,9 @@ class FileBrowserScreen extends StatefulWidget {
 }
 
 class _FileBrowserScreenState extends State<FileBrowserScreen> {
+  String trPhase(String phaseKey) =>
+      tr('phase${phaseKey[0].toUpperCase()}${phaseKey.substring(1)}');
+
   List<FileItem> _files = [];
   String _currentPath = '/';
   bool _loading = false;
@@ -70,10 +75,10 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   bool get _isTransferring => _transfer != null;
 
   static const _quickPaths = [
-    ('/', '根'),
-    ('/sdcard', 'SD'),
-    ('/storage/emulated/0', '存储'),
-    ('/data/local/tmp', '临时'),
+    ('/', 'root'),
+    ('/sdcard', 'sd'),
+    ('/storage/emulated/0', 'storage'),
+    ('/data/local/tmp', 'tmp'),
   ];
 
   @override
@@ -95,8 +100,12 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   }
 
   String get _sortLabel {
-    final base = _sortKey == _SortKey.name ? '名称' : _sortKey == _SortKey.date ? '时间' : '大小';
-    return base + (_sortAsc ? ' ↑' : ' ↓');
+    final base = _sortKey == _SortKey.name
+        ? tr('name')
+        : _sortKey == _SortKey.date
+            ? tr('modified')
+            : tr('size');
+    return '$base${_sortAsc ? " ↑" : " ↓"}';
   }
 
   List<FileItem> _sorted(List<FileItem> files) {
@@ -112,7 +121,9 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
           cmp = a.modified.compareTo(b.modified);
         case _SortKey.size:
           cmp = a.size.compareTo(b.size);
-          if (cmp == 0) cmp = a.name.toLowerCase().compareTo(b.name.toLowerCase());
+          if (cmp == 0) {
+            cmp = a.name.toLowerCase().compareTo(b.name.toLowerCase());
+          }
       }
       return _sortAsc ? cmp : -cmp;
     });
@@ -133,7 +144,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     if (widget.selectedSerial == null) {
       setState(() {
         _files = [];
-        _error = '请先选择设备';
+        _error = tr('selectDevice');
       });
       return;
     }
@@ -144,7 +155,8 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       _contentPath = '';
     });
     try {
-      final files = await widget.api.listFiles(widget.selectedSerial!, _currentPath);
+      final files =
+          await widget.api.listFiles(widget.selectedSerial!, _currentPath);
       if (!mounted) return;
       setState(() {
         _files = _sorted(files);
@@ -162,7 +174,6 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   Future<void> _enterDir(FileItem dir) async {
     if (_isTransferring) return;
     if (widget.selectedSerial == null) return;
-    final prevPath = _currentPath;
     setState(() {
       _history.add(_currentPath);
       _currentPath = dir.path;
@@ -170,7 +181,8 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       _error = null;
     });
     try {
-      final files = await widget.api.listFiles(widget.selectedSerial!, _currentPath);
+      final files =
+          await widget.api.listFiles(widget.selectedSerial!, _currentPath);
       if (!mounted) return;
       setState(() {
         _files = _sorted(files);
@@ -184,7 +196,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('无法访问 ${dir.name}：无权限或目录不存在'),
+          content: Text(tr('accessDenied', {'name': dir.name})),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -217,7 +229,8 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       _error = null;
     });
     try {
-      final content = await widget.api.readFile(widget.selectedSerial!, file.path);
+      final content =
+          await widget.api.readFile(widget.selectedSerial!, file.path);
       if (!mounted) return;
       setState(() {
         _fileContent = content;
@@ -241,7 +254,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     try {
       final location = await getSaveLocation(
         suggestedName: file.name,
-        confirmButtonText: '保存',
+        confirmButtonText: tr('save'),
       );
       if (location == null) return;
       localPath = location.path;
@@ -253,7 +266,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
           fileName: file.name,
           sent: 0,
           total: 0,
-          phase: '设备读取中...',
+          phaseKey: 'deviceReading',
         );
       });
       await widget.api.downloadFileToPath(
@@ -261,7 +274,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         file.path,
         location.path,
         totalBytes: file.size,
-        cancelToken: cancelToken!,
+        cancelToken: cancelToken,
         onProgress: (progress) {
           if (!mounted) return;
           setState(() {
@@ -270,7 +283,9 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
               fileName: file.name,
               sent: progress.sent,
               total: progress.total,
-              phase: progress.total > 0 && progress.sent >= progress.total ? '写入文件中...' : '正在下载...',
+              phaseKey: progress.total > 0 && progress.sent >= progress.total
+                  ? 'writingFile'
+                  : 'downloading',
             );
           });
         },
@@ -279,7 +294,9 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       _transferCancelToken = null;
       setState(() => _transfer = null);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已保存到 ${location.path}'), behavior: SnackBarBehavior.floating),
+        SnackBar(
+            content: Text(tr('savedTo', {'path': location.path})),
+            behavior: SnackBarBehavior.floating),
       );
     } catch (e) {
       if (!mounted) return;
@@ -290,17 +307,22 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
             if (await partial.exists()) await partial.delete();
           }
         } catch (_) {}
+        if (!mounted) return;
         _transferCancelToken = null;
         setState(() => _transfer = null);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('下载已取消'), behavior: SnackBarBehavior.floating),
+          SnackBar(
+              content: Text(tr('downloadCancelled')),
+              behavior: SnackBarBehavior.floating),
         );
         return;
       }
       _transferCancelToken = null;
       setState(() => _transfer = null);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('下载失败: $e'), behavior: SnackBarBehavior.floating),
+        SnackBar(
+            content: Text('${tr('downloadFailed')}: $e'),
+            behavior: SnackBarBehavior.floating),
       );
     }
   }
@@ -308,7 +330,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   Future<void> _uploadFile() async {
     if (_isTransferring) return;
     if (widget.selectedSerial == null) return;
-    final result = await openFile(confirmButtonText: '上传');
+    final result = await openFile(confirmButtonText: tr('upload'));
     if (result == null) return;
     final remotePath = _currentPath.endsWith('/')
         ? '$_currentPath${result.name}'
@@ -323,7 +345,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
           fileName: result.name,
           sent: 0,
           total: totalBytes,
-          phase: '准备上传...',
+          phaseKey: 'preparing',
         );
       });
       await widget.api.pushLocalFile(
@@ -339,7 +361,9 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
               fileName: result.name,
               sent: progress.sent,
               total: progress.total,
-              phase: progress.total > 0 && progress.sent >= progress.total ? '设备写入中...' : '正在上传...',
+              phaseKey: progress.total > 0 && progress.sent >= progress.total
+                  ? 'deviceWriting'
+                  : 'uploading',
             );
           });
         },
@@ -348,23 +372,30 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       _transferCancelToken = null;
       setState(() => _transfer = null);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已上传到 $remotePath'), behavior: SnackBarBehavior.floating),
+        SnackBar(
+            content: Text(tr('uploadedTo', {'path': remotePath})),
+            behavior: SnackBarBehavior.floating),
       );
       _loadFiles();
     } catch (e) {
       if (!mounted) return;
       if (e is TransferCanceledException || cancelToken.canceled) {
+        if (!mounted) return;
         _transferCancelToken = null;
         setState(() => _transfer = null);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('上传已取消'), behavior: SnackBarBehavior.floating),
+          SnackBar(
+              content: Text(tr('uploadCancelled')),
+              behavior: SnackBarBehavior.floating),
         );
         return;
       }
       _transferCancelToken = null;
       setState(() => _transfer = null);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('上传失败: $e'), behavior: SnackBarBehavior.floating),
+        SnackBar(
+            content: Text('${tr('uploadFailed')}: $e'),
+            behavior: SnackBarBehavior.floating),
       );
     }
   }
@@ -379,17 +410,25 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     try {
       await widget.api.screenRecordAction(widget.selectedSerial!, 'start');
       if (!mounted) return;
-      setState(() { _recording = true; _recordSaving = false; _recordSeconds = 0; });
+      setState(() {
+        _recording = true;
+        _recordSaving = false;
+        _recordSeconds = 0;
+      });
       _recordTimer = Timer.periodic(const Duration(seconds: 1), (_) {
         if (mounted) setState(() => _recordSeconds++);
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('开始录屏（最长30分钟）'), behavior: SnackBarBehavior.floating),
+        SnackBar(
+            content: Text(tr('recordingStarted')),
+            behavior: SnackBarBehavior.floating),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('录屏启动失败: $e'), behavior: SnackBarBehavior.floating),
+        SnackBar(
+            content: Text('${tr('recordingFailed')}: $e'),
+            behavior: SnackBarBehavior.floating),
       );
     }
   }
@@ -403,25 +442,42 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       await widget.api.screenRecordAction(widget.selectedSerial!, 'stop');
       if (!mounted) return;
       final location = await getSaveLocation(
-        suggestedName: 'screen-record-${DateTime.now().millisecondsSinceEpoch}.mp4',
-        confirmButtonText: '保存录屏',
+        suggestedName:
+            'screen-record-${DateTime.now().millisecondsSinceEpoch}.mp4',
+        confirmButtonText: tr('saveRecording'),
       );
       if (location == null) {
-        setState(() { _recording = false; _recordSaving = false; _recordSeconds = 0; });
+        setState(() {
+          _recording = false;
+          _recordSaving = false;
+          _recordSeconds = 0;
+        });
         return;
       }
       final bytes = await widget.api.pullRecordedVideo(widget.selectedSerial!);
       await File(location.path).writeAsBytes(bytes);
       if (!mounted) return;
-      setState(() { _recording = false; _recordSaving = false; _recordSeconds = 0; });
+      setState(() {
+        _recording = false;
+        _recordSaving = false;
+        _recordSeconds = 0;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('录屏已保存到 ${location.path}'), behavior: SnackBarBehavior.floating),
+        SnackBar(
+            content: Text(tr('recordingSaved', {'path': location.path})),
+            behavior: SnackBarBehavior.floating),
       );
     } catch (e) {
       if (!mounted) return;
-      setState(() { _recording = false; _recordSaving = false; _recordSeconds = 0; });
+      setState(() {
+        _recording = false;
+        _recordSaving = false;
+        _recordSeconds = 0;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('录屏停止失败: $e'), behavior: SnackBarBehavior.floating),
+        SnackBar(
+            content: Text('${tr('recordingStopFailed')}: $e'),
+            behavior: SnackBarBehavior.floating),
       );
     }
   }
@@ -435,14 +491,17 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         if (!mounted) return;
         setState(() => _screenshotting = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('截屏失败'), behavior: SnackBarBehavior.floating),
+          SnackBar(
+              content: Text(tr('screenshotFailed')),
+              behavior: SnackBarBehavior.floating),
         );
         return;
       }
       if (!mounted) return;
       final location = await getSaveLocation(
-        suggestedName: 'screenshot-${DateTime.now().millisecondsSinceEpoch}.png',
-        confirmButtonText: '保存截屏',
+        suggestedName:
+            'screenshot-${DateTime.now().millisecondsSinceEpoch}.png',
+        confirmButtonText: tr('saveScreenshot'),
       );
       if (location == null) {
         setState(() => _screenshotting = false);
@@ -453,13 +512,17 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       if (!mounted) return;
       setState(() => _screenshotting = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('截屏已保存到 ${location.path}'), behavior: SnackBarBehavior.floating),
+        SnackBar(
+            content: Text(tr('screenshotSaved', {'path': location.path})),
+            behavior: SnackBarBehavior.floating),
       );
     } catch (e) {
       if (!mounted) return;
       setState(() => _screenshotting = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('截屏失败: $e'), behavior: SnackBarBehavior.floating),
+        SnackBar(
+            content: Text('${tr('screenshotFailed')}: $e'),
+            behavior: SnackBarBehavior.floating),
       );
     }
   }
@@ -500,7 +563,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
             fileName: file.name,
             sent: 0,
             total: totalBytes,
-            phase: '准备上传...',
+            phaseKey: 'preparing',
           );
         });
         await widget.api.pushLocalFile(
@@ -516,17 +579,20 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
                 fileName: file.name,
                 sent: progress.sent,
                 total: progress.total,
-                phase: progress.total > 0 && progress.sent >= progress.total ? '设备写入中...' : '正在上传...',
+                phaseKey: progress.total > 0 && progress.sent >= progress.total
+                    ? 'deviceWriting'
+                    : 'uploading',
               );
             });
           },
         );
         if (!mounted) return;
+        if (!mounted) return;
         _transferCancelToken = null;
         setState(() => _transfer = null);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('已上传 ${file.name} 到 $remotePath'),
+            content: Text(tr('uploadedTo', {'path': remotePath})),
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -537,17 +603,18 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
           setState(() => _transfer = null);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('${file.name} 上传已取消'),
+              content: Text(tr('uploadCancelled')),
               behavior: SnackBarBehavior.floating,
             ),
           );
           break;
         }
+        if (!mounted) return;
         _transferCancelToken = null;
         setState(() => _transfer = null);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('上传 ${file.name} 失败: $e'),
+            content: Text('${tr('uploadFailed')}: $e'),
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -559,13 +626,14 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   @override
   Widget build(BuildContext context) {
     if (widget.selectedSerial == null) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.folder_open, size: 48, color: Colors.grey),
-            SizedBox(height: 12),
-            Text('请先在侧边栏选择设备', style: TextStyle(color: Colors.grey)),
+            const Icon(Icons.folder_open, size: 48, color: Colors.grey),
+            const SizedBox(height: 12),
+            Text(tr('selectDeviceSidebar'),
+                style: const TextStyle(color: Colors.grey)),
           ],
         ),
       );
@@ -592,22 +660,29 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
             children: [
               _buildPathBar(),
               if (_loading)
-                const Expanded(child: Center(child: CircularProgressIndicator()))
+                const Expanded(
+                    child: Center(child: CircularProgressIndicator()))
               else if (_error != null)
-                Expanded(child: Center(
+                Expanded(
+                    child: Center(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                      const Icon(Icons.error_outline,
+                          size: 48, color: Colors.red),
                       const SizedBox(height: 8),
-                      Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 12)),
+                      Text(_error!,
+                          style:
+                              const TextStyle(color: Colors.red, fontSize: 12)),
                       const SizedBox(height: 12),
-                      FilledButton.tonal(onPressed: _loadFiles, child: const Text('重试')),
+                      FilledButton.tonal(
+                          onPressed: _loadFiles, child: Text(tr('retry'))),
                     ],
                   ),
                 ))
               else
-                Expanded(child: _gridMode ? _buildGridView() : _buildFileList()),
+                Expanded(
+                    child: _gridMode ? _buildGridView() : _buildFileList()),
             ],
           ),
           Positioned.fill(
@@ -641,10 +716,12 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.cloud_upload, size: 64, color: theme.colorScheme.primary),
+              Icon(Icons.cloud_upload,
+                  size: 64, color: theme.colorScheme.primary),
               const SizedBox(height: 12),
-              Text('释放文件以上传到 $_currentPath',
-                  style: TextStyle(fontSize: 16, color: theme.colorScheme.primary)),
+              Text(tr('dropHintFile', {'path': _currentPath}),
+                  style: TextStyle(
+                      fontSize: 16, color: theme.colorScheme.primary)),
             ],
           ),
         ),
@@ -656,7 +733,9 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     final theme = Theme.of(context);
     final isUpload = transfer.mode == _TransferMode.upload;
     final progress = transfer.progress;
-    final percent = progress == null ? '处理中' : '${(progress * 100).clamp(0, 100).toStringAsFixed(1)}%';
+    final percent = progress == null
+        ? tr('processing')
+        : '${(progress * 100).clamp(0, 100).toStringAsFixed(1)}%';
     return AbsorbPointer(
       absorbing: false,
       child: Container(
@@ -682,15 +761,19 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
               children: [
                 Row(
                   children: [
-                    Icon(isUpload ? Icons.upload_file : Icons.download, color: theme.colorScheme.primary),
+                    Icon(isUpload ? Icons.upload_file : Icons.download,
+                        color: theme.colorScheme.primary),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        isUpload ? '正在上传文件' : '正在下载文件',
-                        style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                        isUpload ? tr('uploadingFile') : tr('downloadingFile'),
+                        style: theme.textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w600),
                       ),
                     ),
-                    Text(percent, style: const TextStyle(fontFamily: 'Menlo', fontWeight: FontWeight.w600)),
+                    Text(percent,
+                        style: const TextStyle(
+                            fontFamily: 'Menlo', fontWeight: FontWeight.w600)),
                   ],
                 ),
                 const SizedBox(height: 14),
@@ -703,18 +786,21 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
                 const SizedBox(height: 12),
                 progress == null
                     ? const LinearProgressIndicator()
-                    : LinearProgressIndicator(value: progress.clamp(0.0, 1.0).toDouble()),
+                    : LinearProgressIndicator(
+                        value: progress.clamp(0.0, 1.0).toDouble()),
                 const SizedBox(height: 10),
                 Row(
                   children: [
                     Expanded(
                       child: Text(
-                        transfer.phase,
-                        style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
+                        trPhase(transfer.phaseKey),
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: theme.colorScheme.onSurfaceVariant),
                       ),
                     ),
                     Text(
-                      '${_formatBytes(transfer.sent)} / ${transfer.total > 0 ? _formatBytes(transfer.total) : '未知大小'}',
+                      '${_formatBytes(transfer.sent)} / ${transfer.total > 0 ? _formatBytes(transfer.total) : tr('unknownSize')}',
                       style: TextStyle(
                         fontSize: 11,
                         fontFamily: 'Menlo',
@@ -725,8 +811,9 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '文件传输中，请等待完成后再进行其它文件操作。',
-                  style: TextStyle(fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
+                  tr('transferWarning'),
+                  style: TextStyle(
+                      fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
                 ),
                 const SizedBox(height: 14),
                 Align(
@@ -734,7 +821,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
                   child: FilledButton.tonalIcon(
                     onPressed: _cancelTransfer,
                     icon: const Icon(Icons.close, size: 16),
-                    label: const Text('取消'),
+                    label: Text(tr('cancel')),
                   ),
                 ),
               ],
@@ -759,18 +846,17 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
           IconButton(
             icon: const Icon(Icons.home, size: 20),
             onPressed: _isTransferring ? null : _goHome,
-            tooltip: '根目录',
+            tooltip: tr('rootDir'),
           ),
           const SizedBox(width: 4),
           if (_history.isNotEmpty)
             IconButton(
               icon: const Icon(Icons.arrow_upward, size: 20),
               onPressed: _isTransferring ? null : _goUp,
-              tooltip: '上级目录',
+              tooltip: tr('parentDir'),
             ),
           const SizedBox(width: 4),
-          for (final qp in _quickPaths)
-            _quickBtn(qp.$1, qp.$2),
+          for (final qp in _quickPaths) _quickBtn(qp.$1, tr(qp.$2)),
           const SizedBox(width: 8),
           Expanded(
             child: SingleChildScrollView(
@@ -778,18 +864,25 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
               child: Row(
                 children: [
                   for (int i = 0; i < parts.length; i++) ...[
-                    if (i > 0) const Icon(Icons.chevron_right, size: 14, color: Colors.grey),
+                    if (i > 0)
+                      const Icon(Icons.chevron_right,
+                          size: 14, color: Colors.grey),
                     GestureDetector(
-                      onTap: !_isTransferring && i < parts.length - 1 ? () {
-                        final path = '/' + parts.sublist(0, i + 1).join('/');
-                        _navigateTo(path);
-                      } : null,
+                      onTap: !_isTransferring && i < parts.length - 1
+                          ? () {
+                              final path =
+                                  '/${parts.sublist(0, i + 1).join('/')}';
+                              _navigateTo(path);
+                            }
+                          : null,
                       child: Text(
                         parts[i],
                         style: TextStyle(
                           fontSize: 12,
                           fontFamily: 'Menlo',
-                          fontWeight: i == parts.length - 1 ? FontWeight.w600 : FontWeight.normal,
+                          fontWeight: i == parts.length - 1
+                              ? FontWeight.w600
+                              : FontWeight.normal,
                           color: i == parts.length - 1
                               ? theme.colorScheme.primary
                               : theme.colorScheme.onSurfaceVariant,
@@ -806,27 +899,30 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
           const SizedBox(width: 4),
           IconButton(
             icon: Icon(_gridMode ? Icons.list : Icons.grid_view, size: 20),
-            onPressed: _isTransferring ? null : () => setState(() => _gridMode = !_gridMode),
-            tooltip: _gridMode ? '列表模式' : '网格模式',
+            onPressed: _isTransferring
+                ? null
+                : () => setState(() => _gridMode = !_gridMode),
+            tooltip: _gridMode ? tr('listMode') : tr('gridMode'),
           ),
           const SizedBox(width: 4),
           _recordSaving
               ? FilledButton.tonal(
                   onPressed: null,
                   style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     textStyle: const TextStyle(fontSize: 12),
                   ),
-                  child: const Row(
+                  child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      SizedBox(
+                      const SizedBox(
                         width: 14,
                         height: 14,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       ),
-                      SizedBox(width: 6),
-                      Text('保存中'),
+                      const SizedBox(width: 6),
+                      Text(tr('saving')),
                     ],
                   ),
                 )
@@ -835,35 +931,41 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
                   : FilledButton.tonal(
                       onPressed: _isTransferring ? null : _startRecording,
                       style: FilledButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
                         textStyle: const TextStyle(fontSize: 12),
                         backgroundColor: Colors.red.shade100,
                       ),
-                      child: const Row(
+                      child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.fiber_manual_record, size: 16, color: Colors.red),
-                          SizedBox(width: 4),
-                          Text('录屏', style: TextStyle(color: Colors.red)),
+                          const Icon(Icons.fiber_manual_record,
+                              size: 16, color: Colors.red),
+                          const SizedBox(width: 4),
+                          Text(tr('record'),
+                              style: const TextStyle(color: Colors.red)),
                         ],
                       ),
                     ),
           const SizedBox(width: 4),
           FilledButton.tonal(
-            onPressed: _screenshotting || _isTransferring ? null : _takeScreenshot,
+            onPressed:
+                _screenshotting || _isTransferring ? null : _takeScreenshot,
             style: FilledButton.styleFrom(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               textStyle: const TextStyle(fontSize: 12),
             ),
             child: _screenshotting
-                ? const SizedBox(width: 16, height: 16,
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
                     child: CircularProgressIndicator(strokeWidth: 2))
-                : const Row(
+                : Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.camera_alt, size: 16),
-                      SizedBox(width: 4),
-                      Text('截屏'),
+                      const Icon(Icons.camera_alt, size: 16),
+                      const SizedBox(width: 4),
+                      Text(tr('screenshot')),
                     ],
                   ),
           ),
@@ -874,12 +976,12 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               textStyle: const TextStyle(fontSize: 12),
             ),
-            child: const Row(
+            child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.upload_file, size: 16),
-                SizedBox(width: 4),
-                Text('上传'),
+                const Icon(Icons.upload_file, size: 16),
+                const SizedBox(width: 4),
+                Text(tr('upload')),
               ],
             ),
           ),
@@ -887,7 +989,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
           IconButton(
             icon: const Icon(Icons.refresh, size: 20),
             onPressed: _isTransferring ? null : _loadFiles,
-            tooltip: '刷新',
+            tooltip: tr('refresh'),
           ),
         ],
       ),
@@ -910,7 +1012,8 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
               border: Border.all(color: Theme.of(context).dividerColor),
               borderRadius: BorderRadius.circular(4),
             ),
-            child: Text(label, style: const TextStyle(fontSize: 11, fontFamily: 'Menlo')),
+            child: Text(label,
+                style: const TextStyle(fontSize: 11, fontFamily: 'Menlo')),
           ),
         ),
       ),
@@ -957,7 +1060,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
           _files = _sorted(_files);
         });
       },
-      tooltip: '排序: $_sortLabel',
+      tooltip: tr('sortLabel', {'label': _sortLabel}),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
@@ -967,7 +1070,8 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(_sortAsc ? Icons.arrow_upward : Icons.arrow_downward, size: 14),
+            Icon(_sortAsc ? Icons.arrow_upward : Icons.arrow_downward,
+                size: 14),
             const SizedBox(width: 4),
             Text(_sortLabel, style: const TextStyle(fontSize: 11)),
           ],
@@ -975,15 +1079,21 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       ),
       itemBuilder: (ctx) => _SortKey.values.map((key) {
         final isCurrent = _sortKey == key;
-        final labels = ['名称', '修改时间', '大小'];
+        final labels = [tr('name'), tr('modified'), tr('size')];
         return PopupMenuItem(
           value: key,
           child: Row(
             children: [
-              if (isCurrent) Icon(_sortAsc ? Icons.arrow_upward : Icons.arrow_downward, size: 16)
-              else const SizedBox(width: 16),
+              if (isCurrent)
+                Icon(_sortAsc ? Icons.arrow_upward : Icons.arrow_downward,
+                    size: 16)
+              else
+                const SizedBox(width: 16),
               const SizedBox(width: 4),
-              Text(labels[key.index], style: TextStyle(fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal)),
+              Text(labels[key.index],
+                  style: TextStyle(
+                      fontWeight:
+                          isCurrent ? FontWeight.bold : FontWeight.normal)),
             ],
           ),
         );
@@ -993,7 +1103,9 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
 
   Widget _buildFileList() {
     if (_files.isEmpty) {
-      return const Center(child: Text('空目录', style: TextStyle(color: Colors.grey)));
+      return Center(
+          child:
+              Text(tr('emptyDir'), style: const TextStyle(color: Colors.grey)));
     }
     return ListView.builder(
       itemCount: _files.length,
@@ -1020,9 +1132,13 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         child: Row(
           children: [
             Icon(
-              file.isDir ? Icons.folder : (isText ? Icons.description : Icons.insert_drive_file),
+              file.isDir
+                  ? Icons.folder
+                  : (isText ? Icons.description : Icons.insert_drive_file),
               size: 18,
-              color: file.isDir ? Colors.amber.shade400 : theme.colorScheme.primary,
+              color: file.isDir
+                  ? Colors.amber.shade400
+                  : theme.colorScheme.primary,
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -1036,7 +1152,10 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
               width: 100,
               child: Text(
                 file.modified,
-                style: TextStyle(fontSize: 10, fontFamily: 'Menlo', color: theme.colorScheme.onSurfaceVariant),
+                style: TextStyle(
+                    fontSize: 10,
+                    fontFamily: 'Menlo',
+                    color: theme.colorScheme.onSurfaceVariant),
               ),
             ),
             if (file.sizeFormatted.isNotEmpty)
@@ -1044,17 +1163,20 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
                 width: 70,
                 child: Text(
                   file.sizeFormatted,
-                  style: TextStyle(fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
+                  style: TextStyle(
+                      fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
                   textAlign: TextAlign.end,
                 ),
               ),
             if (!file.isDir) ...[
               const SizedBox(width: 4),
-              _iconBtn(Icons.download, '下载到 Mac', _isTransferring ? null : () => _downloadFile(file)),
+              _iconBtn(Icons.download, tr('downloadTooltip'),
+                  _isTransferring ? null : () => _downloadFile(file)),
             ],
             if (file.isDir) ...[
               const SizedBox(width: 4),
-              _iconBtn(Icons.upload, '上传到此目录', _isTransferring ? null : _uploadFile),
+              _iconBtn(Icons.upload, tr('uploadToDir'),
+                  _isTransferring ? null : _uploadFile),
             ],
           ],
         ),
@@ -1074,7 +1196,9 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
 
   Widget _buildGridView() {
     if (_files.isEmpty) {
-      return const Center(child: Text('空目录', style: TextStyle(color: Colors.grey)));
+      return Center(
+          child:
+              Text(tr('emptyDir'), style: const TextStyle(color: Colors.grey)));
     }
     return GridView.builder(
       padding: const EdgeInsets.all(8),
@@ -1107,16 +1231,21 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
                   _viewFile(file);
                 }
               },
-        onLongPress: _isTransferring ? null : () => _showFileMenu(context, file),
+        onLongPress:
+            _isTransferring ? null : () => _showFileMenu(context, file),
         child: Padding(
           padding: const EdgeInsets.all(8),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(
-                file.isDir ? Icons.folder : (isText ? Icons.description : Icons.insert_drive_file),
+                file.isDir
+                    ? Icons.folder
+                    : (isText ? Icons.description : Icons.insert_drive_file),
                 size: 28,
-                color: file.isDir ? Colors.amber.shade400 : theme.colorScheme.primary,
+                color: file.isDir
+                    ? Colors.amber.shade400
+                    : theme.colorScheme.primary,
               ),
               const SizedBox(height: 6),
               Text(
@@ -1129,7 +1258,8 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
               if (file.sizeFormatted.isNotEmpty)
                 Text(
                   file.sizeFormatted,
-                  style: TextStyle(fontSize: 9, color: theme.colorScheme.onSurfaceVariant),
+                  style: TextStyle(
+                      fontSize: 9, color: theme.colorScheme.onSurfaceVariant),
                 ),
             ],
           ),
@@ -1147,12 +1277,13 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
           children: [
             Padding(
               padding: const EdgeInsets.all(16),
-              child: Text(file.name, style: Theme.of(context).textTheme.titleSmall),
+              child: Text(file.name,
+                  style: Theme.of(context).textTheme.titleSmall),
             ),
             if (!file.isDir)
               ListTile(
                 leading: const Icon(Icons.download),
-                title: const Text('下载到 Mac'),
+                title: Text(tr('downloadTooltip')),
                 onTap: () {
                   Navigator.pop(ctx);
                   _downloadFile(file);
@@ -1161,7 +1292,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
             if (file.isDir)
               ListTile(
                 leading: const Icon(Icons.upload),
-                title: const Text('上传文件到此目录'),
+                title: Text(tr('uploadToDir')),
                 onTap: () {
                   Navigator.pop(ctx);
                   _uploadFile();
@@ -1169,7 +1300,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
               ),
             ListTile(
               leading: const Icon(Icons.info_outline),
-              title: const Text('详情'),
+              title: Text(tr('details')),
               onTap: () {
                 Navigator.pop(ctx);
                 _showFileInfo(context, file);
@@ -1191,15 +1322,16 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _infoRow('类型', file.isDir ? '目录' : '文件'),
-            _infoRow('路径', file.path),
-            if (!file.isDir) _infoRow('大小', file.sizeFormatted),
-            _infoRow('权限', file.permissions),
-            _infoRow('修改时间', file.modified),
+            _infoRow(tr('type'), file.isDir ? tr('directory') : tr('file')),
+            _infoRow(tr('path'), file.path),
+            if (!file.isDir) _infoRow(tr('size'), file.sizeFormatted),
+            _infoRow(tr('permissions'), file.permissions),
+            _infoRow(tr('modified'), file.modified),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('关闭')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: Text(tr('close'))),
         ],
       ),
     );
@@ -1211,8 +1343,13 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(width: 60, child: Text('$label:', style: const TextStyle(fontSize: 12, color: Colors.grey))),
-          Expanded(child: Text(value, style: const TextStyle(fontSize: 12, fontFamily: 'Menlo'))),
+          SizedBox(
+              width: 80,
+              child: Text('$label:',
+                  style: const TextStyle(fontSize: 12, color: Colors.grey))),
+          Expanded(
+              child: Text(value,
+                  style: const TextStyle(fontSize: 12, fontFamily: 'Menlo'))),
         ],
       ),
     );
@@ -1220,9 +1357,30 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
 
   bool _isTextFile(String name) {
     final ext = name.split('.').last.toLowerCase();
-    return ['txt', 'xml', 'json', 'html', 'css', 'js', 'kt', 'java', 'py',
-            'log', 'cfg', 'conf', 'prop', 'ini', 'md', 'csv', 'yaml', 'yml',
-            'sh', 'bat', 'gradle', 'pro'].contains(ext);
+    return [
+      'txt',
+      'xml',
+      'json',
+      'html',
+      'css',
+      'js',
+      'kt',
+      'java',
+      'py',
+      'log',
+      'cfg',
+      'conf',
+      'prop',
+      'ini',
+      'md',
+      'csv',
+      'yaml',
+      'yml',
+      'sh',
+      'bat',
+      'gradle',
+      'pro'
+    ].contains(ext);
   }
 
   Widget _buildFileViewer() {
@@ -1263,7 +1421,8 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
             padding: const EdgeInsets.all(16),
             child: SelectableText(
               _fileContent!,
-              style: const TextStyle(fontFamily: 'Menlo', fontSize: 11, height: 1.5),
+              style: const TextStyle(
+                  fontFamily: 'Menlo', fontSize: 11, height: 1.5),
             ),
           ),
         ),

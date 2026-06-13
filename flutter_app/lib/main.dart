@@ -6,6 +6,7 @@ import 'services/api_client.dart';
 import 'services/log_stream.dart';
 import 'services/server_launcher.dart';
 import 'screens/home_screen.dart';
+import 'i18n.dart';
 
 final api = ApiClient('http://localhost:9876');
 final logStream = LogStreamService();
@@ -105,6 +106,7 @@ class _ServerBootScreenState extends State<ServerBootScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _status = tr('starting');
     _boot();
   }
 
@@ -129,11 +131,11 @@ class _ServerBootScreenState extends State<ServerBootScreen>
     final launcher = _launcher!;
     try {
       setState(() {
-        _status = 'Launching backend ...';
+        _status = tr('launchingBackend');
         _stoppedByUser = false;
       });
       await launcher.start();
-      setState(() => _status = 'Waiting for server ...');
+      setState(() => _status = tr('waitingForServer'));
       for (int i = 0; i < 30; i++) {
         await Future.delayed(const Duration(milliseconds: 500));
         if (await api.isReady()) {
@@ -143,11 +145,11 @@ class _ServerBootScreenState extends State<ServerBootScreen>
       }
       await launcher.stop();
       _launcher = null;
-      setState(() => _status = 'Server timeout');
+      setState(() => _status = tr('serverTimeout'));
     } catch (e) {
       await launcher.stop();
       _launcher = null;
-      setState(() => _status = 'Error: $e');
+      setState(() => _status = '${tr('serverError')}: $e');
     }
   }
 
@@ -158,7 +160,7 @@ class _ServerBootScreenState extends State<ServerBootScreen>
     setState(() {
       _ready = false;
       _stoppedByUser = true;
-      _status = '服务器已关闭';
+      _status = tr('serverShutdown');
     });
   }
 
@@ -169,7 +171,7 @@ class _ServerBootScreenState extends State<ServerBootScreen>
     setState(() {
       _ready = false;
       _stoppedByUser = false;
-      _status = 'Restarting ...';
+      _status = tr('restarting');
     });
     await _boot();
   }
@@ -201,7 +203,7 @@ class _ServerBootScreenState extends State<ServerBootScreen>
                   child: CircularProgressIndicator(strokeWidth: 3)),
               const SizedBox(height: 24),
             ],
-            Text('ADB Tool',
+            Text(tr('appTitle'),
                 style: theme.textTheme.headlineSmall
                     ?.copyWith(fontWeight: FontWeight.w600)),
             const SizedBox(height: 12),
@@ -213,7 +215,7 @@ class _ServerBootScreenState extends State<ServerBootScreen>
               FilledButton.icon(
                 onPressed: _restartServer,
                 icon: const Icon(Icons.refresh, size: 18),
-                label: const Text('重新启动服务'),
+                label: Text(tr('restartServer')),
               ),
             ],
           ],

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/device.dart';
 import '../services/api_client.dart';
 import '../services/log_stream.dart';
+import '../i18n.dart';
 import 'logcat_screen.dart';
 import 'file_browser_screen.dart';
 import 'app_manager_screen.dart';
@@ -29,61 +30,6 @@ class _NavConfig {
   const _NavConfig(this.icon, this.labelEn, this.labelZh);
 }
 
-const _loc = {
-  'zh': {
-    'title': 'ADB 工具',
-    'devices': '设备',
-    'noDevices': '没有连接的设备',
-    'noDevicesHint': '通过 USB 或 WiFi 连接设备',
-    'unknown': '未知',
-    'online': '在线',
-    'offline': '离线',
-    'refresh': '刷新',
-    'theme': '主题',
-    'lang': '语言',
-    'welcome': '请选择左侧设备和功能',
-    'backendLogs': '后端日志',
-    'restart': '重启服务',
-    'shutdown': '关闭服务',
-    'wirelessAdb': '无线 ADB',
-    'pair': '配对',
-    'connect': '连接',
-    'pairAddress': '配对地址，例如 192.168.1.10:37123',
-    'connectAddress': '连接地址，例如 192.168.1.10:5555',
-    'pairCode': '配对码',
-    'running': '执行中...',
-    'backendOffline': '后端服务已断开，请检查 Go 服务是否运行',
-    'backendOnline': '后端服务已恢复',
-    'dismiss': '忽略',
-  },
-  'en': {
-    'title': 'ADB Tool',
-    'devices': 'Devices',
-    'noDevices': 'No devices',
-    'noDevicesHint': 'Connect via USB or WiFi',
-    'unknown': 'Unknown',
-    'online': 'Online',
-    'offline': 'Offline',
-    'refresh': 'Refresh',
-    'theme': 'Theme',
-    'lang': 'Lang',
-    'welcome': 'Select a device and function from the sidebar',
-    'backendLogs': 'Backend Logs',
-    'restart': 'Restart',
-    'shutdown': 'Shutdown',
-    'wirelessAdb': 'Wireless ADB',
-    'pair': 'Pair',
-    'connect': 'Connect',
-    'pairAddress': 'Pair address, e.g. 192.168.1.10:37123',
-    'connectAddress': 'Connect address, e.g. 192.168.1.10:5555',
-    'pairCode': 'Pair code',
-    'running': 'Running...',
-    'backendOffline': 'Backend disconnected. Check if Go server is running',
-    'backendOnline': 'Backend reconnected',
-    'dismiss': 'Dismiss',
-  },
-};
-
 const _backendLogKey = '_backend_logs';
 
 class HomeScreen extends StatefulWidget {
@@ -109,7 +55,6 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  String _lang = 'zh';
   List<Device> _devices = [];
   bool _backendOnline = true;
   Timer? _refreshTimer;
@@ -132,10 +77,9 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  String tr(String key) => _loc[_lang]?[key] ?? key;
   String navLabel(NavItem item) {
     final c = _navConfig[item]!;
-    return _lang == 'zh' ? c.labelZh : c.labelEn;
+    return currentLang == 'zh' ? c.labelZh : c.labelEn;
   }
 
   Future<void> _refreshDevices() async {
@@ -304,8 +248,11 @@ class _HomeScreenState extends State<HomeScreen> {
                       ?.copyWith(fontWeight: FontWeight.w600)),
               const Spacer(),
               GestureDetector(
-                onTap: () =>
-                    setState(() => _lang = _lang == 'zh' ? 'en' : 'zh'),
+                onTap: () => setState(() {
+                  setLang(currentLang == 'zh' ? 'en' : 'zh');
+                  _screens.clear();
+                  _activeKey = null;
+                }),
                 child: Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
@@ -313,7 +260,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     border: Border.all(color: theme.dividerColor),
                     borderRadius: BorderRadius.circular(6),
                   ),
-                  child: Text(_lang == 'zh' ? 'EN' : '文',
+                  child: Text(currentLang == 'zh' ? 'EN' : '文',
                       style: const TextStyle(fontSize: 10)),
                 ),
               ),
@@ -566,7 +513,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 TextButton(
                   onPressed:
                       running ? null : () => Navigator.pop(dialogContext),
-                  child: Text(_lang == 'zh' ? '关闭' : 'Close'),
+                  child: Text(tr('close')),
                 ),
               ],
             );
@@ -584,14 +531,12 @@ class _HomeScreenState extends State<HomeScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(_lang == 'zh' ? '确认关闭' : 'Confirm Shutdown'),
-        content: Text(_lang == 'zh'
-            ? '关闭后端服务后，需要手动重启应用或点击重启按钮'
-            : 'After shutdown, you need to manually restart the app or click restart button'),
+        title: Text(tr('confirmShutdown')),
+        content: Text(tr('shutdownHint')),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text(_lang == 'zh' ? '取消' : 'Cancel'),
+            child: Text(tr('cancel')),
           ),
           FilledButton(
             onPressed: () {
@@ -601,7 +546,7 @@ class _HomeScreenState extends State<HomeScreen> {
             },
             style: FilledButton.styleFrom(
                 backgroundColor: Theme.of(ctx).colorScheme.error),
-            child: Text(_lang == 'zh' ? '关闭' : 'Shutdown'),
+            child: Text(tr('shutdown')),
           ),
         ],
       ),

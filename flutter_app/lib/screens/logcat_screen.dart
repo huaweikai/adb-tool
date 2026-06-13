@@ -2,54 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/device.dart';
 import '../services/api_client.dart';
+import '../i18n.dart';
 import '../services/log_stream.dart';
-
-const _loc = {
-  'zh': {
-    'start': '开始',
-    'stop': '停止',
-    'pause': '暂停',
-    'resume': '继续',
-    'clear': '清空',
-    'tag': '标签',
-    'package': '包名',
-    'level': '级别',
-    'keyword': '关键词',
-    'autoScroll': '自动滚动',
-    'status': '状态',
-    'lines': '行数',
-    'pid': '进程',
-    'idle': '空闲',
-    'streaming': '采集中',
-    'paused': '已暂停',
-    'stopped': '已停止',
-    'selectDevice': '选择设备后点击开始查看日志',
-    'logsHint': '日志将实时显示在这里',
-    'all': '全部',
-  },
-  'en': {
-    'start': 'Start',
-    'stop': 'Stop',
-    'pause': 'Pause',
-    'resume': 'Resume',
-    'clear': 'Clear',
-    'tag': 'Tag',
-    'package': 'Package',
-    'level': 'Level',
-    'keyword': 'Keyword',
-    'autoScroll': 'Auto-scroll',
-    'status': 'Status',
-    'lines': 'Lines',
-    'pid': 'PID',
-    'idle': 'Idle',
-    'streaming': 'Streaming',
-    'paused': 'Paused',
-    'stopped': 'Stopped',
-    'selectDevice': 'Select a device and click Start',
-    'logsHint': 'Logs will appear here in real-time',
-    'all': 'All',
-  },
-};
 
 class LogcatScreen extends StatefulWidget {
   final ApiClient api;
@@ -68,7 +22,6 @@ class LogcatScreen extends StatefulWidget {
 }
 
 class _LogcatScreenState extends State<LogcatScreen> {
-  String _lang = 'zh';
   String? _packagePid;
 
   String _priority = 'W';
@@ -90,8 +43,6 @@ class _LogcatScreenState extends State<LogcatScreen> {
   late final TextEditingController _tagCtrl;
   late final TextEditingController _kwCtrl;
   late final TextEditingController _pkgCtrl;
-
-  String tr(String key) => _loc[_lang]?[key] ?? key;
 
   @override
   void initState() {
@@ -227,8 +178,9 @@ class _LogcatScreenState extends State<LogcatScreen> {
 
   void _clearLogs() {
     widget.logStream.clear();
-    if (widget.selectedSerial != null)
+    if (widget.selectedSerial != null) {
       widget.api.clearLogcat(widget.selectedSerial!);
+    }
     setState(() => _allEntries.clear());
   }
 
@@ -478,7 +430,7 @@ class _LogcatScreenState extends State<LogcatScreen> {
                 size: 48,
                 color: theme.colorScheme.onSurfaceVariant.withAlpha(80)),
             const SizedBox(height: 12),
-            Text(tr('selectDevice'),
+            Text(tr('logcatSelectDevice'),
                 style: theme.textTheme.bodyMedium
                     ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
             const SizedBox(height: 4),

@@ -19,19 +19,19 @@ class ServerLauncher {
     ];
 
     if (Platform.isMacOS) {
-      final bundleRoot = '$execDir${sep}..${sep}..';
-      candidates.add('$bundleRoot${sep}$_binaryName');
-      candidates.add('$execDir${sep}..${sep}Resources${sep}$_binaryName');
+      final bundleRoot = '$execDir$sep..$sep..';
+      candidates.add('$bundleRoot$sep$_binaryName');
+      candidates.add('$execDir$sep..${sep}Resources$sep$_binaryName');
     }
 
     if (Platform.isWindows) {
-      candidates.add('$execDir${sep}Resources${sep}$_binaryName');
-      candidates.add('$execDir${sep}..${sep}Resources${sep}$_binaryName');
+      candidates.add('$execDir${sep}Resources$sep$_binaryName');
+      candidates.add('$execDir$sep..${sep}Resources$sep$_binaryName');
     }
 
-    candidates.add('${Directory.current.path}${sep}$_binaryName');
-    candidates.add(
-        '${Directory.current.path}${sep}..${sep}backend${sep}$_binaryName');
+    candidates.add('${Directory.current.path}$sep$_binaryName');
+    candidates
+        .add('${Directory.current.path}$sep..${sep}backend$sep$_binaryName');
 
     for (final p in candidates) {
       if (await File(p).exists()) return p;

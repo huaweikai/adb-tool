@@ -218,7 +218,7 @@ class ApiClient {
     );
     final data = json.decode(resp.body);
     if (resp.statusCode != 200) {
-      throw Exception(data['error'] ?? '安装失败');
+      throw Exception(data['error'] ?? 'Install failed');
     }
     return data['status'] ?? 'ok';
   }
@@ -254,8 +254,9 @@ class ApiClient {
       Uri.parse(
           '$baseUrl/api/pull-file?serial=$serial&path=${Uri.encodeComponent(path)}'),
     );
-    if (resp.statusCode != 200)
+    if (resp.statusCode != 200) {
       throw Exception('pull failed: ${resp.statusCode}');
+    }
     return resp.bodyBytes.toList();
   }
 
@@ -405,8 +406,9 @@ class ApiClient {
     final resp = await http.get(
       Uri.parse('$baseUrl/api/screen-record-video?serial=$serial'),
     );
-    if (resp.statusCode != 200)
+    if (resp.statusCode != 200) {
       throw Exception('pull video failed: ${resp.statusCode}');
+    }
     return resp.bodyBytes.toList();
   }
 
