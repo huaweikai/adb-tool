@@ -3,13 +3,11 @@ import 'package:provider/provider.dart';
 import '../services/api_client.dart';
 import '../i18n.dart';
 import '../providers/locale_provider.dart';
+import '../providers/device_provider.dart';
 
 class ClipboardScreen extends StatefulWidget {
-  final String? selectedSerial;
-
   const ClipboardScreen({
     super.key,
-    required this.selectedSerial,
   });
 
   @override
@@ -17,6 +15,8 @@ class ClipboardScreen extends StatefulWidget {
 }
 
 class _ClipboardScreenState extends State<ClipboardScreen> {
+  String? get _selectedSerial => context.read<DeviceSerialScope>().serial;
+
   final TextEditingController _textCtrl = TextEditingController();
   bool _helperInstalled = false;
   bool _checkingInstalled = true;
@@ -39,7 +39,7 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
   }
 
   Future<void> _checkInstalled() async {
-    if (widget.selectedSerial == null) {
+    if (_selectedSerial == null) {
       setState(() {
         _checkingInstalled = false;
         _helperInstalled = false;
@@ -49,7 +49,7 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
     setState(() => _checkingInstalled = true);
     try {
       final installed =
-          await context.read<ApiClient>().checkClipboardInstalled(widget.selectedSerial!);
+          await context.read<ApiClient>().checkClipboardInstalled(_selectedSerial!);
       if (!mounted) return;
       setState(() {
         _helperInstalled = installed;
@@ -66,7 +66,7 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
 
   Future<bool> _ensureInstalled() async {
     if (_helperInstalled) return true;
-    if (widget.selectedSerial == null) return false;
+    if (_selectedSerial == null) return false;
 
     setState(() {
       _installing = true;
@@ -74,7 +74,7 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
     });
 
     try {
-      await context.read<ApiClient>().installClipboardHelper(widget.selectedSerial!);
+      await context.read<ApiClient>().installClipboardHelper(_selectedSerial!);
       if (!mounted) return false;
       setState(() {
         _helperInstalled = true;
@@ -95,7 +95,7 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
 
   Future<void> _sendToClipboard() async {
     final text = _textCtrl.text;
-    if (text.isEmpty || widget.selectedSerial == null) return;
+    if (text.isEmpty || _selectedSerial == null) return;
 
     final installed = await _ensureInstalled();
     if (!installed || !mounted) return;
@@ -106,7 +106,7 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
     });
 
     try {
-      await context.read<ApiClient>().sendClipboard(widget.selectedSerial!, text);
+      await context.read<ApiClient>().sendClipboard(_selectedSerial!, text);
       if (!mounted) return;
       setState(() {
         _sending = false;
@@ -124,7 +124,7 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
   }
 
   Future<void> _uninstallHelper() async {
-    if (widget.selectedSerial == null) return;
+    if (_selectedSerial == null) return;
 
     setState(() {
       _uninstalling = true;
@@ -132,7 +132,7 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
     });
 
     try {
-      await context.read<ApiClient>().uninstallClipboardHelper(widget.selectedSerial!);
+      await context.read<ApiClient>().uninstallClipboardHelper(_selectedSerial!);
       if (!mounted) return;
       setState(() {
         _helperInstalled = false;
@@ -155,7 +155,7 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
     context.watch<LocaleProvider>();
     final theme = Theme.of(context);
 
-    if (widget.selectedSerial == null) {
+    if (_selectedSerial == null) {
       return Center(
         child: Text(tr('selectDevice'),
             style: theme.textTheme.bodyMedium

@@ -6,13 +6,11 @@ import '../services/api_client.dart';
 import '../i18n.dart';
 import '../services/log_stream.dart';
 import '../providers/locale_provider.dart';
+import '../providers/device_provider.dart';
 
 class LogcatScreen extends StatefulWidget {
-  final String? selectedSerial;
-
   const LogcatScreen({
     super.key,
-    required this.selectedSerial,
   });
 
   @override
@@ -20,6 +18,8 @@ class LogcatScreen extends StatefulWidget {
 }
 
 class _LogcatScreenState extends State<LogcatScreen> {
+  String? get _selectedSerial => context.read<DeviceSerialScope>().serial;
+
   String? _packagePid;
 
   String _priority = 'D';
@@ -86,13 +86,13 @@ class _LogcatScreenState extends State<LogcatScreen> {
       );
 
   Future<void> _resolvePackage() async {
-    if (_packageName.isEmpty || widget.selectedSerial == null) {
+    if (_packageName.isEmpty || _selectedSerial == null) {
       setState(() => _packagePid = null);
       _restartIfNeeded();
       return;
     }
     final pid =
-        await context.read<ApiClient>().getPackagePid(widget.selectedSerial!, _packageName);
+        await context.read<ApiClient>().getPackagePid(_selectedSerial!, _packageName);
     if (!mounted) return;
     setState(() => _packagePid = pid);
     _restartIfNeeded();
@@ -122,7 +122,7 @@ class _LogcatScreenState extends State<LogcatScreen> {
   }
 
   void _startLogs() {
-    if (widget.selectedSerial == null) return;
+    if (_selectedSerial == null) return;
     _allEntries.clear();
     _displayedEntries.clear();
     _pendingEntries.clear();
@@ -130,7 +130,7 @@ class _LogcatScreenState extends State<LogcatScreen> {
     _logSub?.cancel();
 
     final filter = _buildFilter();
-    context.read<LogStreamService>().connect(widget.selectedSerial!, filter);
+    context.read<LogStreamService>().connect(_selectedSerial!, filter);
     _connSub?.cancel();
     _connSub = context.read<LogStreamService>().connectionState.listen(
       (connected) {
@@ -252,8 +252,8 @@ class _LogcatScreenState extends State<LogcatScreen> {
     if (_isStreaming) {
       context.read<LogStreamService>().clear();
     }
-    if (widget.selectedSerial != null) {
-      context.read<ApiClient>().clearLogcat(widget.selectedSerial!);
+    if (_selectedSerial != null) {
+      context.read<ApiClient>().clearLogcat(_selectedSerial!);
     }
   }
 
@@ -296,7 +296,7 @@ class _LogcatScreenState extends State<LogcatScreen> {
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             _btn(tr('start'), Icons.play_arrow, !_isStreaming,
-                widget.selectedSerial == null ? null : _startLogs, true),
+                _selectedSerial == null ? null : _startLogs, true),
             const SizedBox(width: 4),
             _btn(tr('stop'), Icons.stop, _isStreaming, _stopLogs, false),
             const SizedBox(width: 4),

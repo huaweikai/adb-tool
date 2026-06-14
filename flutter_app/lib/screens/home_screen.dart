@@ -100,17 +100,17 @@ class _HomeScreenState extends State<HomeScreen> {
       Widget screen;
       switch (item) {
         case NavItem.logcat:
-          screen = LogcatScreen(selectedSerial: serial);
+          screen = Provider<DeviceSerialScope>.value(value: DeviceSerialScope(serial), child: const LogcatScreen());
         case NavItem.files:
-          screen = FileBrowserScreen(selectedSerial: serial);
+          screen = Provider<DeviceSerialScope>.value(value: DeviceSerialScope(serial), child: const FileBrowserScreen());
         case NavItem.apps:
-          screen = AppManagerScreen(selectedSerial: serial);
+          screen = Provider<DeviceSerialScope>.value(value: DeviceSerialScope(serial), child: const AppManagerScreen());
         case NavItem.info:
-          screen = DeviceInfoScreen(selectedSerial: serial);
+          screen = Provider<DeviceSerialScope>.value(value: DeviceSerialScope(serial), child: const DeviceInfoScreen());
         case NavItem.clipboard:
-          screen = ClipboardScreen(selectedSerial: serial);
+          screen = Provider<DeviceSerialScope>.value(value: DeviceSerialScope(serial), child: const ClipboardScreen());
         case NavItem.command:
-          screen = AdbCommandScreen(selectedSerial: serial);
+          screen = Provider<DeviceSerialScope>.value(value: DeviceSerialScope(serial), child: const AdbCommandScreen());
       }
       _screens[key] = screen;
       _evictCache();

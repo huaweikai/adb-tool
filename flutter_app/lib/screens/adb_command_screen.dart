@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../services/api_client.dart';
 import '../i18n.dart';
 import '../providers/locale_provider.dart';
+import '../providers/device_provider.dart';
 
 const _quickGroups = [
   _ActionGroup(
@@ -88,11 +89,8 @@ const _quickGroups = [
 ];
 
 class AdbCommandScreen extends StatefulWidget {
-  final String? selectedSerial;
-
   const AdbCommandScreen({
     super.key,
-    required this.selectedSerial,
   });
 
   @override
@@ -100,6 +98,8 @@ class AdbCommandScreen extends StatefulWidget {
 }
 
 class _AdbCommandScreenState extends State<AdbCommandScreen> {
+  String? get _selectedSerial => context.read<DeviceSerialScope>().serial;
+
   final TextEditingController _commandCtrl = TextEditingController();
   final ScrollController _scrollCtrl = ScrollController();
   final List<_CommandRecord> _records = [];
@@ -170,7 +170,7 @@ class _AdbCommandScreenState extends State<AdbCommandScreen> {
   }
 
   Future<void> _executeCommand(String raw, {bool fillInput = true}) async {
-    if (_running || widget.selectedSerial == null) return;
+    if (_running || _selectedSerial == null) return;
     final command = raw.trim();
     final args = _parseCommand(command);
     if (args.isEmpty) {
@@ -192,7 +192,7 @@ class _AdbCommandScreenState extends State<AdbCommandScreen> {
 
     try {
       final result =
-          await context.read<ApiClient>().executeAdbCommand(widget.selectedSerial!, args);
+          await context.read<ApiClient>().executeAdbCommand(_selectedSerial!, args);
       if (!mounted) return;
       setState(() {
         _records.add(_CommandRecord(
@@ -222,7 +222,7 @@ class _AdbCommandScreenState extends State<AdbCommandScreen> {
           title:
               Text(action.destructive ? tr('dangerousOp') : tr('confirmExec')),
           content: Text(
-              '${tr('confirmBody')}\n\nadb -s ${widget.selectedSerial} ${action.command}'),
+              '${tr('confirmBody')}\n\nadb -s $_selectedSerial ${action.command}'),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -265,7 +265,7 @@ class _AdbCommandScreenState extends State<AdbCommandScreen> {
     context.watch<LocaleProvider>();
     final theme = Theme.of(context);
 
-    if (widget.selectedSerial == null) {
+    if (_selectedSerial == null) {
       return Center(
         child: Text(tr('selectDevice'),
             style: theme.textTheme.bodyMedium
@@ -290,7 +290,7 @@ class _AdbCommandScreenState extends State<AdbCommandScreen> {
                   color: theme.colorScheme.primaryContainer,
                   borderRadius: BorderRadius.circular(999),
                 ),
-                child: Text(widget.selectedSerial!,
+                child: Text(_selectedSerial!,
                     style: const TextStyle(fontSize: 11)),
               ),
               const Spacer(),
@@ -317,7 +317,7 @@ class _AdbCommandScreenState extends State<AdbCommandScreen> {
                   onSubmitted: (_) => _runCommand(),
                   decoration: InputDecoration(
                     hintText: tr('adbInputHint'),
-                    prefixText: 'adb -s ${widget.selectedSerial} ',
+                    prefixText: 'adb -s $_selectedSerial ',
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
@@ -499,7 +499,7 @@ class _AdbCommandScreenState extends State<AdbCommandScreen> {
                 size: 16, color: color),
             const SizedBox(width: 6),
             Expanded(
-              child: Text('adb -s ${widget.selectedSerial} ${record.command}',
+              child: Text('adb -s $_selectedSerial ${record.command}',
                   style:
                       const TextStyle(fontFamily: 'monospace', fontSize: 12)),
             ),

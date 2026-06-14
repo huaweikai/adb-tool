@@ -7,14 +7,12 @@ import '../widgets/loading_view.dart';
 import '../widgets/error_view.dart';
 import '../widgets/file_transfer.dart';
 import '../providers/locale_provider.dart';
+import '../providers/device_provider.dart';
 import 'package:provider/provider.dart';
 
 class AppManagerScreen extends StatefulWidget {
-  final String? selectedSerial;
-
   const AppManagerScreen({
     super.key,
-    required this.selectedSerial,
   });
 
   @override
@@ -22,6 +20,8 @@ class AppManagerScreen extends StatefulWidget {
 }
 
 class _AppManagerScreenState extends State<AppManagerScreen> {
+  String? get _selectedSerial => context.read<DeviceSerialScope>().serial;
+
   List<AppPackage> _allPackages = [];
   List<AppPackage> _filteredPackages = [];
   bool _loading = false;
@@ -41,7 +41,7 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
 
   Future<void> _loadPackages() async {
     if (_installing) return;
-    if (widget.selectedSerial == null) {
+    if (_selectedSerial == null) {
       setState(() {
         _allPackages = [];
         _filteredPackages = [];
@@ -55,7 +55,7 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
     });
     try {
       final pkgs =
-          await context.read<ApiClient>().getInstalledPackages(widget.selectedSerial!);
+          await context.read<ApiClient>().getInstalledPackages(_selectedSerial!);
       if (!mounted) return;
       setState(() {
         _allPackages = pkgs;
@@ -89,6 +89,9 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
 
   Future<void> _uninstallPackage(AppPackage pkg) async {
     if (_installing) return;
+    final serial = _selectedSerial;
+    if (serial == null) return;
+    final api = context.read<ApiClient>();
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -107,8 +110,7 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
     if (confirm != true) return;
 
     try {
-      final ok = await context.read<ApiClient>()
-          .uninstallPackage(widget.selectedSerial!, pkg.packageName);
+      final ok = await api.uninstallPackage(serial, pkg.packageName);
       if (!mounted) return;
       if (ok) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -132,7 +134,9 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
 
   Future<void> _onDropApk(DropDoneDetails details) async {
     if (_installing) return;
-    if (widget.selectedSerial == null) return;
+    final serial = _selectedSerial;
+    if (serial == null) return;
+    final api = context.read<ApiClient>();
     if (mounted) setState(() => _dragOver = false);
     for (final file in details.files) {
       if (!file.name.toLowerCase().endsWith('.apk')) continue;
@@ -148,8 +152,8 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
             phaseKey: 'preparing',
           );
         });
-        final result = await context.read<ApiClient>().installLocalPackage(
-          widget.selectedSerial!,
+        final result = await api.installLocalPackage(
+          serial,
           file.path,
           cancelToken: cancelToken,
           onProgress: (progress) {
@@ -250,7 +254,7 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
   @override
   Widget build(BuildContext context) {
     context.watch<LocaleProvider>();
-    if (widget.selectedSerial == null) {
+    if (_selectedSerial == null) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,

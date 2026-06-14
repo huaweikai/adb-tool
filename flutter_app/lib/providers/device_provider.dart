@@ -2,6 +2,12 @@ import 'package:flutter/material.dart';
 import '../models/device.dart';
 import '../services/api_client.dart';
 
+class DeviceSerialScope {
+  final String? serial;
+
+  const DeviceSerialScope(this.serial);
+}
+
 class DeviceProvider extends ChangeNotifier {
   List<Device> _devices = [];
   bool _online = true;

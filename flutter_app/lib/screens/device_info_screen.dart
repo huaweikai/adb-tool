@@ -5,15 +5,13 @@ import 'package:provider/provider.dart';
 import '../services/api_client.dart';
 import '../i18n.dart';
 import '../providers/locale_provider.dart';
+import '../providers/device_provider.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_view.dart';
 
 class DeviceInfoScreen extends StatefulWidget {
-  final String? selectedSerial;
-
   const DeviceInfoScreen({
     super.key,
-    required this.selectedSerial,
   });
 
   @override
@@ -21,6 +19,8 @@ class DeviceInfoScreen extends StatefulWidget {
 }
 
 class _DeviceInfoScreenState extends State<DeviceInfoScreen> {
+  String? get _selectedSerial => context.read<DeviceSerialScope>().serial;
+
   Map<String, String> _props = {};
   bool _loading = false;
   String? _error;
@@ -33,7 +33,7 @@ class _DeviceInfoScreenState extends State<DeviceInfoScreen> {
   }
 
   Future<void> _loadInfo() async {
-    if (widget.selectedSerial == null) {
+    if (_selectedSerial == null) {
       setState(() {
         _props = {};
         _error = tr('selectDevice');
@@ -45,7 +45,7 @@ class _DeviceInfoScreenState extends State<DeviceInfoScreen> {
       _error = null;
     });
     try {
-      final props = await context.read<ApiClient>().getDeviceDetail(widget.selectedSerial!);
+      final props = await context.read<ApiClient>().getDeviceDetail(_selectedSerial!);
       if (!mounted) return;
       setState(() {
         _props = props;
@@ -61,9 +61,9 @@ class _DeviceInfoScreenState extends State<DeviceInfoScreen> {
   }
 
   Future<void> _takeScreenshot() async {
-    if (widget.selectedSerial == null) return;
+    if (_selectedSerial == null) return;
     try {
-      final b64 = await context.read<ApiClient>().takeScreenshot(widget.selectedSerial!);
+      final b64 = await context.read<ApiClient>().takeScreenshot(_selectedSerial!);
       if (!mounted) return;
       if (b64 != null) {
         showDialog(
@@ -120,7 +120,7 @@ class _DeviceInfoScreenState extends State<DeviceInfoScreen> {
   @override
   Widget build(BuildContext context) {
     context.watch<LocaleProvider>();
-    if (widget.selectedSerial == null) {
+    if (_selectedSerial == null) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
