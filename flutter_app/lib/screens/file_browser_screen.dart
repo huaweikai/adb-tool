@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:file_selector/file_selector.dart';
 import '../services/drop_target.dart';
 import '../models/file_item.dart';
@@ -11,6 +12,18 @@ import '../i18n.dart';
 enum _SortKey { name, date, size }
 
 enum _TransferMode { upload, download }
+
+enum _FileAction {
+  open,
+  download,
+  uploadToDir,
+  copyPath,
+  rename,
+  delete,
+  newFile,
+  newFolder,
+  details,
+}
 
 class _TransferState {
   final _TransferMode mode;
@@ -327,14 +340,12 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     }
   }
 
-  Future<void> _uploadFile() async {
+  Future<void> _uploadFile({String? targetDir}) async {
     if (_isTransferring) return;
     if (widget.selectedSerial == null) return;
     final result = await openFile(confirmButtonText: tr('upload'));
     if (result == null) return;
-    final remotePath = _currentPath.endsWith('/')
-        ? '$_currentPath${result.name}'
-        : '$_currentPath/${result.name}';
+    final remotePath = _joinRemotePath(targetDir ?? _currentPath, result.name);
     final totalBytes = await result.length();
     final cancelToken = TransferCancelToken();
     try {
@@ -402,6 +413,207 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
 
   void _cancelTransfer() {
     _transferCancelToken?.cancel();
+  }
+
+  String _joinRemotePath(String basePath, String name) {
+    final trimmedName = name.trim();
+    if (basePath == '/') return '/$trimmedName';
+    return '${basePath.replaceAll(RegExp(r'/+$'), '')}/$trimmedName';
+  }
+
+  Future<String?> _askName({
+    required String title,
+    required String label,
+    String initialValue = '',
+  }) async {
+    final controller = TextEditingController(text: initialValue);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: InputDecoration(labelText: label),
+          onSubmitted: (value) => Navigator.pop(ctx, value.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(tr('cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: Text(tr('confirm')),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    final trimmed = result?.trim();
+    if (trimmed == null ||
+        trimmed.isEmpty ||
+        trimmed == '.' ||
+        trimmed == '..' ||
+        trimmed.contains('/') ||
+        trimmed.contains('\\')) {
+      return null;
+    }
+    return trimmed;
+  }
+
+  Future<bool> _confirm(
+      {required String title, required String message}) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(tr('cancel')),
+          ),
+          FilledButton.tonal(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(tr('confirm')),
+          ),
+        ],
+      ),
+    );
+    return result == true;
+  }
+
+  Future<void> _copyPath(FileItem file) async {
+    await Clipboard.setData(ClipboardData(text: file.path));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(tr('pathCopied', {'path': file.path})),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  Future<void> _renameFile(FileItem file) async {
+    if (_isTransferring || widget.selectedSerial == null) return;
+    final newName = await _askName(
+      title: tr('rename'),
+      label: tr('newName'),
+      initialValue: file.name,
+    );
+    if (newName == null || newName == file.name) return;
+    final targetPath = _joinRemotePath(_currentPath, newName);
+    try {
+      await widget.api
+          .renameFile(widget.selectedSerial!, file.path, targetPath);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(tr('renamedTo', {'name': newName})),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      _loadFiles();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${tr('renameFailed')}: $e'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  Future<void> _deleteFile(FileItem file) async {
+    if (_isTransferring || widget.selectedSerial == null) return;
+    final ok = await _confirm(
+      title: tr('delete'),
+      message: tr(
+        file.isDir ? 'deleteDirConfirm' : 'deleteFileConfirm',
+        {'name': file.name},
+      ),
+    );
+    if (!ok) return;
+    try {
+      await widget.api.deleteFile(
+        widget.selectedSerial!,
+        file.path,
+        recursive: file.isDir,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(tr('deleted', {'name': file.name})),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      _loadFiles();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${tr('deleteFailed')}: $e'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  Future<void> _createFileOrFolder({
+    required bool directory,
+    String? targetDir,
+  }) async {
+    if (_isTransferring || widget.selectedSerial == null) return;
+    final name = await _askName(
+      title: directory ? tr('newFolder') : tr('newFile'),
+      label: tr('name'),
+    );
+    if (name == null) return;
+    final path = _joinRemotePath(targetDir ?? _currentPath, name);
+    try {
+      if (directory) {
+        await widget.api.createDirectory(widget.selectedSerial!, path);
+      } else {
+        await widget.api.createFile(widget.selectedSerial!, path);
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(tr(directory ? 'folderCreated' : 'fileCreated', {
+            'name': name,
+          })),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      _loadFiles();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${tr(directory ? 'createFolderFailed' : 'createFileFailed')}: $e',
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  Future<void> _showFileInfoWithStat(FileItem file) async {
+    if (widget.selectedSerial == null) {
+      _showFileInfo(context, file);
+      return;
+    }
+    try {
+      final stat = await widget.api.statFile(widget.selectedSerial!, file.path);
+      if (!mounted) return;
+      _showFileInfo(context, file, stat: stat);
+    } catch (_) {
+      if (!mounted) return;
+      _showFileInfo(context, file);
+    }
   }
 
   Future<void> _startRecording() async {
@@ -586,7 +798,6 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
             });
           },
         );
-        if (!mounted) return;
         if (!mounted) return;
         _transferCancelToken = null;
         setState(() => _transfer = null);
@@ -1117,68 +1328,86 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     final theme = Theme.of(context);
     final isText = _isTextFile(file.name);
 
-    return InkWell(
-      onTap: _isTransferring
+    return GestureDetector(
+      onSecondaryTapDown: _isTransferring
           ? null
-          : () {
-              if (file.isDir) {
-                _enterDir(file);
-              } else if (isText) {
-                _viewFile(file);
-              }
-            },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
-        child: Row(
-          children: [
-            Icon(
-              file.isDir
-                  ? Icons.folder
-                  : (isText ? Icons.description : Icons.insert_drive_file),
-              size: 18,
-              color: file.isDir
-                  ? Colors.amber.shade400
-                  : theme.colorScheme.primary,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                file.name,
-                style: const TextStyle(fontSize: 12, fontFamily: 'Menlo'),
-                overflow: TextOverflow.ellipsis,
+          : (details) => _showFileContextMenu(details.globalPosition, file),
+      child: InkWell(
+        onTap: _isTransferring
+            ? null
+            : () {
+                if (file.isDir) {
+                  _enterDir(file);
+                } else if (isText) {
+                  _viewFile(file);
+                }
+              },
+        onLongPress:
+            _isTransferring ? null : () => _showFileMenu(context, file),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+          child: Row(
+            children: [
+              Icon(
+                file.isDir
+                    ? Icons.folder
+                    : (isText ? Icons.description : Icons.insert_drive_file),
+                size: 18,
+                color: file.isDir
+                    ? Colors.amber.shade400
+                    : theme.colorScheme.primary,
               ),
-            ),
-            SizedBox(
-              width: 100,
-              child: Text(
-                file.modified,
-                style: TextStyle(
-                    fontSize: 10,
-                    fontFamily: 'Menlo',
-                    color: theme.colorScheme.onSurfaceVariant),
-              ),
-            ),
-            if (file.sizeFormatted.isNotEmpty)
-              SizedBox(
-                width: 70,
+              const SizedBox(width: 10),
+              Expanded(
                 child: Text(
-                  file.sizeFormatted,
-                  style: TextStyle(
-                      fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
-                  textAlign: TextAlign.end,
+                  file.name,
+                  style: const TextStyle(fontSize: 12, fontFamily: 'Menlo'),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-            if (!file.isDir) ...[
-              const SizedBox(width: 4),
-              _iconBtn(Icons.download, tr('downloadTooltip'),
-                  _isTransferring ? null : () => _downloadFile(file)),
+              SizedBox(
+                width: 100,
+                child: Text(
+                  file.modified,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontFamily: 'Menlo',
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              if (file.sizeFormatted.isNotEmpty)
+                SizedBox(
+                  width: 70,
+                  child: Text(
+                    file.sizeFormatted,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                    textAlign: TextAlign.end,
+                  ),
+                ),
+              if (!file.isDir) ...[
+                const SizedBox(width: 4),
+                _iconBtn(
+                  Icons.download,
+                  tr('downloadTooltip'),
+                  _isTransferring ? null : () => _downloadFile(file),
+                ),
+              ],
+              if (file.isDir) ...[
+                const SizedBox(width: 4),
+                _iconBtn(
+                  Icons.upload,
+                  tr('uploadToDir'),
+                  _isTransferring
+                      ? null
+                      : () => _uploadFile(targetDir: file.path),
+                ),
+              ],
             ],
-            if (file.isDir) ...[
-              const SizedBox(width: 4),
-              _iconBtn(Icons.upload, tr('uploadToDir'),
-                  _isTransferring ? null : _uploadFile),
-            ],
-          ],
+          ),
         ),
       ),
     );
@@ -1217,54 +1446,134 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     final theme = Theme.of(context);
     final isText = _isTextFile(file.name);
 
-    return Card(
-      elevation: 0,
-      color: theme.colorScheme.surfaceContainer,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: _isTransferring
-            ? null
-            : () {
-                if (file.isDir) {
-                  _enterDir(file);
-                } else if (isText) {
-                  _viewFile(file);
-                }
-              },
-        onLongPress:
-            _isTransferring ? null : () => _showFileMenu(context, file),
-        child: Padding(
-          padding: const EdgeInsets.all(8),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                file.isDir
-                    ? Icons.folder
-                    : (isText ? Icons.description : Icons.insert_drive_file),
-                size: 28,
-                color: file.isDir
-                    ? Colors.amber.shade400
-                    : theme.colorScheme.primary,
-              ),
-              const SizedBox(height: 6),
-              Text(
-                file.name,
-                style: const TextStyle(fontSize: 10, fontFamily: 'Menlo'),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-              ),
-              if (file.sizeFormatted.isNotEmpty)
-                Text(
-                  file.sizeFormatted,
-                  style: TextStyle(
-                      fontSize: 9, color: theme.colorScheme.onSurfaceVariant),
+    return GestureDetector(
+      onSecondaryTapDown: _isTransferring
+          ? null
+          : (details) => _showFileContextMenu(details.globalPosition, file),
+      child: Card(
+        elevation: 0,
+        color: theme.colorScheme.surfaceContainer,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: _isTransferring
+              ? null
+              : () {
+                  if (file.isDir) {
+                    _enterDir(file);
+                  } else if (isText) {
+                    _viewFile(file);
+                  }
+                },
+          onLongPress:
+              _isTransferring ? null : () => _showFileMenu(context, file),
+          child: Padding(
+            padding: const EdgeInsets.all(8),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  file.isDir
+                      ? Icons.folder
+                      : (isText ? Icons.description : Icons.insert_drive_file),
+                  size: 28,
+                  color: file.isDir
+                      ? Colors.amber.shade400
+                      : theme.colorScheme.primary,
                 ),
-            ],
+                const SizedBox(height: 6),
+                Text(
+                  file.name,
+                  style: const TextStyle(fontSize: 10, fontFamily: 'Menlo'),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                ),
+                if (file.sizeFormatted.isNotEmpty)
+                  Text(
+                    file.sizeFormatted,
+                    style: TextStyle(
+                      fontSize: 9,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ),
+    );
+  }
+
+  Future<void> _showFileContextMenu(Offset position, FileItem file) async {
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    final action = await showMenu<_FileAction>(
+      context: context,
+      position: RelativeRect.fromRect(
+        Rect.fromLTWH(position.dx, position.dy, 1, 1),
+        Offset.zero & overlay.size,
+      ),
+      items: _filePopupMenuItems(file),
+    );
+    if (action == null) return;
+    await _handleFileAction(action, file);
+  }
+
+  List<PopupMenuEntry<_FileAction>> _filePopupMenuItems(FileItem file) {
+    return [
+      if (file.isDir)
+        PopupMenuItem(
+          value: _FileAction.open,
+          child: _menuRow(Icons.folder_open, tr('open')),
+        ),
+      if (!file.isDir)
+        PopupMenuItem(
+          value: _FileAction.download,
+          child: _menuRow(Icons.download, tr('downloadTooltip')),
+        ),
+      if (file.isDir)
+        PopupMenuItem(
+          value: _FileAction.uploadToDir,
+          child: _menuRow(Icons.upload, tr('uploadToDir')),
+        ),
+      PopupMenuItem(
+        value: _FileAction.copyPath,
+        child: _menuRow(Icons.copy, tr('copyPath')),
+      ),
+      const PopupMenuDivider(),
+      PopupMenuItem(
+        value: _FileAction.rename,
+        child: _menuRow(Icons.drive_file_rename_outline, tr('rename')),
+      ),
+      PopupMenuItem(
+        value: _FileAction.delete,
+        child: _menuRow(Icons.delete_outline, tr('delete')),
+      ),
+      if (file.isDir) ...[
+        const PopupMenuDivider(),
+        PopupMenuItem(
+          value: _FileAction.newFile,
+          child: _menuRow(Icons.note_add_outlined, tr('newFile')),
+        ),
+        PopupMenuItem(
+          value: _FileAction.newFolder,
+          child: _menuRow(Icons.create_new_folder_outlined, tr('newFolder')),
+        ),
+      ],
+      const PopupMenuDivider(),
+      PopupMenuItem(
+        value: _FileAction.details,
+        child: _menuRow(Icons.info_outline, tr('details')),
+      ),
+    ];
+  }
+
+  Widget _menuRow(IconData icon, String label) {
+    return Row(
+      children: [
+        Icon(icon, size: 18),
+        const SizedBox(width: 10),
+        Text(label),
+      ],
     );
   }
 
@@ -1277,35 +1586,12 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
           children: [
             Padding(
               padding: const EdgeInsets.all(16),
-              child: Text(file.name,
-                  style: Theme.of(context).textTheme.titleSmall),
-            ),
-            if (!file.isDir)
-              ListTile(
-                leading: const Icon(Icons.download),
-                title: Text(tr('downloadTooltip')),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _downloadFile(file);
-                },
+              child: Text(
+                file.name,
+                style: Theme.of(context).textTheme.titleSmall,
               ),
-            if (file.isDir)
-              ListTile(
-                leading: const Icon(Icons.upload),
-                title: Text(tr('uploadToDir')),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _uploadFile();
-                },
-              ),
-            ListTile(
-              leading: const Icon(Icons.info_outline),
-              title: Text(tr('details')),
-              onTap: () {
-                Navigator.pop(ctx);
-                _showFileInfo(context, file);
-              },
             ),
+            for (final entry in _fileSheetActions(ctx, file)) entry,
             const SizedBox(height: 8),
           ],
         ),
@@ -1313,7 +1599,110 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     );
   }
 
-  void _showFileInfo(BuildContext context, FileItem file) {
+  List<Widget> _fileSheetActions(BuildContext sheetContext, FileItem file) {
+    return [
+      if (file.isDir)
+        _sheetAction(
+          sheetContext,
+          Icons.folder_open,
+          tr('open'),
+          () => _enterDir(file),
+        ),
+      if (!file.isDir)
+        _sheetAction(
+          sheetContext,
+          Icons.download,
+          tr('downloadTooltip'),
+          () => _downloadFile(file),
+        ),
+      if (file.isDir)
+        _sheetAction(
+          sheetContext,
+          Icons.upload,
+          tr('uploadToDir'),
+          () => _uploadFile(targetDir: file.path),
+        ),
+      _sheetAction(
+        sheetContext,
+        Icons.copy,
+        tr('copyPath'),
+        () => _copyPath(file),
+      ),
+      _sheetAction(
+        sheetContext,
+        Icons.drive_file_rename_outline,
+        tr('rename'),
+        () => _renameFile(file),
+      ),
+      _sheetAction(
+        sheetContext,
+        Icons.delete_outline,
+        tr('delete'),
+        () => _deleteFile(file),
+      ),
+      if (file.isDir)
+        _sheetAction(
+          sheetContext,
+          Icons.note_add_outlined,
+          tr('newFile'),
+          () => _createFileOrFolder(directory: false, targetDir: file.path),
+        ),
+      if (file.isDir)
+        _sheetAction(
+          sheetContext,
+          Icons.create_new_folder_outlined,
+          tr('newFolder'),
+          () => _createFileOrFolder(directory: true, targetDir: file.path),
+        ),
+      _sheetAction(
+        sheetContext,
+        Icons.info_outline,
+        tr('details'),
+        () => _showFileInfoWithStat(file),
+      ),
+    ];
+  }
+
+  Widget _sheetAction(
+    BuildContext sheetContext,
+    IconData icon,
+    String title,
+    VoidCallback action,
+  ) {
+    return ListTile(
+      leading: Icon(icon),
+      title: Text(title),
+      onTap: () {
+        Navigator.pop(sheetContext);
+        action();
+      },
+    );
+  }
+
+  Future<void> _handleFileAction(_FileAction action, FileItem file) async {
+    switch (action) {
+      case _FileAction.open:
+        _enterDir(file);
+      case _FileAction.download:
+        await _downloadFile(file);
+      case _FileAction.uploadToDir:
+        await _uploadFile(targetDir: file.path);
+      case _FileAction.copyPath:
+        await _copyPath(file);
+      case _FileAction.rename:
+        await _renameFile(file);
+      case _FileAction.delete:
+        await _deleteFile(file);
+      case _FileAction.newFile:
+        await _createFileOrFolder(directory: false, targetDir: file.path);
+      case _FileAction.newFolder:
+        await _createFileOrFolder(directory: true, targetDir: file.path);
+      case _FileAction.details:
+        await _showFileInfoWithStat(file);
+    }
+  }
+
+  void _showFileInfo(BuildContext context, FileItem file, {FileStat? stat}) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -1322,11 +1711,15 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _infoRow(tr('type'), file.isDir ? tr('directory') : tr('file')),
-            _infoRow(tr('path'), file.path),
-            if (!file.isDir) _infoRow(tr('size'), file.sizeFormatted),
-            _infoRow(tr('permissions'), file.permissions),
-            _infoRow(tr('modified'), file.modified),
+            _infoRow(tr('type'),
+                (stat?.isDir ?? file.isDir) ? tr('directory') : tr('file')),
+            _infoRow(tr('path'), stat?.path ?? file.path),
+            if (!(stat?.isDir ?? file.isDir))
+              _infoRow(tr('size'), stat?.sizeFormatted ?? file.sizeFormatted),
+            _infoRow(tr('permissions'), stat?.permissions ?? file.permissions),
+            _infoRow(tr('modified'), stat?.modified ?? file.modified),
+            if (stat != null && stat.raw.isNotEmpty)
+              _infoRow(tr('rawInfo'), stat.raw),
           ],
         ),
         actions: [

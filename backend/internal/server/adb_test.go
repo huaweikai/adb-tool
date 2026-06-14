@@ -29,3 +29,23 @@ func TestParseDeviceLineWithUsbSerial(t *testing.T) {
 		t.Fatalf("unexpected state: %q", state)
 	}
 }
+
+func TestShellCommandQuotesSpecialPathCharacters(t *testing.T) {
+	command := shellCommand(
+		"mv --",
+		"/storage/emulated/0/Download/HZ55A55E(1012).zip",
+		"/storage/emulated/0/Download/H).zip",
+	)
+	expected := "mv -- '/storage/emulated/0/Download/HZ55A55E(1012).zip' '/storage/emulated/0/Download/H).zip'"
+	if command != expected {
+		t.Fatalf("unexpected command: %q", command)
+	}
+}
+
+func TestShellQuoteEscapesSingleQuote(t *testing.T) {
+	quoted := shellQuote("/sdcard/Download/a'b.txt")
+	expected := "'/sdcard/Download/a'\\''b.txt'"
+	if quoted != expected {
+		t.Fatalf("unexpected quote: %q", quoted)
+	}
+}

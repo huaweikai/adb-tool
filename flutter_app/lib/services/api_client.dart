@@ -257,6 +257,60 @@ class ApiClient {
     return data['content'] ?? '';
   }
 
+  Future<bool> deleteFile(
+    String serial,
+    String path, {
+    required bool recursive,
+  }) async {
+    final resp = await _dio.post(
+      '/api/file-delete',
+      queryParameters: {
+        'serial': serial,
+        'path': path,
+        'recursive': recursive.toString(),
+      },
+    );
+    _throwIfNotOk(resp);
+    return true;
+  }
+
+  Future<bool> renameFile(String serial, String from, String to) async {
+    final resp = await _dio.post(
+      '/api/file-rename',
+      queryParameters: {'serial': serial, 'from': from, 'to': to},
+    );
+    _throwIfNotOk(resp);
+    return true;
+  }
+
+  Future<bool> createDirectory(String serial, String path) async {
+    final resp = await _dio.post(
+      '/api/file-mkdir',
+      queryParameters: {'serial': serial, 'path': path},
+    );
+    _throwIfNotOk(resp);
+    return true;
+  }
+
+  Future<bool> createFile(String serial, String path) async {
+    final resp = await _dio.post(
+      '/api/file-touch',
+      queryParameters: {'serial': serial, 'path': path},
+    );
+    _throwIfNotOk(resp);
+    return true;
+  }
+
+  Future<FileStat> statFile(String serial, String path) async {
+    final resp = await _dio.get(
+      '/api/file-stat',
+      queryParameters: {'serial': serial, 'path': path},
+    );
+    _throwIfNotOk(resp);
+    final data = _asMap(resp.data);
+    return FileStat.fromJson(_asMap(data['stat']));
+  }
+
   Future<List<int>> pullFile(String serial, String path) async {
     final resp = await _dio.get<List<int>>(
       '/api/pull-file',

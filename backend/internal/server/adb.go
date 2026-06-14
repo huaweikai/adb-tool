@@ -344,14 +344,48 @@ type FileEntry struct {
 	Modified    string `json:"modified"`
 }
 
+type FileStat struct {
+	Name        string `json:"name"`
+	Path        string `json:"path"`
+	Size        int64  `json:"size"`
+	IsDir       bool   `json:"isDir"`
+	Permissions string `json:"permissions"`
+	Modified    string `json:"modified"`
+	Raw         string `json:"raw"`
+}
+
 type PackageInfo struct {
 	PackageName string `json:"packageName"`
 	SourceDir   string `json:"sourceDir"`
 }
 
+func shellQuote(value string) string {
+	if value == "" {
+		return "''"
+	}
+	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
+}
+
+func shellCommand(command string, args ...string) string {
+	quoted := make([]string, 0, len(args)+1)
+	quoted = append(quoted, command)
+	for _, arg := range args {
+		quoted = append(quoted, shellQuote(arg))
+	}
+	return strings.Join(quoted, " ")
+}
+
+func (m *AdbManager) runShell(serial, command string) (string, error) {
+	return m.run("-s", serial, "shell", command)
+}
+
 func (m *AdbManager) ListFiles(serial, path string) ([]FileEntry, error) {
-	path = strings.TrimRight(path, "/")
-	out, err := m.run("-s", serial, "shell", "ls", "-la", path)
+	if path == "" {
+		path = "/sdcard"
+	} else if path != "/" {
+		path = strings.TrimRight(path, "/")
+	}
+	out, err := m.runShell(serial, shellCommand("ls -la", path))
 	if err != nil {
 		return nil, err
 	}
@@ -388,7 +422,7 @@ func parseLsOutput(out, basePath string) []FileEntry {
 			name = name[:idx]
 		}
 
-		fullPath := basePath + "/" + name
+		fullPath := joinDevicePath(basePath, name)
 
 		entries = append(entries, FileEntry{
 			Name:        name,
@@ -402,8 +436,95 @@ func parseLsOutput(out, basePath string) []FileEntry {
 	return entries
 }
 
+func joinDevicePath(basePath, name string) string {
+	basePath = strings.TrimRight(basePath, "/")
+	if basePath == "" {
+		return "/" + name
+	}
+	return basePath + "/" + name
+}
+
+func deviceBaseName(path string) string {
+	path = strings.TrimRight(path, "/")
+	if path == "" {
+		return "/"
+	}
+	if idx := strings.LastIndex(path, "/"); idx >= 0 {
+		return path[idx+1:]
+	}
+	return path
+}
+
 func (m *AdbManager) ReadFile(serial, path string) (string, error) {
-	return m.run("-s", serial, "shell", "cat", path)
+	return m.runShell(serial, shellCommand("cat", path))
+}
+
+func (m *AdbManager) DeleteFile(serial, path string, recursive bool) error {
+	command := "rm -f --"
+	if recursive {
+		command = "rm -rf --"
+	}
+	_, err := m.runShell(serial, shellCommand(command, path))
+	return err
+}
+
+func (m *AdbManager) RenameFile(serial, from, to string) error {
+	_, err := m.runShell(serial, shellCommand("mv --", from, to))
+	return err
+}
+
+func (m *AdbManager) MakeDir(serial, path string) error {
+	_, err := m.runShell(serial, shellCommand("mkdir -p", path))
+	return err
+}
+
+func (m *AdbManager) TouchFile(serial, path string) error {
+	_, err := m.runShell(serial, shellCommand("touch", path))
+	return err
+}
+
+func (m *AdbManager) FileStat(serial, path string) (FileStat, error) {
+	out, err := m.runShell(serial, shellCommand("ls -ld", path))
+	if err != nil {
+		return FileStat{}, err
+	}
+	entry, ok := parseLsSingle(strings.TrimSpace(out), path)
+	if !ok {
+		return FileStat{Path: path, Name: deviceBaseName(path), Raw: strings.TrimSpace(out)}, nil
+	}
+	return FileStat{
+		Name:        entry.Name,
+		Path:        path,
+		Size:        entry.Size,
+		IsDir:       entry.IsDir,
+		Permissions: entry.Permissions,
+		Modified:    entry.Modified,
+		Raw:         strings.TrimSpace(out),
+	}, nil
+}
+
+func parseLsSingle(line, path string) (FileEntry, bool) {
+	fields := strings.Fields(line)
+	if len(fields) < 8 {
+		return FileEntry{}, false
+	}
+	perms := fields[0]
+	if len(perms) < 10 {
+		return FileEntry{}, false
+	}
+	var size int64
+	if s, err := strconv.ParseInt(fields[4], 10, 64); err == nil {
+		size = s
+	}
+	name := deviceBaseName(path)
+	return FileEntry{
+		Name:        name,
+		Path:        path,
+		Size:        size,
+		IsDir:       perms[0] == 'd' || perms[0] == 'l',
+		Permissions: perms,
+		Modified:    fields[5] + " " + fields[6],
+	}, true
 }
 
 func (m *AdbManager) InstalledPackages(serial string) ([]PackageInfo, error) {
@@ -480,7 +601,7 @@ func (m *AdbManager) Screenshot(serial string) ([]byte, error) {
 }
 
 func (m *AdbManager) PullFile(serial, remotePath string) ([]byte, error) {
-	return m.runOut("-s", serial, "exec-out", "cat", remotePath)
+	return m.runOut("-s", serial, "exec-out", shellCommand("cat", remotePath))
 }
 
 func (m *AdbManager) PullFileToPath(serial, remotePath, localPath string) error {

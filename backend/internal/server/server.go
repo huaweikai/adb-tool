@@ -78,6 +78,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/backend-logs", s.handleBackendLogs)
 	mux.HandleFunc("/api/pull-file", s.handlePullFile)
 	mux.HandleFunc("/api/push-file", s.handlePushFile)
+	mux.HandleFunc("/api/file-delete", s.handleFileDelete)
+	mux.HandleFunc("/api/file-rename", s.handleFileRename)
+	mux.HandleFunc("/api/file-mkdir", s.handleFileMkdir)
+	mux.HandleFunc("/api/file-touch", s.handleFileTouch)
+	mux.HandleFunc("/api/file-stat", s.handleFileStat)
 	mux.HandleFunc("/api/screen-record", s.handleScreenRecord)
 	mux.HandleFunc("/api/screen-record-video", s.handleScreenRecordVideo)
 	mux.HandleFunc("/api/identify", s.handleIdentify)
@@ -549,6 +554,95 @@ func (s *Server) handlePushFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleFileDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+	serial := r.URL.Query().Get("serial")
+	path := r.URL.Query().Get("path")
+	recursive := r.URL.Query().Get("recursive") == "true"
+	if serial == "" || path == "" {
+		http.Error(w, "serial and path required", http.StatusBadRequest)
+		return
+	}
+	if err := s.adb.DeleteFile(serial, path, recursive); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleFileRename(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+	serial := r.URL.Query().Get("serial")
+	from := r.URL.Query().Get("from")
+	to := r.URL.Query().Get("to")
+	if serial == "" || from == "" || to == "" {
+		http.Error(w, "serial, from and to required", http.StatusBadRequest)
+		return
+	}
+	if err := s.adb.RenameFile(serial, from, to); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleFileMkdir(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+	serial := r.URL.Query().Get("serial")
+	path := r.URL.Query().Get("path")
+	if serial == "" || path == "" {
+		http.Error(w, "serial and path required", http.StatusBadRequest)
+		return
+	}
+	if err := s.adb.MakeDir(serial, path); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleFileTouch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+	serial := r.URL.Query().Get("serial")
+	path := r.URL.Query().Get("path")
+	if serial == "" || path == "" {
+		http.Error(w, "serial and path required", http.StatusBadRequest)
+		return
+	}
+	if err := s.adb.TouchFile(serial, path); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleFileStat(w http.ResponseWriter, r *http.Request) {
+	serial := r.URL.Query().Get("serial")
+	path := r.URL.Query().Get("path")
+	if serial == "" || path == "" {
+		http.Error(w, "serial and path required", http.StatusBadRequest)
+		return
+	}
+	stat, err := s.adb.FileStat(serial, path)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]interface{}{"stat": stat})
 }
 
 func (s *Server) handleScreenRecordVideo(w http.ResponseWriter, r *http.Request) {
