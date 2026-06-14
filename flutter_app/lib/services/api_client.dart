@@ -72,7 +72,7 @@ class ApiClient {
   Future<List<Device>> getDevices() async {
     final resp = await _dio.get('/api/devices');
     if (!_isOk(resp)) return [];
-    final list = _asList(resp.data);
+    final list = _asList(_responseData(resp));
     return list.map((e) => Device.fromJson(_asMap(e))).toList();
   }
 
@@ -82,7 +82,7 @@ class ApiClient {
       queryParameters: {'serial': serial},
     );
     if (!_isOk(resp)) return [];
-    final data = _asMap(resp.data);
+    final data = _responseMap(resp);
     final list = data['packages'] as List? ?? [];
     return list.map((e) => e.toString()).toList();
   }
@@ -93,7 +93,7 @@ class ApiClient {
       queryParameters: {'serial': serial, 'package': package},
     );
     if (!_isOk(resp)) return null;
-    final data = _asMap(resp.data);
+    final data = _responseMap(resp);
     final pid = data['pid'] as String?;
     return (pid != null && pid.isNotEmpty) ? pid : null;
   }
@@ -114,8 +114,7 @@ class ApiClient {
       data: {'args': args},
       options: Options(contentType: Headers.jsonContentType),
     );
-    final data = _asMap(resp.data);
-    return _adbCommandResult(data);
+    return _adbCommandResult(_responseMap(resp));
   }
 
   Future<AdbCommandResult> pairWirelessAdb(String address, String code) async {
@@ -124,7 +123,7 @@ class ApiClient {
       data: {'address': address, 'code': code},
       options: Options(contentType: Headers.jsonContentType),
     );
-    return _adbCommandResult(_asMap(resp.data));
+    return _adbCommandResult(_responseMap(resp));
   }
 
   Future<AdbCommandResult> connectWirelessAdb(String address) async {
@@ -133,7 +132,7 @@ class ApiClient {
       data: {'address': address},
       options: Options(contentType: Headers.jsonContentType),
     );
-    return _adbCommandResult(_asMap(resp.data));
+    return _adbCommandResult(_responseMap(resp));
   }
 
   Future<AdbCommandResult> disconnectWirelessAdb(String serial) async {
@@ -142,7 +141,7 @@ class ApiClient {
       data: {'serial': serial},
       options: Options(contentType: Headers.jsonContentType),
     );
-    return _adbCommandResult(_asMap(resp.data));
+    return _adbCommandResult(_responseMap(resp));
   }
 
   Future<bool> isReady() async {
@@ -161,7 +160,7 @@ class ApiClient {
       queryParameters: {'serial': serial, 'path': path},
     );
     _throwIfNotOk(resp);
-    final data = _asMap(resp.data);
+    final data = _responseMap(resp);
     final list = data['files'] as List? ?? [];
     return list.map((e) => FileItem.fromJson(_asMap(e))).toList();
   }
@@ -172,7 +171,7 @@ class ApiClient {
       queryParameters: {'serial': serial, 'path': path},
     );
     _throwIfNotOk(resp);
-    final data = _asMap(resp.data);
+    final data = _responseMap(resp);
     return data['content'] ?? '';
   }
 
@@ -182,7 +181,7 @@ class ApiClient {
       queryParameters: {'serial': serial},
     );
     _throwIfNotOk(resp);
-    final data = _asMap(resp.data);
+    final data = _responseMap(resp);
     final list = data['packages'] as List? ?? [];
     return list.map((e) => AppPackage.fromJson(_asMap(e))).toList();
   }
@@ -193,7 +192,7 @@ class ApiClient {
       queryParameters: {'serial': serial},
     );
     _throwIfNotOk(resp);
-    final data = _asMap(resp.data);
+    final data = _responseMap(resp);
     final props = _asMap(data['props']);
     return props.map((k, v) => MapEntry(k, v.toString()));
   }
@@ -224,10 +223,10 @@ class ApiClient {
       data: apkBytes,
       options: Options(contentType: 'application/octet-stream'),
     );
-    final data = _asMap(resp.data);
     if (!_isOk(resp)) {
-      throw Exception(data['error'] ?? 'Install failed');
+      throw Exception(_errorMessage(resp));
     }
+    final data = _responseMap(resp);
     return data['status'] ?? 'ok';
   }
 
@@ -253,7 +252,7 @@ class ApiClient {
       queryParameters: {'serial': serial, 'path': path},
     );
     _throwIfNotOk(resp);
-    final data = _asMap(resp.data);
+    final data = _responseMap(resp);
     return data['content'] ?? '';
   }
 
@@ -307,7 +306,7 @@ class ApiClient {
       queryParameters: {'serial': serial, 'path': path},
     );
     _throwIfNotOk(resp);
-    final data = _asMap(resp.data);
+    final data = _responseMap(resp);
     return FileStat.fromJson(_asMap(data['stat']));
   }
 
@@ -412,7 +411,7 @@ class ApiClient {
         throw Exception(_errorMessage(response));
       }
       onProgress?.call(TransferProgress(total, total));
-      return _asMap(response.data);
+      return _responseMap(response);
     } on DioException catch (e) {
       if (_isCancelError(e)) throw TransferCanceledException();
       rethrow;
@@ -426,7 +425,7 @@ class ApiClient {
       queryParameters: {'serial': serial, 'action': action},
     );
     _throwIfNotOk(resp);
-    return _asMap(resp.data);
+    return _responseMap(resp);
   }
 
   Future<Map<String, dynamic>> screenRecordStatus() async {
@@ -435,7 +434,7 @@ class ApiClient {
       queryParameters: {'action': 'status'},
     );
     _throwIfNotOk(resp);
-    return _asMap(resp.data);
+    return _responseMap(resp);
   }
 
   Future<List<int>> pullRecordedVideo(String serial) async {
@@ -456,7 +455,7 @@ class ApiClient {
       queryParameters: {'serial': serial},
     );
     _throwIfNotOk(resp);
-    final data = _asMap(resp.data);
+    final data = _responseMap(resp);
     return data['installed'] == true;
   }
 
@@ -491,7 +490,7 @@ class ApiClient {
     final resp =
         await _dio.get('/api/backend-logs').timeout(const Duration(seconds: 3));
     if (!_isOk(resp)) return [];
-    final data = _asMap(resp.data);
+    final data = _responseMap(resp);
     final list = data['logs'] as List? ?? [];
     return list.map((e) => _asMap(e)).toList();
   }
@@ -509,14 +508,45 @@ class ApiClient {
     throw Exception(_errorMessage(response));
   }
 
-  bool _isOk(Response response) => response.statusCode == 200;
+  bool _isOk(Response response) {
+    if (response.statusCode != 200) return false;
+    final body = _asMap(response.data);
+    if (_isEnvelope(body)) return body['ok'] == true;
+    return true;
+  }
+
+  dynamic _responseData(Response response) {
+    final body = _asMap(response.data);
+    if (_isEnvelope(body)) return body['data'];
+    return response.data;
+  }
+
+  Map<String, dynamic> _responseMap(Response response) {
+    final body = _asMap(response.data);
+    final data = _asMap(_responseData(response));
+    if (_isEnvelope(body) && body['ok'] != true && !data.containsKey('error')) {
+      final error = body['error']?.toString() ?? '';
+      if (error.isNotEmpty) data['error'] = error;
+    }
+    return data;
+  }
+
+  bool _isEnvelope(Map<String, dynamic> data) {
+    return data.containsKey('ok') && data.containsKey('data');
+  }
 
   String _errorMessage(Response response) {
     final data = response.data;
-    if (data is Map) {
-      return data['error']?.toString() ??
-          data['message']?.toString() ??
-          '$data';
+    final body = _asMap(data);
+    if (_isEnvelope(body)) {
+      final error = body['error']?.toString() ?? '';
+      if (error.isNotEmpty) return error;
+      return 'HTTP ${response.statusCode}';
+    }
+    if (body.isNotEmpty) {
+      return body['error']?.toString() ??
+          body['message']?.toString() ??
+          '$body';
     }
     if (data is List<int>) {
       return utf8.decode(data, allowMalformed: true);

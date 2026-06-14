@@ -111,7 +111,7 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 	devices, err := s.adb.Devices()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if devices == nil {
@@ -123,11 +123,11 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleClear(w http.ResponseWriter, r *http.Request) {
 	serial := r.URL.Query().Get("serial")
 	if serial == "" {
-		http.Error(w, "serial required", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "serial required")
 		return
 	}
 	if err := s.adb.ClearLogcat(serial); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, map[string]string{"status": "ok"})
@@ -136,12 +136,12 @@ func (s *Server) handleClear(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDeviceInfo(w http.ResponseWriter, r *http.Request) {
 	serial := r.URL.Query().Get("serial")
 	if serial == "" {
-		http.Error(w, "serial required", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "serial required")
 		return
 	}
 	output, err := s.adb.Shell(serial, "getprop")
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, map[string]string{"props": output})
@@ -151,12 +151,12 @@ func (s *Server) handlePackagePID(w http.ResponseWriter, r *http.Request) {
 	serial := r.URL.Query().Get("serial")
 	packageName := r.URL.Query().Get("package")
 	if serial == "" || packageName == "" {
-		http.Error(w, "serial and package required", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "serial and package required")
 		return
 	}
 	pid, err := s.adb.GetPackagePID(serial, packageName)
 	if err != nil {
-		writeJSON(w, map[string]string{"error": err.Error(), "pid": ""})
+		writeAPIErrorData(w, http.StatusInternalServerError, err.Error(), map[string]string{"pid": ""})
 		return
 	}
 	writeJSON(w, map[string]string{"pid": pid})
@@ -165,12 +165,12 @@ func (s *Server) handlePackagePID(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleRunningPackages(w http.ResponseWriter, r *http.Request) {
 	serial := r.URL.Query().Get("serial")
 	if serial == "" {
-		http.Error(w, "serial required", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "serial required")
 		return
 	}
 	pkgs, err := s.adb.GetRunningPackages(serial)
 	if err != nil {
-		writeJSON(w, map[string]interface{}{"error": err.Error(), "packages": []string{}})
+		writeAPIErrorData(w, http.StatusInternalServerError, err.Error(), map[string]interface{}{"packages": []string{}})
 		return
 	}
 	if pkgs == nil {
@@ -186,7 +186,7 @@ func (s *Server) handleAdbPath(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleLogStream(w http.ResponseWriter, r *http.Request) {
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		http.Error(w, "websocket upgrade failed", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "websocket upgrade failed")
 		return
 	}
 
@@ -198,12 +198,12 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
 	serial := r.URL.Query().Get("serial")
 	path := r.URL.Query().Get("path")
 	if serial == "" || path == "" {
-		http.Error(w, `{"error":"serial and path required"}`, http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "serial and path required")
 		return
 	}
 	entries, err := s.adb.ListFiles(serial, path)
 	if err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if entries == nil {
@@ -216,12 +216,12 @@ func (s *Server) handleFileContent(w http.ResponseWriter, r *http.Request) {
 	serial := r.URL.Query().Get("serial")
 	path := r.URL.Query().Get("path")
 	if serial == "" || path == "" {
-		http.Error(w, "serial and path required", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "serial and path required")
 		return
 	}
 	content, err := s.adb.ReadFile(serial, path)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, map[string]string{"content": content})
@@ -230,12 +230,12 @@ func (s *Server) handleFileContent(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handlePackages(w http.ResponseWriter, r *http.Request) {
 	serial := r.URL.Query().Get("serial")
 	if serial == "" {
-		http.Error(w, "serial required", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "serial required")
 		return
 	}
 	pkgs, err := s.adb.InstalledPackages(serial)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if pkgs == nil {
@@ -247,12 +247,12 @@ func (s *Server) handlePackages(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDeviceDetail(w http.ResponseWriter, r *http.Request) {
 	serial := r.URL.Query().Get("serial")
 	if serial == "" {
-		http.Error(w, "serial required", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "serial required")
 		return
 	}
 	props, err := s.adb.DeviceDetail(serial)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if props == nil {
@@ -264,12 +264,12 @@ func (s *Server) handleDeviceDetail(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleScreenshot(w http.ResponseWriter, r *http.Request) {
 	serial := r.URL.Query().Get("serial")
 	if serial == "" {
-		http.Error(w, "serial required", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "serial required")
 		return
 	}
 	data, err := s.adb.Screenshot(serial)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	w.Header().Set("Content-Type", "image/png")
@@ -280,17 +280,17 @@ func (s *Server) handleScreenshot(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleUninstallPackage(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		writeAPIError(w, http.StatusMethodNotAllowed, "POST required")
 		return
 	}
 	serial := r.URL.Query().Get("serial")
 	packageName := r.URL.Query().Get("package")
 	if serial == "" || packageName == "" {
-		http.Error(w, "serial and package required", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "serial and package required")
 		return
 	}
 	if err := s.adb.UninstallPackage(serial, packageName); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, map[string]string{"status": "ok"})
@@ -298,19 +298,19 @@ func (s *Server) handleUninstallPackage(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) handleInstallPackage(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		writeAPIError(w, http.StatusMethodNotAllowed, "POST required")
 		return
 	}
 	serial := r.URL.Query().Get("serial")
 	if serial == "" {
-		http.Error(w, "serial required", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "serial required")
 		return
 	}
 	defer r.Body.Close()
 
 	tmpFile, err := os.CreateTemp("", "adb-tool-install-*.apk")
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	defer os.Remove(tmpFile.Name())
@@ -319,24 +319,22 @@ func (s *Server) handleInstallPackage(w http.ResponseWriter, r *http.Request) {
 		if closeErr := tmpFile.Close(); closeErr != nil {
 			Log.Add("install temp close", "", closeErr, 0)
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if err := tmpFile.Close(); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	output, err := s.adb.InstallPackageContext(r.Context(), serial, tmpFile.Name())
 	if err != nil {
 		if r.Context().Err() != nil {
-			w.WriteHeader(499)
-			writeJSON(w, map[string]string{"error": "操作已取消"})
+			writeAPIError(w, 499, "操作已取消")
 			return
 		}
-		w.WriteHeader(http.StatusBadRequest)
 		msg := parseInstallError(output)
-		writeJSON(w, map[string]string{"error": msg, "raw": output})
+		writeAPIErrorData(w, http.StatusBadRequest, msg, map[string]string{"raw": output})
 		return
 	}
 	writeJSON(w, map[string]string{"status": "ok", "output": output})
@@ -375,12 +373,12 @@ func (s *Server) handleBackendLogs(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleAdbExec(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		writeAPIError(w, http.StatusMethodNotAllowed, "POST required")
 		return
 	}
 	serial := r.URL.Query().Get("serial")
 	if serial == "" {
-		http.Error(w, "serial required", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "serial required")
 		return
 	}
 	defer r.Body.Close()
@@ -388,23 +386,22 @@ func (s *Server) handleAdbExec(w http.ResponseWriter, r *http.Request) {
 		Args []string `json:"args"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if len(req.Args) == 0 {
-		http.Error(w, "args required", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "args required")
 		return
 	}
 	for _, arg := range req.Args {
 		if strings.TrimSpace(arg) == "" {
-			http.Error(w, "empty argument not allowed", http.StatusBadRequest)
+			writeAPIError(w, http.StatusBadRequest, "empty argument not allowed")
 			return
 		}
 	}
 	output, err := s.adb.Execute(serial, req.Args)
 	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		writeJSON(w, map[string]interface{}{"ok": false, "output": output, "error": err.Error()})
+		writeAPIErrorData(w, http.StatusBadRequest, err.Error(), map[string]interface{}{"ok": false, "output": output})
 		return
 	}
 	writeJSON(w, map[string]interface{}{"ok": true, "output": output})
@@ -412,7 +409,7 @@ func (s *Server) handleAdbExec(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleAdbWirelessPair(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		writeAPIError(w, http.StatusMethodNotAllowed, "POST required")
 		return
 	}
 	defer r.Body.Close()
@@ -421,19 +418,18 @@ func (s *Server) handleAdbWirelessPair(w http.ResponseWriter, r *http.Request) {
 		Code    string `json:"code"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	req.Address = strings.TrimSpace(req.Address)
 	req.Code = strings.TrimSpace(req.Code)
 	if req.Address == "" || req.Code == "" {
-		http.Error(w, "address and code required", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "address and code required")
 		return
 	}
 	output, err := s.adb.WirelessPair(req.Address, req.Code)
 	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		writeJSON(w, map[string]interface{}{"ok": false, "output": output, "error": err.Error()})
+		writeAPIErrorData(w, http.StatusBadRequest, err.Error(), map[string]interface{}{"ok": false, "output": output})
 		return
 	}
 	writeJSON(w, map[string]interface{}{"ok": true, "output": output})
@@ -441,7 +437,7 @@ func (s *Server) handleAdbWirelessPair(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleAdbWirelessConnect(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		writeAPIError(w, http.StatusMethodNotAllowed, "POST required")
 		return
 	}
 	defer r.Body.Close()
@@ -449,18 +445,17 @@ func (s *Server) handleAdbWirelessConnect(w http.ResponseWriter, r *http.Request
 		Address string `json:"address"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	req.Address = strings.TrimSpace(req.Address)
 	if req.Address == "" {
-		http.Error(w, "address required", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "address required")
 		return
 	}
 	output, err := s.adb.WirelessConnect(req.Address)
 	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		writeJSON(w, map[string]interface{}{"ok": false, "output": output, "error": err.Error()})
+		writeAPIErrorData(w, http.StatusBadRequest, err.Error(), map[string]interface{}{"ok": false, "output": output})
 		return
 	}
 	writeJSON(w, map[string]interface{}{"ok": true, "output": output})
@@ -468,7 +463,7 @@ func (s *Server) handleAdbWirelessConnect(w http.ResponseWriter, r *http.Request
 
 func (s *Server) handleAdbWirelessDisconnect(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		writeAPIError(w, http.StatusMethodNotAllowed, "POST required")
 		return
 	}
 	defer r.Body.Close()
@@ -476,18 +471,17 @@ func (s *Server) handleAdbWirelessDisconnect(w http.ResponseWriter, r *http.Requ
 		Serial string `json:"serial"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	req.Serial = strings.TrimSpace(req.Serial)
 	if req.Serial == "" {
-		http.Error(w, "serial required", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "serial required")
 		return
 	}
 	output, err := s.adb.WirelessDisconnect(req.Serial)
 	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		writeJSON(w, map[string]interface{}{"ok": false, "output": output, "error": err.Error()})
+		writeAPIErrorData(w, http.StatusBadRequest, err.Error(), map[string]interface{}{"ok": false, "output": output})
 		return
 	}
 	writeJSON(w, map[string]interface{}{"ok": true, "output": output})
@@ -497,17 +491,17 @@ func (s *Server) handlePullFile(w http.ResponseWriter, r *http.Request) {
 	serial := r.URL.Query().Get("serial")
 	path := r.URL.Query().Get("path")
 	if serial == "" || path == "" {
-		http.Error(w, "serial and path required", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "serial and path required")
 		return
 	}
 	tmpFile := filepath.Join(os.TempDir(), "adb-tool-pull-"+time.Now().Format("20060102150405.000000000"))
 	defer os.Remove(tmpFile)
 	if err := s.adb.PullFileToPathContext(r.Context(), serial, path, tmpFile); err != nil {
 		if r.Context().Err() != nil {
-			http.Error(w, "操作已取消", 499)
+			writeAPIError(w, 499, "操作已取消")
 			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	w.Header().Set("Content-Disposition", "attachment; filename=\""+filepath.Base(path)+"\"")
@@ -517,13 +511,13 @@ func (s *Server) handlePullFile(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handlePushFile(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		writeAPIError(w, http.StatusMethodNotAllowed, "POST required")
 		return
 	}
 	serial := r.URL.Query().Get("serial")
 	path := r.URL.Query().Get("path")
 	if serial == "" || path == "" {
-		http.Error(w, "serial and path required", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "serial and path required")
 		return
 	}
 	defer r.Body.Close()
@@ -531,26 +525,26 @@ func (s *Server) handlePushFile(w http.ResponseWriter, r *http.Request) {
 	defer os.Remove(tmpFile)
 	out, err := os.Create(tmpFile)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if _, err := io.Copy(out, r.Body); err != nil {
 		if closeErr := out.Close(); closeErr != nil {
 			Log.Add("push temp close", "", closeErr, 0)
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if err := out.Close(); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if err := s.adb.PushFileFromPathContext(r.Context(), serial, tmpFile, path); err != nil {
 		if r.Context().Err() != nil {
-			http.Error(w, "操作已取消", 499)
+			writeAPIError(w, 499, "操作已取消")
 			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, map[string]string{"status": "ok"})
@@ -558,18 +552,18 @@ func (s *Server) handlePushFile(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleFileDelete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		writeAPIError(w, http.StatusMethodNotAllowed, "POST required")
 		return
 	}
 	serial := r.URL.Query().Get("serial")
 	path := r.URL.Query().Get("path")
 	recursive := r.URL.Query().Get("recursive") == "true"
 	if serial == "" || path == "" {
-		http.Error(w, "serial and path required", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "serial and path required")
 		return
 	}
 	if err := s.adb.DeleteFile(serial, path, recursive); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, map[string]string{"status": "ok"})
@@ -577,18 +571,18 @@ func (s *Server) handleFileDelete(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleFileRename(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		writeAPIError(w, http.StatusMethodNotAllowed, "POST required")
 		return
 	}
 	serial := r.URL.Query().Get("serial")
 	from := r.URL.Query().Get("from")
 	to := r.URL.Query().Get("to")
 	if serial == "" || from == "" || to == "" {
-		http.Error(w, "serial, from and to required", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "serial, from and to required")
 		return
 	}
 	if err := s.adb.RenameFile(serial, from, to); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, map[string]string{"status": "ok"})
@@ -596,17 +590,17 @@ func (s *Server) handleFileRename(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleFileMkdir(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		writeAPIError(w, http.StatusMethodNotAllowed, "POST required")
 		return
 	}
 	serial := r.URL.Query().Get("serial")
 	path := r.URL.Query().Get("path")
 	if serial == "" || path == "" {
-		http.Error(w, "serial and path required", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "serial and path required")
 		return
 	}
 	if err := s.adb.MakeDir(serial, path); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, map[string]string{"status": "ok"})
@@ -614,17 +608,17 @@ func (s *Server) handleFileMkdir(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleFileTouch(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		writeAPIError(w, http.StatusMethodNotAllowed, "POST required")
 		return
 	}
 	serial := r.URL.Query().Get("serial")
 	path := r.URL.Query().Get("path")
 	if serial == "" || path == "" {
-		http.Error(w, "serial and path required", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "serial and path required")
 		return
 	}
 	if err := s.adb.TouchFile(serial, path); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, map[string]string{"status": "ok"})
@@ -634,12 +628,12 @@ func (s *Server) handleFileStat(w http.ResponseWriter, r *http.Request) {
 	serial := r.URL.Query().Get("serial")
 	path := r.URL.Query().Get("path")
 	if serial == "" || path == "" {
-		http.Error(w, "serial and path required", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "serial and path required")
 		return
 	}
 	stat, err := s.adb.FileStat(serial, path)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, map[string]interface{}{"stat": stat})
@@ -648,12 +642,12 @@ func (s *Server) handleFileStat(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleScreenRecordVideo(w http.ResponseWriter, r *http.Request) {
 	serial := r.URL.Query().Get("serial")
 	if serial == "" {
-		http.Error(w, "serial required", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "serial required")
 		return
 	}
 	data, err := s.adb.PullRecordedVideo(serial)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	go s.adb.CleanRecordedVideo(serial)
@@ -671,17 +665,17 @@ func (s *Server) handleScreenRecord(w http.ResponseWriter, r *http.Request) {
 	switch action {
 	case "start":
 		if serial == "" {
-			http.Error(w, "serial required", http.StatusBadRequest)
+			writeAPIError(w, http.StatusBadRequest, "serial required")
 			return
 		}
 		s.recordMu.Lock()
 		defer s.recordMu.Unlock()
 		if s.recordingSerial != "" {
-			writeJSON(w, map[string]interface{}{"error": "already recording on " + s.recordingSerial})
+			writeAPIError(w, http.StatusConflict, "already recording on "+s.recordingSerial)
 			return
 		}
 		if err := s.adb.StartScreenRecord(serial); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			writeAPIError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 		s.recordingSerial = serial
@@ -692,12 +686,12 @@ func (s *Server) handleScreenRecord(w http.ResponseWriter, r *http.Request) {
 		s.recordMu.Lock()
 		if s.recordingSerial == "" {
 			s.recordMu.Unlock()
-			writeJSON(w, map[string]interface{}{"error": "not recording"})
+			writeAPIError(w, http.StatusConflict, "not recording")
 			return
 		}
 		if err := s.adb.StopScreenRecord(s.recordingSerial); err != nil {
 			s.recordMu.Unlock()
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			writeAPIError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 		s.recordingSerial = ""
@@ -727,7 +721,7 @@ func (s *Server) handleScreenRecord(w http.ResponseWriter, r *http.Request) {
 		})
 
 	default:
-		writeJSON(w, map[string]string{"error": "action must be start, stop, or status"})
+		writeAPIError(w, http.StatusBadRequest, "action must be start, stop, or status")
 	}
 }
 
@@ -741,18 +735,18 @@ func (s *Server) handleIdentify(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleShutdown(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		writeAPIError(w, http.StatusMethodNotAllowed, "POST required")
 		return
 	}
 
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
-		http.Error(w, "bad remote addr", http.StatusForbidden)
+		writeAPIError(w, http.StatusForbidden, "bad remote addr")
 		return
 	}
 	ip := net.ParseIP(host)
 	if ip == nil || !ip.IsLoopback() {
-		http.Error(w, "forbidden", http.StatusForbidden)
+		writeAPIError(w, http.StatusForbidden, "forbidden")
 		return
 	}
 
@@ -767,17 +761,10 @@ func (s *Server) handleShutdown(w http.ResponseWriter, r *http.Request) {
 	}()
 }
 
-func writeJSON(w http.ResponseWriter, v interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		Log.Add("http json response", "", err, 0)
-	}
-}
-
 func (s *Server) handleClipboardCheck(w http.ResponseWriter, r *http.Request) {
 	serial := r.URL.Query().Get("serial")
 	if serial == "" {
-		http.Error(w, "serial required", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "serial required")
 		return
 	}
 	installed := s.adb.IsClipboardHelperInstalled(serial)
@@ -786,16 +773,16 @@ func (s *Server) handleClipboardCheck(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleClipboardInstall(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		writeAPIError(w, http.StatusMethodNotAllowed, "POST required")
 		return
 	}
 	serial := r.URL.Query().Get("serial")
 	if serial == "" {
-		http.Error(w, "serial required", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "serial required")
 		return
 	}
 	if err := s.adb.InstallClipboardHelper(serial, s.clipboardApk); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, map[string]string{"status": "ok"})
@@ -803,17 +790,17 @@ func (s *Server) handleClipboardInstall(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) handleClipboardSend(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		writeAPIError(w, http.StatusMethodNotAllowed, "POST required")
 		return
 	}
 	serial := r.URL.Query().Get("serial")
 	text := r.URL.Query().Get("text")
 	if serial == "" || text == "" {
-		http.Error(w, "serial and text required", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "serial and text required")
 		return
 	}
 	if err := s.adb.SendClipboard(serial, text); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, map[string]string{"status": "ok"})
@@ -821,16 +808,16 @@ func (s *Server) handleClipboardSend(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleClipboardUninstall(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		writeAPIError(w, http.StatusMethodNotAllowed, "POST required")
 		return
 	}
 	serial := r.URL.Query().Get("serial")
 	if serial == "" {
-		http.Error(w, "serial required", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "serial required")
 		return
 	}
 	if err := s.adb.UninstallClipboardHelper(serial); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, map[string]string{"status": "ok"})
