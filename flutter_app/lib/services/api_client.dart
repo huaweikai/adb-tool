@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 
 import '../models/app_package.dart';
 import '../models/device.dart';
+import '../models/device_status.dart';
 import '../models/file_item.dart';
 
 class AdbCommandResult {
@@ -195,6 +196,16 @@ class ApiClient {
     final data = _responseMap(resp);
     final props = _asMap(data['props']);
     return props.map((k, v) => MapEntry(k, v.toString()));
+  }
+
+  Future<DeviceStatus> getDeviceStatus(String serial) async {
+    final resp = await _dio.get(
+      '/api/device-status',
+      queryParameters: {'serial': serial},
+    );
+    _throwIfNotOk(resp);
+    final data = _responseMap(resp);
+    return DeviceStatus.fromJson(_asMap(data['status']));
   }
 
   Future<String?> takeScreenshot(String serial) async {

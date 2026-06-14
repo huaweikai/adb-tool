@@ -72,6 +72,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/file-content", s.handleFileContent)
 	mux.HandleFunc("/api/packages", s.handlePackages)
 	mux.HandleFunc("/api/device-detail", s.handleDeviceDetail)
+	mux.HandleFunc("/api/device-status", s.handleDeviceStatus)
 	mux.HandleFunc("/api/screenshot", s.handleScreenshot)
 	mux.HandleFunc("/api/uninstall-package", s.handleUninstallPackage)
 	mux.HandleFunc("/api/install-package", s.handleInstallPackage)
@@ -259,6 +260,20 @@ func (s *Server) handleDeviceDetail(w http.ResponseWriter, r *http.Request) {
 		props = map[string]string{}
 	}
 	writeJSON(w, map[string]interface{}{"props": props})
+}
+
+func (s *Server) handleDeviceStatus(w http.ResponseWriter, r *http.Request) {
+	serial := r.URL.Query().Get("serial")
+	if serial == "" {
+		writeAPIError(w, http.StatusBadRequest, "serial required")
+		return
+	}
+	status, err := s.adb.DeviceStatus(r.Context(), serial)
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, map[string]interface{}{"status": status})
 }
 
 func (s *Server) handleScreenshot(w http.ResponseWriter, r *http.Request) {

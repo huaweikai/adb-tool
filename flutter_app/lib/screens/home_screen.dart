@@ -7,6 +7,7 @@ import '../providers/theme_provider.dart';
 import '../providers/device_provider.dart';
 import '../providers/locale_provider.dart';
 import '../i18n.dart';
+import 'device_status_screen.dart';
 import 'logcat_screen.dart';
 import 'file_browser_screen.dart';
 import 'app_manager_screen.dart';
@@ -15,22 +16,22 @@ import 'clipboard_screen.dart';
 import 'backend_log_screen.dart';
 import 'adb_command_screen.dart';
 
-enum NavItem { logcat, files, apps, info, clipboard, command }
+enum NavItem { status, logcat, files, apps, info, clipboard, command }
 
 const _navConfig = {
-  NavItem.logcat: _NavConfig(Icons.list_alt, 'Logcat', '日志'),
-  NavItem.files: _NavConfig(Icons.folder_open, 'Files', '文件'),
-  NavItem.apps: _NavConfig(Icons.android, 'Apps', '应用'),
-  NavItem.info: _NavConfig(Icons.info_outline, 'Info', '信息'),
-  NavItem.clipboard: _NavConfig(Icons.content_paste, 'Clipboard', '剪贴板'),
-  NavItem.command: _NavConfig(Icons.terminal, 'Command', '指令'),
+  NavItem.status: _NavConfig(Icons.phone_android, 'status'),
+  NavItem.logcat: _NavConfig(Icons.list_alt, 'logcat'),
+  NavItem.files: _NavConfig(Icons.folder_open, 'files'),
+  NavItem.apps: _NavConfig(Icons.android, 'apps'),
+  NavItem.info: _NavConfig(Icons.info_outline, 'info'),
+  NavItem.clipboard: _NavConfig(Icons.content_paste, 'clipboard'),
+  NavItem.command: _NavConfig(Icons.terminal, 'command'),
 };
 
 class _NavConfig {
   final IconData icon;
-  final String labelEn;
-  final String labelZh;
-  const _NavConfig(this.icon, this.labelEn, this.labelZh);
+  final String label;
+  const _NavConfig(this.icon, this.label);
 }
 
 const _backendLogKey = '_backend_logs';
@@ -61,8 +62,7 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     final api = context.read<ApiClient>();
     context.read<DeviceProvider>().refresh(api);
-    _refreshTimer =
-        Timer.periodic(const Duration(seconds: 5), (_) {
+    _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       context.read<DeviceProvider>().refresh(context.read<ApiClient>());
     });
   }
@@ -75,7 +75,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   String navLabel(NavItem item) {
     final c = _navConfig[item]!;
-    return currentLang == 'zh' ? c.labelZh : c.labelEn;
+    return tr(c.label);
   }
 
   void _toggleExpand(String serial) {
@@ -85,7 +85,7 @@ class _HomeScreenState extends State<HomeScreen> {
       } else {
         _expandedSerials.add(serial);
         if (_screens.isEmpty) {
-          _navigateTo(serial, NavItem.logcat);
+          _navigateTo(serial, NavItem.status);
         }
       }
     });
@@ -99,18 +99,31 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!_screens.containsKey(key)) {
       Widget screen;
       switch (item) {
+        case NavItem.status:
+          screen = Provider<DeviceSerialScope>.value(
+              value: DeviceSerialScope(serial), child: const DeviceStatusScreen());
         case NavItem.logcat:
-          screen = Provider<DeviceSerialScope>.value(value: DeviceSerialScope(serial), child: const LogcatScreen());
+          screen = Provider<DeviceSerialScope>.value(
+              value: DeviceSerialScope(serial), child: const LogcatScreen());
         case NavItem.files:
-          screen = Provider<DeviceSerialScope>.value(value: DeviceSerialScope(serial), child: const FileBrowserScreen());
+          screen = Provider<DeviceSerialScope>.value(
+              value: DeviceSerialScope(serial),
+              child: const FileBrowserScreen());
         case NavItem.apps:
-          screen = Provider<DeviceSerialScope>.value(value: DeviceSerialScope(serial), child: const AppManagerScreen());
+          screen = Provider<DeviceSerialScope>.value(
+              value: DeviceSerialScope(serial),
+              child: const AppManagerScreen());
         case NavItem.info:
-          screen = Provider<DeviceSerialScope>.value(value: DeviceSerialScope(serial), child: const DeviceInfoScreen());
+          screen = Provider<DeviceSerialScope>.value(
+              value: DeviceSerialScope(serial),
+              child: const DeviceInfoScreen());
         case NavItem.clipboard:
-          screen = Provider<DeviceSerialScope>.value(value: DeviceSerialScope(serial), child: const ClipboardScreen());
+          screen = Provider<DeviceSerialScope>.value(
+              value: DeviceSerialScope(serial), child: const ClipboardScreen());
         case NavItem.command:
-          screen = Provider<DeviceSerialScope>.value(value: DeviceSerialScope(serial), child: const AdbCommandScreen());
+          screen = Provider<DeviceSerialScope>.value(
+              value: DeviceSerialScope(serial),
+              child: const AdbCommandScreen());
       }
       _screens[key] = screen;
       _evictCache();
@@ -191,7 +204,8 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildSidebar(BuildContext context, List<Device> devices, bool online) {
+  Widget _buildSidebar(
+      BuildContext context, List<Device> devices, bool online) {
     final theme = Theme.of(context);
     return Container(
       width: 240,
@@ -238,7 +252,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     border: Border.all(color: theme.dividerColor),
                     borderRadius: BorderRadius.circular(6),
                   ),
-                  child: Text(context.read<LocaleProvider>().currentLang == 'zh' ? 'EN' : '文',
+                  child: Text(
+                      context.read<LocaleProvider>().currentLang == 'zh'
+                          ? 'EN'
+                          : '文',
                       style: const TextStyle(fontSize: 10)),
                 ),
               ),
@@ -354,8 +371,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _expandedSerials.clear();
     _activeKey = null;
     context.read<DeviceProvider>().select(null);
-    _refreshTimer =
-        Timer.periodic(const Duration(seconds: 5), (_) {
+    _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       context.read<DeviceProvider>().refresh(context.read<ApiClient>());
     });
   }
@@ -455,10 +471,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: FilledButton.icon(
                         onPressed: running
                             ? null
-                            : () =>
-                                runAction(() => api.connectWirelessAdb(
-                                      connectAddressCtrl.text.trim(),
-                                    )),
+                            : () => runAction(() => api.connectWirelessAdb(
+                                  connectAddressCtrl.text.trim(),
+                                )),
                         icon: const Icon(Icons.wifi, size: 16),
                         label: Text(tr('connect')),
                       ),

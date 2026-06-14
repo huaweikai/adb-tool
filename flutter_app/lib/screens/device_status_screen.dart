@@ -1,0 +1,593 @@
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
+import 'package:provider/provider.dart';
+import '../i18n.dart';
+import '../models/device_status.dart';
+import '../providers/device_provider.dart';
+import '../providers/locale_provider.dart';
+import '../services/api_client.dart';
+import '../widgets/error_view.dart';
+import '../widgets/loading_view.dart';
+
+class DeviceStatusScreen extends StatefulWidget {
+  const DeviceStatusScreen({super.key});
+
+  @override
+  State<DeviceStatusScreen> createState() => _DeviceStatusScreenState();
+}
+
+class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
+  String? get _selectedSerial => context.read<DeviceSerialScope>().serial;
+
+  DeviceStatus? _status;
+  Timer? _timer;
+  bool _loading = false;
+  bool _autoRefresh = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadStatus();
+    _timer = Timer.periodic(const Duration(seconds: 8), (_) {
+      if (_autoRefresh && !_loading) {
+        _loadStatus(silent: true);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadStatus({bool silent = false}) async {
+    final serial = _selectedSerial;
+    if (serial == null) {
+      setState(() => _error = tr('selectDevice'));
+      return;
+    }
+    final api = context.read<ApiClient>();
+    if (!silent) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
+    try {
+      final status = await api.getDeviceStatus(serial);
+      if (!mounted) return;
+      setState(() {
+        _status = status;
+        _loading = false;
+        _error = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    context.watch<LocaleProvider>();
+    if (_selectedSerial == null) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.monitor_heart_outlined,
+                size: 48, color: Colors.grey),
+            const SizedBox(height: 12),
+            Text(tr('selectDeviceSidebar'),
+                style: const TextStyle(color: Colors.grey)),
+          ],
+        ),
+      );
+    }
+
+    final status = _status;
+    final error = _error;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildToolbar(context, status: status, error: error),
+        if (_loading && status == null)
+          const Expanded(child: LoadingView())
+        else if (error != null && status == null)
+          Expanded(
+            child: ErrorView(
+              message: error,
+              onRetry: _loadStatus,
+              retryLabel: tr('retry'),
+            ),
+          )
+        else
+          Expanded(child: _buildDashboard(context)),
+      ],
+    );
+  }
+
+  Widget _buildToolbar(
+    BuildContext context, {
+    required DeviceStatus? status,
+    required String? error,
+  }) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerLow,
+        border: Border(bottom: BorderSide(color: theme.dividerColor)),
+      ),
+      child: Wrap(
+        spacing: 12,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          Text(
+            tr('monitorTitle'),
+            style: theme.textTheme.titleSmall
+                ?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          FilledButton.tonalIcon(
+            onPressed: _loading ? null : () => _loadStatus(),
+            icon: _loading
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh, size: 16),
+            label: Text(tr('refresh')),
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              textStyle: const TextStyle(fontSize: 12),
+            ),
+          ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Checkbox(
+                value: _autoRefresh,
+                onChanged: (v) => setState(() => _autoRefresh = v ?? true),
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
+              ),
+              Text(tr('monitorAutoRefresh'),
+                  style: const TextStyle(fontSize: 12)),
+            ],
+          ),
+          if (status?.collectedAt.isNotEmpty == true)
+            Text(
+              '${tr('monitorLastUpdated')}: ${status?.collectedAt ?? ''}',
+              style: TextStyle(
+                fontSize: 11,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          if (error != null && status != null)
+            Text(
+              error,
+              style: TextStyle(fontSize: 11, color: theme.colorScheme.error),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDashboard(BuildContext context) {
+    final status = _status;
+    if (status == null) {
+      return Center(child: Text(tr('monitorNoData')));
+    }
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns = _gridColumns(constraints.maxWidth, maxColumns: 4);
+        return CustomScrollView(
+          slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.all(16),
+              sliver: SliverMasonryGrid.count(
+                crossAxisCount: columns,
+                mainAxisSpacing: 12,
+                crossAxisSpacing: 12,
+                childCount: 16,
+                itemBuilder: (context, index) =>
+                    _buildDashboardItem(context, status, index),
+              ),
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              sliver: SliverToBoxAdapter(
+                child: _buildProcesses(context, status.topProcesses),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildDashboardItem(
+    BuildContext context,
+    DeviceStatus status,
+    int index,
+  ) {
+    switch (index) {
+      case 0:
+        return _metricCard(context, tr('monitorBattery'), Icons.battery_full,
+            _value(status.batteryLevel, suffix: '%'),
+            subtitle: _join([status.batteryStatus, status.batteryTemperature]),
+            progress: _parsePercent(status.batteryLevel) / 100);
+      case 1:
+        return _metricCard(context, tr('monitorCpuUsage'), Icons.memory,
+            _value(status.cpuUsage),
+            subtitle: '${tr('monitorCpuLoad')}: ${_value(status.cpuLoad)}',
+            progress: _parsePercent(status.cpuUsage) / 100);
+      case 2:
+        return _metricCard(context, tr('monitorMemory'), Icons.storage,
+            _value(status.memoryUsedPercent),
+            subtitle:
+                '${tr('monitorAvailable')}: ${_value(status.memoryAvailable)} / ${_value(status.memoryTotal)}',
+            progress: _parsePercent(status.memoryUsedPercent) / 100);
+      case 3:
+        return _metricCard(context, tr('monitorStorage'), Icons.folder_outlined,
+            _value(status.storageUsedPercent),
+            subtitle:
+                '${_value(status.storageUsed)} / ${_value(status.storageTotal)}',
+            progress: _parsePercent(status.storageUsedPercent) / 100);
+      case 4:
+        return _miniCard(
+            context, tr('monitorResolution'), status.resolution,
+            Icons.aspect_ratio);
+      case 5:
+        return _miniCard(
+            context, tr('monitorDensity'), status.density, Icons.density_medium);
+      case 6:
+        return _miniCard(context, tr('monitorRefreshRate'), status.refreshRate,
+            Icons.refresh);
+      case 7:
+        return _miniCard(context, tr('monitorFrameStats'), status.frameStats,
+            Icons.speed);
+      case 8:
+        return _miniCard(context, tr('monitorNetworkType'), status.networkType,
+            Icons.wifi);
+      case 9:
+        return _miniCard(context, tr('monitorWifiSsid'), status.wifiSsid,
+            Icons.wifi_find);
+      case 10:
+        return _miniCard(context, tr('monitorWifiRssi'), status.wifiRssi,
+            Icons.signal_wifi_statusbar_4_bar);
+      case 11:
+        return _miniCard(context, tr('monitorMobileSignal'),
+            status.mobileSignal, Icons.signal_cellular_alt);
+      case 12:
+        return _miniCard(context, tr('monitorIpAddress'), status.ipAddress,
+            Icons.language);
+      case 13:
+        return _miniCard(
+            context, tr('monitorUptime'), status.uptime, Icons.timer_outlined);
+      case 14:
+        return _miniCard(context, tr('monitorThermalStatus'),
+            status.thermalStatus, Icons.thermostat);
+      case 15:
+        return _miniCard(context, tr('monitorCpuLoad'), status.cpuLoad,
+            Icons.show_chart);
+      default:
+        return const SizedBox.shrink();
+    }
+  }
+
+  Widget _miniCard(
+    BuildContext context,
+    String label,
+    String value,
+    IconData icon,
+  ) {
+    final theme = Theme.of(context);
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: theme.colorScheme.primary),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label,
+                      style: const TextStyle(fontSize: 10),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
+                  const SizedBox(height: 2),
+                  Text(
+                    _value(value),
+                    style: const TextStyle(
+                        fontSize: 11,
+                        fontFamily: 'Menlo',
+                        fontWeight: FontWeight.w600),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _metricCard(
+    BuildContext context,
+    String title,
+    IconData icon,
+    String value, {
+    String subtitle = '',
+    double progress = -1,
+  }) {
+    final theme = Theme.of(context);
+    final hasProgress = progress >= 0;
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, size: 18, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(
+              value,
+              style: theme.textTheme.headlineSmall
+                  ?.copyWith(fontWeight: FontWeight.w700),
+              overflow: TextOverflow.ellipsis,
+            ),
+            if (hasProgress) ...[
+              const SizedBox(height: 8),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: progress.clamp(0.0, 1.0),
+                  minHeight: 8,
+                  backgroundColor: theme.colorScheme.surfaceContainerHighest,
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                      _heatColor(progress * 100, theme)),
+                ),
+              ),
+            ],
+            const SizedBox(height: 4),
+            Text(
+              subtitle.isEmpty ? tr('unknown') : subtitle,
+              style: TextStyle(
+                fontSize: 11,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProcesses(BuildContext context, List<ProcessStatus> processes) {
+    final theme = Theme.of(context);
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.format_list_numbered,
+                    size: 18, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                Text(tr('monitorTopProcesses'),
+                    style: theme.textTheme.titleSmall
+                        ?.copyWith(fontWeight: FontWeight.w700)),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (processes.isEmpty)
+              Text(tr('monitorNoData'),
+                  style: TextStyle(
+                      fontSize: 12, color: theme.colorScheme.onSurfaceVariant))
+            else
+              ...processes.asMap().entries.map(
+                  (e) => _buildProcessCard(context, e.key, e.value)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProcessCard(
+      BuildContext context, int index, ProcessStatus process) {
+    final theme = Theme.of(context);
+    final cpuNum = _parsePercent(process.cpu);
+    final memNum = _parsePercent(process.memory);
+    final displayName = process.name.isNotEmpty ? process.name : process.command;
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
+      margin: const EdgeInsets.only(bottom: 4),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 20,
+                height: 20,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primary.withAlpha(30),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  '${index + 1}',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  displayName,
+                  style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      fontFamily: 'Menlo'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Text('PID ${process.pid}',
+                  style: TextStyle(
+                      fontSize: 10,
+                      color: theme.colorScheme.onSurfaceVariant)),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              SizedBox(
+                width: 36,
+                child: Text('CPU',
+                    style: TextStyle(
+                        fontSize: 10,
+                        color: theme.colorScheme.onSurfaceVariant)),
+              ),
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(3),
+                  child: LinearProgressIndicator(
+                    value: (cpuNum / 100).clamp(0.0, 1.0),
+                    minHeight: 6,
+                    backgroundColor:
+                        theme.colorScheme.surfaceContainerHighest,
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                        _heatColor(cpuNum, theme)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              SizedBox(
+                width: 42,
+                child: Text(
+                  process.cpu.isEmpty ? '--' : process.cpu,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    fontFamily: 'Menlo',
+                    color: _heatColor(cpuNum, theme),
+                  ),
+                  textAlign: TextAlign.right,
+                ),
+              ),
+              const SizedBox(width: 12),
+              SizedBox(
+                width: 36,
+                child: Text('MEM',
+                    style: TextStyle(
+                        fontSize: 10,
+                        color: theme.colorScheme.onSurfaceVariant)),
+              ),
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(3),
+                  child: LinearProgressIndicator(
+                    value: (memNum / 100).clamp(0.0, 1.0),
+                    minHeight: 6,
+                    backgroundColor:
+                        theme.colorScheme.surfaceContainerHighest,
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                        _heatColor(memNum, theme)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              SizedBox(
+                width: 42,
+                child: Text(
+                  process.memory.isEmpty ? '--' : process.memory,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    fontFamily: 'Menlo',
+                    color: _heatColor(memNum, theme),
+                  ),
+                  textAlign: TextAlign.right,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  double _parsePercent(String value) {
+    final cleaned = value.replaceAll('%', '').trim();
+    final parsed = double.tryParse(cleaned);
+    return parsed ?? 0;
+  }
+
+  Color _heatColor(double value, ThemeData theme) {
+    if (value >= 50) return Colors.red;
+    if (value >= 25) return Colors.orange;
+    if (value >= 10) return Colors.amber.shade700;
+    return theme.colorScheme.primary;
+  }
+
+  int _gridColumns(double width, {required int maxColumns}) {
+    if (width >= 1100) return maxColumns;
+    if (width >= 760) return maxColumns >= 3 ? 3 : maxColumns;
+    if (width >= 520) return maxColumns >= 2 ? 2 : maxColumns;
+    return 1;
+  }
+
+  String _value(String value, {String suffix = ''}) {
+    if (value.trim().isEmpty) return tr('unknown');
+    if (suffix.isNotEmpty && !value.endsWith(suffix)) return '$value$suffix';
+    return value;
+  }
+
+  String _join(List<String> values) {
+    return values.where((e) => e.trim().isNotEmpty).join(' · ');
+  }
+}
+
