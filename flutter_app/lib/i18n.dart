@@ -288,7 +288,9 @@ const _loc = <String, Map<String, String>>{
     'checking': '检测中...',
     'clearInput': '清空',
     'history': '发送历史',
-    'historyTapHint': '点击可重新填入',
+    'historyTapHint': '点击可重新填入，星标不会自动清理',
+    'clipboardFavorite': '收藏，避免被历史上限清理',
+    'clipboardUnfavorite': '取消收藏',
 
     // ==== 后端日志 ====
     'filterCommand': '过滤命令...',
@@ -594,7 +596,9 @@ const _loc = <String, Map<String, String>>{
     'checking': 'Checking...',
     'clearInput': 'Clear',
     'history': 'History',
-    'historyTapHint': 'Tap to reuse',
+    'historyTapHint': 'Tap to reuse. Starred items are kept',
+    'clipboardFavorite': 'Star to keep from history cleanup',
+    'clipboardUnfavorite': 'Unstar',
 
     // ==== 后端日志 ====
     'filterCommand': 'Filter command...',
