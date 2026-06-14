@@ -12,6 +12,7 @@ import 'package:provider/provider.dart';
 import '../widgets/loading_view.dart';
 import '../widgets/error_view.dart';
 import '../widgets/file_transfer.dart';
+import '../providers/locale_provider.dart';
 
 enum _SortKey { name, date, size }
 
@@ -791,6 +792,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<LocaleProvider>();
     if (widget.selectedSerial == null) {
       return Center(
         child: Column(

@@ -5,6 +5,7 @@ import '../models/device.dart';
 import '../services/api_client.dart';
 import '../providers/theme_provider.dart';
 import '../providers/device_provider.dart';
+import '../providers/locale_provider.dart';
 import '../i18n.dart';
 import 'logcat_screen.dart';
 import 'file_browser_screen.dart';
@@ -90,6 +91,8 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  static const int _maxCachedScreens = 20;
+
   void _navigateTo(String serial, NavItem item) {
     context.read<DeviceProvider>().select(serial);
     final key = '${serial}_${item.name}';
@@ -110,8 +113,22 @@ class _HomeScreenState extends State<HomeScreen> {
           screen = AdbCommandScreen(selectedSerial: serial);
       }
       _screens[key] = screen;
+      _evictCache();
     }
     setState(() => _activeKey = key);
+  }
+
+  void _evictCache() {
+    if (_screens.length <= _maxCachedScreens) return;
+    final toRemove = _screens.length - _maxCachedScreens;
+    final keys = _screens.keys.toList();
+    int removed = 0;
+    for (final k in keys) {
+      if (removed >= toRemove) break;
+      if (k == _activeKey || k == _backendLogKey) continue;
+      _screens.remove(k);
+      removed++;
+    }
   }
 
   void _openBackendLogs() {
@@ -124,6 +141,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final deviceProvider = context.watch<DeviceProvider>();
+    context.watch<LocaleProvider>();
     final devices = deviceProvider.devices;
     final backendOnline = deviceProvider.online;
 
@@ -212,11 +230,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ?.copyWith(fontWeight: FontWeight.w600)),
               const Spacer(),
               GestureDetector(
-                onTap: () => setState(() {
-                  setLang(currentLang == 'zh' ? 'en' : 'zh');
-                  _screens.clear();
-                  _activeKey = null;
-                }),
+                onTap: () => context.read<LocaleProvider>().toggle(),
                 child: Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
@@ -224,7 +238,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     border: Border.all(color: theme.dividerColor),
                     borderRadius: BorderRadius.circular(6),
                   ),
-                  child: Text(currentLang == 'zh' ? 'EN' : '文',
+                  child: Text(context.read<LocaleProvider>().currentLang == 'zh' ? 'EN' : '文',
                       style: const TextStyle(fontSize: 10)),
                 ),
               ),

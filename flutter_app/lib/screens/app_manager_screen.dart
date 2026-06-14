@@ -6,6 +6,7 @@ import '../i18n.dart';
 import '../widgets/loading_view.dart';
 import '../widgets/error_view.dart';
 import '../widgets/file_transfer.dart';
+import '../providers/locale_provider.dart';
 import 'package:provider/provider.dart';
 
 class AppManagerScreen extends StatefulWidget {
@@ -248,6 +249,7 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<LocaleProvider>();
     if (widget.selectedSerial == null) {
       return Center(
         child: Column(

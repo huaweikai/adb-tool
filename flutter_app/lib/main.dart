@@ -8,6 +8,7 @@ import 'screens/home_screen.dart';
 import 'i18n.dart';
 import 'providers/theme_provider.dart';
 import 'providers/device_provider.dart';
+import 'providers/locale_provider.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -26,6 +27,9 @@ void main() {
         ChangeNotifierProvider<DeviceProvider>(
           create: (_) => DeviceProvider(),
         ),
+        ChangeNotifierProvider<LocaleProvider>(
+          create: (_) => LocaleProvider(),
+        ),
       ],
       child: const AdbToolApp(),
     ),
@@ -38,6 +42,7 @@ class AdbToolApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final themeProvider = context.watch<ThemeProvider>();
+    context.watch<LocaleProvider>();
     return MaterialApp(
       title: 'ADB Tool',
       debugShowCheckedModeBanner: false,
@@ -58,7 +63,7 @@ class AdbToolApp extends StatelessWidget {
         dividerColor: const Color(0xFFD0D7DE),
         fontFamily: 'System',
       ),
-      home: const ServerBootScreen(),
+      home: ServerBootScreen(),
     );
   }
 }

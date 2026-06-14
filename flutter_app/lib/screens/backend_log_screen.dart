@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/api_client.dart';
 import '../i18n.dart';
+import '../providers/locale_provider.dart';
 
 class BackendLogEntry {
   final String time;
@@ -101,6 +102,7 @@ class _BackendLogScreenState extends State<BackendLogScreen> {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<LocaleProvider>();
     final entries = _filteredLogs;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

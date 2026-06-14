@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/api_client.dart';
 import '../i18n.dart';
+import '../providers/locale_provider.dart';
 
 class ClipboardScreen extends StatefulWidget {
   final String? selectedSerial;
@@ -151,6 +152,7 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<LocaleProvider>();
     final theme = Theme.of(context);
 
     if (widget.selectedSerial == null) {

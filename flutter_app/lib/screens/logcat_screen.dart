@@ -5,6 +5,7 @@ import '../models/device.dart';
 import '../services/api_client.dart';
 import '../i18n.dart';
 import '../services/log_stream.dart';
+import '../providers/locale_provider.dart';
 
 class LogcatScreen extends StatefulWidget {
   final String? selectedSerial;
@@ -270,6 +271,7 @@ class _LogcatScreenState extends State<LogcatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<LocaleProvider>();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [

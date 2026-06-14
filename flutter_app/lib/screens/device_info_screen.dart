@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../services/api_client.dart';
 import '../i18n.dart';
+import '../providers/locale_provider.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_view.dart';
 
@@ -118,6 +119,7 @@ class _DeviceInfoScreenState extends State<DeviceInfoScreen> {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<LocaleProvider>();
     if (widget.selectedSerial == null) {
       return Center(
         child: Column(
