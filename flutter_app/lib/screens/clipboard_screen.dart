@@ -6,9 +6,7 @@ import '../providers/locale_provider.dart';
 import '../providers/device_provider.dart';
 
 class ClipboardScreen extends StatefulWidget {
-  const ClipboardScreen({
-    super.key,
-  });
+  const ClipboardScreen({super.key});
 
   @override
   State<ClipboardScreen> createState() => _ClipboardScreenState();
@@ -18,6 +16,7 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
   String? get _selectedSerial => context.read<DeviceSerialScope>().serial;
 
   final TextEditingController _textCtrl = TextEditingController();
+  final FocusNode _focusNode = FocusNode();
   bool _helperInstalled = false;
   bool _checkingInstalled = true;
   bool _sending = false;
@@ -25,6 +24,7 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
   bool _uninstalling = false;
   String? _status;
   bool _success = false;
+  final List<_SentItem> _sentHistory = [];
 
   @override
   void initState() {
@@ -35,6 +35,7 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
   @override
   void dispose() {
     _textCtrl.dispose();
+    _focusNode.dispose();
     super.dispose();
   }
 
@@ -108,6 +109,10 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
     try {
       await context.read<ApiClient>().sendClipboard(_selectedSerial!, text);
       if (!mounted) return;
+      _sentHistory.insert(0, _SentItem(text, DateTime.now()));
+      if (_sentHistory.length > 20) {
+        _sentHistory.removeLast();
+      }
       setState(() {
         _sending = false;
         _status = tr('sentToClipboard');
@@ -150,6 +155,19 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
     }
   }
 
+  void _clearInput() {
+    _textCtrl.clear();
+    _focusNode.requestFocus();
+  }
+
+  void _useHistory(String text) {
+    _textCtrl.text = text;
+    _textCtrl.selection = TextSelection.fromPosition(
+      TextPosition(offset: text.length),
+    );
+    _focusNode.requestFocus();
+  }
+
   @override
   Widget build(BuildContext context) {
     context.watch<LocaleProvider>();
@@ -163,135 +181,318 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
       );
     }
 
-    return Padding(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(tr('sendToDeviceClipboard'),
-              style: theme.textTheme.titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w600)),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              Text(tr('clipboardService'),
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-              if (_checkingInstalled)
-                const SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              else if (_helperInstalled)
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.check_circle,
-                        size: 16, color: Colors.green),
-                    const SizedBox(width: 4),
-                    Text(tr('installed'),
-                        style:
-                            const TextStyle(fontSize: 12, color: Colors.green)),
-                  ],
-                )
-              else
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.warning_amber,
-                        size: 16, color: Colors.orange),
-                    const SizedBox(width: 4),
-                    Text(tr('notInstalledHint'),
-                        style: const TextStyle(
-                            fontSize: 12, color: Colors.orange)),
-                  ],
-                ),
-            ],
+    return CustomScrollView(
+      slivers: [
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+          sliver: SliverToBoxAdapter(
+            child: _buildHeader(theme),
           ),
-          const SizedBox(height: 16),
-          Expanded(
-            child: TextField(
-              controller: _textCtrl,
-              maxLines: null,
-              expands: true,
-              textAlignVertical: TextAlignVertical.top,
-              decoration: InputDecoration(
-                hintText: tr('clipboardInputHint'),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              ),
-              style: const TextStyle(fontSize: 14),
+        ),
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+          sliver: SliverToBoxAdapter(
+            child: _buildInputCard(theme),
+          ),
+        ),
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          sliver: SliverToBoxAdapter(
+            child: _buildButtonsAndStatus(theme),
+          ),
+        ),
+        if (_sentHistory.isNotEmpty)
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+            sliver: SliverToBoxAdapter(
+              child: _buildSentHistory(theme),
             ),
           ),
-          const SizedBox(height: 12),
-          Row(
+        const SliverPadding(padding: EdgeInsets.only(bottom: 20)),
+      ],
+    );
+  }
+
+  Widget _buildHeader(ThemeData theme) {
+    return Row(
+      children: [
+        Icon(Icons.content_paste,
+            size: 22, color: theme.colorScheme.primary),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              FilledButton.icon(
-                onPressed: (_sending || _installing) ? null : _sendToClipboard,
-                icon: (_sending || _installing)
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white),
-                      )
-                    : const Icon(Icons.send, size: 18),
-                label: Text(_installing
-                    ? tr('installingText')
-                    : (_sending ? tr('sending') : tr('sendToClipboard'))),
-              ),
-              const SizedBox(width: 8),
-              if (_helperInstalled)
-                OutlinedButton.icon(
-                  onPressed: _uninstalling ? null : _uninstallHelper,
-                  icon: _uninstalling
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.delete_outline, size: 18),
-                  label: Text(_uninstalling
-                      ? tr('uninstalling')
-                      : tr('uninstallService')),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.red,
-                    side: const BorderSide(color: Colors.red),
-                  ),
-                ),
-              const SizedBox(width: 12),
-              if (_status != null)
-                Flexible(
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        _success ? Icons.check_circle : Icons.error,
-                        size: 18,
-                        color: _success ? Colors.green : Colors.red,
-                      ),
-                      const SizedBox(width: 6),
-                      Flexible(
-                        child: Text(
-                          _status!,
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: _success ? Colors.green : Colors.red,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+              Text(tr('sendToDeviceClipboard'),
+                  style: theme.textTheme.titleMedium
+                      ?.copyWith(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 2),
+              _buildServiceStatus(theme),
             ],
           ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildServiceStatus(ThemeData theme) {
+    if (_checkingInstalled) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(
+            width: 12,
+            height: 12,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          const SizedBox(width: 6),
+          Text(tr('checking'),
+              style: TextStyle(
+                  fontSize: 11,
+                  color: theme.colorScheme.onSurfaceVariant)),
+        ],
+      );
+    }
+    if (_helperInstalled) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.check_circle, size: 14, color: Colors.green),
+          const SizedBox(width: 4),
+          Text(tr('installed'),
+              style: const TextStyle(fontSize: 11, color: Colors.green)),
+        ],
+      );
+    }
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Icon(Icons.warning_amber, size: 14, color: Colors.orange),
+        const SizedBox(width: 4),
+        Text(tr('notInstalledHint'),
+            style:
+                const TextStyle(fontSize: 11, color: Colors.orange)),
+      ],
+    );
+  }
+
+  Widget _buildInputCard(ThemeData theme) {
+    final busy = _sending || _installing;
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(tr('clipboardInputHint'),
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: theme.colorScheme.onSurfaceVariant)),
+                const Spacer(),
+                if (_textCtrl.text.isNotEmpty)
+                  InkWell(
+                    borderRadius: BorderRadius.circular(4),
+                    onTap: busy ? null : _clearInput,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      child: Text(tr('clearInput'),
+                          style: TextStyle(
+                              fontSize: 11,
+                              color: theme.colorScheme.primary)),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 180),
+              child: TextField(
+                controller: _textCtrl,
+                focusNode: _focusNode,
+                maxLines: null,
+                readOnly: busy,
+                textAlignVertical: TextAlignVertical.top,
+                decoration: InputDecoration(
+                  hintText: tr('clipboardInputHint'),
+                  isDense: true,
+                  contentPadding: const EdgeInsets.all(12),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide:
+                        BorderSide(color: theme.dividerColor),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide:
+                        BorderSide(color: theme.dividerColor),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(
+                        color: theme.colorScheme.primary, width: 1.5),
+                  ),
+                ),
+                style: const TextStyle(fontSize: 13),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildButtonsAndStatus(ThemeData theme) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Row(
+        children: [
+          FilledButton.icon(
+            onPressed:
+                (_sending || _installing) ? null : _sendToClipboard,
+            icon: (_sending || _installing)
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white),
+                  )
+                : const Icon(Icons.send, size: 16),
+            label: Text(_installing
+                ? tr('installingText')
+                : (_sending ? tr('sending') : tr('sendToClipboard'))),
+            style: FilledButton.styleFrom(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              textStyle: const TextStyle(fontSize: 12),
+            ),
+          ),
+          const SizedBox(width: 8),
+          if (_helperInstalled)
+            OutlinedButton.icon(
+              onPressed: _uninstalling ? null : _uninstallHelper,
+              icon: _uninstalling
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child:
+                          CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.delete_outline, size: 16),
+              label: Text(_uninstalling
+                  ? tr('uninstalling')
+                  : tr('uninstallService')),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.red,
+                side: const BorderSide(color: Colors.red),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 12, vertical: 10),
+                textStyle: const TextStyle(fontSize: 12),
+              ),
+            ),
+          if (_status != null) ...[
+            const SizedBox(width: 12),
+            Flexible(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    _success ? Icons.check_circle : Icons.error,
+                    size: 16,
+                    color: _success ? Colors.green : Colors.red,
+                  ),
+                  const SizedBox(width: 4),
+                  Flexible(
+                    child: Text(
+                      _status!,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color:
+                            _success ? Colors.green : Colors.red,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
+
+  Widget _buildSentHistory(ThemeData theme) {
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.history, size: 16),
+                const SizedBox(width: 6),
+                Text(tr('history'),
+                    style: theme.textTheme.titleSmall
+                        ?.copyWith(fontWeight: FontWeight.w600)),
+                const Spacer(),
+                Text(tr('historyTapHint'),
+                    style: TextStyle(
+                        fontSize: 10,
+                        color: theme.colorScheme.onSurfaceVariant)),
+              ],
+            ),
+            const SizedBox(height: 8),
+            ..._sentHistory.take(10).map((item) => _buildHistoryItem(theme, item)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHistoryItem(ThemeData theme, _SentItem item) {
+    final timeStr =
+        '${item.time.hour.toString().padLeft(2, '0')}:${item.time.minute.toString().padLeft(2, '0')}:${item.time.second.toString().padLeft(2, '0')}';
+    return InkWell(
+      borderRadius: BorderRadius.circular(6),
+      onTap: () => _useHistory(item.text),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 52,
+              child: Text(timeStr,
+                  style: TextStyle(
+                      fontSize: 10,
+                      color: theme.colorScheme.onSurfaceVariant,
+                      fontFamily: 'Menlo')),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                item.text,
+                style: const TextStyle(fontSize: 12),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SentItem {
+  final String text;
+  final DateTime time;
+  const _SentItem(this.text, this.time);
 }

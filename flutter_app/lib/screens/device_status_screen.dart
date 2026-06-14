@@ -198,7 +198,7 @@ class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
                 crossAxisCount: columns,
                 mainAxisSpacing: 12,
                 crossAxisSpacing: 12,
-                childCount: 16,
+                childCount: 10,
                 itemBuilder: (context, index) =>
                     _buildDashboardItem(context, status, index),
               ),
@@ -244,86 +244,167 @@ class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
                 '${_value(status.storageUsed)} / ${_value(status.storageTotal)}',
             progress: _parsePercent(status.storageUsedPercent) / 100);
       case 4:
-        return _miniCard(
-            context, tr('monitorResolution'), status.resolution,
-            Icons.aspect_ratio);
+        return _pairedCard(context, tr('monitorScreenAndFrames'),
+            Icons.screenshot_monitor_outlined, [
+              _PairItem(tr('monitorResolution'), status.resolution, Icons.aspect_ratio),
+              _PairItem(tr('monitorDensity'), status.density, Icons.density_medium),
+            ]);
       case 5:
-        return _miniCard(
-            context, tr('monitorDensity'), status.density, Icons.density_medium);
+        return _pairedCard(context, tr('monitorDisplay'),
+            Icons.refresh, [
+              _PairItem(tr('monitorRefreshRate'), status.refreshRate, Icons.refresh),
+              _PairItem(tr('monitorFrameStats'), status.frameStats, Icons.speed),
+            ]);
       case 6:
-        return _miniCard(context, tr('monitorRefreshRate'), status.refreshRate,
-            Icons.refresh);
+        return _pairedCard(context, tr('monitorNetworkSignal'),
+            Icons.network_wifi, [
+              _PairItem(tr('monitorNetworkType'), status.networkType, Icons.wifi),
+              _PairItem(tr('monitorWifiSsid'), status.wifiSsid, Icons.wifi_find),
+            ]);
       case 7:
-        return _miniCard(context, tr('monitorFrameStats'), status.frameStats,
-            Icons.speed);
+        return _pairedCard(context, tr('monitorSignal'),
+            Icons.signal_cellular_alt, [
+              _PairItem(tr('monitorWifiRssi'), status.wifiRssi, Icons.signal_wifi_statusbar_4_bar),
+              _PairItem(tr('monitorMobileSignal'), status.mobileSignal, Icons.signal_cellular_alt),
+            ]);
       case 8:
-        return _miniCard(context, tr('monitorNetworkType'), status.networkType,
-            Icons.wifi);
+        return _pairedCard(context, tr('monitorNetworkAndUptime'),
+            Icons.language, [
+              _PairItem(tr('monitorIpAddress'), status.ipAddress, Icons.language),
+              _PairItem(tr('monitorUptime'), status.uptime, Icons.timer_outlined),
+            ]);
       case 9:
-        return _miniCard(context, tr('monitorWifiSsid'), status.wifiSsid,
-            Icons.wifi_find);
-      case 10:
-        return _miniCard(context, tr('monitorWifiRssi'), status.wifiRssi,
-            Icons.signal_wifi_statusbar_4_bar);
-      case 11:
-        return _miniCard(context, tr('monitorMobileSignal'),
-            status.mobileSignal, Icons.signal_cellular_alt);
-      case 12:
-        return _miniCard(context, tr('monitorIpAddress'), status.ipAddress,
-            Icons.language);
-      case 13:
-        return _miniCard(
-            context, tr('monitorUptime'), status.uptime, Icons.timer_outlined);
-      case 14:
-        return _miniCard(context, tr('monitorThermalStatus'),
-            status.thermalStatus, Icons.thermostat);
-      case 15:
-        return _miniCard(context, tr('monitorCpuLoad'), status.cpuLoad,
-            Icons.show_chart);
+        return _pairedCard(context, tr('monitorSystemHealth'),
+            Icons.health_and_safety_outlined, [
+              _PairItem(tr('monitorThermalStatus'), status.thermalStatus, Icons.thermostat),
+              _PairItem(tr('monitorCpuLoad'), status.cpuLoad, Icons.show_chart),
+            ]);
       default:
         return const SizedBox.shrink();
     }
   }
 
-  Widget _miniCard(
+  Widget _pairedCard(
     BuildContext context,
-    String label,
-    String value,
+    String title,
     IconData icon,
+    List<_PairItem> items,
   ) {
     final theme = Theme.of(context);
     return Card(
       margin: EdgeInsets.zero,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        child: Row(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, size: 18, color: theme.colorScheme.primary),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(label,
-                      style: const TextStyle(fontSize: 10),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis),
-                  const SizedBox(height: 2),
-                  Text(
-                    _value(value),
-                    style: const TextStyle(
-                        fontSize: 11,
-                        fontFamily: 'Menlo',
-                        fontWeight: FontWeight.w600),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+            Row(
+              children: [
+                Icon(icon, size: 18, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
+            const SizedBox(height: 16),
+            ...items.map((item) => _pairedRow(context, item)),
+            const SizedBox(height: 4),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _pairedRow(BuildContext context, _PairItem item) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        children: [
+          Icon(item.icon, size: 14, color: theme.colorScheme.primary.withAlpha(180)),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 90,
+            child: Text(item.label,
+                style: TextStyle(
+                    fontSize: 11,
+                    color: theme.colorScheme.onSurfaceVariant)),
+          ),
+          Expanded(
+            child: _tappableValue(context, item.value),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _tappableValue(BuildContext context, String value) {
+    final display = _value(value);
+    return GestureDetector(
+      onTap: value.trim().isNotEmpty
+          ? () => _showValueDetail(context, display)
+          : null,
+      child: Text(
+        display,
+        style: const TextStyle(fontSize: 11, fontFamily: 'Menlo', fontWeight: FontWeight.w600),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+    );
+  }
+
+  void _showValueDetail(BuildContext context, String value) {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.info_outline, size: 20),
+                    const SizedBox(width: 8),
+                    Text(tr('monitorDetailTitle'),
+                        style: theme.textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w600)),
+                    const Spacer(),
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 20),
+                      onPressed: () => Navigator.pop(ctx),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surfaceContainerLow,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: SelectableText(value,
+                      style:
+                          const TextStyle(fontSize: 13, fontFamily: 'Menlo')),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -589,5 +670,13 @@ class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
   String _join(List<String> values) {
     return values.where((e) => e.trim().isNotEmpty).join(' · ');
   }
+}
+
+class _PairItem {
+  final String label;
+  final String value;
+  final IconData icon;
+
+  const _PairItem(this.label, this.value, this.icon);
 }
 

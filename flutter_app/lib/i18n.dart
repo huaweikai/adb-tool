@@ -105,6 +105,10 @@ const _loc = <String, Map<String, String>>{
     'monitorScreenAndFrames': '屏幕 / 帧率',
     'monitorNetworkSignal': '网络 / 信号',
     'monitorSystemHealth': '系统健康',
+    'monitorDisplay': '显示 / 帧率',
+    'monitorSignal': '信号强度',
+    'monitorNetworkAndUptime': '网络 / 运行',
+    'monitorDetailTitle': '详细信息',
     'monitorResolution': '分辨率',
     'monitorDensity': '密度',
     'monitorRefreshRate': '刷新率',
@@ -281,6 +285,10 @@ const _loc = <String, Map<String, String>>{
     'uninstalling': '卸载中...',
     'uninstallService': '卸载服务',
     'clipboardInputHint': '在此输入要发送的文本...',
+    'checking': '检测中...',
+    'clearInput': '清空',
+    'history': '发送历史',
+    'historyTapHint': '点击可重新填入',
 
     // ==== 后端日志 ====
     'filterCommand': '过滤命令...',
@@ -398,6 +406,10 @@ const _loc = <String, Map<String, String>>{
     'monitorScreenAndFrames': 'Screen / FPS',
     'monitorNetworkSignal': 'Network / Signal',
     'monitorSystemHealth': 'System Health',
+    'monitorDisplay': 'Display / FPS',
+    'monitorSignal': 'Signal',
+    'monitorNetworkAndUptime': 'Network / Uptime',
+    'monitorDetailTitle': 'Details',
     'monitorResolution': 'Resolution',
     'monitorDensity': 'Density',
     'monitorRefreshRate': 'Refresh Rate',
@@ -579,6 +591,10 @@ const _loc = <String, Map<String, String>>{
     'uninstalling': 'Uninstalling...',
     'uninstallService': 'Uninstall service',
     'clipboardInputHint': 'Enter text to send...',
+    'checking': 'Checking...',
+    'clearInput': 'Clear',
+    'history': 'History',
+    'historyTapHint': 'Tap to reuse',
 
     // ==== 后端日志 ====
     'filterCommand': 'Filter command...',
