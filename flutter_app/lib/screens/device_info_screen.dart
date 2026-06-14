@@ -1,16 +1,17 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import '../services/api_client.dart';
 import '../i18n.dart';
+import '../widgets/error_view.dart';
+import '../widgets/loading_view.dart';
 
 class DeviceInfoScreen extends StatefulWidget {
-  final ApiClient api;
   final String? selectedSerial;
 
   const DeviceInfoScreen({
     super.key,
-    required this.api,
     required this.selectedSerial,
   });
 
@@ -23,13 +24,6 @@ class _DeviceInfoScreenState extends State<DeviceInfoScreen> {
   bool _loading = false;
   String? _error;
   String _searchQuery = '';
-  @override
-  void didUpdateWidget(DeviceInfoScreen oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.selectedSerial != widget.selectedSerial) {
-      _loadInfo();
-    }
-  }
 
   @override
   void initState() {
@@ -50,7 +44,7 @@ class _DeviceInfoScreenState extends State<DeviceInfoScreen> {
       _error = null;
     });
     try {
-      final props = await widget.api.getDeviceDetail(widget.selectedSerial!);
+      final props = await context.read<ApiClient>().getDeviceDetail(widget.selectedSerial!);
       if (!mounted) return;
       setState(() {
         _props = props;
@@ -68,7 +62,7 @@ class _DeviceInfoScreenState extends State<DeviceInfoScreen> {
   Future<void> _takeScreenshot() async {
     if (widget.selectedSerial == null) return;
     try {
-      final b64 = await widget.api.takeScreenshot(widget.selectedSerial!);
+      final b64 = await context.read<ApiClient>().takeScreenshot(widget.selectedSerial!);
       if (!mounted) return;
       if (b64 != null) {
         showDialog(
@@ -143,23 +137,15 @@ class _DeviceInfoScreenState extends State<DeviceInfoScreen> {
       children: [
         _buildToolbar(context),
         if (_loading)
-          const Expanded(child: Center(child: CircularProgressIndicator()))
+          const Expanded(child: LoadingView())
         else if (_error != null)
           Expanded(
-              child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.error_outline, size: 48, color: Colors.red),
-                const SizedBox(height: 8),
-                Text(_error!,
-                    style: const TextStyle(color: Colors.red, fontSize: 12)),
-                const SizedBox(height: 12),
-                FilledButton.tonal(
-                    onPressed: _loadInfo, child: Text(tr('retry'))),
-              ],
+            child: ErrorView(
+              message: _error!,
+              onRetry: _loadInfo,
+              retryLabel: tr('retry'),
             ),
-          ))
+          )
         else
           Expanded(child: _buildPropList(context)),
       ],

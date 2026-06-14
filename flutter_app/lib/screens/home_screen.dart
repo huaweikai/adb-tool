@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../models/device.dart';
 import '../services/api_client.dart';
-import '../services/log_stream.dart';
+import '../providers/theme_provider.dart';
+import '../providers/device_provider.dart';
 import '../i18n.dart';
 import 'logcat_screen.dart';
 import 'file_browser_screen.dart';
@@ -33,19 +35,11 @@ class _NavConfig {
 const _backendLogKey = '_backend_logs';
 
 class HomeScreen extends StatefulWidget {
-  final ApiClient api;
-  final LogStreamService logStream;
-  final ValueChanged<bool> onThemeToggle;
-  final bool isDark;
   final VoidCallback? onShutdown;
   final VoidCallback? onRestart;
 
   const HomeScreen({
     super.key,
-    required this.api,
-    required this.logStream,
-    required this.onThemeToggle,
-    required this.isDark,
     this.onShutdown,
     this.onRestart,
   });
@@ -55,8 +49,6 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  List<Device> _devices = [];
-  bool _backendOnline = true;
   Timer? _refreshTimer;
 
   final Set<String> _expandedSerials = {};
@@ -66,9 +58,12 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _refreshDevices();
+    final api = context.read<ApiClient>();
+    context.read<DeviceProvider>().refresh(api);
     _refreshTimer =
-        Timer.periodic(const Duration(seconds: 5), (_) => _refreshDevices());
+        Timer.periodic(const Duration(seconds: 5), (_) {
+      context.read<DeviceProvider>().refresh(context.read<ApiClient>());
+    });
   }
 
   @override
@@ -80,26 +75,6 @@ class _HomeScreenState extends State<HomeScreen> {
   String navLabel(NavItem item) {
     final c = _navConfig[item]!;
     return currentLang == 'zh' ? c.labelZh : c.labelEn;
-  }
-
-  Future<void> _refreshDevices() async {
-    try {
-      final devices = await widget.api.getDevices();
-      if (!mounted) return;
-      setState(() {
-        _devices = devices;
-        _backendOnline = true;
-      });
-    } catch (_) {
-      if (!mounted) return;
-      if (_backendOnline) {
-        _expandedSerials.clear();
-      }
-      setState(() {
-        _backendOnline = false;
-        _devices = [];
-      });
-    }
   }
 
   void _toggleExpand(String serial) {
@@ -116,41 +91,23 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _navigateTo(String serial, NavItem item) {
+    context.read<DeviceProvider>().select(serial);
     final key = '${serial}_${item.name}';
     if (!_screens.containsKey(key)) {
       Widget screen;
       switch (item) {
         case NavItem.logcat:
-          screen = LogcatScreen(
-            api: widget.api,
-            logStream: widget.logStream,
-            selectedSerial: serial,
-          );
+          screen = LogcatScreen(selectedSerial: serial);
         case NavItem.files:
-          screen = FileBrowserScreen(
-            api: widget.api,
-            selectedSerial: serial,
-          );
+          screen = FileBrowserScreen(selectedSerial: serial);
         case NavItem.apps:
-          screen = AppManagerScreen(
-            api: widget.api,
-            selectedSerial: serial,
-          );
+          screen = AppManagerScreen(selectedSerial: serial);
         case NavItem.info:
-          screen = DeviceInfoScreen(
-            api: widget.api,
-            selectedSerial: serial,
-          );
+          screen = DeviceInfoScreen(selectedSerial: serial);
         case NavItem.clipboard:
-          screen = ClipboardScreen(
-            api: widget.api,
-            selectedSerial: serial,
-          );
+          screen = ClipboardScreen(selectedSerial: serial);
         case NavItem.command:
-          screen = AdbCommandScreen(
-            api: widget.api,
-            selectedSerial: serial,
-          );
+          screen = AdbCommandScreen(selectedSerial: serial);
       }
       _screens[key] = screen;
     }
@@ -159,21 +116,25 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _openBackendLogs() {
     if (!_screens.containsKey(_backendLogKey)) {
-      _screens[_backendLogKey] = BackendLogScreen(api: widget.api);
+      _screens[_backendLogKey] = const BackendLogScreen();
     }
     setState(() => _activeKey = _backendLogKey);
   }
 
   @override
   Widget build(BuildContext context) {
+    final deviceProvider = context.watch<DeviceProvider>();
+    final devices = deviceProvider.devices;
+    final backendOnline = deviceProvider.online;
+
     return Scaffold(
       body: Column(
         children: [
-          if (!_backendOnline) _buildOfflineBanner(context),
+          if (!backendOnline) _buildOfflineBanner(context),
           Expanded(
             child: Row(
               children: [
-                _buildSidebar(context),
+                _buildSidebar(context, devices, backendOnline),
                 Expanded(child: _buildContent()),
               ],
             ),
@@ -212,7 +173,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildSidebar(BuildContext context) {
+  Widget _buildSidebar(BuildContext context, List<Device> devices, bool online) {
     final theme = Theme.of(context);
     return Container(
       width: 240,
@@ -225,7 +186,7 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           _buildHeader(theme),
           const Divider(height: 1),
-          Expanded(child: _buildDeviceTree(theme)),
+          Expanded(child: _buildDeviceTree(theme, devices)),
           const Divider(height: 1),
           _buildBackendLogsEntry(theme),
         ],
@@ -234,6 +195,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildHeader(ThemeData theme) {
+    final deviceProvider = context.read<DeviceProvider>();
+    final api = context.read<ApiClient>();
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
       child: Column(
@@ -275,7 +239,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 theme,
                 icon: Icons.sync,
                 label: tr('refresh'),
-                onTap: _refreshDevices,
+                onTap: () => deviceProvider.refresh(api),
               ),
               _headerAction(
                 theme,
@@ -305,7 +269,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 theme,
                 icon: Icons.brightness_6,
                 label: tr('theme'),
-                onTap: () => widget.onThemeToggle(!widget.isDark),
+                onTap: () => context.read<ThemeProvider>().toggle(),
               ),
             ],
           ),
@@ -345,6 +309,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildOfflineBanner(BuildContext context) {
     final theme = Theme.of(context);
+    final api = context.read<ApiClient>();
+    final deviceProvider = context.read<DeviceProvider>();
+
     return MaterialBanner(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       backgroundColor: theme.colorScheme.errorContainer,
@@ -358,7 +325,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       actions: [
         TextButton(
-          onPressed: _refreshDevices,
+          onPressed: () => deviceProvider.refresh(api),
           child: Text(tr('refresh'),
               style: TextStyle(
                   fontSize: 12, color: theme.colorScheme.onErrorContainer)),
@@ -372,7 +339,11 @@ class _HomeScreenState extends State<HomeScreen> {
     _screens.clear();
     _expandedSerials.clear();
     _activeKey = null;
-    setState(() => _devices = []);
+    context.read<DeviceProvider>().select(null);
+    _refreshTimer =
+        Timer.periodic(const Duration(seconds: 5), (_) {
+      context.read<DeviceProvider>().refresh(context.read<ApiClient>());
+    });
   }
 
   Future<void> _showWirelessAdbDialog() async {
@@ -381,6 +352,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final connectAddressCtrl = TextEditingController();
     var running = false;
     String? result;
+    final api = context.read<ApiClient>();
+    final deviceProvider = context.read<DeviceProvider>();
+
     try {
       await showDialog<void>(
         context: context,
@@ -399,7 +373,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ? (res.output.isEmpty ? 'OK' : res.output)
                       : (res.error.isEmpty ? res.output : res.error);
                 });
-                if (res.ok) _refreshDevices();
+                if (res.ok) deviceProvider.refresh(api);
               } catch (e) {
                 setDialogState(() => result = e.toString());
               } finally {
@@ -444,7 +418,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: FilledButton.tonalIcon(
                         onPressed: running
                             ? null
-                            : () => runAction(() => widget.api.pairWirelessAdb(
+                            : () => runAction(() => api.pairWirelessAdb(
                                   pairAddressCtrl.text.trim(),
                                   pairCodeCtrl.text.trim(),
                                 )),
@@ -468,7 +442,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         onPressed: running
                             ? null
                             : () =>
-                                runAction(() => widget.api.connectWirelessAdb(
+                                runAction(() => api.connectWirelessAdb(
                                       connectAddressCtrl.text.trim(),
                                     )),
                         icon: const Icon(Icons.wifi, size: 16),
@@ -595,8 +569,8 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildDeviceTree(ThemeData theme) {
-    if (_devices.isEmpty) {
+  Widget _buildDeviceTree(ThemeData theme, List<Device> devices) {
+    if (devices.isEmpty) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -625,7 +599,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 4),
       children:
-          _devices.map((d) => _buildDeviceNode(context, d, theme)).toList(),
+          devices.map((d) => _buildDeviceNode(context, d, theme)).toList(),
     );
   }
 
@@ -708,6 +682,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _disconnect(BuildContext context, Device d) async {
+    final api = context.read<ApiClient>();
+    final deviceProvider = context.read<DeviceProvider>();
+
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -726,7 +703,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
     if (ok != true) return;
-    final result = await widget.api.disconnectWirelessAdb(d.serial);
+    final result = await api.disconnectWirelessAdb(d.serial);
     if (!mounted || !context.mounted) return;
     if (result.ok) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -745,7 +722,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       );
     }
-    _refreshDevices();
+    deviceProvider.refresh(api);
   }
 
   Widget _buildFunctionItem(

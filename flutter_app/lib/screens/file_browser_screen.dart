@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -8,10 +8,12 @@ import '../services/drop_target.dart';
 import '../models/file_item.dart';
 import '../services/api_client.dart';
 import '../i18n.dart';
+import 'package:provider/provider.dart';
+import '../widgets/loading_view.dart';
+import '../widgets/error_view.dart';
+import '../widgets/file_transfer.dart';
 
 enum _SortKey { name, date, size }
-
-enum _TransferMode { upload, download }
 
 enum _FileAction {
   open,
@@ -25,34 +27,11 @@ enum _FileAction {
   details,
 }
 
-class _TransferState {
-  final _TransferMode mode;
-  final String fileName;
-  final int sent;
-  final int total;
-  final String phaseKey;
-
-  const _TransferState({
-    required this.mode,
-    required this.fileName,
-    required this.sent,
-    required this.total,
-    required this.phaseKey,
-  });
-
-  bool get waitingForAdb =>
-      phaseKey == 'deviceReading' || phaseKey == 'deviceWriting';
-
-  double? get progress => total > 0 && !waitingForAdb ? sent / total : null;
-}
-
 class FileBrowserScreen extends StatefulWidget {
-  final ApiClient api;
   final String? selectedSerial;
 
   const FileBrowserScreen({
     super.key,
-    required this.api,
     required this.selectedSerial,
   });
 
@@ -82,7 +61,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   int _recordSeconds = 0;
   Timer? _recordTimer;
   bool _screenshotting = false;
-  _TransferState? _transfer;
+  TransferState? _transfer;
   TransferCancelToken? _transferCancelToken;
 
   bool get _isTransferring => _transfer != null;
@@ -93,18 +72,6 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     ('/storage/emulated/0', 'storage'),
     ('/data/local/tmp', 'tmp'),
   ];
-
-  @override
-  void didUpdateWidget(FileBrowserScreen oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.selectedSerial != widget.selectedSerial) {
-      _currentPath = '/';
-      _history.clear();
-      _fileContent = null;
-      _contentPath = '';
-      _loadFiles();
-    }
-  }
 
   @override
   void initState() {
@@ -169,7 +136,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     });
     try {
       final files =
-          await widget.api.listFiles(widget.selectedSerial!, _currentPath);
+          await context.read<ApiClient>().listFiles(widget.selectedSerial!, _currentPath);
       if (!mounted) return;
       setState(() {
         _files = _sorted(files);
@@ -195,7 +162,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     });
     try {
       final files =
-          await widget.api.listFiles(widget.selectedSerial!, _currentPath);
+          await context.read<ApiClient>().listFiles(widget.selectedSerial!, _currentPath);
       if (!mounted) return;
       setState(() {
         _files = _sorted(files);
@@ -243,7 +210,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     });
     try {
       final content =
-          await widget.api.readFile(widget.selectedSerial!, file.path);
+          await context.read<ApiClient>().readFile(widget.selectedSerial!, file.path);
       if (!mounted) return;
       setState(() {
         _fileContent = content;
@@ -274,15 +241,15 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       cancelToken = TransferCancelToken();
       _transferCancelToken = cancelToken;
       setState(() {
-        _transfer = _TransferState(
-          mode: _TransferMode.download,
+        _transfer = TransferState(
+          mode: TransferMode.download,
           fileName: file.name,
           sent: 0,
           total: 0,
           phaseKey: 'deviceReading',
         );
       });
-      await widget.api.downloadFileToPath(
+      await context.read<ApiClient>().downloadFileToPath(
         widget.selectedSerial!,
         file.path,
         location.path,
@@ -291,8 +258,8 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         onProgress: (progress) {
           if (!mounted) return;
           setState(() {
-            _transfer = _TransferState(
-              mode: _TransferMode.download,
+            _transfer = TransferState(
+              mode: TransferMode.download,
               fileName: file.name,
               sent: progress.sent,
               total: progress.total,
@@ -351,15 +318,15 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     try {
       _transferCancelToken = cancelToken;
       setState(() {
-        _transfer = _TransferState(
-          mode: _TransferMode.upload,
+        _transfer = TransferState(
+          mode: TransferMode.upload,
           fileName: result.name,
           sent: 0,
           total: totalBytes,
           phaseKey: 'preparing',
         );
       });
-      await widget.api.pushLocalFile(
+      await context.read<ApiClient>().pushLocalFile(
         widget.selectedSerial!,
         remotePath,
         result.path,
@@ -367,8 +334,8 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         onProgress: (progress) {
           if (!mounted) return;
           setState(() {
-            _transfer = _TransferState(
-              mode: _TransferMode.upload,
+            _transfer = TransferState(
+              mode: TransferMode.upload,
               fileName: result.name,
               sent: progress.sent,
               total: progress.total,
@@ -505,7 +472,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     if (newName == null || newName == file.name) return;
     final targetPath = _joinRemotePath(_currentPath, newName);
     try {
-      await widget.api
+      await context.read<ApiClient>()
           .renameFile(widget.selectedSerial!, file.path, targetPath);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -537,7 +504,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     );
     if (!ok) return;
     try {
-      await widget.api.deleteFile(
+      await context.read<ApiClient>().deleteFile(
         widget.selectedSerial!,
         file.path,
         recursive: file.isDir,
@@ -574,9 +541,9 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     final path = _joinRemotePath(targetDir ?? _currentPath, name);
     try {
       if (directory) {
-        await widget.api.createDirectory(widget.selectedSerial!, path);
+        await context.read<ApiClient>().createDirectory(widget.selectedSerial!, path);
       } else {
-        await widget.api.createFile(widget.selectedSerial!, path);
+        await context.read<ApiClient>().createFile(widget.selectedSerial!, path);
       }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -607,7 +574,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       return;
     }
     try {
-      final stat = await widget.api.statFile(widget.selectedSerial!, file.path);
+      final stat = await context.read<ApiClient>().statFile(widget.selectedSerial!, file.path);
       if (!mounted) return;
       _showFileInfo(context, file, stat: stat);
     } catch (_) {
@@ -620,7 +587,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     if (widget.selectedSerial == null) return;
     if (_recordSaving || _recording) return;
     try {
-      await widget.api.screenRecordAction(widget.selectedSerial!, 'start');
+      await context.read<ApiClient>().screenRecordAction(widget.selectedSerial!, 'start');
       if (!mounted) return;
       setState(() {
         _recording = true;
@@ -651,7 +618,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     _recordTimer?.cancel();
     setState(() => _recordSaving = true);
     try {
-      await widget.api.screenRecordAction(widget.selectedSerial!, 'stop');
+      await context.read<ApiClient>().screenRecordAction(widget.selectedSerial!, 'stop');
       if (!mounted) return;
       final location = await getSaveLocation(
         suggestedName:
@@ -666,7 +633,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         });
         return;
       }
-      final bytes = await widget.api.pullRecordedVideo(widget.selectedSerial!);
+      final bytes = await context.read<ApiClient>().pullRecordedVideo(widget.selectedSerial!);
       await File(location.path).writeAsBytes(bytes);
       if (!mounted) return;
       setState(() {
@@ -698,7 +665,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     if (widget.selectedSerial == null || _screenshotting) return;
     setState(() => _screenshotting = true);
     try {
-      final b64 = await widget.api.takeScreenshot(widget.selectedSerial!);
+      final b64 = await context.read<ApiClient>().takeScreenshot(widget.selectedSerial!);
       if (b64 == null) {
         if (!mounted) return;
         setState(() => _screenshotting = false);
@@ -745,18 +712,6 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
 
-  String _formatBytes(int bytes) {
-    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-    var value = bytes.toDouble();
-    var unit = 0;
-    while (value >= 1024 && unit < units.length - 1) {
-      value /= 1024;
-      unit++;
-    }
-    if (unit == 0) return '$bytes ${units[unit]}';
-    return '${value.toStringAsFixed(value >= 100 ? 0 : 1)} ${units[unit]}';
-  }
-
   Future<void> _onDropFile(DropDoneDetails details) async {
     if (_isTransferring) return;
     if (widget.selectedSerial == null) return;
@@ -770,15 +725,15 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       try {
         _transferCancelToken = cancelToken;
         setState(() {
-          _transfer = _TransferState(
-            mode: _TransferMode.upload,
+          _transfer = TransferState(
+            mode: TransferMode.upload,
             fileName: file.name,
             sent: 0,
             total: totalBytes,
             phaseKey: 'preparing',
           );
         });
-        await widget.api.pushLocalFile(
+        await context.read<ApiClient>().pushLocalFile(
           widget.selectedSerial!,
           remotePath,
           file.path,
@@ -786,8 +741,8 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
           onProgress: (progress) {
             if (!mounted) return;
             setState(() {
-              _transfer = _TransferState(
-                mode: _TransferMode.upload,
+              _transfer = TransferState(
+                mode: TransferMode.upload,
                 fileName: file.name,
                 sent: progress.sent,
                 total: progress.total,
@@ -871,26 +826,15 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
             children: [
               _buildPathBar(),
               if (_loading)
-                const Expanded(
-                    child: Center(child: CircularProgressIndicator()))
+                const Expanded(child: LoadingView())
               else if (_error != null)
                 Expanded(
-                    child: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.error_outline,
-                          size: 48, color: Colors.red),
-                      const SizedBox(height: 8),
-                      Text(_error!,
-                          style:
-                              const TextStyle(color: Colors.red, fontSize: 12)),
-                      const SizedBox(height: 12),
-                      FilledButton.tonal(
-                          onPressed: _loadFiles, child: Text(tr('retry'))),
-                    ],
+                  child: ErrorView(
+                    message: _error!,
+                    onRetry: _loadFiles,
+                    retryLabel: tr('retry'),
                   ),
-                ))
+                )
               else
                 Expanded(
                     child: _gridMode ? _buildGridView() : _buildFileList()),
@@ -940,9 +884,9 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     );
   }
 
-  Widget _buildTransferOverlay(_TransferState transfer) {
+  Widget _buildTransferOverlay(TransferState transfer) {
     final theme = Theme.of(context);
-    final isUpload = transfer.mode == _TransferMode.upload;
+    final isUpload = transfer.mode == TransferMode.upload;
     final progress = transfer.progress;
     final percent = progress == null
         ? tr('processing')
@@ -1011,7 +955,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
                       ),
                     ),
                     Text(
-                      '${_formatBytes(transfer.sent)} / ${transfer.total > 0 ? _formatBytes(transfer.total) : tr('unknownSize')}',
+                      '${formatBytes(transfer.sent)} / ${transfer.total > 0 ? formatBytes(transfer.total) : tr('unknownSize')}',
                       style: TextStyle(
                         fontSize: 11,
                         fontFamily: 'Menlo',
@@ -1823,3 +1767,4 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     );
   }
 }
+

@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../services/api_client.dart';
 import '../i18n.dart';
 
 class ClipboardScreen extends StatefulWidget {
-  final ApiClient api;
   final String? selectedSerial;
 
   const ClipboardScreen({
     super.key,
-    required this.api,
     required this.selectedSerial,
   });
 
@@ -25,14 +24,6 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
   bool _uninstalling = false;
   String? _status;
   bool _success = false;
-
-  @override
-  void didUpdateWidget(ClipboardScreen oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.selectedSerial != widget.selectedSerial) {
-      _checkInstalled();
-    }
-  }
 
   @override
   void initState() {
@@ -57,7 +48,7 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
     setState(() => _checkingInstalled = true);
     try {
       final installed =
-          await widget.api.checkClipboardInstalled(widget.selectedSerial!);
+          await context.read<ApiClient>().checkClipboardInstalled(widget.selectedSerial!);
       if (!mounted) return;
       setState(() {
         _helperInstalled = installed;
@@ -82,7 +73,7 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
     });
 
     try {
-      await widget.api.installClipboardHelper(widget.selectedSerial!);
+      await context.read<ApiClient>().installClipboardHelper(widget.selectedSerial!);
       if (!mounted) return false;
       setState(() {
         _helperInstalled = true;
@@ -114,7 +105,7 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
     });
 
     try {
-      await widget.api.sendClipboard(widget.selectedSerial!, text);
+      await context.read<ApiClient>().sendClipboard(widget.selectedSerial!, text);
       if (!mounted) return;
       setState(() {
         _sending = false;
@@ -140,7 +131,7 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
     });
 
     try {
-      await widget.api.uninstallClipboardHelper(widget.selectedSerial!);
+      await context.read<ApiClient>().uninstallClipboardHelper(widget.selectedSerial!);
       if (!mounted) return;
       setState(() {
         _helperInstalled = false;

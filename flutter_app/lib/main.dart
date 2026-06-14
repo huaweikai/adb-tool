@@ -1,61 +1,47 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'services/api_client.dart';
 import 'services/log_stream.dart';
 import 'services/server_launcher.dart';
 import 'screens/home_screen.dart';
 import 'i18n.dart';
-
-final api = ApiClient('http://localhost:9876');
-final logStream = LogStreamService();
+import 'providers/theme_provider.dart';
+import 'providers/device_provider.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const AdbToolApp());
+  runApp(
+    MultiProvider(
+      providers: [
+        Provider<ApiClient>(
+          create: (_) => ApiClient('http://localhost:9876'),
+        ),
+        Provider<LogStreamService>(
+          create: (_) => LogStreamService(),
+        ),
+        ChangeNotifierProvider<ThemeProvider>(
+          create: (_) => ThemeProvider(),
+        ),
+        ChangeNotifierProvider<DeviceProvider>(
+          create: (_) => DeviceProvider(),
+        ),
+      ],
+      child: const AdbToolApp(),
+    ),
+  );
 }
 
-String get _prefsPath {
-  final home = Platform.environment['HOME'] ??
-      Platform.environment['USERPROFILE'] ??
-      '.';
-  return '$home/.adb_tool_prefs.json';
-}
-
-ThemeMode _loadTheme() {
-  try {
-    final f = File(_prefsPath);
-    if (f.existsSync()) {
-      final data = json.decode(f.readAsStringSync());
-      return data['dark'] == false ? ThemeMode.light : ThemeMode.dark;
-    }
-  } catch (_) {}
-  return ThemeMode.dark;
-}
-
-void _saveTheme(bool dark) {
-  try {
-    File(_prefsPath).writeAsStringSync(json.encode({'dark': dark}));
-  } catch (_) {}
-}
-
-class AdbToolApp extends StatefulWidget {
+class AdbToolApp extends StatelessWidget {
   const AdbToolApp({super.key});
 
   @override
-  State<AdbToolApp> createState() => _AdbToolAppState();
-}
-
-class _AdbToolAppState extends State<AdbToolApp> {
-  ThemeMode _themeMode = _loadTheme();
-
-  @override
   Widget build(BuildContext context) {
+    final themeProvider = context.watch<ThemeProvider>();
     return MaterialApp(
       title: 'ADB Tool',
       debugShowCheckedModeBanner: false,
-      themeMode: _themeMode,
+      themeMode: themeProvider.themeMode,
       darkTheme: ThemeData(
         useMaterial3: true,
         brightness: Brightness.dark,
@@ -72,24 +58,13 @@ class _AdbToolAppState extends State<AdbToolApp> {
         dividerColor: const Color(0xFFD0D7DE),
         fontFamily: 'System',
       ),
-      home: ServerBootScreen(
-        onThemeToggle: (isDark) {
-          setState(
-              () => _themeMode = isDark ? ThemeMode.dark : ThemeMode.light);
-          _saveTheme(isDark);
-        },
-        isDark: _themeMode == ThemeMode.dark,
-      ),
+      home: const ServerBootScreen(),
     );
   }
 }
 
 class ServerBootScreen extends StatefulWidget {
-  final ValueChanged<bool> onThemeToggle;
-  final bool isDark;
-
-  const ServerBootScreen(
-      {super.key, required this.onThemeToggle, required this.isDark});
+  const ServerBootScreen({super.key});
 
   @override
   State<ServerBootScreen> createState() => _ServerBootScreenState();
@@ -131,6 +106,7 @@ class _ServerBootScreenState extends State<ServerBootScreen>
   }
 
   Future<void> _boot() async {
+    final api = context.read<ApiClient>();
     _launcher ??= ServerLauncher();
     final launcher = _launcher!;
     try {
@@ -199,10 +175,6 @@ class _ServerBootScreenState extends State<ServerBootScreen>
   Widget build(BuildContext context) {
     if (_ready) {
       return HomeScreen(
-        api: api,
-        logStream: logStream,
-        onThemeToggle: widget.onThemeToggle,
-        isDark: widget.isDark,
         onShutdown: _shutdownServer,
         onRestart: _restartServer,
       );

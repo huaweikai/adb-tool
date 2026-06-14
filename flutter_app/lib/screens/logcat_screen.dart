@@ -1,19 +1,16 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../models/device.dart';
 import '../services/api_client.dart';
 import '../i18n.dart';
 import '../services/log_stream.dart';
 
 class LogcatScreen extends StatefulWidget {
-  final ApiClient api;
-  final LogStreamService logStream;
   final String? selectedSerial;
 
   const LogcatScreen({
     super.key,
-    required this.api,
-    required this.logStream,
     required this.selectedSerial,
   });
 
@@ -61,19 +58,6 @@ class _LogcatScreenState extends State<LogcatScreen> {
     _pkgCtrl = TextEditingController();
   }
 
-  @override
-  void didUpdateWidget(LogcatScreen oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.selectedSerial != widget.selectedSerial) {
-      if (_isStreaming) {
-        _stopLogs();
-      }
-      _packagePid = null;
-      _packageName = '';
-      _pkgCtrl.clear();
-    }
-  }
-
   void _onUserScroll() {
     if (!_scrollCtrl.hasClients) return;
     final distanceFromBottom =
@@ -107,7 +91,7 @@ class _LogcatScreenState extends State<LogcatScreen> {
       return;
     }
     final pid =
-        await widget.api.getPackagePid(widget.selectedSerial!, _packageName);
+        await context.read<ApiClient>().getPackagePid(widget.selectedSerial!, _packageName);
     if (!mounted) return;
     setState(() => _packagePid = pid);
     _restartIfNeeded();
@@ -123,7 +107,7 @@ class _LogcatScreenState extends State<LogcatScreen> {
   void _stopAndStart() {
     _logSub?.cancel();
     _flushTimer?.cancel();
-    widget.logStream.stop();
+    context.read<LogStreamService>().stop();
     setState(() {
       _isStreaming = false;
       _allEntries.clear();
@@ -145,9 +129,9 @@ class _LogcatScreenState extends State<LogcatScreen> {
     _logSub?.cancel();
 
     final filter = _buildFilter();
-    widget.logStream.connect(widget.selectedSerial!, filter);
+    context.read<LogStreamService>().connect(widget.selectedSerial!, filter);
     _connSub?.cancel();
-    _connSub = widget.logStream.connectionState.listen(
+    _connSub = context.read<LogStreamService>().connectionState.listen(
       (connected) {
         if (!mounted) return;
         setState(() => _wsConnected = connected);
@@ -157,7 +141,7 @@ class _LogcatScreenState extends State<LogcatScreen> {
       const Duration(milliseconds: 80),
       (_) => _flushPendingEntries(),
     );
-    _logSub = widget.logStream.logStream.listen(
+    _logSub = context.read<LogStreamService>().logStream.listen(
       (entries) {
         if (!mounted || entries.isEmpty) return;
         _pendingEntries.addAll(entries);
@@ -239,7 +223,7 @@ class _LogcatScreenState extends State<LogcatScreen> {
 
   void _stopLogs() {
     _flushPendingEntries();
-    widget.logStream.stop();
+    context.read<LogStreamService>().stop();
     _logSub?.cancel();
     _flushTimer?.cancel();
     setState(() {
@@ -249,12 +233,12 @@ class _LogcatScreenState extends State<LogcatScreen> {
   }
 
   void _pauseLogs() {
-    widget.logStream.pause();
+    context.read<LogStreamService>().pause();
     setState(() => _isPaused = true);
   }
 
   void _resumeLogs() {
-    widget.logStream.resume();
+    context.read<LogStreamService>().resume();
     setState(() => _isPaused = false);
   }
 
@@ -265,10 +249,10 @@ class _LogcatScreenState extends State<LogcatScreen> {
       _pendingEntries.clear();
     });
     if (_isStreaming) {
-      widget.logStream.clear();
+      context.read<LogStreamService>().clear();
     }
     if (widget.selectedSerial != null) {
-      widget.api.clearLogcat(widget.selectedSerial!);
+      context.read<ApiClient>().clearLogcat(widget.selectedSerial!);
     }
   }
 
@@ -381,7 +365,7 @@ class _LogcatScreenState extends State<LogcatScreen> {
         onChanged: (v) {
           _tag = v;
           _refreshDisplayedEntries();
-          if (_isStreaming) widget.logStream.updateFilter(_buildFilter());
+          if (_isStreaming) context.read<LogStreamService>().updateFilter(_buildFilter());
         },
         decoration: InputDecoration(
           labelText: tr('tag'),
@@ -442,7 +426,7 @@ class _LogcatScreenState extends State<LogcatScreen> {
         onChanged: (v) {
           _keyword = v;
           _refreshDisplayedEntries();
-          if (_isStreaming) widget.logStream.updateFilter(_buildFilter());
+          if (_isStreaming) context.read<LogStreamService>().updateFilter(_buildFilter());
         },
         decoration: InputDecoration(
           labelText: tr('keyword'),

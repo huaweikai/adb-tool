@@ -3,32 +3,16 @@ import '../services/drop_target.dart';
 import '../models/app_package.dart';
 import '../services/api_client.dart';
 import '../i18n.dart';
-
-class _InstallState {
-  final String fileName;
-  final int sent;
-  final int total;
-  final String phaseKey;
-
-  const _InstallState({
-    required this.fileName,
-    required this.sent,
-    required this.total,
-    required this.phaseKey,
-  });
-
-  bool get waitingForAdb => phaseKey == 'deviceInstalling';
-
-  double? get progress => total > 0 && !waitingForAdb ? sent / total : null;
-}
+import '../widgets/loading_view.dart';
+import '../widgets/error_view.dart';
+import '../widgets/file_transfer.dart';
+import 'package:provider/provider.dart';
 
 class AppManagerScreen extends StatefulWidget {
-  final ApiClient api;
   final String? selectedSerial;
 
   const AppManagerScreen({
     super.key,
-    required this.api,
     required this.selectedSerial,
   });
 
@@ -41,20 +25,12 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
   List<AppPackage> _filteredPackages = [];
   bool _loading = false;
   bool _dragOver = false;
-  _InstallState? _installState;
+  TransferState? _installState;
   TransferCancelToken? _installCancelToken;
   String? _error;
 
   bool get _installing => _installState != null;
   final TextEditingController _searchCtrl = TextEditingController();
-
-  @override
-  void didUpdateWidget(AppManagerScreen oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.selectedSerial != widget.selectedSerial) {
-      _loadPackages();
-    }
-  }
 
   @override
   void initState() {
@@ -78,7 +54,7 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
     });
     try {
       final pkgs =
-          await widget.api.getInstalledPackages(widget.selectedSerial!);
+          await context.read<ApiClient>().getInstalledPackages(widget.selectedSerial!);
       if (!mounted) return;
       setState(() {
         _allPackages = pkgs;
@@ -130,7 +106,7 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
     if (confirm != true) return;
 
     try {
-      final ok = await widget.api
+      final ok = await context.read<ApiClient>()
           .uninstallPackage(widget.selectedSerial!, pkg.packageName);
       if (!mounted) return;
       if (ok) {
@@ -164,21 +140,21 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
       try {
         _installCancelToken = cancelToken;
         setState(() {
-          _installState = _InstallState(
+          _installState = TransferState(mode: TransferMode.upload,
             fileName: file.name,
             sent: 0,
             total: totalBytes,
             phaseKey: 'preparing',
           );
         });
-        final result = await widget.api.installLocalPackage(
+        final result = await context.read<ApiClient>().installLocalPackage(
           widget.selectedSerial!,
           file.path,
           cancelToken: cancelToken,
           onProgress: (progress) {
             if (!mounted) return;
             setState(() {
-              _installState = _InstallState(
+              _installState = TransferState(mode: TransferMode.upload,
                 fileName: file.name,
                 sent: progress.sent,
                 total: progress.total,
@@ -303,26 +279,15 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
             children: [
               _buildToolbar(context),
               if (_loading)
-                const Expanded(
-                    child: Center(child: CircularProgressIndicator()))
+                const Expanded(child: LoadingView())
               else if (_error != null)
                 Expanded(
-                    child: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.error_outline,
-                          size: 48, color: Colors.red),
-                      const SizedBox(height: 8),
-                      Text(_error!,
-                          style:
-                              const TextStyle(color: Colors.red, fontSize: 12)),
-                      const SizedBox(height: 12),
-                      FilledButton.tonal(
-                          onPressed: _loadPackages, child: Text(tr('retry'))),
-                    ],
+                  child: ErrorView(
+                    message: _error!,
+                    onRetry: _loadPackages,
+                    retryLabel: tr('retry'),
                   ),
-                ))
+                )
               else
                 Expanded(child: _buildPackageList(context)),
               _buildStatusBar(context),
@@ -585,7 +550,7 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
     );
   }
 
-  Widget _buildInstallingOverlay(_InstallState state) {
+  Widget _buildInstallingOverlay(TransferState state) {
     final theme = Theme.of(context);
     final progress = state.progress;
     final percent = progress == null
@@ -659,7 +624,7 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
                         ),
                       ),
                       Text(
-                        '${_formatBytes(state.sent)} / ${state.total > 0 ? _formatBytes(state.total) : tr('unknownSize')}',
+                        '${formatBytes(state.sent)} / ${state.total > 0 ? formatBytes(state.total) : tr('unknownSize')}',
                         style: TextStyle(
                           fontSize: 11,
                           fontFamily: 'Menlo',
@@ -693,15 +658,4 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
     );
   }
 
-  String _formatBytes(int bytes) {
-    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-    var value = bytes.toDouble();
-    var unit = 0;
-    while (value >= 1024 && unit < units.length - 1) {
-      value /= 1024;
-      unit++;
-    }
-    if (unit == 0) return '$bytes ${units[unit]}';
-    return '${value.toStringAsFixed(value >= 100 ? 0 : 1)} ${units[unit]}';
-  }
 }

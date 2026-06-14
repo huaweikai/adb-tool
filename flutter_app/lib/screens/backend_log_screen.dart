@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../services/api_client.dart';
 import '../i18n.dart';
 
@@ -33,9 +34,7 @@ class BackendLogEntry {
 }
 
 class BackendLogScreen extends StatefulWidget {
-  final ApiClient api;
-
-  const BackendLogScreen({super.key, required this.api});
+  const BackendLogScreen({super.key});
 
   @override
   State<BackendLogScreen> createState() => _BackendLogScreenState();
@@ -67,7 +66,7 @@ class _BackendLogScreenState extends State<BackendLogScreen> {
 
   Future<void> _fetch() async {
     try {
-      final list = await widget.api.getBackendLogs();
+      final list = await context.read<ApiClient>().getBackendLogs();
       final logs = list.map((e) => BackendLogEntry.fromJson(e)).toList();
       if (!mounted) return;
       final wasAtBottom = _scrollCtrl.hasClients &&

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../services/api_client.dart';
 import '../i18n.dart';
 
@@ -86,12 +87,10 @@ const _quickGroups = [
 ];
 
 class AdbCommandScreen extends StatefulWidget {
-  final ApiClient api;
   final String? selectedSerial;
 
   const AdbCommandScreen({
     super.key,
-    required this.api,
     required this.selectedSerial,
   });
 
@@ -192,7 +191,7 @@ class _AdbCommandScreenState extends State<AdbCommandScreen> {
 
     try {
       final result =
-          await widget.api.executeAdbCommand(widget.selectedSerial!, args);
+          await context.read<ApiClient>().executeAdbCommand(widget.selectedSerial!, args);
       if (!mounted) return;
       setState(() {
         _records.add(_CommandRecord(
