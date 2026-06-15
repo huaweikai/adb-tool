@@ -128,22 +128,13 @@ class _LogcatScreenState extends State<LogcatScreen> {
   }
 
   void _applyConfig(TestAppConfig config) {
-    var pkgChanged = false;
-    if (_packageName.isEmpty && config.packageName.isNotEmpty) {
-      _pkgCtrl.text = config.packageName;
-      _packageName = config.packageName;
-      pkgChanged = true;
-    }
-    if (_tag.isEmpty && config.logcat.tags.isNotEmpty) {
-      final tags = config.logcat.tags.join(', ');
-      _tagCtrl.text = tags;
-      _tag = tags;
-    }
-    if (_keyword.isEmpty && config.logcat.keywords.isNotEmpty) {
-      final kws = config.logcat.keywords.join(', ');
-      _kwCtrl.text = kws;
-      _keyword = kws;
-    }
+    final pkgChanged = config.packageName.isNotEmpty;
+    _pkgCtrl.text = config.packageName;
+    _packageName = config.packageName;
+    _tagCtrl.text = config.logcat.tags.join(', ');
+    _tag = config.logcat.tags.join(', ');
+    _kwCtrl.text = config.logcat.keywords.join(', ');
+    _keyword = config.logcat.keywords.join(', ');
     if (config.logcat.defaultLevel.isNotEmpty) {
       _priority = config.logcat.defaultLevel;
     }
