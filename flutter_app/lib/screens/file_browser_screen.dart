@@ -14,6 +14,7 @@ import '../widgets/error_view.dart';
 import '../widgets/file_transfer.dart';
 import '../widgets/video_preview.dart';
 import '../widgets/editor_i18n.dart';
+import '../widgets/screenshot_watermark.dart';
 import 'package:pro_image_editor/pro_image_editor.dart';
 import '../providers/locale_provider.dart';
 import '../providers/device_provider.dart';
@@ -72,8 +73,8 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
 
   static const _quickPaths = [
     ('/', 'root'),
-    ('/sdcard', 'sd'),
     ('/storage/emulated/0', 'storage'),
+    ('/sdcard/Android/data', 'sandbox'),
     ('/data/local/tmp', 'tmp'),
   ];
 
@@ -682,27 +683,47 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       }
       if (!mounted) return;
       setState(() => _screenshotting = false);
-      final bytes = base64Decode(b64);
+      var bytes = base64Decode(b64);
       if (!mounted) return;
-      await Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => ProImageEditor.memory(
-          bytes,
-          configs: kImageEditorConfigs,
-          callbacks: ProImageEditorCallbacks(
-            onImageEditingComplete: (edited) async {
-              if (!context.mounted) return;
-              final location = await getSaveLocation(
-                suggestedName: 'screenshot-${DateTime.now().millisecondsSinceEpoch}.png',
-                confirmButtonText: tr('saveScreenshot'),
-              );
-              if (location != null) {
-                await File(location.path).writeAsBytes(edited);
-              }
-            },
-          ),
-        )),
-      );
+      final opts = await showWatermarkDialog(context);
+      if (opts == null) return;
+      if (opts.addTimestamp) {
+        bytes = await addTimestampWatermark(bytes);
+      }
+      if (opts.stepNumber != null) {
+        bytes = await addStepNumber(bytes, opts.stepNumber!);
+      }
+      if (!mounted) return;
+      if (opts.skipEdit) {
+        final location = await getSaveLocation(
+          suggestedName: 'screenshot-${DateTime.now().millisecondsSinceEpoch}.png',
+          confirmButtonText: tr('saveScreenshot'),
+        );
+        if (location != null) {
+          await File(location.path).writeAsBytes(bytes);
+        }
+      } else {
+        if (!mounted) return;
+        await Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => ProImageEditor.memory(
+            bytes,
+            configs: kImageEditorConfigs,
+            callbacks: ProImageEditorCallbacks(
+              onImageEditingComplete: (edited) async {
+                if (!context.mounted) return;
+                final location = await getSaveLocation(
+                  suggestedName: 'screenshot-${DateTime.now().millisecondsSinceEpoch}.png',
+                  confirmButtonText: tr('saveScreenshot'),
+                );
+                if (location != null) {
+                  await File(location.path).writeAsBytes(edited);
+                }
+              },
+            ),
+          )),
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() => _screenshotting = false);

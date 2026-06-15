@@ -12,6 +12,7 @@ import '../providers/device_provider.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_view.dart';
 import '../widgets/editor_i18n.dart';
+import '../widgets/screenshot_watermark.dart';
 
 class DeviceInfoScreen extends StatefulWidget {
   const DeviceInfoScreen({
@@ -70,11 +71,30 @@ class _DeviceInfoScreenState extends State<DeviceInfoScreen> {
       final b64 = await context.read<ApiClient>().takeScreenshot(_selectedSerial!);
       if (!mounted) return;
       if (b64 != null) {
-        final bytes = base64Decode(b64);
+        var bytes = base64Decode(b64);
         if (!mounted) return;
-        await Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => ProImageEditor.memory(
+        final opts = await showWatermarkDialog(context);
+        if (opts == null) return;
+        if (opts.addTimestamp) {
+          bytes = await addTimestampWatermark(bytes);
+        }
+        if (opts.stepNumber != null) {
+          bytes = await addStepNumber(bytes, opts.stepNumber!);
+        }
+        if (!mounted) return;
+        if (opts.skipEdit) {
+          final location = await getSaveLocation(
+            suggestedName: 'screenshot-${DateTime.now().millisecondsSinceEpoch}.png',
+            confirmButtonText: tr('saveScreenshot'),
+          );
+          if (location != null) {
+            await File(location.path).writeAsBytes(bytes);
+          }
+        } else {
+          if (!mounted) return;
+          await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => ProImageEditor.memory(
             bytes,
             configs: kImageEditorConfigs,
             callbacks: ProImageEditorCallbacks(
@@ -90,7 +110,8 @@ class _DeviceInfoScreenState extends State<DeviceInfoScreen> {
               },
             ),
           )),
-        );
+          );
+        }
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(tr('screenshotFailed'))),

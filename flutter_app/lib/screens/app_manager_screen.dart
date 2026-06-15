@@ -87,6 +87,76 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
     });
   }
 
+  Future<void> _clearAppData(AppPackage pkg) async {
+    if (_installing) return;
+    final serial = _selectedSerial;
+    if (serial == null) return;
+    final api = context.read<ApiClient>();
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(tr('clearData')),
+        content: Text(tr('clearDataConfirm', {'pkg': pkg.packageName})),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(tr('cancel'))),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(tr('clearData'))),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    try {
+      final result = await api.executeAdbCommand(serial, ['shell', 'pm', 'clear', pkg.packageName]);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result.ok ? tr('dataCleared', {'pkg': pkg.packageName}) : '${tr('operationFailed')}: ${result.error}')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${tr('operationFailed')}: $e')),
+      );
+    }
+  }
+
+  Future<void> _forceStopApp(AppPackage pkg) async {
+    if (_installing) return;
+    final serial = _selectedSerial;
+    if (serial == null) return;
+    final api = context.read<ApiClient>();
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(tr('forceStop')),
+        content: Text(tr('forceStopConfirm', {'pkg': pkg.packageName})),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(tr('cancel'))),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(tr('forceStop'))),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    try {
+      final result = await api.executeAdbCommand(serial, ['shell', 'am', 'force-stop', pkg.packageName]);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result.ok ? tr('appForceStopped', {'pkg': pkg.packageName}) : '${tr('operationFailed')}: ${result.error}')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${tr('operationFailed')}: $e')),
+      );
+    }
+  }
+
   Future<void> _uninstallPackage(AppPackage pkg) async {
     if (_installing) return;
     final serial = _selectedSerial;
@@ -437,9 +507,33 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
             PopupMenuButton<String>(
               enabled: !_installing,
               onSelected: (v) {
+                if (v == 'forceStop') _forceStopApp(pkg);
+                if (v == 'clearData') _clearAppData(pkg);
                 if (v == 'uninstall') _uninstallPackage(pkg);
               },
               itemBuilder: (ctx) => [
+                PopupMenuItem(
+                    value: 'forceStop',
+                    child: Row(
+                      children: [
+                        const Icon(Icons.stop_circle_outlined,
+                            size: 18, color: Colors.orange),
+                        const SizedBox(width: 8),
+                        Text(tr('forceStop'),
+                            style: const TextStyle(color: Colors.orange))
+                      ],
+                    )),
+                PopupMenuItem(
+                    value: 'clearData',
+                    child: Row(
+                      children: [
+                        const Icon(Icons.cleaning_services_outlined,
+                            size: 18, color: Colors.orange),
+                        const SizedBox(width: 8),
+                        Text(tr('clearData'),
+                            style: const TextStyle(color: Colors.orange))
+                      ],
+                    )),
                 PopupMenuItem(
                     value: 'uninstall',
                     child: Row(
@@ -473,6 +567,32 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
             _detailRow(tr('packageName'), pkg.packageName),
             _detailRow(tr('path'), pkg.sourceDir),
             const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.tonalIcon(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  _forceStopApp(pkg);
+                },
+                icon: const Icon(Icons.stop_circle_outlined, size: 18),
+                label: Text(tr('forceStop')),
+                style: FilledButton.styleFrom(foregroundColor: Colors.orange),
+              ),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.tonalIcon(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  _clearAppData(pkg);
+                },
+                icon: const Icon(Icons.cleaning_services_outlined, size: 18),
+                label: Text(tr('clearData')),
+                style: FilledButton.styleFrom(foregroundColor: Colors.orange),
+              ),
+            ),
+            const SizedBox(height: 10),
             SizedBox(
               width: double.infinity,
               child: FilledButton.tonalIcon(

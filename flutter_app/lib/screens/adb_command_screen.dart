@@ -86,6 +86,18 @@ const _quickGroups = [
           confirm: true, destructive: true),
     ],
   ),
+  _ActionGroup(
+    titleKey: 'quickGroupIntent',
+    icon: Icons.open_in_browser,
+    actions: [
+      _QuickAction('quickActionViewUrl', '', Icons.language,
+          dialog: true),
+      _QuickAction('quickActionDeepLink', '', Icons.link,
+          dialog: true),
+      _QuickAction('quickActionCustomIntent', '', Icons.tune,
+          customIntent: true),
+    ],
+  ),
 ];
 
 class AdbCommandScreen extends StatefulWidget {
@@ -215,6 +227,19 @@ class _AdbCommandScreenState extends State<AdbCommandScreen> {
   }
 
   Future<void> _runQuickAction(_QuickAction action) async {
+    if (action.customIntent) {
+      _showCustomIntentDialog();
+      return;
+    }
+    if (action.dialog) {
+      final input = await _showTextInputDialog(action.labelKey);
+      if (input == null || input.isEmpty) return;
+      final cmd = action.labelKey == 'quickActionViewUrl'
+          ? 'shell am start -a android.intent.action.VIEW -d $input'
+          : 'shell am start -a android.intent.action.VIEW -d "$input"';
+      await _executeCommand(cmd);
+      return;
+    }
     if (action.confirm) {
       final ok = await showDialog<bool>(
         context: context,
@@ -258,6 +283,135 @@ class _AdbCommandScreenState extends State<AdbCommandScreen> {
 
   void _clearRecords() {
     setState(() => _records.clear());
+  }
+
+  Future<String?> _showTextInputDialog(String labelKey) async {
+    final ctrl = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(tr(labelKey)),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: InputDecoration(
+            hintText: labelKey == 'quickActionViewUrl' ? 'https://...' : 'yourapp://...',
+            border: const OutlineInputBorder(),
+          ),
+          onSubmitted: (v) => Navigator.pop(ctx, v),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(tr('cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text),
+            child: Text(tr('execute')),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showCustomIntentDialog() {
+    final actionCtrl = TextEditingController();
+    final dataCtrl = TextEditingController();
+    final categoryCtrl = TextEditingController();
+    final extrasCtrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(tr('quickActionCustomIntent')),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: actionCtrl,
+                decoration: InputDecoration(
+                  labelText: tr('intentAction'),
+                  hintText: 'android.intent.action.VIEW',
+                  border: const OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: dataCtrl,
+                decoration: InputDecoration(
+                  labelText: tr('intentData'),
+                  hintText: 'https://... 或 yourapp://...',
+                  border: const OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: categoryCtrl,
+                decoration: InputDecoration(
+                  labelText: tr('intentCategory'),
+                  hintText: 'android.intent.category.DEFAULT',
+                  border: const OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: extrasCtrl,
+                maxLines: 3,
+                decoration: InputDecoration(
+                  labelText: tr('intentExtras'),
+                  hintText: 'key1=val1\nkey2=val2\nboolKey true',
+                  border: const OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(tr('cancel')),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              final parts = <String>['shell', 'am', 'start'];
+              final action = actionCtrl.text.trim();
+              final data = dataCtrl.text.trim();
+              final category = categoryCtrl.text.trim();
+              final extras = extrasCtrl.text.trim();
+              if (action.isNotEmpty) {
+                parts.addAll(['-a', action]);
+              }
+              if (data.isNotEmpty) {
+                parts.addAll(['-d', "'$data'"]);
+              }
+              if (category.isNotEmpty) {
+                parts.addAll(['-c', category]);
+              }
+              for (final line in extras.split('\n')) {
+                final trimmed = line.trim();
+                if (trimmed.isEmpty) continue;
+                final spaceIdx = trimmed.lastIndexOf(' ');
+                if (spaceIdx > 0) {
+                  final val = trimmed.substring(spaceIdx + 1);
+                  if (val == 'true' || val == 'false') {
+                    parts.addAll(['--ez', trimmed.substring(0, spaceIdx), val]);
+                  } else {
+                    parts.addAll(['-e', trimmed.substring(0, spaceIdx), val]);
+                  }
+                }
+              }
+              _executeCommand(parts.join(' '));
+            },
+            child: Text(tr('execute')),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -562,6 +716,8 @@ class _QuickAction {
   final IconData icon;
   final bool confirm;
   final bool destructive;
+  final bool dialog;
+  final bool customIntent;
 
   const _QuickAction(
     this.labelKey,
@@ -569,6 +725,8 @@ class _QuickAction {
     this.icon, {
     this.confirm = false,
     this.destructive = false,
+    this.dialog = false,
+    this.customIntent = false,
   });
 }
 

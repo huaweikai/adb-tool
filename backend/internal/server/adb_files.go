@@ -48,8 +48,24 @@ func parseLsOutput(out, basePath string) []FileEntry {
 		if name == "." || name == ".." {
 			continue
 		}
+
+		var resolvedTarget string
+		isLink := perms[0] == 'l'
 		if idx := strings.Index(name, " -> "); idx > 0 {
+			resolvedTarget = name[idx+4:]
 			name = name[:idx]
+			if strings.HasPrefix(resolvedTarget, "/") {
+				fullPath := resolvedTarget
+				entries = append(entries, FileEntry{
+					Name:        name,
+					Path:        fullPath,
+					Size:        size,
+					IsDir:       true,
+					Permissions: perms,
+					Modified:    fields[5] + " " + fields[6],
+				})
+				continue
+			}
 		}
 
 		fullPath := joinDevicePath(basePath, name)
@@ -58,7 +74,7 @@ func parseLsOutput(out, basePath string) []FileEntry {
 			Name:        name,
 			Path:        fullPath,
 			Size:        size,
-			IsDir:       perms[0] == 'd' || perms[0] == 'l',
+			IsDir:       perms[0] == 'd' || isLink,
 			Permissions: perms,
 			Modified:    fields[5] + " " + fields[6],
 		})
