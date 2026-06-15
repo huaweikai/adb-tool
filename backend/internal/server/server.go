@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"io/fs"
@@ -96,6 +97,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/adb-wireless-pair", s.handleAdbWirelessPair)
 	mux.HandleFunc("/api/adb-wireless-connect", s.handleAdbWirelessConnect)
 	mux.HandleFunc("/api/adb-wireless-disconnect", s.handleAdbWirelessDisconnect)
+	mux.HandleFunc("/api/adb-wireless-scan", s.handleAdbWirelessScan)
 
 	webFS, err := fs.Sub(s.webFS, "web")
 	if err != nil {
@@ -500,6 +502,26 @@ func (s *Server) handleAdbWirelessDisconnect(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	writeJSON(w, map[string]interface{}{"ok": true, "output": output})
+}
+
+func (s *Server) handleAdbWirelessScan(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		writeAPIError(w, http.StatusMethodNotAllowed, "GET required")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+	defer cancel()
+	devices, output, err := s.adb.ScanWirelessAdb(ctx)
+	data := map[string]interface{}{"devices": devices, "output": output}
+	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			writeJSON(w, data)
+			return
+		}
+		writeAPIErrorData(w, http.StatusBadRequest, err.Error(), data)
+		return
+	}
+	writeJSON(w, data)
 }
 
 func (s *Server) handlePullFile(w http.ResponseWriter, r *http.Request) {

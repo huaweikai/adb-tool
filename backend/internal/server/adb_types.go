@@ -39,3 +39,13 @@ type PackageInfo struct {
 	PackageName string `json:"packageName"`
 	SourceDir   string `json:"sourceDir"`
 }
+
+type WirelessAdbDevice struct {
+	Name        string `json:"name"`
+	Host        string `json:"host"`
+	PairPort    string `json:"pairPort,omitempty"`
+	ConnectPort string `json:"connectPort,omitempty"`
+	PairAddress string `json:"pairAddress,omitempty"`
+	Address     string `json:"address,omitempty"`
+	Source      string `json:"source"`
+}

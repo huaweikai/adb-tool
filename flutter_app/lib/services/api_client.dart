@@ -20,6 +20,38 @@ class AdbCommandResult {
   });
 }
 
+class WirelessAdbDevice {
+  final String name;
+  final String host;
+  final String pairPort;
+  final String connectPort;
+  final String pairAddress;
+  final String address;
+  final String source;
+
+  WirelessAdbDevice({
+    required this.name,
+    required this.host,
+    required this.pairPort,
+    required this.connectPort,
+    required this.pairAddress,
+    required this.address,
+    required this.source,
+  });
+
+  factory WirelessAdbDevice.fromJson(Map<String, dynamic> json) {
+    return WirelessAdbDevice(
+      name: json['name']?.toString() ?? '',
+      host: json['host']?.toString() ?? '',
+      pairPort: json['pairPort']?.toString() ?? '',
+      connectPort: json['connectPort']?.toString() ?? '',
+      pairAddress: json['pairAddress']?.toString() ?? '',
+      address: json['address']?.toString() ?? '',
+      source: json['source']?.toString() ?? '',
+    );
+  }
+}
+
 class TransferProgress {
   final int sent;
   final int total;
@@ -143,6 +175,14 @@ class ApiClient {
       options: Options(contentType: Headers.jsonContentType),
     );
     return _adbCommandResult(_responseMap(resp));
+  }
+
+  Future<List<WirelessAdbDevice>> scanWirelessAdb() async {
+    final resp = await _dio.get('/api/adb-wireless-scan');
+    _throwIfNotOk(resp);
+    final data = _responseMap(resp);
+    final list = data['devices'] as List? ?? [];
+    return list.map((e) => WirelessAdbDevice.fromJson(_asMap(e))).toList();
   }
 
   Future<bool> isReady() async {

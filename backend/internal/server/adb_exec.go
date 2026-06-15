@@ -3,7 +3,9 @@ package server
 import (
 	"context"
 	"fmt"
+	"net"
 	"os/exec"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -98,4 +100,67 @@ func (m *AdbManager) WirelessConnect(address string) (string, error) {
 
 func (m *AdbManager) WirelessDisconnect(serial string) (string, error) {
 	return m.runRaw("disconnect", serial)
+}
+
+func (m *AdbManager) ScanWirelessAdb(ctx context.Context) ([]WirelessAdbDevice, string, error) {
+	output, err := m.runRawContext(ctx, "mdns", "services")
+	devices := parseWirelessAdbMdns(output)
+	if err != nil {
+		return devices, output, err
+	}
+	return devices, output, nil
+}
+
+var mdnsHostPortRe = regexp.MustCompile(`([0-9A-Fa-f:.]+):(\d+)`)
+
+func parseWirelessAdbMdns(output string) []WirelessAdbDevice {
+	items := map[string]*WirelessAdbDevice{}
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || !strings.Contains(line, "_adb-tls-") {
+			continue
+		}
+		match := mdnsHostPortRe.FindStringSubmatch(line)
+		if len(match) < 3 {
+			continue
+		}
+		host := strings.Trim(match[1], "[]")
+		port := match[2]
+		if net.ParseIP(host) == nil {
+			continue
+		}
+		device := items[host]
+		if device == nil {
+			device = &WirelessAdbDevice{
+				Name:   mdnsDeviceName(line),
+				Host:   host,
+				Source: "mdns",
+			}
+			items[host] = device
+		}
+		if strings.Contains(line, "_adb-tls-pairing") {
+			device.PairPort = port
+			device.PairAddress = net.JoinHostPort(host, port)
+		}
+		if strings.Contains(line, "_adb-tls-connect") {
+			device.ConnectPort = port
+			device.Address = net.JoinHostPort(host, port)
+		}
+	}
+	devices := make([]WirelessAdbDevice, 0, len(items))
+	for _, device := range items {
+		devices = append(devices, *device)
+	}
+	return devices
+}
+
+func mdnsDeviceName(line string) string {
+	fields := strings.Fields(line)
+	if len(fields) == 0 {
+		return ""
+	}
+	name := strings.TrimSuffix(fields[0], ".")
+	name = strings.TrimSuffix(name, "._adb-tls-connect._tcp")
+	name = strings.TrimSuffix(name, "._adb-tls-pairing._tcp")
+	return name
 }
