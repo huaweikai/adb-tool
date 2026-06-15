@@ -36,8 +36,10 @@ type Server struct {
 }
 
 func New(adbPath string, webFS fs.FS, clipboardApk []byte) *Server {
+	adb := NewAdbManager(adbPath)
+	adb.DiagnoseStartup()
 	return &Server{
-		adb:           NewAdbManager(adbPath),
+		adb:           adb,
 		webFS:         webFS,
 		clipboardApk:  clipboardApk,
 		sessionLogcat: &SessionLogcat{},

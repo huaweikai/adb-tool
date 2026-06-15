@@ -50,10 +50,14 @@ func (m *AdbManager) runOut(args ...string) ([]byte, error) {
 	start := time.Now()
 	cmdStr := strings.Join(args, " ")
 	cmd := exec.Command(m.adbPath, args...)
-	output, err := cmd.Output()
+	output, err := cmd.CombinedOutput()
 	elapsed := time.Since(start)
 	if err != nil {
-		Log.Add("adb "+cmdStr, "", err, elapsed)
+		outStr := strings.TrimSpace(string(output))
+		if len(outStr) > 500 {
+			outStr = outStr[:500] + fmt.Sprintf("... (%d bytes)", len(outStr))
+		}
+		Log.Add("adb "+cmdStr, outStr, err, elapsed)
 	} else {
 		Log.Add("adb "+cmdStr, fmt.Sprintf("<%d bytes binary>", len(output)), nil, elapsed)
 	}

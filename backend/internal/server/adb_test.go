@@ -69,6 +69,41 @@ func TestShellQuoteEscapesSingleQuote(t *testing.T) {
 	}
 }
 
+func TestNewServerLogsAdbStartupDiagnostics(t *testing.T) {
+	oldLog := Log
+	Log = NewBackendLogger(20)
+	defer func() { Log = oldLog }()
+
+	adbPath := writeFakeAdb(t, `#!/bin/sh
+printf '%s ' "$@" >> "$ADB_FAKE_LOG"
+printf '\n' >> "$ADB_FAKE_LOG"
+if [ "$1" = "version" ]; then
+  printf 'Android Debug Bridge version 1.0.41\n'
+  exit 0
+fi
+if [ "$1" = "start-server" ]; then
+  printf '* daemon started successfully *\n'
+  exit 0
+fi
+exit 0
+`)
+	logPath := filepath.Join(t.TempDir(), "adb.log")
+	t.Setenv("ADB_FAKE_LOG", logPath)
+
+	New(adbPath, os.DirFS(t.TempDir()), nil)
+
+	entries := Log.Snapshot()
+	if !hasLogCommand(entries, "adb diagnostic path") {
+		t.Fatalf("expected adb path diagnostic log, entries: %+v", entries)
+	}
+	if !hasLogCommand(entries, "adb version") {
+		t.Fatalf("expected adb version diagnostic log, entries: %+v", entries)
+	}
+	if !hasLogCommand(entries, "adb start-server") {
+		t.Fatalf("expected adb start-server diagnostic log, entries: %+v", entries)
+	}
+}
+
 func TestDevicesSkipsPropsForDisconnectedStates(t *testing.T) {
 	adbPath := writeFakeAdb(t, `#!/bin/sh
 printf '%s ' "$@" >> "$ADB_FAKE_LOG"
@@ -119,6 +154,15 @@ exit 1
 	if !strings.Contains(log, "-s ready-serial shell getprop") {
 		t.Fatalf("connected device should run getprop, log:\n%s", log)
 	}
+}
+
+func hasLogCommand(entries []LogEntry, command string) bool {
+	for _, entry := range entries {
+		if entry.Command == command {
+			return true
+		}
+	}
+	return false
 }
 
 func writeFakeAdb(t *testing.T, script string) string {

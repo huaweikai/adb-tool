@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"os/exec"
 	"sync"
 	"time"
@@ -19,6 +20,18 @@ func NewAdbManager(adbPath string) *AdbManager {
 
 func (m *AdbManager) AdbPath() string {
 	return m.adbPath
+}
+
+func (m *AdbManager) DiagnoseStartup() {
+	start := time.Now()
+	resolved, err := exec.LookPath(m.adbPath)
+	result := fmt.Sprintf("configured=%s", m.adbPath)
+	if resolved != "" {
+		result += fmt.Sprintf(" resolved=%s", resolved)
+	}
+	Log.Add("adb diagnostic path", result, err, time.Since(start))
+	m.runRaw("version")
+	m.runRaw("start-server")
 }
 
 func (m *AdbManager) Close() {
