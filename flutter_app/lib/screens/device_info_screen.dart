@@ -1,6 +1,9 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:file_selector/file_selector.dart';
+import 'package:pro_image_editor/pro_image_editor.dart';
 import 'package:provider/provider.dart';
 import '../services/api_client.dart';
 import '../i18n.dart';
@@ -8,6 +11,7 @@ import '../providers/locale_provider.dart';
 import '../providers/device_provider.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_view.dart';
+import '../widgets/editor_i18n.dart';
 
 class DeviceInfoScreen extends StatefulWidget {
   const DeviceInfoScreen({
@@ -66,32 +70,26 @@ class _DeviceInfoScreenState extends State<DeviceInfoScreen> {
       final b64 = await context.read<ApiClient>().takeScreenshot(_selectedSerial!);
       if (!mounted) return;
       if (b64 != null) {
-        showDialog(
-          context: context,
-          builder: (ctx) => Dialog(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  children: [
-                    const Spacer(),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.pop(ctx),
-                    ),
-                  ],
-                ),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: Image.memory(
-                    base64Decode(b64),
-                    fit: BoxFit.contain,
-                  ),
-                ),
-                const SizedBox(height: 12),
-              ],
+        final bytes = base64Decode(b64);
+        if (!mounted) return;
+        await Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => ProImageEditor.memory(
+            bytes,
+            configs: kImageEditorConfigs,
+            callbacks: ProImageEditorCallbacks(
+              onImageEditingComplete: (edited) async {
+                if (!context.mounted) return;
+                final location = await getSaveLocation(
+                  suggestedName: 'screenshot-${DateTime.now().millisecondsSinceEpoch}.png',
+                  confirmButtonText: tr('saveScreenshot'),
+                );
+                if (location != null) {
+                  await File(location.path).writeAsBytes(edited);
+                }
+              },
             ),
-          ),
+          )),
         );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(

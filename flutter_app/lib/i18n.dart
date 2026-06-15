@@ -21,6 +21,8 @@ const _loc = <String, Map<String, String>>{
     'files': '文件',
     'apps': '应用',
     'clipboard': '剪贴板',
+    'draw': '绘制',
+    'undo': '撤销',
 
     // ==== 启动页 ====
     'starting': 'Starting ...',
@@ -338,6 +340,8 @@ const _loc = <String, Map<String, String>>{
     'files': 'Files',
     'apps': 'Apps',
     'clipboard': 'Clipboard',
+    'draw': 'Draw',
+    'undo': 'Undo',
 
     // ==== 启动页 ====
     'starting': 'Starting ...',

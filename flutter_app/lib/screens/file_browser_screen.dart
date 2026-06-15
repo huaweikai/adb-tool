@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -12,6 +12,9 @@ import 'package:provider/provider.dart';
 import '../widgets/loading_view.dart';
 import '../widgets/error_view.dart';
 import '../widgets/file_transfer.dart';
+import '../widgets/video_preview.dart';
+import '../widgets/editor_i18n.dart';
+import 'package:pro_image_editor/pro_image_editor.dart';
 import '../providers/locale_provider.dart';
 import '../providers/device_provider.dart';
 
@@ -635,31 +638,17 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     try {
       await api.screenRecordAction(serial, 'stop');
       if (!mounted) return;
-      final location = await getSaveLocation(
-        suggestedName:
-            'screen-record-${DateTime.now().millisecondsSinceEpoch}.mp4',
-        confirmButtonText: tr('saveRecording'),
-      );
-      if (location == null) {
-        setState(() {
-          _recording = false;
-          _recordSaving = false;
-          _recordSeconds = 0;
-        });
-        return;
-      }
       final bytes = await api.pullRecordedVideo(serial);
-      await File(location.path).writeAsBytes(bytes);
       if (!mounted) return;
       setState(() {
         _recording = false;
         _recordSaving = false;
         _recordSeconds = 0;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text(tr('recordingSaved', {'path': location.path})),
-            behavior: SnackBarBehavior.floating),
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        builder: (_) => VideoPreview(videoBytes: bytes),
       );
     } catch (e) {
       if (!mounted) return;
@@ -692,23 +681,27 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         return;
       }
       if (!mounted) return;
-      final location = await getSaveLocation(
-        suggestedName:
-            'screenshot-${DateTime.now().millisecondsSinceEpoch}.png',
-        confirmButtonText: tr('saveScreenshot'),
-      );
-      if (location == null) {
-        setState(() => _screenshotting = false);
-        return;
-      }
-      final bytes = base64Decode(b64);
-      await File(location.path).writeAsBytes(bytes);
-      if (!mounted) return;
       setState(() => _screenshotting = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text(tr('screenshotSaved', {'path': location.path})),
-            behavior: SnackBarBehavior.floating),
+      final bytes = base64Decode(b64);
+      if (!mounted) return;
+      await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => ProImageEditor.memory(
+          bytes,
+          configs: kImageEditorConfigs,
+          callbacks: ProImageEditorCallbacks(
+            onImageEditingComplete: (edited) async {
+              if (!context.mounted) return;
+              final location = await getSaveLocation(
+                suggestedName: 'screenshot-${DateTime.now().millisecondsSinceEpoch}.png',
+                confirmButtonText: tr('saveScreenshot'),
+              );
+              if (location != null) {
+                await File(location.path).writeAsBytes(edited);
+              }
+            },
+          ),
+        )),
       );
     } catch (e) {
       if (!mounted) return;
