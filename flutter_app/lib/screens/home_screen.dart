@@ -67,7 +67,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Timer? _refreshTimer;
 
   final Set<String> _expandedSerials = {};
@@ -77,6 +77,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     final api = context.read<ApiClient>();
     final dp = context.read<DeviceProvider>();
     dp.refresh(api);
@@ -88,9 +89,17 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _refreshTimer?.cancel();
     context.read<DeviceProvider>().removeListener(_onDevicesChanged);
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      context.read<DeviceProvider>().refresh(context.read<ApiClient>());
+    }
   }
 
   String navLabel(NavItem item) {
@@ -403,6 +412,16 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
       actions: [
+        if (widget.onRestart != null)
+          TextButton(
+            onPressed: () {
+              widget.onRestart!();
+              _clearAllState();
+            },
+            child: Text(tr('restart'),
+                style: TextStyle(
+                    fontSize: 12, color: theme.colorScheme.onErrorContainer)),
+          ),
         TextButton(
           onPressed: () => deviceProvider.refresh(api),
           child: Text(tr('refresh'),
@@ -415,13 +434,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _clearAllState() {
     _refreshTimer?.cancel();
+    _refreshTimer = null;
     _screens.clear();
     _expandedSerials.clear();
     _activeKey = null;
     context.read<DeviceProvider>().select(null);
-    _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
-      context.read<DeviceProvider>().refresh(context.read<ApiClient>());
-    });
   }
 
   Future<void> _showWirelessAdbDialog() async {

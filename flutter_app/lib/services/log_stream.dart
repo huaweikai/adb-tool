@@ -22,7 +22,7 @@ class LogStreamService {
     _serial = serial;
     _filter = filter;
 
-    const wsUrl = 'ws://localhost:9876/ws/logs';
+    const wsUrl = 'ws://127.0.0.1:9876/ws/logs';
     _channel = WebSocketChannel.connect(Uri.parse(wsUrl));
 
     _channel!.ready.then((_) {

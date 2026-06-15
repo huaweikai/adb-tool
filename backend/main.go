@@ -29,7 +29,11 @@ func main() {
 	}
 	fmt.Printf("       ADB ready at: %s\n", adbPath)
 
-	fmt.Println("[2/3] Starting HTTP server on :9876...")
+	listenAddr := os.Getenv("ADB_TOOL_LISTEN")
+	if listenAddr == "" {
+		listenAddr = server.DefaultListenAddr
+	}
+	fmt.Printf("[2/3] Starting HTTP server on %s...\n", listenAddr)
 	srv := server.New(adbPath, webFS, clipboardHelperApk)
 	shutdownCh := make(chan struct{})
 	var shutdownOnce sync.Once
@@ -41,8 +45,12 @@ func main() {
 	srv.SetShutdownFunc(requestShutdown)
 
 	httpServer := &http.Server{
-		Addr:    ":9876",
-		Handler: srv.Handler(),
+		Addr:         listenAddr,
+		Handler:      srv.Handler(),
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		WriteTimeout:      10 * time.Minute,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	go func() {
@@ -52,7 +60,7 @@ func main() {
 		}
 	}()
 
-	fmt.Println("[3/3] Server ready. Listening on :9876")
+	fmt.Printf("[3/3] Server ready. Listening on %s\n", listenAddr)
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)

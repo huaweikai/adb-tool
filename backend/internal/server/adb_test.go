@@ -3,6 +3,7 @@ package server
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -115,10 +116,10 @@ if [ "$1" = "devices" ]; then
   printf 'ready-serial\tdevice product:test model:Ready device:test\n'
   exit 0
 fi
-if [ "$3" = "shell" ] && [ "$4" = "getprop" ]; then
-  printf '[ro.product.model]: [Ready]\n'
-  printf '[ro.product.brand]: [TestBrand]\n'
-  printf '[ro.build.version.sdk]: [35]\n'
+if [ "$3" = "shell" ] && echo "$4" | grep -q "getprop"; then
+  printf 'Ready\n'
+  printf 'TestBrand\n'
+  printf '35\n'
   exit 0
 fi
 exit 1
@@ -151,7 +152,7 @@ exit 1
 	if strings.Contains(log, "-s unauth-serial shell getprop") {
 		t.Fatalf("unauthorized device should not run getprop, log:\n%s", log)
 	}
-	if !strings.Contains(log, "-s ready-serial shell getprop") {
+	if !strings.Contains(log, "-s ready-serial shell") || !strings.Contains(log, "getprop ro.product.model") {
 		t.Fatalf("connected device should run getprop, log:\n%s", log)
 	}
 }
@@ -167,7 +168,24 @@ func hasLogCommand(entries []LogEntry, command string) bool {
 
 func writeFakeAdb(t *testing.T, script string) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "adb")
+	dir := t.TempDir()
+	if runtime.GOOS == "windows" {
+		path := filepath.Join(dir, "adb.bat")
+		batch := strings.Join([]string{
+			"@echo off",
+			"echo %* >> \"%ADB_FAKE_LOG%\"",
+			"if \"%1\"==\"version\" echo Android Debug Bridge version 1.0.41& exit /b 0",
+			"if \"%1\"==\"start-server\" echo * daemon started successfully *& exit /b 0",
+			"if \"%1\"==\"devices\" echo List of devices attached& echo offline-serial	offline product:test model:Offline device:test& echo unauth-serial	unauthorized product:test model:Unauthorized device:test& echo ready-serial	device product:test model:Ready device:test& exit /b 0",
+			"if \"%3\"==\"shell\" echo %4 | findstr getprop >nul && echo Ready& echo TestBrand& echo 35& exit /b 0",
+			"exit /b 1",
+		}, "\r\n")
+		if err := os.WriteFile(path, []byte(batch), 0o755); err != nil {
+			t.Fatalf("write fake adb: %v", err)
+		}
+		return path
+	}
+	path := filepath.Join(dir, "adb")
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
 		t.Fatalf("write fake adb: %v", err)
 	}

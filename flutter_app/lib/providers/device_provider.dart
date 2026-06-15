@@ -46,6 +46,10 @@ class DeviceProvider extends ChangeNotifier {
 
   Future<void> _refresh(ApiClient api) async {
     try {
+      if (!await api.isReady()) {
+        _markOffline();
+        return;
+      }
       final devices = await api.getDevices();
       _devices = devices;
       _online = true;
@@ -55,10 +59,14 @@ class DeviceProvider extends ChangeNotifier {
       }
       notifyListeners();
     } catch (_) {
-      _online = false;
-      _devices = [];
-      _activeSerial = null;
-      notifyListeners();
+      _markOffline();
     }
+  }
+
+  void _markOffline() {
+    _online = false;
+    _devices = [];
+    _activeSerial = null;
+    notifyListeners();
   }
 }

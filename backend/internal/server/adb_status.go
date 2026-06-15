@@ -57,7 +57,7 @@ type ProcessStatus struct {
 }
 
 func (m *AdbManager) DeviceStatus(ctx context.Context, serial string) (*DeviceStatus, error) {
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	status := &DeviceStatus{

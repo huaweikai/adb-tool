@@ -7,17 +7,31 @@ import (
 	"time"
 )
 
+const devicePropsCacheTTL = 60 * time.Second
+
+type cachedDeviceProps struct {
+	props map[string]string
+	until time.Time
+}
+
 type AdbManager struct {
 	adbPath      string
 	recordMu     sync.Mutex
 	recordCmd    *exec.Cmd
 	recordSerial string
+
+	propsMu        sync.Mutex
+	propsCache     map[string]cachedDeviceProps
+	restartMu      sync.Mutex
+	lastAdbRestart time.Time
 }
 
 func NewAdbManager(adbPath string) *AdbManager {
-	return &AdbManager{adbPath: adbPath}
+	return &AdbManager{
+		adbPath:    adbPath,
+		propsCache: make(map[string]cachedDeviceProps),
+	}
 }
-
 func (m *AdbManager) AdbPath() string {
 	return m.adbPath
 }
@@ -31,9 +45,23 @@ func (m *AdbManager) DiagnoseStartup() {
 	}
 	Log.Add("adb diagnostic path", result, err, time.Since(start))
 	m.runRaw("version")
-	m.runRaw("start-server")
+	if _, err := m.runRaw("start-server"); err != nil {
+		Log.Add("adb start-server retry", "", err, 0)
+		m.restartAdbServer()
+	}
 }
 
+func (m *AdbManager) restartAdbServer() {
+	m.restartMu.Lock()
+	defer m.restartMu.Unlock()
+	if time.Since(m.lastAdbRestart) < 10*time.Second {
+		return
+	}
+	m.lastAdbRestart = time.Now()
+	Log.Add("adb recovery", "restarting adb server", nil, 0)
+	m.runRaw("kill-server")
+	m.runRaw("start-server")
+}
 func (m *AdbManager) Close() {
 	m.recordMu.Lock()
 	cmd := m.recordCmd

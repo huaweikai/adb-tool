@@ -98,13 +98,16 @@ class ApiClient {
               BaseOptions(
                 baseUrl: baseUrl,
                 connectTimeout: const Duration(seconds: 5),
+                receiveTimeout: const Duration(seconds: 120),
                 validateStatus: (_) => true,
               ),
             );
 
   Future<List<Device>> getDevices() async {
     final resp = await _dio.get('/api/devices');
-    if (!_isOk(resp)) return [];
+    if (!_isOk(resp)) {
+      throw Exception(_errorMessage(resp));
+    }
     final list = _asList(_responseData(resp));
     return list.map((e) => Device.fromJson(_asMap(e))).toList();
   }
@@ -222,6 +225,17 @@ class ApiClient {
       return _isOk(resp);
     } catch (_) {
       return false;
+    }
+  }
+
+  Future<Map<String, dynamic>?> getServerIdentity() async {
+    try {
+      final resp =
+          await _dio.get('/api/identify').timeout(const Duration(seconds: 2));
+      if (!_isOk(resp)) return null;
+      return _responseMap(resp);
+    } catch (_) {
+      return null;
     }
   }
 
@@ -552,7 +566,9 @@ class ApiClient {
   Future<bool> sendClipboard(String serial, String text) async {
     final resp = await _dio.post(
       '/api/clipboard-send',
-      queryParameters: {'serial': serial, 'text': text},
+      queryParameters: {'serial': serial},
+      data: {'text': text},
+      options: Options(contentType: Headers.jsonContentType),
     );
     _throwIfNotOk(resp);
     return true;

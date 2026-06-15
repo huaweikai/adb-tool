@@ -47,6 +47,11 @@ const _loc = <String, Map<String, String>>{
     'lang': '语言',
     'welcome': '请选择左侧设备和功能',
     'backendLogs': '后端日志',
+    'backendServerOnline': 'Go 服务运行中 · PID {pid} · 启动于 {started}',
+    'backendServerOffline': 'Go 服务不可达（进程可能已退出）',
+    'backendServerChecking': '正在检查 Go 服务状态...',
+    'backendLogsContextHint':
+        '红色日志表示单条 ADB 命令失败，不代表 Go 服务崩溃。若本栏显示“运行中”且日志仍在刷新，说明服务正常。',
     'restart': '重启服务',
     'shutdown': '关闭服务',
     'wirelessAdb': '无线 ADB',
@@ -503,6 +508,11 @@ const _loc = <String, Map<String, String>>{
     'lang': 'Lang',
     'welcome': 'Select a device and function from the sidebar',
     'backendLogs': 'Backend Logs',
+    'backendServerOnline': 'Go server running · PID {pid} · started {started}',
+    'backendServerOffline': 'Go server unreachable (process may have exited)',
+    'backendServerChecking': 'Checking Go server status...',
+    'backendLogsContextHint':
+        'Red entries mean a single ADB command failed, not a server crash. If status shows running and logs keep updating, the server is healthy.',
     'restart': 'Restart',
     'shutdown': 'Shutdown',
     'wirelessAdb': 'Wireless ADB',

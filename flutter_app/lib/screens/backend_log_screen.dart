@@ -45,6 +45,8 @@ class _BackendLogScreenState extends State<BackendLogScreen> {
   List<BackendLogEntry> _logs = [];
   Timer? _pollTimer;
   bool _autoScroll = true;
+  bool _serverOnline = false;
+  String _serverInfo = '';
   final ScrollController _scrollCtrl = ScrollController();
   final TextEditingController _filterCtrl = TextEditingController();
   String _filterQuery = '';
@@ -67,13 +69,25 @@ class _BackendLogScreenState extends State<BackendLogScreen> {
 
   Future<void> _fetch() async {
     try {
-      final list = await context.read<ApiClient>().getBackendLogs();
+      final api = context.read<ApiClient>();
+      final identity = await api.getServerIdentity();
+      final list = await api.getBackendLogs();
       final logs = list.map((e) => BackendLogEntry.fromJson(e)).toList();
       if (!mounted) return;
       final wasAtBottom = _scrollCtrl.hasClients &&
           _scrollCtrl.position.pixels >=
               _scrollCtrl.position.maxScrollExtent - 30;
-      setState(() => _logs = logs);
+      setState(() {
+        _logs = logs;
+        _serverOnline = identity != null;
+        if (identity != null) {
+          final pid = identity['pid']?.toString() ?? '?';
+          final started = identity['started']?.toString() ?? '';
+          _serverInfo = tr('backendServerOnline', {'pid': pid, 'started': started});
+        } else {
+          _serverInfo = tr('backendServerOffline');
+        }
+      });
       if (_autoScroll && wasAtBottom) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (_scrollCtrl.hasClients) {
@@ -107,10 +121,56 @@ class _BackendLogScreenState extends State<BackendLogScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        _buildServerStatus(context),
         _buildToolbar(context),
         Expanded(child: _buildLogList(context, entries)),
         _buildStatusBar(context),
       ],
+    );
+  }
+
+  Widget _buildServerStatus(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = _serverOnline ? Colors.green : Colors.red;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withAlpha(20),
+        border: Border(bottom: BorderSide(color: theme.dividerColor)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                _serverOnline ? Icons.check_circle : Icons.error,
+                size: 14,
+                color: color,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  _serverInfo.isEmpty ? tr('backendServerChecking') : _serverInfo,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: _serverOnline ? Colors.green.shade700 : Colors.red.shade700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            tr('backendLogsContextHint'),
+            style: TextStyle(
+              fontSize: 10,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
     );
   }
 

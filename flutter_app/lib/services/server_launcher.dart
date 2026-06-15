@@ -1,13 +1,28 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
 
+class PortInUseException implements Exception {
+  final int port;
+  final String message;
+
+  PortInUseException(this.port, this.message);
+
+  @override
+  String toString() => message;
+}
+
 class ServerLauncher {
+  static const int serverPort = 9876;
+  static const String baseUrl = 'http://127.0.0.1:$serverPort';
+
   final Dio _dio = Dio(
     BaseOptions(
-      connectTimeout: const Duration(milliseconds: 800),
-      receiveTimeout: const Duration(milliseconds: 800),
+      baseUrl: baseUrl,
+      connectTimeout: const Duration(seconds: 2),
+      receiveTimeout: const Duration(seconds: 2),
       validateStatus: (_) => true,
     ),
   );
@@ -55,7 +70,7 @@ class ServerLauncher {
 
   Future<bool> start() async {
     _stopFuture = null;
-    await _stopOldServerIfAny();
+    await _releaseOurBackendPort(serverPort);
     final path = await findServerBinary();
 
     final env = Map<String, String>.from(Platform.environment);
@@ -98,60 +113,110 @@ class ServerLauncher {
   Future<void> _stop() async {
     final process = _process;
     _process = null;
-    await _tryHttpShutdown('http://localhost:9876');
-    if (process == null) return;
+    await _tryHttpShutdown(baseUrl);
 
-    try {
-      final code = await process.exitCode.timeout(const Duration(seconds: 3));
-      if (code != 0) {
-        stderr.writeln('Server exited with code $code');
+    if (process != null) {
+      try {
+        final code = await process.exitCode.timeout(const Duration(seconds: 3));
+        if (code != 0) {
+          stderr.writeln('Server exited with code $code');
+        }
+      } catch (_) {
+        process.kill();
+        try {
+          await process.exitCode.timeout(const Duration(seconds: 2));
+        } catch (_) {
+          process.kill(ProcessSignal.sigkill);
+        }
       }
-      return;
-    } catch (_) {}
-
-    process.kill();
-    try {
-      await process.exitCode.timeout(const Duration(seconds: 1));
-    } catch (_) {
-      process.kill(ProcessSignal.sigkill);
     }
+
+    await _releaseOurBackendPort(serverPort, trackedPid: process?.pid);
   }
 
-  Future<void> _stopOldServerIfAny() async {
-    const baseUrl = 'http://localhost:9876';
-    final isOurServer = await _isOurBackend(baseUrl);
-    if (!isOurServer) return;
+  Future<void> _releaseOurBackendPort(int port, {int? trackedPid}) async {
+    if (!await _isPortOpen(port)) return;
+
+    final isOurs = await _isOurBackend();
+    if (!isOurs) {
+      throw PortInUseException(
+        port,
+        'Port $port is already in use by another application. '
+        'Stop that process or change ADB_TOOL_LISTEN before starting adb-tool.',
+      );
+    }
 
     await _tryHttpShutdown(baseUrl);
-    if (await _isPortOpen(9876)) {
-      await _killPortListeners(9876);
+    await _waitForPortClosed(port, const Duration(seconds: 4));
+    if (!await _isPortOpen(port)) return;
+
+    final stillOurs = await _isOurBackend();
+    if (!stillOurs) {
+      throw PortInUseException(
+        port,
+        'Port $port is in use by another application.',
+      );
     }
 
-    final deadline = DateTime.now().add(const Duration(seconds: 2));
-    while (DateTime.now().isBefore(deadline)) {
-      if (!await _isPortOpen(9876)) break;
-      await Future.delayed(const Duration(milliseconds: 100));
+    await _killVerifiedBackendListeners(port, trackedPid: trackedPid);
+    await _waitForPortClosed(port, const Duration(seconds: 5));
+
+    if (await _isPortOpen(port)) {
+      throw PortInUseException(
+        port,
+        'Port $port is still in use after attempting to stop the previous adb-tool backend.',
+      );
     }
   }
 
-  Future<bool> _isOurBackend(String baseUrl) async {
+  Future<bool> _isOurBackend() async {
     try {
-      final resp = await _dio.get('$baseUrl/api/identify');
-      if (resp.statusCode == 200) {
-        final data = resp.data;
-        return data is Map && data['name'] == 'adb-tool';
-      }
-    } catch (_) {}
-
-    try {
-      final resp = await _dio.get('$baseUrl/api/adb-path');
-      if (resp.statusCode == 200) {
-        final data = resp.data;
-        return data is Map && data.containsKey('path');
+      final resp = await _dio.get('/api/identify');
+      if (resp.statusCode == 200 && _isOurBackendPayload(resp.data)) {
+        return true;
       }
     } catch (_) {}
 
     return false;
+  }
+
+  Future<int?> _ourBackendPid() async {
+    try {
+      final resp = await _dio.get('/api/identify');
+      if (resp.statusCode != 200 || !_isOurBackendPayload(resp.data)) {
+        return null;
+      }
+      final payload = _unwrapPayload(_asMap(resp.data));
+      return int.tryParse(payload['pid']?.toString() ?? '');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  bool _isOurBackendPayload(dynamic data) {
+    final payload = _unwrapPayload(_asMap(data));
+    return payload['name'] == 'adb-tool';
+  }
+
+  Map<String, dynamic> _unwrapPayload(Map<String, dynamic> body) {
+    if (body['ok'] == true && body['data'] is Map) {
+      return _asMap(body['data']);
+    }
+    return body;
+  }
+
+  Map<String, dynamic> _asMap(dynamic data) {
+    if (data is Map<String, dynamic>) return data;
+    if (data is Map) return data.map((k, v) => MapEntry(k.toString(), v));
+    if (data is String && data.isNotEmpty) {
+      try {
+        final decoded = json.decode(data);
+        if (decoded is Map) {
+          return decoded.map((k, v) => MapEntry(k.toString(), v));
+        }
+      } catch (_) {}
+    }
+    return <String, dynamic>{};
   }
 
   Future<void> _tryHttpShutdown(String baseUrl) async {
@@ -160,33 +225,62 @@ class ServerLauncher {
     } catch (_) {}
   }
 
-  Future<bool> _isPortOpen(int port) async {
-    try {
-      final socket = await Socket.connect('127.0.0.1', port,
-          timeout: const Duration(milliseconds: 200));
-      socket.destroy();
-      return true;
-    } catch (_) {
-      try {
-        final socket = await Socket.connect('::1', port,
-            timeout: const Duration(milliseconds: 200));
-        socket.destroy();
-        return true;
-      } catch (_) {
-        return false;
-      }
+  Future<void> _waitForPortClosed(int port, Duration timeout) async {
+    final deadline = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(deadline)) {
+      if (!await _isPortOpen(port)) return;
+      await Future.delayed(const Duration(milliseconds: 150));
     }
   }
 
-  Future<void> _killPortListeners(int port) async {
-    final pids = await _getPortPids(port);
-    for (final pid in pids) {
-      Process.killPid(pid, ProcessSignal.sigterm);
+  Future<bool> _isPortOpen(int port) async {
+    for (final host in const ['127.0.0.1', '::1']) {
+      try {
+        final socket = await Socket.connect(
+          host,
+          port,
+          timeout: const Duration(milliseconds: 250),
+        );
+        socket.destroy();
+        return true;
+      } catch (_) {}
     }
-    await Future.delayed(const Duration(milliseconds: 300));
-    final pids2 = await _getPortPids(port);
-    for (final pid in pids2) {
-      Process.killPid(pid, ProcessSignal.sigkill);
+    return false;
+  }
+
+  Future<void> _killVerifiedBackendListeners(int port, {int? trackedPid}) async {
+    final allowedPids = <int>{};
+    if (trackedPid != null && trackedPid > 0) {
+      allowedPids.add(trackedPid);
+    }
+    final backendPid = await _ourBackendPid();
+    if (backendPid != null && backendPid > 0) {
+      allowedPids.add(backendPid);
+    }
+
+    if (allowedPids.isEmpty) {
+      throw PortInUseException(
+        port,
+        'Port $port is in use but the adb-tool backend PID could not be verified.',
+      );
+    }
+
+    final listenerPids = await _getPortPids(port);
+    final targets =
+        listenerPids.where((listenerPid) => allowedPids.contains(listenerPid)).toList();
+    if (targets.isEmpty) {
+      return;
+    }
+
+    for (final listenerPid in targets) {
+      if (listenerPid == pid) continue;
+      Process.killPid(listenerPid, ProcessSignal.sigterm);
+    }
+    await Future.delayed(const Duration(milliseconds: 400));
+    final remaining = await _getPortPids(port);
+    for (final listenerPid in remaining) {
+      if (!allowedPids.contains(listenerPid) || listenerPid == pid) continue;
+      Process.killPid(listenerPid, ProcessSignal.sigkill);
     }
   }
 
@@ -197,34 +291,51 @@ class ServerLauncher {
         if (result.exitCode != 0) return [];
         final out = (result.stdout ?? '').toString();
         final pids = <int>{};
+        final portToken = ':$port';
         for (final line in out.split('\n')) {
           final trimmed = line.trim();
-          if (trimmed.contains(':9876') && trimmed.contains('LISTENING')) {
-            final parts = trimmed.split(RegExp(r'\s+'));
-            if (parts.isNotEmpty) {
-              final pid = int.tryParse(parts.last);
-              if (pid != null && pid > 0) pids.add(pid);
-            }
+          if (!trimmed.contains('LISTENING')) continue;
+          if (!_lineHasListeningPort(trimmed, portToken)) continue;
+          final parts = trimmed.split(RegExp(r'\s+'));
+          if (parts.isEmpty) continue;
+          final listenerPid = int.tryParse(parts.last);
+          if (listenerPid != null && listenerPid > 0) {
+            pids.add(listenerPid);
           }
         }
         return pids.toList();
-      } else {
-        final result = await Process.run(
-          'lsof',
-          ['-nP', '-iTCP:$port', '-sTCP:LISTEN', '-t'],
-        );
-        if (result.exitCode != 0) return [];
-        final out = (result.stdout ?? '').toString().trim();
-        if (out.isEmpty) return [];
-        return out
-            .split(RegExp(r'\s+'))
-            .map((e) => int.tryParse(e))
-            .whereType<int>()
-            .toSet()
-            .toList();
       }
+
+      final result = await Process.run(
+        'lsof',
+        ['-nP', '-iTCP:$port', '-sTCP:LISTEN', '-t'],
+      );
+      if (result.exitCode != 0) return [];
+      final out = (result.stdout ?? '').toString().trim();
+      if (out.isEmpty) return [];
+      return out
+          .split(RegExp(r'\s+'))
+          .map((e) => int.tryParse(e))
+          .whereType<int>()
+          .toSet()
+          .toList();
     } catch (_) {
       return [];
     }
   }
+
+  bool _lineHasListeningPort(String line, String portToken) {
+    final parts = line.split(RegExp(r'\s+'));
+    if (parts.length < 2) return false;
+    for (final part in parts) {
+      if (part == 'LISTENING') break;
+      final colon = part.lastIndexOf(':');
+      if (colon < 0) continue;
+      final portText = part.substring(colon + 1);
+      if (portText == portToken.substring(1)) return true;
+    }
+    return false;
+  }
+
+  Future<bool> isBackendReachable() => _isOurBackend();
 }

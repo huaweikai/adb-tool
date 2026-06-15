@@ -17,7 +17,7 @@ void main() {
     MultiProvider(
       providers: [
         Provider<ApiClient>(
-          create: (_) => ApiClient('http://localhost:9876'),
+          create: (_) => ApiClient('http://127.0.0.1:9876'),
         ),
         Provider<LogStreamService>(
           create: (_) => LogStreamService(),
@@ -91,6 +91,7 @@ class _ServerBootScreenState extends State<ServerBootScreen>
   String _status = 'Starting ...';
   bool _ready = false;
   bool _stoppedByUser = false;
+  bool _canRetry = false;
   bool _disposed = false;
   Timer? _bootDelayTimer;
   ServerLauncher? _launcher;
@@ -130,28 +131,39 @@ class _ServerBootScreenState extends State<ServerBootScreen>
       setState(() {
         _status = tr('launchingBackend');
         _stoppedByUser = false;
+        _canRetry = false;
       });
       await launcher.start();
       if (!mounted || _disposed) return;
       setState(() => _status = tr('waitingForServer'));
-      for (int i = 0; i < 30; i++) {
+      await Future.delayed(const Duration(milliseconds: 800));
+      for (int i = 0; i < 60; i++) {
         await _waitForBootRetry();
         if (!mounted || _disposed) return;
         if (await api.isReady()) {
           if (!mounted || _disposed) return;
-          setState(() => _ready = true);
+          setState(() {
+            _ready = true;
+            _canRetry = false;
+          });
           return;
         }
       }
       await launcher.stop();
       if (!mounted || _disposed) return;
       _launcher = null;
-      setState(() => _status = tr('serverTimeout'));
+      setState(() {
+        _status = tr('serverTimeout');
+        _canRetry = true;
+      });
     } catch (e) {
       await launcher.stop();
       if (!mounted || _disposed) return;
       _launcher = null;
-      setState(() => _status = '${tr('serverError')}: $e');
+      setState(() {
+        _status = '${tr('serverError')}: $e';
+        _canRetry = true;
+      });
     }
   }
 
@@ -171,6 +183,7 @@ class _ServerBootScreenState extends State<ServerBootScreen>
     setState(() {
       _ready = false;
       _stoppedByUser = true;
+      _canRetry = true;
       _status = tr('serverShutdown');
     });
   }
@@ -182,6 +195,7 @@ class _ServerBootScreenState extends State<ServerBootScreen>
     setState(() {
       _ready = false;
       _stoppedByUser = false;
+      _canRetry = false;
       _status = tr('restarting');
     });
     await _boot();
@@ -203,7 +217,7 @@ class _ServerBootScreenState extends State<ServerBootScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (!_stoppedByUser) ...[
+            if (!_stoppedByUser && !_canRetry) ...[
               const SizedBox(
                   width: 48,
                   height: 48,
@@ -217,7 +231,7 @@ class _ServerBootScreenState extends State<ServerBootScreen>
             Text(_status,
                 style: theme.textTheme.bodyMedium
                     ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-            if (_stoppedByUser) ...[
+            if (_stoppedByUser || _canRetry) ...[
               const SizedBox(height: 20),
               FilledButton.icon(
                 onPressed: _restartServer,

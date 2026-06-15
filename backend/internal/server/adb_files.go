@@ -102,6 +102,16 @@ func deviceBaseName(path string) string {
 }
 
 func (m *AdbManager) ReadFile(serial, path string) (string, error) {
+	stat, err := m.FileStat(serial, path)
+	if err != nil {
+		return "", err
+	}
+	if stat.IsDir {
+		return "", fmt.Errorf("path is a directory")
+	}
+	if stat.Size > maxReadFileBytes {
+		return "", fmt.Errorf("file too large to read (%d bytes, max %d)", stat.Size, maxReadFileBytes)
+	}
 	return m.runShell(serial, shellCommand("cat", path))
 }
 

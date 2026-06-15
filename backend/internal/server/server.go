@@ -45,7 +45,7 @@ func New(adbPath string, webFS fs.FS, clipboardApk []byte) *Server {
 		sessionLogcat: &SessionLogcat{},
 		startedAt:     time.Now(),
 		upgrader: websocket.Upgrader{
-			CheckOrigin: func(r *http.Request) bool { return true },
+			CheckOrigin: isAllowedWebSocketOrigin,
 		},
 	}
 }
@@ -116,7 +116,7 @@ func (s *Server) Handler() http.Handler {
 		mux.Handle("/", http.FileServer(http.FS(webFS)))
 	}
 
-	return mux
+	return requireLoopback(mux)
 }
 
 func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
@@ -517,7 +517,7 @@ func (s *Server) handleAdbWirelessScan(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusMethodNotAllowed, "GET required")
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 	devices, output, err := s.adb.ScanWirelessAdb(ctx)
 	data := map[string]interface{}{"devices": devices, "output": output}
@@ -581,7 +581,12 @@ func (s *Server) handleSessionLogcat(w http.ResponseWriter, r *http.Request) {
 			writeAPIError(w, http.StatusBadRequest, "serial and sessionDir required")
 			return
 		}
-		if err := s.sessionLogcat.Start(s.adb.AdbPath(), req.Serial, req.SessionDir, req.PackageName); err != nil {
+		sessionDir, err := validateSessionDir(req.SessionDir)
+		if err != nil {
+			writeAPIError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if err := s.sessionLogcat.Start(s.adb.AdbPath(), req.Serial, sessionDir, req.PackageName); err != nil {
 			writeAPIError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
@@ -901,9 +906,21 @@ func (s *Server) handleClipboardSend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	serial := r.URL.Query().Get("serial")
-	text := r.URL.Query().Get("text")
-	if serial == "" || text == "" {
-		writeAPIError(w, http.StatusBadRequest, "serial and text required")
+	if serial == "" {
+		writeAPIError(w, http.StatusBadRequest, "serial required")
+		return
+	}
+	defer r.Body.Close()
+	var req struct {
+		Text string `json:"text"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "text required")
+		return
+	}
+	text := strings.TrimSpace(req.Text)
+	if text == "" {
+		writeAPIError(w, http.StatusBadRequest, "text required")
 		return
 	}
 	if err := s.adb.SendClipboard(serial, text); err != nil {

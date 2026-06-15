@@ -1,6 +1,8 @@
 package server
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -30,21 +32,31 @@ func NewBackendLogger(max int) *BackendLogger {
 	}
 }
 
+func formatLogError(err error) string {
+	if err == nil {
+		return ""
+	}
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return "超时：ADB 命令执行超过时限（ADB 可能卡住或设备响应慢）"
+	case errors.Is(err, context.Canceled):
+		return "已取消：请求被中断（切换页面、重启服务或取消传输时会触发）"
+	default:
+		return err.Error()
+	}
+}
+
 func (l *BackendLogger) Add(cmd, result string, err error, elapsed time.Duration) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
 	l.seq++
-	errStr := ""
-	if err != nil {
-		errStr = err.Error()
-	}
 
 	entry := LogEntry{
 		Time:    time.Now().Format("15:04:05.000"),
 		Command: cmd,
 		Result:  result,
-		Err:     errStr,
+		Err:     formatLogError(err),
 		Elapsed: fmt.Sprintf("%dms", elapsed.Milliseconds()),
 	}
 

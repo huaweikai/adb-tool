@@ -22,7 +22,27 @@ func (m *AdbManager) runRaw(args ...string) (string, error) {
 	return m.runRawContext(context.Background(), args...)
 }
 
+const defaultAdbCommandTimeout = 120 * time.Second
+
+func withDefaultTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	if _, ok := ctx.Deadline(); ok {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, defaultAdbCommandTimeout)
+}
+
 func (m *AdbManager) runRawContext(ctx context.Context, args ...string) (string, error) {
+	return m.runRawContextInner(ctx, true, args...)
+}
+
+func (m *AdbManager) runRawContextQuiet(ctx context.Context, args ...string) (string, error) {
+	return m.runRawContextInner(ctx, false, args...)
+}
+
+func (m *AdbManager) runRawContextInner(ctx context.Context, logErrors bool, args ...string) (string, error) {
+	ctx, cancel := withDefaultTimeout(ctx)
+	defer cancel()
+
 	start := time.Now()
 	cmdStr := strings.Join(args, " ")
 	cmd := exec.CommandContext(ctx, m.adbPath, args...)
@@ -35,21 +55,30 @@ func (m *AdbManager) runRawContext(ctx context.Context, args ...string) (string,
 	}
 	if err != nil {
 		if ctx.Err() != nil {
-			Log.Add("adb "+cmdStr, logOut, ctx.Err(), elapsed)
+			if logErrors {
+				Log.Add("adb "+cmdStr, logOut, ctx.Err(), elapsed)
+			}
 			return outStr, ctx.Err()
 		}
 		errStr := fmt.Sprintf("adb %s: %v\n%s", cmdStr, err, string(output))
-		Log.Add("adb "+cmdStr, logOut, err, elapsed)
+		if logErrors {
+			Log.Add("adb "+cmdStr, logOut, err, elapsed)
+		}
 		return outStr, fmt.Errorf("%s", errStr)
 	}
-	Log.Add("adb "+cmdStr, logOut, nil, elapsed)
+	if logErrors {
+		Log.Add("adb "+cmdStr, logOut, nil, elapsed)
+	}
 	return outStr, nil
 }
 
 func (m *AdbManager) runOut(args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), defaultAdbCommandTimeout)
+	defer cancel()
+
 	start := time.Now()
 	cmdStr := strings.Join(args, " ")
-	cmd := exec.Command(m.adbPath, args...)
+	cmd := exec.CommandContext(ctx, m.adbPath, args...)
 	output, err := cmd.CombinedOutput()
 	elapsed := time.Since(start)
 	if err != nil {
