@@ -4,6 +4,7 @@ import '../services/api_client.dart';
 import '../i18n.dart';
 import '../providers/locale_provider.dart';
 import '../providers/device_provider.dart';
+import '../providers/test_config_provider.dart';
 
 const _quickGroups = [
   _ActionGroup(
@@ -417,6 +418,7 @@ class _AdbCommandScreenState extends State<AdbCommandScreen> {
   @override
   Widget build(BuildContext context) {
     context.watch<LocaleProvider>();
+    context.watch<TestConfigProvider>();
     final theme = Theme.of(context);
 
     if (_selectedSerial == null) {
@@ -522,6 +524,25 @@ class _AdbCommandScreenState extends State<AdbCommandScreen> {
   }
 
   Widget _buildQuickPanel(ThemeData theme) {
+    final config = context.read<TestConfigProvider>().currentApp;
+    final groups = List<_ActionGroup>.from(_quickGroups);
+    if (config != null && config.deepLinks.isNotEmpty) {
+      groups.insert(
+        0,
+        _ActionGroup(
+          titleKey: 'quickGroupConfigDeepLinks',
+          icon: Icons.link,
+          actions: config.deepLinks
+              .map((dl) => _QuickAction(
+                    dl.name,
+                    'shell am start -a android.intent.action.VIEW -d "${dl.value}"',
+                    Icons.open_in_browser,
+                    confirm: false,
+                  ))
+              .toList(),
+        ),
+      );
+    }
     return Container(
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceContainerLow,
@@ -548,10 +569,10 @@ class _AdbCommandScreenState extends State<AdbCommandScreen> {
           Expanded(
             child: ListView.separated(
               padding: const EdgeInsets.all(10),
-              itemCount: _quickGroups.length,
+              itemCount: groups.length,
               separatorBuilder: (_, __) => const SizedBox(height: 10),
               itemBuilder: (ctx, i) =>
-                  _buildActionGroup(theme, _quickGroups[i]),
+                  _buildActionGroup(theme, groups[i]),
             ),
           ),
         ],

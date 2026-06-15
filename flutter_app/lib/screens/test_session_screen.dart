@@ -11,6 +11,7 @@ import '../models/test_session.dart';
 import '../providers/device_provider.dart';
 import '../providers/locale_provider.dart';
 import '../providers/test_session_provider.dart';
+import '../providers/test_config_provider.dart';
 import '../services/api_client.dart';
 
 class TestSessionScreen extends StatefulWidget {
@@ -547,7 +548,8 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
     }
     final displayName = device?.displayName ?? serial;
     final nameCtrl = TextEditingController(text: tr('defaultSessionName'));
-    final packageCtrl = TextEditingController();
+    final configPkg = context.read<TestConfigProvider>().currentApp?.packageName ?? '';
+    final packageCtrl = TextEditingController(text: configPkg);
     final noteCtrl = TextEditingController();
     String type = tr('sessionTypeBug');
     final result = await showDialog<_CreateSessionResult>(

@@ -19,6 +19,7 @@ import 'package:pro_image_editor/pro_image_editor.dart';
 import '../providers/locale_provider.dart';
 import '../providers/device_provider.dart';
 import '../providers/test_session_provider.dart';
+import '../providers/test_config_provider.dart';
 
 enum _SortKey { name, date, size }
 
@@ -849,6 +850,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   @override
   Widget build(BuildContext context) {
     context.watch<LocaleProvider>();
+    context.watch<TestConfigProvider>();
     if (_selectedSerial == null) {
       return Center(
         child: Column(
@@ -1070,6 +1072,13 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
             ),
           const SizedBox(width: 4),
           for (final qp in _quickPaths) _quickBtn(qp.$1, tr(qp.$2)),
+          ...() {
+            final configPaths =
+                context.read<TestConfigProvider>().currentApp?.filePaths ?? [];
+            return [
+              for (final fp in configPaths) _quickBtn(fp.path, fp.name),
+            ];
+          }(),
           const SizedBox(width: 8),
           Expanded(
             child: SingleChildScrollView(

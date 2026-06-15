@@ -6,6 +6,7 @@ import '../services/api_client.dart';
 import '../providers/theme_provider.dart';
 import '../providers/device_provider.dart';
 import '../providers/locale_provider.dart';
+import '../providers/test_config_provider.dart';
 import '../i18n.dart';
 import 'device_status_screen.dart';
 import 'logcat_screen.dart';
@@ -16,6 +17,7 @@ import 'clipboard_screen.dart';
 import 'backend_log_screen.dart';
 import 'adb_command_screen.dart';
 import 'test_session_screen.dart';
+import 'test_config_screen.dart';
 
 enum NavItem { status, logcat, files, apps, info, clipboard, command, session }
 
@@ -37,6 +39,7 @@ class _NavConfig {
 }
 
 const _backendLogKey = '_backend_logs';
+const _testConfigKey = '_test_config';
 
 class _CachedScreen extends StatelessWidget {
   final String? serial;
@@ -46,6 +49,7 @@ class _CachedScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<TestConfigProvider>();
     return Provider<DeviceSerialScope>.value(
       value: DeviceSerialScope(serial),
       child: child,
@@ -174,6 +178,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     setState(() => _activeKey = _backendLogKey);
   }
 
+  void _openTestConfig() {
+    if (!_screens.containsKey(_testConfigKey)) {
+      _screens[_testConfigKey] = const _CachedScreen(
+        serial: null,
+        child: TestConfigScreen(),
+      );
+    }
+    setState(() => _activeKey = _testConfigKey);
+  }
+
   @override
   Widget build(BuildContext context) {
     final deviceProvider = context.watch<DeviceProvider>();
@@ -277,7 +291,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           const Divider(height: 1),
           Expanded(child: _buildDeviceTree(theme, devices)),
           const Divider(height: 1),
-          _buildBackendLogsEntry(theme),
+          _buildGlobalEntry(
+            theme,
+            keyName: _testConfigKey,
+            icon: Icons.tune,
+            label: tr('testConfigCenter'),
+            badge: tr('config'),
+            onTap: _openTestConfig,
+          ),
+          _buildGlobalEntry(
+            theme,
+            keyName: _backendLogKey,
+            icon: Icons.terminal,
+            label: tr('backendLogs'),
+            badge: 'Go',
+            onTap: _openBackendLogs,
+          ),
         ],
       ),
     );
@@ -477,40 +506,49 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildBackendLogsEntry(ThemeData theme) {
-    final isActive = _activeKey == _backendLogKey;
+  Widget _buildGlobalEntry(
+    ThemeData theme, {
+    required String keyName,
+    required IconData icon,
+    required String label,
+    required String badge,
+    required VoidCallback onTap,
+  }) {
+    final isActive = _activeKey == keyName;
     return Material(
       color: isActive ? theme.colorScheme.primaryContainer : Colors.transparent,
       child: InkWell(
-        onTap: _openBackendLogs,
+        onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           child: Row(
             children: [
-              Icon(Icons.terminal,
+              Icon(icon,
                   size: 16,
                   color: isActive
                       ? theme.colorScheme.primary
                       : theme.colorScheme.onSurfaceVariant),
               const SizedBox(width: 10),
-              Text(
-                tr('backendLogs'),
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
-                  color: isActive
-                      ? theme.colorScheme.primary
-                      : theme.colorScheme.onSurface,
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
+                    color: isActive
+                        ? theme.colorScheme.primary
+                        : theme.colorScheme.onSurface,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-              const Spacer(),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
                   color: theme.colorScheme.primary.withAlpha(30),
                   borderRadius: BorderRadius.circular(4),
                 ),
-                child: const Text('Go', style: TextStyle(fontSize: 9)),
+                child: Text(badge, style: const TextStyle(fontSize: 9)),
               ),
             ],
           ),

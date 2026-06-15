@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "configName": "示例 App 测试配置",
+  "description": "这是一个示例测试配置，展示支持的字段。可根据实际项目修改后导入使用。",
+  "apps": [
+    {
+      "id": "example-app",
+      "appName": "示例 App",
+      "packageName": "com.example.app",
+      "appType": "Android",
+      "notes": "这是一个示例 App 配置，请根据你的实际项目修改包名和其他信息",
+      "logcat": {
+        "keywords": ["Exception", "Error", "FATAL", "crash"],
+        "tags": ["ExampleTag", "MyApp"],
+        "defaultLevel": "W"
+      },
+      "deepLinks": [
+        { "name": "首页", "url": "exampleapp://home" },
+        { "name": "商品详情", "url": "exampleapp://product/detail?id=1" },
+        { "name": "个人中心", "url": "exampleapp://profile" }
+      ],
+      "filePaths": [
+        { "name": "下载目录", "path": "/storage/emulated/0/Download" },
+        { "name": "App数据目录", "path": "/sdcard/Android/data/com.example.app" }
+      ],
+      "testTexts": [
+        { "name": "测试手机号", "value": "13800000000" },
+        { "name": "测试验证码", "value": "123456" }
+      ],
+      "testFlows": [
+        {
+          "name": "登录流程",
+          "steps": [
+            "1. 打开 App",
+            "2. 点击登录按钮",
+            "3. 输入手机号和验证码",
+            "4. 点击确认登录",
+            "5. 验证跳转到首页"
+          ]
+        }
+      ]
+    }
+  ]
+}

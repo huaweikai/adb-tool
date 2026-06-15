@@ -10,6 +10,7 @@ import 'providers/theme_provider.dart';
 import 'providers/device_provider.dart';
 import 'providers/locale_provider.dart';
 import 'providers/test_session_provider.dart';
+import 'providers/test_config_provider.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -33,6 +34,9 @@ void main() {
         ),
         ChangeNotifierProvider<TestSessionProvider>(
           create: (_) => TestSessionProvider(),
+        ),
+        ChangeNotifierProvider<TestConfigProvider>(
+          create: (_) => TestConfigProvider()..load(),
         ),
       ],
       child: const AdbToolApp(),

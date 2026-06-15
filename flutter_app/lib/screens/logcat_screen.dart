@@ -3,12 +3,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/device.dart';
+import '../models/test_config.dart';
 import '../services/api_client.dart';
 import '../i18n.dart';
 import '../services/log_stream.dart';
 import '../providers/locale_provider.dart';
 import '../providers/device_provider.dart';
 import '../providers/test_session_provider.dart';
+import '../providers/test_config_provider.dart';
 
 class _HighlightRule {
   final String label;
@@ -114,6 +116,7 @@ class _LogcatScreenState extends State<LogcatScreen> {
   late final TextEditingController _kwCtrl;
   late final TextEditingController _pkgCtrl;
   late final TextEditingController _ruleCtrl;
+  String? _lastAppliedConfigId;
 
   @override
   void initState() {
@@ -122,6 +125,31 @@ class _LogcatScreenState extends State<LogcatScreen> {
     _kwCtrl = TextEditingController();
     _pkgCtrl = TextEditingController();
     _ruleCtrl = TextEditingController();
+  }
+
+  void _applyConfig(TestAppConfig config) {
+    var pkgChanged = false;
+    if (_packageName.isEmpty && config.packageName.isNotEmpty) {
+      _pkgCtrl.text = config.packageName;
+      _packageName = config.packageName;
+      pkgChanged = true;
+    }
+    if (_tag.isEmpty && config.logcat.tags.isNotEmpty) {
+      final tags = config.logcat.tags.join(', ');
+      _tagCtrl.text = tags;
+      _tag = tags;
+    }
+    if (_keyword.isEmpty && config.logcat.keywords.isNotEmpty) {
+      final kws = config.logcat.keywords.join(', ');
+      _kwCtrl.text = kws;
+      _keyword = kws;
+    }
+    if (config.logcat.defaultLevel.isNotEmpty) {
+      _priority = config.logcat.defaultLevel;
+    }
+    if (pkgChanged) {
+      _resolvePackage();
+    }
   }
 
   void _onUserScroll() {
@@ -423,6 +451,17 @@ class _LogcatScreenState extends State<LogcatScreen> {
   @override
   Widget build(BuildContext context) {
     context.watch<LocaleProvider>();
+    final config = context.watch<TestConfigProvider>().currentApp;
+    final configId = config?.id;
+    if (configId != null && configId != _lastAppliedConfigId) {
+      _lastAppliedConfigId = configId;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _applyConfig(config!);
+      });
+    } else if (configId == null) {
+      _lastAppliedConfigId = null;
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [

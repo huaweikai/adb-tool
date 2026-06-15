@@ -174,13 +174,18 @@ class TestSessionProvider extends ChangeNotifier {
       ..writeln(_bracket('clipboardIssueSeverity'))
       ..writeln(_severityLabel(issue.severity))
       ..writeln()
+      ..writeln('【发生时间】')
+      ..writeln(_dateTimeStr(issue.createdAt))
+      ..writeln()
       ..writeln(_bracket('clipboardTestEnvironment'))
       ..writeln(
           '${_t('reportDevice')}：${session == null ? '-' : _deviceLabel(session)}')
       ..writeln(
-          '${_t('reportSdk')}：${session?.deviceSdk.isEmpty ?? true ? '-' : session!.deviceSdk}')
+          '${_t('reportBrand')}：${_emptyIfNone(session?.deviceBrand)}')
       ..writeln(
-          '${_t('reportPackageName')}：${session?.packageName.isEmpty ?? true ? '-' : session!.packageName}')
+          '${_t('reportSdk')}：${_emptyIfNone(session?.deviceSdk)}')
+      ..writeln(
+          '${_t('reportPackageName')}：${_emptyIfNone(session?.packageName)}')
       ..writeln()
       ..writeln(_bracket('clipboardIssueSteps'))
       ..writeln(issue.steps.isEmpty ? '-' : issue.steps)
@@ -202,6 +207,18 @@ class TestSessionProvider extends ChangeNotifier {
             .join('\n'));
     return buffer.toString();
   }
+
+  String _emptyIfNone(String? value) {
+    if (value == null || value.isEmpty) return '-';
+    return value;
+  }
+
+  String _dateTimeStr(DateTime time) {
+    return '${time.year}-${_pad2(time.month)}-${_pad2(time.day)} '
+        '${_pad2(time.hour)}:${_pad2(time.minute)}:${_pad2(time.second)}';
+  }
+
+  String _pad2(int value) => value.toString().padLeft(2, '0');
 
   String _issueTypeLabel(TestSessionIssueType type) => switch (type) {
         TestSessionIssueType.crash => _t('issueTypeCrash'),
