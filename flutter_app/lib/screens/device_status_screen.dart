@@ -19,46 +19,93 @@ class DeviceStatusScreen extends StatefulWidget {
 
 class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
   String? get _selectedSerial => context.read<DeviceSerialScope>().serial;
+  bool _isActive({bool listen = false}) {
+    try {
+      return Provider.of<DeviceScreenActiveScope>(context, listen: listen)
+          .active;
+    } on ProviderNotFoundException {
+      return true;
+    }
+  }
 
   DeviceStatus? _status;
   Timer? _timer;
   bool _loading = false;
+  bool _disposed = false;
+  bool _wasActive = false;
   bool _autoRefresh = true;
   String? _error;
+  int _consecutiveErrors = 0;
+  static const int _maxConsecutiveErrors = 3;
 
   @override
   void initState() {
     super.initState();
-    _loadStatus();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_isActive()) return;
+      _loadStatus();
+      _startTimer();
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final active = _isActive(listen: true);
+    if (active) {
+      _startTimer();
+      if (!_wasActive) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _isActive() && !_loading) {
+            _loadStatus(silent: _status != null);
+          }
+        });
+      }
+    } else {
+      _stopTimer();
+    }
+    _wasActive = active;
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _stopTimer();
+    super.dispose();
+  }
+
+  void _startTimer() {
+    if (_timer != null || _disposed) return;
     _timer = Timer.periodic(const Duration(seconds: 8), (_) {
-      if (_autoRefresh && !_loading) {
+      if (_autoRefresh && !_loading && _isActive()) {
         _loadStatus(silent: true);
       }
     });
   }
 
-  @override
-  void dispose() {
+  void _stopTimer() {
     _timer?.cancel();
-    super.dispose();
+    _timer = null;
   }
 
   Future<void> _loadStatus({bool silent = false}) async {
+    if (_loading || (silent && !_isActive())) return;
     final serial = _selectedSerial;
     if (serial == null) {
       setState(() => _error = tr('selectDevice'));
       return;
     }
     final api = context.read<ApiClient>();
-    if (!silent) {
-      setState(() {
-        _loading = true;
+    setState(() {
+      _loading = true;
+      if (!silent) {
         _error = null;
-      });
-    }
+      }
+    });
     try {
       final status = await api.getDeviceStatus(serial);
       if (!mounted) return;
+      _consecutiveErrors = 0;
       setState(() {
         _status = status;
         _loading = false;
@@ -66,9 +113,14 @@ class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
       });
     } catch (e) {
       if (!mounted) return;
+      _consecutiveErrors++;
+      final autoRefreshDisabled = _consecutiveErrors >= _maxConsecutiveErrors;
       setState(() {
         _error = e.toString();
         _loading = false;
+        if (autoRefreshDisabled) {
+          _autoRefresh = false;
+        }
       });
     }
   }
@@ -246,39 +298,43 @@ class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
       case 4:
         return _pairedCard(context, tr('monitorScreenAndFrames'),
             Icons.screenshot_monitor_outlined, [
-              _PairItem(tr('monitorResolution'), status.resolution, Icons.aspect_ratio),
-              _PairItem(tr('monitorDensity'), status.density, Icons.density_medium),
-            ]);
+          _PairItem(
+              tr('monitorResolution'), status.resolution, Icons.aspect_ratio),
+          _PairItem(tr('monitorDensity'), status.density, Icons.density_medium),
+        ]);
       case 5:
-        return _pairedCard(context, tr('monitorDisplay'),
-            Icons.refresh, [
-              _PairItem(tr('monitorRefreshRate'), status.refreshRate, Icons.refresh),
-              _PairItem(tr('monitorFrameStats'), status.frameStats, Icons.speed),
-            ]);
+        return _pairedCard(context, tr('monitorDisplay'), Icons.refresh, [
+          _PairItem(
+              tr('monitorRefreshRate'), status.refreshRate, Icons.refresh),
+          _PairItem(tr('monitorFrameStats'), status.frameStats, Icons.speed),
+        ]);
       case 6:
-        return _pairedCard(context, tr('monitorNetworkSignal'),
-            Icons.network_wifi, [
-              _PairItem(tr('monitorNetworkType'), status.networkType, Icons.wifi),
-              _PairItem(tr('monitorWifiSsid'), status.wifiSsid, Icons.wifi_find),
-            ]);
+        return _pairedCard(
+            context, tr('monitorNetworkSignal'), Icons.network_wifi, [
+          _PairItem(tr('monitorNetworkType'), status.networkType, Icons.wifi),
+          _PairItem(tr('monitorWifiSsid'), status.wifiSsid, Icons.wifi_find),
+        ]);
       case 7:
-        return _pairedCard(context, tr('monitorSignal'),
-            Icons.signal_cellular_alt, [
-              _PairItem(tr('monitorWifiRssi'), status.wifiRssi, Icons.signal_wifi_statusbar_4_bar),
-              _PairItem(tr('monitorMobileSignal'), status.mobileSignal, Icons.signal_cellular_alt),
-            ]);
+        return _pairedCard(
+            context, tr('monitorSignal'), Icons.signal_cellular_alt, [
+          _PairItem(tr('monitorWifiRssi'), status.wifiRssi,
+              Icons.signal_wifi_statusbar_4_bar),
+          _PairItem(tr('monitorMobileSignal'), status.mobileSignal,
+              Icons.signal_cellular_alt),
+        ]);
       case 8:
-        return _pairedCard(context, tr('monitorNetworkAndUptime'),
-            Icons.language, [
-              _PairItem(tr('monitorIpAddress'), status.ipAddress, Icons.language),
-              _PairItem(tr('monitorUptime'), status.uptime, Icons.timer_outlined),
-            ]);
+        return _pairedCard(
+            context, tr('monitorNetworkAndUptime'), Icons.language, [
+          _PairItem(tr('monitorIpAddress'), status.ipAddress, Icons.language),
+          _PairItem(tr('monitorUptime'), status.uptime, Icons.timer_outlined),
+        ]);
       case 9:
         return _pairedCard(context, tr('monitorSystemHealth'),
             Icons.health_and_safety_outlined, [
-              _PairItem(tr('monitorThermalStatus'), status.thermalStatus, Icons.thermostat),
-              _PairItem(tr('monitorCpuLoad'), status.cpuLoad, Icons.show_chart),
-            ]);
+          _PairItem(tr('monitorThermalStatus'), status.thermalStatus,
+              Icons.thermostat),
+          _PairItem(tr('monitorCpuLoad'), status.cpuLoad, Icons.show_chart),
+        ]);
       default:
         return const SizedBox.shrink();
     }
@@ -328,14 +384,14 @@ class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
         children: [
-          Icon(item.icon, size: 14, color: theme.colorScheme.primary.withAlpha(180)),
+          Icon(item.icon,
+              size: 14, color: theme.colorScheme.primary.withAlpha(180)),
           const SizedBox(width: 8),
           SizedBox(
             width: 90,
             child: Text(item.label,
                 style: TextStyle(
-                    fontSize: 11,
-                    color: theme.colorScheme.onSurfaceVariant)),
+                    fontSize: 11, color: theme.colorScheme.onSurfaceVariant)),
           ),
           Expanded(
             child: _tappableValue(context, item.value),
@@ -353,7 +409,8 @@ class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
           : null,
       child: Text(
         display,
-        style: const TextStyle(fontSize: 11, fontFamily: 'Menlo', fontWeight: FontWeight.w600),
+        style: const TextStyle(
+            fontSize: 11, fontFamily: 'Menlo', fontWeight: FontWeight.w600),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
@@ -501,8 +558,10 @@ class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
                   style: TextStyle(
                       fontSize: 12, color: theme.colorScheme.onSurfaceVariant))
             else
-              ...processes.asMap().entries.map(
-                  (e) => _buildProcessCard(context, e.key, e.value)),
+              ...processes
+                  .asMap()
+                  .entries
+                  .map((e) => _buildProcessCard(context, e.key, e.value)),
           ],
         ),
       ),
@@ -514,7 +573,8 @@ class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
     final theme = Theme.of(context);
     final cpuNum = _parsePercent(process.cpu);
     final memNum = _parsePercent(process.memory);
-    final displayName = process.name.isNotEmpty ? process.name : process.command;
+    final displayName =
+        process.name.isNotEmpty ? process.name : process.command;
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
       margin: const EdgeInsets.only(bottom: 4),
@@ -558,8 +618,7 @@ class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
               ),
               Text('PID ${process.pid}',
                   style: TextStyle(
-                      fontSize: 10,
-                      color: theme.colorScheme.onSurfaceVariant)),
+                      fontSize: 10, color: theme.colorScheme.onSurfaceVariant)),
             ],
           ),
           const SizedBox(height: 6),
@@ -578,8 +637,7 @@ class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
                   child: LinearProgressIndicator(
                     value: (cpuNum / 100).clamp(0.0, 1.0),
                     minHeight: 6,
-                    backgroundColor:
-                        theme.colorScheme.surfaceContainerHighest,
+                    backgroundColor: theme.colorScheme.surfaceContainerHighest,
                     valueColor: AlwaysStoppedAnimation<Color>(
                         _heatColor(cpuNum, theme)),
                   ),
@@ -613,8 +671,7 @@ class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
                   child: LinearProgressIndicator(
                     value: (memNum / 100).clamp(0.0, 1.0),
                     minHeight: 6,
-                    backgroundColor:
-                        theme.colorScheme.surfaceContainerHighest,
+                    backgroundColor: theme.colorScheme.surfaceContainerHighest,
                     valueColor: AlwaysStoppedAnimation<Color>(
                         _heatColor(memNum, theme)),
                   ),
@@ -679,4 +736,3 @@ class _PairItem {
 
   const _PairItem(this.label, this.value, this.icon);
 }
-

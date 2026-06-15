@@ -1,9 +1,20 @@
 package server
 
-import "strings"
+import (
+	"context"
+	"strings"
+	"time"
+)
 
 func (m *AdbManager) Devices() ([]Device, error) {
-	out, err := m.run("devices", "-l")
+	return m.DevicesContext(context.Background())
+}
+
+func (m *AdbManager) DevicesContext(ctx context.Context) ([]Device, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	out, err := m.runRawContext(ctx, "devices", "-l")
 	if err != nil {
 		return nil, err
 	}
@@ -25,11 +36,13 @@ func (m *AdbManager) Devices() ([]Device, error) {
 
 		device := Device{Serial: serial, State: state}
 
-		props, err := m.deviceProps(serial)
-		if err == nil {
-			device.Model = props["ro.product.model"]
-			device.Brand = props["ro.product.brand"]
-			device.SDK = props["ro.build.version.sdk"]
+		if state == "device" {
+			props, err := m.devicePropsContext(ctx, serial)
+			if err == nil {
+				device.Model = props["ro.product.model"]
+				device.Brand = props["ro.product.brand"]
+				device.SDK = props["ro.build.version.sdk"]
+			}
 		}
 
 		devices = append(devices, device)
@@ -40,24 +53,41 @@ func (m *AdbManager) Devices() ([]Device, error) {
 
 func parseDeviceLine(line string) (string, string, bool) {
 	fields := strings.Fields(line)
-	for _, state := range []string{"device", "offline", "unauthorized", "recovery", "sideload", "bootloader", "host", "no permissions"} {
-		marker := "\t" + state
-		if idx := strings.Index(line, marker); idx > 0 {
-			return strings.TrimSpace(line[:idx]), state, true
+	if len(fields) < 2 {
+		return "", "", false
+	}
+	validStates := map[string]bool{
+		"device":       true,
+		"offline":      true,
+		"unauthorized": true,
+		"recovery":     true,
+		"sideload":     true,
+		"bootloader":   true,
+		"host":         true,
+	}
+	for i, field := range fields {
+		if validStates[field] {
+			if i == 0 {
+				return "", "", false
+			}
+			return strings.Join(fields[:i], " "), field, true
 		}
-		marker = " " + state
-		if idx := strings.Index(line, marker); idx > 0 {
-			return strings.TrimSpace(line[:idx]), state, true
+		if field == "no" && i+1 < len(fields) && fields[i+1] == "permissions" {
+			if i == 0 {
+				return "", "", false
+			}
+			return strings.Join(fields[:i], " "), "no permissions", true
 		}
 	}
-	if len(fields) >= 2 {
-		return fields[0], fields[1], true
-	}
-	return "", "", false
+	return fields[0], fields[1], true
 }
 
 func (m *AdbManager) deviceProps(serial string) (map[string]string, error) {
-	out, err := m.run("-s", serial, "shell", "getprop")
+	return m.devicePropsContext(context.Background(), serial)
+}
+
+func (m *AdbManager) devicePropsContext(ctx context.Context, serial string) (map[string]string, error) {
+	out, err := m.runRawContext(ctx, "-s", serial, "shell", "getprop")
 	if err != nil {
 		return nil, err
 	}

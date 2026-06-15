@@ -36,6 +36,21 @@ class _NavConfig {
 
 const _backendLogKey = '_backend_logs';
 
+class _CachedScreen extends StatelessWidget {
+  final String? serial;
+  final Widget child;
+
+  const _CachedScreen({required this.serial, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Provider<DeviceSerialScope>.value(
+      value: DeviceSerialScope(serial),
+      child: child,
+    );
+  }
+}
+
 class HomeScreen extends StatefulWidget {
   final VoidCallback? onShutdown;
   final VoidCallback? onRestart;
@@ -54,14 +69,16 @@ class _HomeScreenState extends State<HomeScreen> {
   Timer? _refreshTimer;
 
   final Set<String> _expandedSerials = {};
-  final Map<String, Widget> _screens = {};
+  final Map<String, _CachedScreen> _screens = {};
   String? _activeKey;
 
   @override
   void initState() {
     super.initState();
     final api = context.read<ApiClient>();
-    context.read<DeviceProvider>().refresh(api);
+    final dp = context.read<DeviceProvider>();
+    dp.refresh(api);
+    dp.addListener(_onDevicesChanged);
     _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       context.read<DeviceProvider>().refresh(context.read<ApiClient>());
     });
@@ -70,6 +87,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _refreshTimer?.cancel();
+    context.read<DeviceProvider>().removeListener(_onDevicesChanged);
     super.dispose();
   }
 
@@ -100,33 +118,21 @@ class _HomeScreenState extends State<HomeScreen> {
       Widget screen;
       switch (item) {
         case NavItem.status:
-          screen = Provider<DeviceSerialScope>.value(
-              value: DeviceSerialScope(serial),
-              child: const DeviceStatusScreen());
+          screen = const DeviceStatusScreen();
         case NavItem.logcat:
-          screen = Provider<DeviceSerialScope>.value(
-              value: DeviceSerialScope(serial), child: const LogcatScreen());
+          screen = const LogcatScreen();
         case NavItem.files:
-          screen = Provider<DeviceSerialScope>.value(
-              value: DeviceSerialScope(serial),
-              child: const FileBrowserScreen());
+          screen = const FileBrowserScreen();
         case NavItem.apps:
-          screen = Provider<DeviceSerialScope>.value(
-              value: DeviceSerialScope(serial),
-              child: const AppManagerScreen());
+          screen = const AppManagerScreen();
         case NavItem.info:
-          screen = Provider<DeviceSerialScope>.value(
-              value: DeviceSerialScope(serial),
-              child: const DeviceInfoScreen());
+          screen = const DeviceInfoScreen();
         case NavItem.clipboard:
-          screen = Provider<DeviceSerialScope>.value(
-              value: DeviceSerialScope(serial), child: const ClipboardScreen());
+          screen = const ClipboardScreen();
         case NavItem.command:
-          screen = Provider<DeviceSerialScope>.value(
-              value: DeviceSerialScope(serial),
-              child: const AdbCommandScreen());
+          screen = const AdbCommandScreen();
       }
-      _screens[key] = screen;
+      _screens[key] = _CachedScreen(serial: serial, child: screen);
       _evictCache();
     }
     setState(() => _activeKey = key);
@@ -147,7 +153,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _openBackendLogs() {
     if (!_screens.containsKey(_backendLogKey)) {
-      _screens[_backendLogKey] = const BackendLogScreen();
+      _screens[_backendLogKey] = const _CachedScreen(
+        serial: null,
+        child: BackendLogScreen(),
+      );
     }
     setState(() => _activeKey = _backendLogKey);
   }
@@ -176,6 +185,36 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  void _onDevicesChanged() {
+    if (!mounted) return;
+    _schedulePruneDisconnectedScreens(context.read<DeviceProvider>().devices);
+  }
+
+  void _schedulePruneDisconnectedScreens(List<Device> devices) {
+    final onlineSerials = devices
+        .where((device) => device.isOnline)
+        .map((device) => device.serial)
+        .toSet();
+    final removedSerials = _screens.values
+        .map((screen) => screen.serial)
+        .whereType<String>()
+        .where((serial) => !onlineSerials.contains(serial))
+        .toSet();
+    if (removedSerials.isEmpty) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() {
+        _screens.removeWhere((_, screen) =>
+            screen.serial != null && removedSerials.contains(screen.serial));
+        _expandedSerials.removeWhere(removedSerials.contains);
+        if (_activeKey != null && !_screens.containsKey(_activeKey)) {
+          _activeKey = null;
+        }
+      });
+    });
+  }
+
   Widget _buildContent() {
     if (_activeKey == null || !_screens.containsKey(_activeKey)) {
       final theme = Theme.of(context);
@@ -197,9 +236,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Stack(
       children: _screens.entries.map((entry) {
+        final active = entry.key == _activeKey;
         return Offstage(
-          offstage: entry.key != _activeKey,
-          child: SizedBox.expand(child: entry.value),
+          offstage: !active,
+          child: Provider<DeviceScreenActiveScope>.value(
+            value: DeviceScreenActiveScope(active),
+            child: SizedBox.expand(child: entry.value),
+          ),
         );
       }).toList(),
     );

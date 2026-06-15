@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"regexp"
 	"sort"
 	"strconv"
@@ -62,6 +63,11 @@ func (m *AdbManager) DeviceStatus(ctx context.Context, serial string) (*DeviceSt
 	status := &DeviceStatus{
 		CollectedAt:  time.Now().Format(time.RFC3339),
 		TopProcesses: []ProcessStatus{},
+	}
+
+	ok, err := m.runShellContext(ctx, serial, "echo ok")
+	if err != nil || strings.TrimSpace(ok) != "ok" {
+		return nil, fmt.Errorf("device unreachable")
 	}
 
 	var wg sync.WaitGroup

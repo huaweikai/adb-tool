@@ -8,10 +8,17 @@ class DeviceSerialScope {
   const DeviceSerialScope(this.serial);
 }
 
+class DeviceScreenActiveScope {
+  final bool active;
+
+  const DeviceScreenActiveScope(this.active);
+}
+
 class DeviceProvider extends ChangeNotifier {
   List<Device> _devices = [];
   bool _online = true;
   String? _activeSerial;
+  Future<void>? _refreshing;
 
   List<Device> get devices => _devices;
   bool get online => _online;
@@ -24,7 +31,20 @@ class DeviceProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> refresh(ApiClient api) async {
+  Future<void> refresh(ApiClient api) {
+    final running = _refreshing;
+    if (running != null) return running;
+
+    final future = _refresh(api);
+    _refreshing = future;
+    return future.whenComplete(() {
+      if (identical(_refreshing, future)) {
+        _refreshing = null;
+      }
+    });
+  }
+
+  Future<void> _refresh(ApiClient api) async {
     try {
       final devices = await api.getDevices();
       _devices = devices;

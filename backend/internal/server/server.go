@@ -112,7 +112,7 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
-	devices, err := s.adb.Devices()
+	devices, err := s.adb.DevicesContext(r.Context())
 	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
