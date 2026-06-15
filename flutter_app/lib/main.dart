@@ -9,6 +9,7 @@ import 'i18n.dart';
 import 'providers/theme_provider.dart';
 import 'providers/device_provider.dart';
 import 'providers/locale_provider.dart';
+import 'providers/test_session_provider.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -30,6 +31,9 @@ void main() {
         ChangeNotifierProvider<LocaleProvider>(
           create: (_) => LocaleProvider(),
         ),
+        ChangeNotifierProvider<TestSessionProvider>(
+          create: (_) => TestSessionProvider(),
+        ),
       ],
       child: const AdbToolApp(),
     ),
@@ -43,6 +47,13 @@ class AdbToolApp extends StatelessWidget {
   Widget build(BuildContext context) {
     final themeProvider = context.watch<ThemeProvider>();
     context.watch<LocaleProvider>();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (context.mounted) {
+        context
+            .read<TestSessionProvider>()
+            .setTranslator(tr, language: currentLang);
+      }
+    });
     return MaterialApp(
       title: 'ADB Tool',
       debugShowCheckedModeBanner: false,

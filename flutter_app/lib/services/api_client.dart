@@ -150,6 +150,36 @@ class ApiClient {
     return _adbCommandResult(_responseMap(resp));
   }
 
+  Future<String> getRecentLogcat(String serial, {int lines = 1000}) async {
+    final resp = await _dio.get(
+      '/api/logcat-recent',
+      queryParameters: {'serial': serial, 'lines': lines},
+    );
+    _throwIfNotOk(resp);
+    final data = _responseMap(resp);
+    return data['content']?.toString() ?? '';
+  }
+
+  Future<Map<String, dynamic>> sessionLogcatAction(
+    String action, {
+    required String serial,
+    required String sessionDir,
+    String packageName = '',
+  }) async {
+    final resp = await _dio.post(
+      '/api/session-logcat',
+      data: {
+        'action': action,
+        'serial': serial,
+        'sessionDir': sessionDir,
+        'packageName': packageName,
+      },
+      options: Options(contentType: Headers.jsonContentType),
+    );
+    _throwIfNotOk(resp);
+    return _responseMap(resp);
+  }
+
   Future<AdbCommandResult> pairWirelessAdb(String address, String code) async {
     final resp = await _dio.post(
       '/api/adb-wireless-pair',

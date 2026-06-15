@@ -18,6 +18,7 @@ import '../widgets/screenshot_watermark.dart';
 import 'package:pro_image_editor/pro_image_editor.dart';
 import '../providers/locale_provider.dart';
 import '../providers/device_provider.dart';
+import '../providers/test_session_provider.dart';
 
 enum _SortKey { name, date, size }
 
@@ -140,8 +141,9 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       _contentPath = '';
     });
     try {
-      final files =
-          await context.read<ApiClient>().listFiles(_selectedSerial!, _currentPath);
+      final files = await context
+          .read<ApiClient>()
+          .listFiles(_selectedSerial!, _currentPath);
       if (!mounted) return;
       setState(() {
         _files = _sorted(files);
@@ -166,8 +168,9 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       _error = null;
     });
     try {
-      final files =
-          await context.read<ApiClient>().listFiles(_selectedSerial!, _currentPath);
+      final files = await context
+          .read<ApiClient>()
+          .listFiles(_selectedSerial!, _currentPath);
       if (!mounted) return;
       setState(() {
         _files = _sorted(files);
@@ -591,7 +594,8 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       return;
     }
     try {
-      final stat = await context.read<ApiClient>().statFile(_selectedSerial!, file.path);
+      final stat =
+          await context.read<ApiClient>().statFile(_selectedSerial!, file.path);
       if (!mounted) return;
       _showFileInfo(context, file, stat: stat);
     } catch (_) {
@@ -603,8 +607,13 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   Future<void> _startRecording() async {
     if (_selectedSerial == null) return;
     if (_recordSaving || _recording) return;
+    final api = context.read<ApiClient>();
+    final sessionProvider = context.read<TestSessionProvider>();
     try {
-      await context.read<ApiClient>().screenRecordAction(_selectedSerial!, 'start');
+      await api.screenRecordAction(_selectedSerial!, 'start');
+      if (sessionProvider.hasRunningSession) {
+        await sessionProvider.markScreenRecordStarted();
+      }
       if (!mounted) return;
       setState(() {
         _recording = true;
@@ -633,6 +642,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     final serial = _selectedSerial;
     if (serial == null) return;
     final api = context.read<ApiClient>();
+    final sessionProvider = context.read<TestSessionProvider>();
     if (_recordSaving || !_recording) return;
     _recordTimer?.cancel();
     setState(() => _recordSaving = true);
@@ -646,6 +656,10 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         _recordSaving = false;
         _recordSeconds = 0;
       });
+      if (!mounted) return;
+      if (sessionProvider.hasRunningSession) {
+        await sessionProvider.saveVideoBytes(bytes);
+      }
       if (!mounted) return;
       showDialog(
         context: context,
@@ -669,8 +683,10 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   Future<void> _takeScreenshot() async {
     if (_selectedSerial == null || _screenshotting) return;
     setState(() => _screenshotting = true);
+    final sessionProvider = context.read<TestSessionProvider>();
     try {
-      final b64 = await context.read<ApiClient>().takeScreenshot(_selectedSerial!);
+      final b64 =
+          await context.read<ApiClient>().takeScreenshot(_selectedSerial!);
       if (b64 == null) {
         if (!mounted) return;
         setState(() => _screenshotting = false);
@@ -695,8 +711,12 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       }
       if (!mounted) return;
       if (opts.skipEdit) {
+        if (sessionProvider.hasRunningSession) {
+          await sessionProvider.saveScreenshotBytes(bytes);
+        }
         final location = await getSaveLocation(
-          suggestedName: 'screenshot-${DateTime.now().millisecondsSinceEpoch}.png',
+          suggestedName:
+              'screenshot-${DateTime.now().millisecondsSinceEpoch}.png',
           confirmButtonText: tr('saveScreenshot'),
         );
         if (location != null) {
@@ -706,22 +726,28 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         if (!mounted) return;
         await Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => ProImageEditor.memory(
-            bytes,
-            configs: kImageEditorConfigs,
-            callbacks: ProImageEditorCallbacks(
-              onImageEditingComplete: (edited) async {
-                if (!context.mounted) return;
-                final location = await getSaveLocation(
-                  suggestedName: 'screenshot-${DateTime.now().millisecondsSinceEpoch}.png',
-                  confirmButtonText: tr('saveScreenshot'),
-                );
-                if (location != null) {
-                  await File(location.path).writeAsBytes(edited);
-                }
-              },
-            ),
-          )),
+          MaterialPageRoute(
+              builder: (_) => ProImageEditor.memory(
+                    bytes,
+                    configs: kImageEditorConfigs,
+                    callbacks: ProImageEditorCallbacks(
+                      onImageEditingComplete: (edited) async {
+                        if (!context.mounted) return;
+                        final location = await getSaveLocation(
+                          suggestedName:
+                              'screenshot-${DateTime.now().millisecondsSinceEpoch}.png',
+                          confirmButtonText: tr('saveScreenshot'),
+                        );
+                        if (!context.mounted) return;
+                        if (sessionProvider.hasRunningSession) {
+                          await sessionProvider.saveScreenshotBytes(edited);
+                        }
+                        if (location != null) {
+                          await File(location.path).writeAsBytes(edited);
+                        }
+                      },
+                    ),
+                  )),
         );
       }
     } catch (e) {
@@ -1799,4 +1825,3 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     );
   }
 }
-

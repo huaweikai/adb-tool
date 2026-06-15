@@ -15,8 +15,9 @@ import 'device_info_screen.dart';
 import 'clipboard_screen.dart';
 import 'backend_log_screen.dart';
 import 'adb_command_screen.dart';
+import 'test_session_screen.dart';
 
-enum NavItem { status, logcat, files, apps, info, clipboard, command }
+enum NavItem { status, logcat, files, apps, info, clipboard, command, session }
 
 const _navConfig = {
   NavItem.status: _NavConfig(Icons.phone_android, 'status'),
@@ -26,6 +27,7 @@ const _navConfig = {
   NavItem.info: _NavConfig(Icons.info_outline, 'info'),
   NavItem.clipboard: _NavConfig(Icons.content_paste, 'clipboard'),
   NavItem.command: _NavConfig(Icons.terminal, 'command'),
+  NavItem.session: _NavConfig(Icons.assignment_outlined, 'testSession'),
 };
 
 class _NavConfig {
@@ -131,6 +133,8 @@ class _HomeScreenState extends State<HomeScreen> {
           screen = const ClipboardScreen();
         case NavItem.command:
           screen = const AdbCommandScreen();
+        case NavItem.session:
+          screen = const TestSessionScreen();
       }
       _screens[key] = _CachedScreen(serial: serial, child: screen);
       _evictCache();

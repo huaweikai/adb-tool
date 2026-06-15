@@ -8,6 +8,7 @@ import '../i18n.dart';
 import '../services/log_stream.dart';
 import '../providers/locale_provider.dart';
 import '../providers/device_provider.dart';
+import '../providers/test_session_provider.dart';
 
 class _HighlightRule {
   final String label;
@@ -366,6 +367,31 @@ class _LogcatScreenState extends State<LogcatScreen> {
     setState(() => _isPaused = false);
   }
 
+  Future<void> _saveLogsToSession() async {
+    _flushPendingEntries();
+    if (_allEntries.isEmpty) return;
+    final content = _allEntries.map((entry) => entry.raw).join('\n');
+    try {
+      final path =
+          await context.read<TestSessionProvider>().saveLogcat(content);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(tr('logcatSavedToSession', {'path': path})),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${tr('saveFailed')}: $e'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
   void _clearLogs() {
     setState(() {
       _allEntries.clear();
@@ -428,6 +454,13 @@ class _LogcatScreenState extends State<LogcatScreen> {
           _btn(tr('resume'), Icons.play_arrow, _isPaused, _resumeLogs, false),
           _btn(tr('clear'), Icons.delete_outline, _isStreaming || _hasLogs,
               _clearLogs, false),
+          _btn(
+              tr('saveToSession'),
+              Icons.save_alt,
+              _hasLogs &&
+                  context.watch<TestSessionProvider>().hasRunningSession,
+              _saveLogsToSession,
+              false),
           _sep(),
           _buildTagFilter(),
           _buildPriortyFilter(),

@@ -38,6 +38,13 @@ func (m *AdbManager) StartLogcat(serial string, filter LogFilter) (*exec.Cmd, io
 	return cmd, stdout, nil
 }
 
+func (m *AdbManager) GetRecentLogcat(serial string, lines int) (string, error) {
+	if lines <= 0 {
+		lines = 1000
+	}
+	return m.run("-s", serial, "logcat", "-d", "-v", "threadtime", "-t", fmt.Sprintf("%d", lines))
+}
+
 func (m *AdbManager) GetPackagePID(serial, packageName string) (string, error) {
 	out, err := m.run("-s", serial, "shell", "pidof", packageName)
 	if err != nil {
