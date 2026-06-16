@@ -5,6 +5,12 @@ import 'package:video_player/video_player.dart';
 import 'package:file_selector/file_selector.dart';
 import '../i18n.dart';
 
+enum VideoPreviewMode { embedded, external }
+
+VideoPreviewMode videoPreviewModeForPlatform({required bool isWindows}) {
+  return isWindows ? VideoPreviewMode.external : VideoPreviewMode.embedded;
+}
+
 class VideoPreview extends StatefulWidget {
   final List<int> videoBytes;
 
@@ -33,7 +39,15 @@ class _VideoPreviewState extends State<VideoPreview> {
       final dir = Directory.systemTemp;
       _tempFile = File(
           '${dir.path}/adb-tool-preview-${DateTime.now().millisecondsSinceEpoch}.mp4');
-      await _tempFile!.writeAsBytes(widget.videoBytes);
+      await _tempFile!.writeAsBytes(widget.videoBytes, flush: true);
+
+      if (videoPreviewModeForPlatform(isWindows: Platform.isWindows) ==
+          VideoPreviewMode.external) {
+        if (mounted) {
+          setState(() => _initialized = true);
+        }
+        return;
+      }
 
       _controller = VideoPlayerController.file(_tempFile!);
       await _controller!.initialize();
@@ -68,11 +82,36 @@ class _VideoPreviewState extends State<VideoPreview> {
   void _seekRelative(double seconds) {
     if (_controller == null) return;
     final dur = _controller!.value.duration;
-    var newMs = _controller!.value.position.inMilliseconds +
-        (seconds * 1000).round();
+    var newMs =
+        _controller!.value.position.inMilliseconds + (seconds * 1000).round();
     if (newMs < 0) newMs = 0;
     if (newMs > dur.inMilliseconds) newMs = dur.inMilliseconds;
     _controller!.seekTo(Duration(milliseconds: newMs));
+  }
+
+  Future<void> _openExternal() async {
+    final file = _tempFile;
+    if (file == null) return;
+    try {
+      if (Platform.isWindows) {
+        await Process.start('cmd', ['/c', 'start', '', file.path],
+            mode: ProcessStartMode.detached);
+      } else if (Platform.isMacOS) {
+        await Process.start('open', [file.path],
+            mode: ProcessStartMode.detached);
+      } else if (Platform.isLinux) {
+        await Process.start('xdg-open', [file.path],
+            mode: ProcessStartMode.detached);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${tr('openRecordingFailed')}: $e'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   Future<void> _save() async {
@@ -159,10 +198,14 @@ class _VideoPreviewState extends State<VideoPreview> {
       );
     }
 
-    if (!_initialized || _controller == null) {
+    if (!_initialized) {
       return const Center(
         child: CircularProgressIndicator(color: Colors.white),
       );
+    }
+
+    if (_controller == null) {
+      return _buildExternalPreviewFallback(theme);
     }
 
     return Column(
@@ -200,12 +243,51 @@ class _VideoPreviewState extends State<VideoPreview> {
     );
   }
 
+  Widget _buildExternalPreviewFallback(ThemeData theme) {
+    final path = _tempFile?.path ?? '';
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.video_file, color: Colors.white70, size: 64),
+              const SizedBox(height: 16),
+              Text(
+                tr('windowsVideoPreviewFallback'),
+                style: theme.textTheme.titleMedium?.copyWith(
+                  color: Colors.white,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                path,
+                style: const TextStyle(color: Colors.white54, fontSize: 12),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              FilledButton.icon(
+                onPressed: _openExternal,
+                icon: const Icon(Icons.open_in_new),
+                label: Text(tr('openRecording')),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildControls(ThemeData theme) {
     if (_controller == null) return const SizedBox.shrink();
     final duration = _controller!.value.duration;
     final position = _controller!.value.position;
-    final progress =
-        duration.inMilliseconds > 0 ? position.inMilliseconds / duration.inMilliseconds : 0.0;
+    final progress = duration.inMilliseconds > 0
+        ? position.inMilliseconds / duration.inMilliseconds
+        : 0.0;
 
     return Container(
       color: Colors.grey.shade900,
@@ -225,8 +307,8 @@ class _VideoPreviewState extends State<VideoPreview> {
             child: Slider(
               value: progress.clamp(0.0, 1.0),
               onChanged: (v) {
-                final target =
-                    Duration(milliseconds: (duration.inMilliseconds * v).round());
+                final target = Duration(
+                    milliseconds: (duration.inMilliseconds * v).round());
                 _controller!.seekTo(target);
               },
             ),
@@ -236,9 +318,7 @@ class _VideoPreviewState extends State<VideoPreview> {
               Text(
                 _formatDuration(position),
                 style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 11,
-                    fontFamily: 'Menlo'),
+                    color: Colors.white70, fontSize: 11, fontFamily: 'Menlo'),
               ),
               const Spacer(),
               IconButton(
@@ -263,9 +343,7 @@ class _VideoPreviewState extends State<VideoPreview> {
               Text(
                 _formatDuration(duration),
                 style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 11,
-                    fontFamily: 'Menlo'),
+                    color: Colors.white70, fontSize: 11, fontFamily: 'Menlo'),
               ),
             ],
           ),

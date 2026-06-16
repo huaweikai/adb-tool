@@ -19,6 +19,7 @@ type AdbManager struct {
 	recordMu     sync.Mutex
 	recordCmd    *exec.Cmd
 	recordSerial string
+	recordDone   chan error
 
 	propsMu        sync.Mutex
 	propsCache     map[string]cachedDeviceProps
@@ -65,14 +66,16 @@ func (m *AdbManager) restartAdbServer() {
 func (m *AdbManager) Close() {
 	m.recordMu.Lock()
 	cmd := m.recordCmd
+	done := m.recordDone
 	m.recordCmd = nil
 	m.recordSerial = ""
+	m.recordDone = nil
 	m.recordMu.Unlock()
 	if cmd != nil && cmd.Process != nil {
 		if err := cmd.Process.Kill(); err != nil {
 			Log.Add("screenrecord kill", "", err, 0)
 		}
-		if _, err := waitCommandExit(cmd, 2*time.Second); err != nil {
+		if err := waitRecordDone(done, 2*time.Second); err != nil {
 			Log.Add("screenrecord wait", "", err, 0)
 		}
 	}

@@ -801,14 +801,23 @@ func (s *Server) handleScreenRecord(w http.ResponseWriter, r *http.Request) {
 			writeAPIError(w, http.StatusConflict, "not recording")
 			return
 		}
-		if err := s.adb.StopScreenRecord(s.recordingSerial); err != nil {
-			s.recordMu.Unlock()
+		serial := s.recordingSerial
+		started := s.recordStarted
+		s.recordMu.Unlock()
+
+		err := s.adb.StopScreenRecord(serial)
+
+		s.recordMu.Lock()
+		if s.recordingSerial == serial {
+			s.recordingSerial = ""
+			s.recordStarted = time.Time{}
+		}
+		s.recordMu.Unlock()
+
+		if err != nil {
 			writeAPIError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		s.recordingSerial = ""
-		started := s.recordStarted
-		s.recordMu.Unlock()
 
 		elapsed := time.Since(started).Seconds()
 		writeJSON(w, map[string]interface{}{
@@ -824,8 +833,21 @@ func (s *Server) handleScreenRecord(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		serial := s.recordingSerial
-		elapsed := time.Since(s.recordStarted).Seconds()
+		started := s.recordStarted
 		s.recordMu.Unlock()
+
+		if !s.adb.IsScreenRecording(serial) {
+			s.recordMu.Lock()
+			if s.recordingSerial == serial {
+				s.recordingSerial = ""
+				s.recordStarted = time.Time{}
+			}
+			s.recordMu.Unlock()
+			writeJSON(w, map[string]interface{}{"recording": false})
+			return
+		}
+
+		elapsed := time.Since(started).Seconds()
 		writeJSON(w, map[string]interface{}{
 			"recording": true,
 			"serial":    serial,
