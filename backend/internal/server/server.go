@@ -116,7 +116,7 @@ func (s *Server) Handler() http.Handler {
 		mux.Handle("/", http.FileServer(http.FS(webFS)))
 	}
 
-	return requireLoopback(mux)
+	return recoverHTTP(requireLoopback(mux))
 }
 
 func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
@@ -452,7 +452,7 @@ func (s *Server) handleAdbWirelessPair(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, "address and code required")
 		return
 	}
-	output, err := s.adb.WirelessPair(req.Address, req.Code)
+	output, err := s.adb.WirelessPairContext(r.Context(), req.Address, req.Code)
 	if err != nil {
 		writeAPIErrorData(w, http.StatusBadRequest, err.Error(), map[string]interface{}{"ok": false, "output": output})
 		return
@@ -478,7 +478,7 @@ func (s *Server) handleAdbWirelessConnect(w http.ResponseWriter, r *http.Request
 		writeAPIError(w, http.StatusBadRequest, "address required")
 		return
 	}
-	output, err := s.adb.WirelessConnect(req.Address)
+	output, err := s.adb.WirelessConnectContext(r.Context(), req.Address)
 	if err != nil {
 		writeAPIErrorData(w, http.StatusBadRequest, err.Error(), map[string]interface{}{"ok": false, "output": output})
 		return
@@ -504,7 +504,7 @@ func (s *Server) handleAdbWirelessDisconnect(w http.ResponseWriter, r *http.Requ
 		writeAPIError(w, http.StatusBadRequest, "serial required")
 		return
 	}
-	output, err := s.adb.WirelessDisconnect(req.Serial)
+	output, err := s.adb.WirelessDisconnectContext(r.Context(), req.Serial)
 	if err != nil {
 		writeAPIErrorData(w, http.StatusBadRequest, err.Error(), map[string]interface{}{"ok": false, "output": output})
 		return

@@ -29,8 +29,10 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
   bool _logcatRunning = false;
   int _recordSeconds = 0;
   int _logcatSeconds = 0;
+  int _sessionTick = 0;
   Timer? _recordTimer;
   Timer? _logcatTimer;
+  Timer? _sessionTimer;
 
   String? get _serial => context.read<DeviceSerialScope>().serial;
 
@@ -38,6 +40,7 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
   void dispose() {
     _recordTimer?.cancel();
     _logcatTimer?.cancel();
+    _sessionTimer?.cancel();
     super.dispose();
   }
 
@@ -47,6 +50,17 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
     context.watch<LocaleProvider>();
     final session = provider.currentSession;
     final theme = Theme.of(context);
+
+    if (provider.hasRunningSession) {
+      _sessionTimer ??= Timer.periodic(const Duration(seconds: 1), (_) {
+        if (mounted) setState(() => _sessionTick++);
+      });
+    } else {
+      _sessionTimer?.cancel();
+      _sessionTimer = null;
+      _sessionTick = 0;
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -97,22 +111,48 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
               ),
               const SizedBox(width: 12),
               if (session != null)
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: session.status == TestSessionStatus.running
-                        ? Colors.green.withAlpha(40)
-                        : theme.colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(999),
+                ...[
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: session.status == TestSessionStatus.running
+                          ? Colors.green.withAlpha(40)
+                          : theme.colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      session.status == TestSessionStatus.running
+                          ? tr('sessionRunning')
+                          : tr('sessionFinished'),
+                      style: const TextStyle(fontSize: 11),
+                    ),
                   ),
-                  child: Text(
-                    session.status == TestSessionStatus.running
-                        ? tr('sessionRunning')
-                        : tr('sessionFinished'),
-                    style: const TextStyle(fontSize: 11),
-                  ),
-                ),
+                  if (running) ...[
+                    const SizedBox(width: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.timer_outlined,
+                              size: 12,
+                              color: theme.colorScheme.onSurfaceVariant),
+                          const SizedBox(width: 4),
+                          Text(
+                            _fmtElapsed(DateTime.now().difference(session!.startedAt)),
+                            style: const TextStyle(fontSize: 11),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
             ],
           ),
           Wrap(
@@ -124,6 +164,11 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
                 onPressed: _busy ? null : _showCreateDialog,
                 icon: const Icon(Icons.add, size: 16),
                 label: Text(tr('newSession')),
+              ),
+              FilledButton.tonalIcon(
+                onPressed: _busy ? null : _showHistoryDialog,
+                icon: const Icon(Icons.history, size: 16),
+                label: Text(tr('sessionHistory')),
               ),
               if (_recording)
                 FilledButton.icon(
@@ -217,10 +262,21 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
                 ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
           ),
           const SizedBox(height: 20),
-          FilledButton.icon(
-            onPressed: _showCreateDialog,
-            icon: const Icon(Icons.add),
-            label: Text(tr('newSession')),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              FilledButton.icon(
+                onPressed: _showCreateDialog,
+                icon: const Icon(Icons.add),
+                label: Text(tr('newSession')),
+              ),
+              const SizedBox(width: 12),
+              FilledButton.tonalIcon(
+                onPressed: _showHistoryDialog,
+                icon: const Icon(Icons.history),
+                label: Text(tr('sessionHistory')),
+              ),
+            ],
           ),
         ],
       ),
@@ -339,7 +395,7 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
         _issueList(theme, session),
         const SizedBox(height: 16),
         _sectionTitle(theme, tr('sessionArtifacts')),
-        _artifactSummary(theme, session),
+        _artifactList(theme, session),
         const SizedBox(height: 16),
         _sectionTitle(theme, tr('sessionNotes')),
         if (session.notes.isEmpty)
@@ -491,39 +547,64 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
     );
   }
 
-  Widget _artifactSummary(ThemeData theme, TestSession session) {
-    final screenshots = _count(session, TestSessionArtifactKind.screenshot);
-    final videos = _count(session, TestSessionArtifactKind.video);
-    final logs = _count(session, TestSessionArtifactKind.log);
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
+  Widget _artifactList(ThemeData theme, TestSession session) {
+    if (session.artifacts.isEmpty) {
+      return Text(tr('noArtifacts'),
+          style: TextStyle(color: theme.colorScheme.onSurfaceVariant));
+    }
+    return Column(
       children: [
-        _chip(theme, Icons.image_outlined, '${tr('screenshot')}: $screenshots'),
-        _chip(theme, Icons.videocam_outlined, '${tr('record')}: $videos'),
-        _chip(theme, Icons.list_alt, '${tr('logcat')}: $logs'),
+        for (final artifact in session.artifacts)
+          Card(
+            elevation: 0,
+            margin: const EdgeInsets.only(bottom: 6),
+            color: theme.colorScheme.surfaceContainerLow,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              child: Row(
+                children: [
+                  Icon(_artifactIcon(artifact.kind),
+                      size: 18, color: theme.colorScheme.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(artifact.name,
+                            style: const TextStyle(fontSize: 12),
+                            overflow: TextOverflow.ellipsis),
+                        if (artifact.size > 0)
+                          Text(_fmtSize(artifact.size),
+                              style: TextStyle(
+                                  fontSize: 10,
+                                  color: theme.colorScheme.onSurfaceVariant)),
+                      ],
+                    ),
+                  ),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(999),
+                    onTap: () => _deleteArtifact(artifact.id, artifact.name),
+                    child: Padding(
+                      padding: const EdgeInsets.all(4),
+                      child: Icon(Icons.close,
+                          size: 14,
+                          color: theme.colorScheme.onSurfaceVariant),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
       ],
     );
   }
 
-  Widget _chip(ThemeData theme, IconData icon, String text) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: theme.dividerColor),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: theme.colorScheme.primary),
-          const SizedBox(width: 6),
-          Text(text, style: const TextStyle(fontSize: 12)),
-        ],
-      ),
-    );
-  }
+  static IconData _artifactIcon(TestSessionArtifactKind kind) => switch (kind) {
+        TestSessionArtifactKind.screenshot => Icons.image_outlined,
+        TestSessionArtifactKind.video => Icons.videocam_outlined,
+        TestSessionArtifactKind.log => Icons.list_alt,
+        TestSessionArtifactKind.report => Icons.description_outlined,
+      };
 
   Future<void> _showCreateDialog() async {
     final serial = _serial;
@@ -1105,10 +1186,6 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
     return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
 
-  int _count(TestSession session, TestSessionArtifactKind kind) {
-    return session.artifacts.where((artifact) => artifact.kind == kind).length;
-  }
-
   Color _severityColor(TestSessionIssueSeverity severity) {
     return switch (severity) {
       TestSessionIssueSeverity.blocker => Colors.red,
@@ -1164,6 +1241,213 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
       TestSessionEventType.issueMarked => Colors.deepOrange,
       TestSessionEventType.sessionFinished => theme.colorScheme.error,
     };
+  }
+
+  String _fmtElapsed(Duration d) {
+    final h = d.inHours;
+    final m = d.inMinutes.remainder(60);
+    final s = d.inSeconds.remainder(60);
+    return '${h.toString().padLeft(2, '0')}:'
+        '${m.toString().padLeft(2, '0')}:'
+        '${s.toString().padLeft(2, '0')}';
+  }
+
+  static String _fmtSize(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) {
+      return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    }
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+
+  Future<void> _deleteArtifact(String id, String name) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(tr('deleteArtifact')),
+        content: Text(tr('deleteArtifactConfirm', {'name': name})),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(tr('cancel'))),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(tr('delete'))),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await context.read<TestSessionProvider>().deleteArtifact(id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content: Text(tr('artifactDeleted')),
+            behavior: SnackBarBehavior.floating),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content: Text('${tr('saveFailed')}: $e'),
+            behavior: SnackBarBehavior.floating),
+      );
+    }
+  }
+
+  Future<void> _showHistoryDialog() async {
+    setState(() => _busy = true);
+    final TestSessionProvider provider = context.read<TestSessionProvider>();
+    List<TestSession> sessions;
+    try {
+      sessions = await provider.scanHistory();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('${tr('saveFailed')}: $e'),
+        behavior: SnackBarBehavior.floating,
+      ));
+      setState(() => _busy = false);
+      return;
+    }
+    if (!mounted) {
+      setState(() => _busy = false);
+      return;
+    }
+    setState(() => _busy = false);
+    await showDialog(
+      context: context,
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        return StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: Text(tr('sessionHistory')),
+            content: SizedBox(
+              width: 500,
+              child: sessions.isEmpty
+                  ? Text(tr('noHistorySessions'),
+                      style: TextStyle(color: theme.colorScheme.onSurfaceVariant))
+                  : ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: sessions.length,
+                      separatorBuilder: (_, __) =>
+                          const Divider(height: 1),
+                      itemBuilder: (_, i) {
+                        final s = sessions[i];
+                        return ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(s.name,
+                              style: const TextStyle(fontWeight: FontWeight.w600)),
+                          subtitle: Text(
+                            [
+                              s.type,
+                              s.deviceModel.isEmpty
+                                  ? s.deviceSerial
+                                  : s.deviceModel,
+                              _date(s.startedAt),
+                              tr('historyIssues',
+                                  {'count': '${s.issues.length}'}),
+                            ].join(' · '),
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: theme.colorScheme.onSurfaceVariant),
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.open_in_new, size: 18),
+                                tooltip: tr('reopenSession'),
+                                onPressed: () async {
+                                  Navigator.pop(ctx);
+                                  await _loadHistorySession(provider, s.id);
+                                },
+                              ),
+                              IconButton(
+                                icon: Icon(Icons.delete_outline,
+                                    size: 18, color: theme.colorScheme.error),
+                                tooltip: tr('deleteSession'),
+                                onPressed: () async {
+                                  final confirmed = await showDialog<bool>(
+                                    context: context,
+                                    builder: (c) => AlertDialog(
+                                      title: Text(tr('deleteSession')),
+                                      content: Text(tr('deleteSessionConfirm',
+                                          {'name': s.name})),
+                                      actions: [
+                                        TextButton(
+                                            onPressed: () => Navigator.pop(
+                                                c, false),
+                                            child: Text(tr('cancel'))),
+                                        FilledButton(
+                                            onPressed: () =>
+                                                Navigator.pop(c, true),
+                                            child: Text(tr('delete'))),
+                                      ],
+                                    ),
+                                  );
+                                  if (confirmed != true) return;
+                                  try {
+                                    await provider.deleteSession(s.id);
+                                    setDialogState(
+                                        () => sessions.removeAt(i));
+                                    ScaffoldMessenger.of(context)
+                                        .showSnackBar(
+                                      SnackBar(
+                                          content: Text(
+                                              tr('sessionDeleted')),
+                                          behavior: SnackBarBehavior
+                                              .floating),
+                                    );
+                                  } catch (e) {
+                                    ScaffoldMessenger.of(context)
+                                        .showSnackBar(
+                                      SnackBar(
+                                          content: Text(
+                                              '${tr('saveFailed')}: $e'),
+                                          behavior: SnackBarBehavior
+                                              .floating),
+                                    );
+                                  }
+                                },
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+            ),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: Text(tr('close'))),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _loadHistorySession(
+      TestSessionProvider provider, String id) async {
+    setState(() => _busy = true);
+    try {
+      await provider.loadHistoricalSession(id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(tr('sessionReopened')),
+        behavior: SnackBarBehavior.floating,
+      ));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('${tr('saveFailed')}: $e'),
+        behavior: SnackBarBehavior.floating,
+      ));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   String _time(DateTime time) =>

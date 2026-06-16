@@ -68,7 +68,9 @@ func (m *AdbManager) enrichDevicesProps(devices []Device) {
 			continue
 		}
 		wg.Add(1)
-		go func(idx int, serial string) {
+		idx := i
+		serial := devices[i].Serial
+		goSafe("enrich-props", func() {
 			defer wg.Done()
 			props := m.devicePropsForList(serial)
 			if props == nil {
@@ -79,7 +81,7 @@ func (m *AdbManager) enrichDevicesProps(devices []Device) {
 			devices[idx].Brand = props["ro.product.brand"]
 			devices[idx].SDK = props["ro.build.version.sdk"]
 			mu.Unlock()
-		}(i, devices[i].Serial)
+		})
 	}
 	wg.Wait()
 }

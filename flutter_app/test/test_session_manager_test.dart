@@ -237,4 +237,92 @@ void main() {
     expect(report, contains('ISSUE-001 支付页白屏'));
     expect(report, contains('阻塞'));
   });
+
+  group('History and lifecycle', () {
+    test('scanHistory returns sessions sorted newest first', () async {
+      final s1 = await provider.startSession(
+        name: '测试A', type: '冒烟测试', serial: 'd1',
+        deviceDisplayName: 'd1',
+      );
+      final s2 = await provider.startSession(
+        name: '测试B', type: '缺陷复现', serial: 'd2',
+        deviceDisplayName: 'd2',
+      );
+      await provider.finishSession();
+
+      final history = await provider.scanHistory();
+      expect(history.length, greaterThanOrEqualTo(1));
+      // Newest first.
+      expect(history.first.name, s2.name);
+    });
+
+    test('deleteSession removes directory and clears current if loaded',
+        () async {
+      final session = await provider.startSession(
+        name: '待删除', type: '冒烟测试', serial: 'd1',
+        deviceDisplayName: 'd1',
+      );
+      await provider.finishSession();
+      final dir = Directory(session.directoryPath);
+      expect(await dir.exists(), isTrue);
+
+      await provider.deleteSession(session.id);
+      expect(await dir.exists(), isFalse);
+      expect(provider.currentSession, isNull);
+    });
+
+    test('loadHistoricalSession reloads a finished session', () async {
+      final session = await provider.startSession(
+        name: '历史测试', type: '回归测试', serial: 'hid',
+        model: 'Pixel 7', deviceDisplayName: 'Pixel 7',
+      );
+      await provider.markIssue(title: '仅有的问题');
+      await provider.finishSession();
+
+      final id = session.id;
+      // Create a fresh provider to ensure we're loading from disk.
+      provider = TestSessionProvider(baseDirectory: tempDir);
+      final loaded = await provider.loadHistoricalSession(id);
+
+      expect(loaded.name, '历史测试');
+      expect(loaded.status, TestSessionStatus.finished);
+      expect(loaded.issues, hasLength(1));
+      expect(loaded.issues.single.title, '仅有的问题');
+      expect(loaded.deviceModel, 'Pixel 7');
+    });
+
+    test('deleteArtifact removes file and updates session', () async {
+      final session = await provider.startSession(
+        name: '附件测试', type: '冒烟测试', serial: 's1',
+        deviceDisplayName: 's1',
+      );
+      await provider.saveScreenshotBytes([1, 2, 3]);
+      final path = await provider.saveLogcat('some log');
+      final saved = provider.currentSession!;
+      expect(saved.artifacts.length, 2);
+
+      final logArtifact = saved.artifacts
+          .firstWhere((a) => a.kind == TestSessionArtifactKind.log);
+      await provider.deleteArtifact(logArtifact.id);
+
+      final after = provider.currentSession!;
+      expect(after.artifacts.length, 1);
+      expect(after.artifacts.single.kind, TestSessionArtifactKind.screenshot);
+      expect(await File(path).exists(), isFalse);
+    });
+
+    test('scanHistory skips directories without session.json', () async {
+      await provider.startSession(
+        name: '有效会话', type: '冒烟测试', serial: 'd1',
+        deviceDisplayName: 'd1',
+      );
+      final root = tempDir;
+      final orphan = await Directory(
+          '${root.path}/sessions/orphan_dir').create(recursive: true);
+      await File('${orphan.path}/not_a_session.txt').writeAsString('junk');
+
+      final history = await provider.scanHistory();
+      expect(history.any((s) => s.name == '有效会话'), isTrue);
+    });
+  });
 }

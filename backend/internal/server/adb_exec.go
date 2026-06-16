@@ -127,12 +127,24 @@ func (m *AdbManager) WirelessPair(address, code string) (string, error) {
 	return m.runRaw("pair", address, code)
 }
 
+func (m *AdbManager) WirelessPairContext(ctx context.Context, address, code string) (string, error) {
+	return m.runRawContext(ctx, "pair", address, code)
+}
+
 func (m *AdbManager) WirelessConnect(address string) (string, error) {
 	return m.runRaw("connect", address)
 }
 
+func (m *AdbManager) WirelessConnectContext(ctx context.Context, address string) (string, error) {
+	return m.runRawContext(ctx, "connect", address)
+}
+
 func (m *AdbManager) WirelessDisconnect(serial string) (string, error) {
 	return m.runRaw("disconnect", serial)
+}
+
+func (m *AdbManager) WirelessDisconnectContext(ctx context.Context, serial string) (string, error) {
+	return m.runRawContext(ctx, "disconnect", serial)
 }
 
 func (m *AdbManager) ScanWirelessAdb(ctx context.Context) ([]WirelessAdbDevice, string, error) {

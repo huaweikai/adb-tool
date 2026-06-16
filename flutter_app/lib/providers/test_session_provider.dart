@@ -441,6 +441,89 @@ class TestSessionProvider extends ChangeNotifier {
     return destination;
   }
 
+  // ── History & lifecycle ──────────────────────────────────────
+
+  /// Scans [ADBToolData/sessions/] and returns parsed [TestSession] instances
+  /// sorted by start time (newest first).
+  Future<List<TestSession>> scanHistory() async {
+    final root = await _rootDirectory();
+    final sessionsDir = Directory('${root.path}/sessions');
+    if (!await sessionsDir.exists()) return [];
+    final results = <TestSession>[];
+    await for (final entity in sessionsDir.list()) {
+      if (entity is! Directory) continue;
+      final jsonFile = File('${entity.path}/session.json');
+      if (!await jsonFile.exists()) continue;
+      try {
+        final json = jsonDecode(await jsonFile.readAsString())
+            as Map<String, dynamic>;
+        results.add(TestSession.fromJson(json));
+      } catch (_) {
+        // Skip corrupted / unreadable session directories.
+      }
+    }
+    results.sort((a, b) => b.startedAt.compareTo(a.startedAt));
+    return results;
+  }
+
+  /// Loads a historical session from disk and makes it the current session.
+  /// The loaded session is treated as read-only (its status is not changed).
+  Future<TestSession> loadHistoricalSession(String sessionId) async {
+    final root = await _rootDirectory();
+    final sessionDir = Directory('${root.path}/sessions/$sessionId');
+    if (!await sessionDir.exists()) {
+      throw Exception(
+          _t('errorLogFileNotFound', {'path': sessionDir.path}));
+    }
+    final jsonFile = File('${sessionDir.path}/session.json');
+    if (!await jsonFile.exists()) {
+      throw Exception(
+          _t('errorLogFileNotFound', {'path': jsonFile.path}));
+    }
+    final json =
+        jsonDecode(await jsonFile.readAsString()) as Map<String, dynamic>;
+    _currentSession = TestSession.fromJson(json);
+    notifyListeners();
+    return _currentSession!;
+  }
+
+  /// Deletes an entire session directory (including all artifacts).
+  Future<void> deleteSession(String sessionId) async {
+    final root = await _rootDirectory();
+    final sessionDir = Directory('${root.path}/sessions/$sessionId');
+    if (await sessionDir.exists()) {
+      await sessionDir.delete(recursive: true);
+    }
+    // If the deleted session is the one currently loaded, clear it.
+    if (_currentSession?.id == sessionId) {
+      _currentSession = null;
+      notifyListeners();
+    }
+  }
+
+  /// Deletes a single artifact from the current session.
+  /// Removes the file from disk, drops the entry from the artifact list,
+  /// and persists the change.
+  Future<void> deleteArtifact(String artifactId) async {
+    final session = _requireRunningSession();
+    final idx = session.artifacts.indexWhere((a) => a.id == artifactId);
+    if (idx == -1) return;
+    final artifact = session.artifacts[idx];
+    // Remove the file from disk (best effort).
+    try {
+      final file = File(artifact.path);
+      if (await file.exists()) await file.delete();
+    } catch (_) {}
+    _currentSession = session.copyWith(
+      artifacts: [
+        for (var i = 0; i < session.artifacts.length; i++)
+          if (i != idx) session.artifacts[i],
+      ],
+    );
+    await _persist();
+    notifyListeners();
+  }
+
   TestSession _requireRunningSession() {
     final session = _currentSession;
     if (session == null || session.status != TestSessionStatus.running) {
