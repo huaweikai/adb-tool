@@ -167,19 +167,40 @@ class _VideoPreviewState extends State<VideoPreview> {
     final theme = Theme.of(context);
     return Dialog.fullscreen(
       child: Scaffold(
-        backgroundColor: Colors.black,
-        appBar: AppBar(
-          backgroundColor: Colors.grey.shade900,
-          foregroundColor: Colors.white,
-          leading: IconButton(
-            icon: const Icon(Icons.close),
-            tooltip: tr('close'),
-            onPressed: _saving ? null : () => Navigator.of(context).pop(),
+        backgroundColor: const Color(0xFF1C1C1E),
+        appBar: PreferredSize(
+          preferredSize: const Size.fromHeight(48),
+          child: Container(
+            color: const Color(0xFF2C2C2E),
+            child: SafeArea(
+              bottom: false,
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 20),
+                    tooltip: tr('close'),
+                    color: Colors.white70,
+                    onPressed:
+                        _saving ? null : () => Navigator.of(context).pop(),
+                  ),
+                  Expanded(
+                    child: Text(
+                      tr('record'),
+                      style: const TextStyle(
+                          fontSize: 16,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w500),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: _buildSaveButton(),
+                  ),
+                ],
+              ),
+            ),
           ),
-          title: Text(tr('record'), style: const TextStyle(fontSize: 16)),
-          actions: [
-            _buildSaveButton(),
-          ],
         ),
         body: _buildBody(theme),
       ),
@@ -224,7 +245,7 @@ class _VideoPreviewState extends State<VideoPreview> {
                       Container(
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: Colors.black.withAlpha(120),
+                          color: const Color(0xFF2C2C2E).withAlpha(180),
                         ),
                         child: const Padding(
                           padding: EdgeInsets.all(16),
@@ -247,32 +268,49 @@ class _VideoPreviewState extends State<VideoPreview> {
     final path = _tempFile?.path ?? '';
     return Center(
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 520),
+        constraints: const BoxConstraints(maxWidth: 420),
         child: Padding(
           padding: const EdgeInsets.all(32),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.video_file, color: Colors.white70, size: 64),
-              const SizedBox(height: 16),
+              Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF3A3A3C),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Icon(Icons.video_file, color: Color(0xFF8E8E93), size: 40),
+              ),
+              const SizedBox(height: 20),
               Text(
                 tr('windowsVideoPreviewFallback'),
-                style: theme.textTheme.titleMedium?.copyWith(
+                style: const TextStyle(
                   color: Colors.white,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
                 ),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               Text(
                 path,
-                style: const TextStyle(color: Colors.white54, fontSize: 12),
+                style: const TextStyle(color: Colors.white38, fontSize: 11),
                 textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 24),
               FilledButton.icon(
                 onPressed: _openExternal,
-                icon: const Icon(Icons.open_in_new),
+                icon: const Icon(Icons.open_in_new, size: 18),
                 label: Text(tr('openRecording')),
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF0A84FF),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                ),
               ),
             ],
           ),
@@ -290,7 +328,7 @@ class _VideoPreviewState extends State<VideoPreview> {
         : 0.0;
 
     return Container(
-      color: Colors.grey.shade900,
+      color: const Color(0xFF2C2C2E),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -372,8 +410,10 @@ class _VideoPreviewState extends State<VideoPreview> {
       icon: const Icon(Icons.save, size: 16),
       label: Text(tr('save')),
       style: FilledButton.styleFrom(
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        textStyle: const TextStyle(fontSize: 12),
+        backgroundColor: const Color(0xFF0A84FF),
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        textStyle: const TextStyle(fontSize: 13),
       ),
     );
   }
