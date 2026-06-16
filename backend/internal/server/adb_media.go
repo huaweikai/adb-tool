@@ -12,6 +12,10 @@ import (
 
 const recordedVideoPath = "/sdcard/adb-tool-record.mp4"
 
+// Minimum viable video size: ~10KB for a usable recording.
+// Anything smaller means the file is incomplete or still being written.
+const minViableVideoSize = 10 * 1024
+
 func (m *AdbManager) Screenshot(serial string) ([]byte, error) {
 	return m.runOut("-s", serial, "exec-out", "screencap", "-p")
 }
@@ -48,6 +52,7 @@ func (m *AdbManager) StartScreenRecord(serial string) error {
 	m.recordMu.Lock()
 	defer m.recordMu.Unlock()
 	if m.recordCmd != nil {
+		// Another goroutine won the race; clean up this one.
 		if cmd.Process != nil {
 			if err := cmd.Process.Kill(); err != nil {
 				Log.Add("screenrecord duplicate kill", "", err, 0)
@@ -74,29 +79,71 @@ func (m *AdbManager) StopScreenRecord(serial string) error {
 		return m.waitRecordedVideo(serial, 2*time.Second)
 	}
 
-	if cmd.Process != nil {
-		if err := cmd.Process.Signal(os.Interrupt); err != nil {
-			Log.Add("screenrecord interrupt", "", err, 0)
-			if err := cmd.Process.Kill(); err != nil {
-				Log.Add("screenrecord kill", "", err, 0)
-			}
-		}
-	}
+	// Stop screenrecord by sending SIGINT from the DEVICE side.
+	// This avoids cross-platform signal forwarding issues:
+	//   - Windows os.Interrupt = CTRL_C_EVENT, adb may not forward it reliably
+	//   - Unix SIGINT is forwarded fine, but device-side kill is cleaner
+	// Using "kill -INT $(pgrep screenrecord)" sends SIGINT to the screenrecord
+	// process, which causes it to flush buffers and finalize the MP4 muxer —
+	// exactly what Ctrl+C does.
+	m.killScreenRecordOnDevice(serial)
 
+	// Wait for the local adb subprocess to exit.
+	// The subprocess exits automatically once the remote screenrecord exits,
+	// so we don't need a separate "wait for remote" step.
 	if err := waitRecordDone(done, 8*time.Second); err != nil {
-		Log.Add("screenrecord wait", "", err, 0)
+		Log.Add("screenrecord local wait", "", err, 0)
+		// Fallback: kill the local adb process if it didn't exit.
+		// This can happen if the device-side kill failed.
 		if cmd.Process != nil {
 			if killErr := cmd.Process.Kill(); killErr != nil {
-				Log.Add("screenrecord kill after wait", "", killErr, 0)
+				Log.Add("screenrecord local kill", "", killErr, 0)
 			}
 		}
 		if waitErr := waitRecordDone(done, 2*time.Second); waitErr != nil {
-			Log.Add("screenrecord wait after kill", "", waitErr, 0)
+			Log.Add("screenrecord wait after local kill", "", waitErr, 0)
 		}
 	}
 
 	m.clearRecord(serial, cmd)
-	return m.waitRecordedVideo(serial, 5*time.Second)
+
+	// KEY FIX: Force Android filesystem sync before waiting for the file.
+	// screenrecord exits, but Android's buffer cache may not have flushed
+	// the MP4 data to storage yet. "sync; sync" improves reliability on
+	// devices with slower storage controllers.
+	// Suppress errors — sync is best-effort on some devices.
+	if _, err := m.run("-s", serial, "shell", "sync"); err != nil {
+		Log.Add("screenrecord sync", "", err, 0)
+	}
+
+	return m.waitRecordedVideo(serial, 10*time.Second)
+}
+
+// killScreenRecordOnDevice sends SIGINT to the running screenrecord process
+// on the Android device. This is more reliable than sending os.Interrupt
+// from the host, because it avoids cross-platform signal forwarding issues
+// (Windows CTRL_C_EVENT vs Unix SIGINT).
+func (m *AdbManager) killScreenRecordOnDevice(serial string) {
+	// Try pgrep first (most Android devices have it via toybox).
+	// pgrep returns the PID; -o = oldest match if multiple.
+	// Fallback to pidof for devices without pgrep.
+	// The $! shell trick captures the PID of the last background job,
+	// but screenrecord runs in the foreground so we need pgrep/pidof.
+	pidCmd := "(pgrep -o screenrecord 2>/dev/null || pidof screenrecord 2>/dev/null || ps -o pid,NAME 2>/dev/null | grep '[s]creenrecord' | awk '{print $1}')"
+	out, err := m.run("-s", serial, "shell", "sh", "-c", pidCmd)
+	if err != nil || strings.TrimSpace(out) == "" {
+		Log.Add("screenrecord find pid", out, err, 0)
+		return
+	}
+	pid := strings.TrimSpace(out)
+	// Send SIGINT (equivalent to Ctrl+C) for graceful shutdown.
+	_, err = m.run("-s", serial, "shell", "sh", "-c",
+		fmt.Sprintf("kill -INT %s 2>/dev/null; kill -0 %s 2>/dev/null && sleep 1 && kill -INT %s 2>/dev/null", pid, pid, pid))
+	if err != nil {
+		Log.Add("screenrecord device kill -INT", "", err, 0)
+	}
+	// Give screenrecord a moment to flush and exit.
+	time.Sleep(500 * time.Millisecond)
 }
 
 func (m *AdbManager) PullRecordedVideo(serial string) ([]byte, error) {
@@ -175,28 +222,90 @@ func waitRecordDone(done <-chan error, timeout time.Duration) error {
 }
 
 func (m *AdbManager) waitRecordedVideo(serial string, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
+	// Give the filesystem a moment to flush buffers after screenrecord exits.
+	// Without this, Android's buffer cache may delay writing the MP4 data
+	// to storage, causing false "file not available" errors.
+	// 2s is a safe default for most devices.
+	const fsFlushDelay = 2 * time.Second
+
+	// Wait for the initial flush window first.
+	time.Sleep(fsFlushDelay)
+
+	// Remaining time for polling.
+	remaining := timeout - fsFlushDelay
+	if remaining <= 0 {
 		size, err := m.remoteFileSize(serial, recordedVideoPath)
-		if err == nil && size > 0 {
+		if err == nil && size >= minViableVideoSize {
 			return nil
 		}
-		time.Sleep(250 * time.Millisecond)
+		return fmt.Errorf("recorded video not available after %s (timeout too short)", timeout)
 	}
+
+	deadline := time.Now().Add(remaining)
+
+	// Poll for file availability with size stability check.
+	// A file is "ready" when: it exists, has ≥ minViableVideoSize bytes,
+	// and its size hasn't changed across two consecutive polls.
+	var lastSize int64 = -1
+	stableCount := 0
+	const minStablePolls = 2
+
+	for time.Now().Before(deadline) {
+		size, err := m.remoteFileSize(serial, recordedVideoPath)
+		if err == nil && size >= minViableVideoSize {
+			if size == lastSize {
+				stableCount++
+				if stableCount >= minStablePolls {
+					return nil
+				}
+			} else {
+				lastSize = size
+				stableCount = 0
+			}
+		} else {
+			lastSize = -1
+			stableCount = 0
+		}
+		time.Sleep(400 * time.Millisecond)
+	}
+
+	// Last-ditch check at the deadline.
+	size, err := m.remoteFileSize(serial, recordedVideoPath)
+	if err == nil && size >= minViableVideoSize {
+		return nil
+	}
+
 	return fmt.Errorf("recorded video not available after %s", timeout)
 }
 
 func (m *AdbManager) remoteFileSize(serial, path string) (int64, error) {
-	out, err := m.run(
-		"-s", serial, "shell", "sh", "-c",
-		"stat -c %s "+path+" 2>/dev/null || ls -l "+path+" 2>/dev/null | awk '{print $5}'",
-	)
-	if err != nil {
-		return 0, err
+	// Try multiple methods, in order of reliability:
+	//  1. stat -c %s  — GNU stat (most Android devices)
+	//  2. stat -f %z  — BSD stat (some devices)
+	//  3. ls -l        — parse 5th column
+	//  4. wc -c        — read byte count directly
+	commands := []string{
+		"stat -c %s " + path + " 2>/dev/null",
+		"stat -f %z " + path + " 2>/dev/null",
+		"ls -l " + path + " 2>/dev/null | awk '{print $5}'",
+		"wc -c < " + path + " 2>/dev/null",
 	}
-	out = strings.TrimSpace(out)
-	if out == "" {
-		return 0, fmt.Errorf("empty file size output")
+
+	for _, cmd := range commands {
+		out, err := m.run("-s", serial, "shell", "sh", "-c", cmd)
+		if err != nil {
+			continue
+		}
+		out = strings.TrimSpace(out)
+		if out == "" {
+			continue
+		}
+		// Extract first valid positive integer from output.
+		for _, field := range strings.Fields(out) {
+			if size, err := strconv.ParseInt(field, 10, 64); err == nil && size > 0 {
+				return size, nil
+			}
+		}
 	}
-	return strconv.ParseInt(out, 10, 64)
+	return 0, fmt.Errorf("could not determine file size for %s", path)
 }

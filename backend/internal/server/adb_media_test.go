@@ -1,7 +1,9 @@
 package server
 
 import (
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -9,6 +11,7 @@ import (
 	"time"
 )
 
+// TODO: re-enable after fixing Windows batch fake adb stubbing.
 func TestScreenRecordStartsWithPlainAdbScreenrecord(t *testing.T) {
 	adbPath := writePlainScreenRecordFakeAdb(t)
 	logPath := filepath.Join(t.TempDir(), "adb.log")
@@ -20,7 +23,8 @@ func TestScreenRecordStartsWithPlainAdbScreenrecord(t *testing.T) {
 	}
 	waitForLogContains(t, logPath, "-s serial-1 shell screenrecord /sdcard/adb-tool-record.mp4")
 	if err := manager.StopScreenRecord("serial-1"); err != nil {
-		t.Fatalf("StopScreenRecord returned error: %v", err)
+		logBytes, _ := os.ReadFile(logPath)
+		t.Fatalf("StopScreenRecord returned error: %v\nLog:\n%s", err, string(logBytes))
 	}
 
 	logBytes, err := os.ReadFile(logPath)
@@ -52,46 +56,90 @@ func waitForLogContains(t *testing.T, path string, want string) {
 	t.Fatalf("log did not contain %q, log:\n%s", want, data)
 }
 
+// writePlainScreenRecordFakeAdb creates a self-contained fake adb program.
+//
+// Strategy: We compile a Go program to a real executable (not a script).
+// On Windows, the batch wrapper calls this exe. On Unix, it's a shell script.
+// This avoids all Windows batch quoting/escaping problems (% in stat -c %s, etc.)
+// that plague batch-based fakes.
 func writePlainScreenRecordFakeAdb(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	if runtime.GOOS == "windows" {
-		path := filepath.Join(dir, "adb.bat")
-		batch := strings.Join([]string{
-			"@echo off",
-			"echo %* >> \"%ADB_FAKE_LOG%\"",
-			"if \"%3\"==\"shell\" if \"%4\"==\"rm\" exit /b 0",
-			"if \"%3\"==\"shell\" if \"%4\"==\"settings\" exit /b 0",
-			"if \"%3\"==\"shell\" if \"%4\"==\"screenrecord\" exit /b 0",
-			"if \"%3\"==\"shell\" if \"%4\"==\"sh\" echo 1024& exit /b 0",
-			"exit /b 1",
-		}, "\r\n")
-		if err := os.WriteFile(path, []byte(batch), 0o755); err != nil {
-			t.Fatalf("write fake adb: %v", err)
+
+	fakeSrc := `package main
+
+import (
+	"os"
+	"strings"
+)
+
+func main() {
+	// Always flush output before exiting.
+	os.Stdout.Sync()
+
+	if len(os.Args) < 2 {
+		os.Exit(1)
+	}
+	args := os.Args[1:]
+
+	// Log invocations.
+	if log := os.Getenv("ADB_FAKE_LOG"); log != "" {
+		if f, err := os.OpenFile(log, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
+			f.WriteString(strings.Join(args, " ") + "\n")
+			f.Close()
 		}
-		return path
 	}
-	path := filepath.Join(dir, "adb")
-	script := `#!/bin/sh
-printf '%s ' "$@" >> "$ADB_FAKE_LOG"
-printf '\n' >> "$ADB_FAKE_LOG"
-if [ "$3" = "shell" ] && [ "$4" = "rm" ]; then
-  exit 0
-fi
-if [ "$3" = "shell" ] && [ "$4" = "settings" ]; then
-  exit 0
-fi
-if [ "$3" = "shell" ] && [ "$4" = "screenrecord" ]; then
-  exit 0
-fi
-if echo "$*" | grep -q "stat -c %s"; then
-  printf '1024\n'
-  exit 0
-fi
-exit 1
+
+	// Route: -s SERIAL shell <cmd>
+	if len(args) >= 4 && args[0] == "-s" && args[2] == "shell" {
+		cmd, rest := args[3], args[4:]
+		switch cmd {
+		case "rm", "settings", "screenrecord", "sync":
+			os.Exit(0)
+		case "sh":
+			if len(rest) >= 2 {
+				payload := rest[1]
+				switch {
+				case strings.Contains(payload, "pgrep") || strings.Contains(payload, "pidof"):
+					os.Stdout.WriteString("12345\n")
+				case strings.Contains(payload, "kill"):
+					// succeed silently
+				default:
+					os.Stdout.WriteString("1024\n") // stat / ls -l / wc -c → fake size
+				}
+			}
+			os.Exit(0)
+		}
+	}
+	os.Exit(1)
+}
 `
-	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
-		t.Fatalf("write fake adb: %v", err)
+
+	// Compile Go source → real executable in temp dir.
+	srcPath := filepath.Join(dir, "fake_adb.go")
+	if err := os.WriteFile(srcPath, []byte(fakeSrc), 0644); err != nil {
+		t.Fatalf("write fake adb source: %v", err)
 	}
-	return path
+	binName := "adb"
+	if runtime.GOOS == "windows" {
+		binName += ".exe"
+	}
+	binPath := filepath.Join(dir, binName)
+	buildResult := exec.Command("go", "build", "-o", binPath, srcPath)
+	if bOut, err := buildResult.CombinedOutput(); err != nil {
+		t.Fatalf("compile fake adb: %v\nOutput: %s", err, string(bOut))
+	}
+	os.Chmod(binPath, 0755)
+
+	if runtime.GOOS == "windows" {
+		// Write a batch wrapper that calls the compiled exe.
+		// Quotes in the exe path are preserved with %q.
+		batPath := filepath.Join(dir, "adb.bat")
+		bat := fmt.Sprintf("@echo off\n%q %s\n", binPath, "%*")
+		if err := os.WriteFile(batPath, []byte(bat), 0755); err != nil {
+			t.Fatalf("write fake adb .bat: %v", err)
+		}
+		return batPath
+	}
+	return binPath
 }
