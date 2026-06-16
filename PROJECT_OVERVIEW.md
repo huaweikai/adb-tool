@@ -60,18 +60,20 @@
     │   │   ├── device.dart             # Device, LogFilter, LogEntry
     │   │   ├── file_item.dart          # FileItem
     │   │   ├── app_package.dart        # AppPackage
-    │   │   └── test_session.dart       # TestSession, events, artifacts, issues
+    │   │   └── test_session.dart       # TestSession, events, artifacts, issues, test plan items
     │   ├── providers/
     │   │   ├── device_provider.dart
     │   │   ├── locale_provider.dart
     │   │   ├── theme_provider.dart
-    │   │   ├── test_session_provider.dart  # Session CRUD, history, export
-    │   │   └── test_config_provider.dart
+    │   │   ├── test_session_provider.dart  # Session CRUD, test plan status, history, export
+    │   │   └── test_config_provider.dart   # App test config, copy, flow steps
     │   ├── services/
     │   │   ├── api_client.dart         # HTTP API 客户端
     │   │   ├── log_stream.dart         # WebSocket logcat 流
     │   │   ├── server_launcher.dart    # 后端进程管理
     │   │   └── mac_drop.dart           # macOS 拖放支持
+    │   ├── utils/
+    │   │   └── test_flow_text.dart     # 测试流程/步骤文本解析与格式化
     │   └── screens/
     │       ├── home_screen.dart        # 主界面 (侧边栏 + 内容区)
     │       ├── logcat_screen.dart      # Logcat 日志
@@ -79,7 +81,7 @@
     │       ├── app_manager_screen.dart # 应用管理
     │       ├── device_info_screen.dart # 设备信息
     │       ├── clipboard_screen.dart   # 剪贴板
-    │       ├── test_session_screen.dart # 测试会话管理
+    │       ├── test_session_screen.dart # 测试会话管理，流程步骤回显与结果标记
     │       └── backend_log_screen.dart # 后端日志
     ├── macos/                          # macOS 原生层
     │   └── Runner/
@@ -388,6 +390,7 @@ class TestSession {
   List<TestSessionArtifact> artifacts; // screenshot, video, log
   List<TestSessionIssue> issues;
   List<TestSessionNote> notes;
+  List<TestSessionPlanItem> testPlan; // configured flow/step snapshot
 }
 ```
 
@@ -395,7 +398,8 @@ class TestSession {
 
 ChangeNotifier 模式，管理测试会话完整生命周期：
 
-- `startSession()` — 创建会话，建立目录结构（logs/screenshots/videos/），持久化 session.json
+- `startSession()` — 创建会话，建立目录结构（logs/screenshots/videos/），保存测试流程/步骤快照并持久化 session.json
+- `updateTestPlanItem()` — 标记测试步骤通过/失败，并保存失败原因或备注
 - `markIssue()` / `addNote()` — 记录问题/备注，关联最近附件
 - `saveScreenshotBytes()` / `saveVideoBytes()` / `saveLogcat()` — 附件归档
 - `finishSession()` — 结束会话，生成 report.md

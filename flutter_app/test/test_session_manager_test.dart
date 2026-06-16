@@ -46,6 +46,71 @@ void main() {
         await File('${session.directoryPath}/session.json').exists(), isTrue);
   });
 
+  test('startSession stores configured test plan steps as session snapshot',
+      () async {
+    final session = await provider.startSession(
+      name: '配置流程测试',
+      type: '冒烟测试',
+      serial: 'serial',
+      deviceDisplayName: 'serial',
+      packageName: 'com.example.app',
+      testPlanItems: const [
+        TestSessionPlanItem(flowName: '登录流程', step: '打开 App'),
+        TestSessionPlanItem(flowName: '登录流程', step: '输入验证码'),
+        TestSessionPlanItem(flowName: '支付流程', step: '确认支付'),
+      ],
+    );
+
+    expect(session.testPlan, hasLength(3));
+    expect(session.testPlan.first.flowName, '登录流程');
+    expect(session.testPlan.first.step, '打开 App');
+    expect(session.testPlan.first.status, TestSessionPlanStatus.pending);
+
+    final jsonFile = File('${session.directoryPath}/session.json');
+    final json =
+        jsonDecode(await jsonFile.readAsString()) as Map<String, dynamic>;
+    expect(json['testPlan'], hasLength(3));
+    expect(json['testPlan'][1]['flowName'], '登录流程');
+    expect(json['testPlan'][1]['step'], '输入验证码');
+    expect(json['testPlan'][1]['status'], 'pending');
+  });
+
+  test('updateTestPlanItem stores pass and fail result messages', () async {
+    final session = await provider.startSession(
+      name: '步骤结果测试',
+      type: '冒烟测试',
+      serial: 'serial',
+      deviceDisplayName: 'serial',
+      testPlanItems: const [
+        TestSessionPlanItem(flowName: '登录流程', step: '打开 App'),
+        TestSessionPlanItem(flowName: '登录流程', step: '输入验证码'),
+      ],
+    );
+
+    await provider.updateTestPlanItem(
+      session.testPlan.first.id,
+      TestSessionPlanStatus.passed,
+    );
+    await provider.updateTestPlanItem(
+      session.testPlan.last.id,
+      TestSessionPlanStatus.failed,
+      message: '验证码错误',
+    );
+
+    final saved = provider.currentSession!;
+    expect(saved.testPlan.first.status, TestSessionPlanStatus.passed);
+    expect(saved.testPlan.last.status, TestSessionPlanStatus.failed);
+    expect(saved.testPlan.last.message, '验证码错误');
+    expect(saved.events.last.type, TestSessionEventType.testPlanUpdated);
+
+    final jsonFile = File('${saved.directoryPath}/session.json');
+    final json =
+        jsonDecode(await jsonFile.readAsString()) as Map<String, dynamic>;
+    expect(json['testPlan'][0]['status'], 'passed');
+    expect(json['testPlan'][1]['status'], 'failed');
+    expect(json['testPlan'][1]['message'], '验证码错误');
+  });
+
   test('saveLogcat adds a log artifact and persists session json', () async {
     final session = await provider.startSession(
       name: '日志测试',

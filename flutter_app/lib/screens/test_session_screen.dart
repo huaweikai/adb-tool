@@ -7,12 +7,14 @@ import 'package:provider/provider.dart';
 
 import '../i18n.dart';
 import '../models/device.dart';
+import '../models/test_config.dart';
 import '../models/test_session.dart';
 import '../providers/device_provider.dart';
 import '../providers/locale_provider.dart';
 import '../providers/test_session_provider.dart';
 import '../providers/test_config_provider.dart';
 import '../services/api_client.dart';
+import '../utils/test_flow_text.dart';
 
 class TestSessionScreen extends StatefulWidget {
   const TestSessionScreen({super.key});
@@ -391,6 +393,9 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
           _InfoLine(tr('sessionDirectory'), session.directoryPath),
         ]),
         const SizedBox(height: 16),
+        _sectionTitle(theme, tr('sessionTestPlan')),
+        _testPlanList(theme, session),
+        const SizedBox(height: 16),
         _sectionTitle(theme, tr('sessionIssues')),
         _issueList(theme, session),
         const SizedBox(height: 16),
@@ -422,6 +427,18 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
               )),
       ],
     );
+  }
+
+  List<TestSessionPlanItem> _buildSessionPlanItems(List<TestFlowConfig> flows) {
+    final items = <TestSessionPlanItem>[];
+    for (final flow in flows) {
+      for (final step in flow.steps) {
+        final text = step.trim();
+        if (text.isEmpty) continue;
+        items.add(TestSessionPlanItem(flowName: flow.name, step: text));
+      }
+    }
+    return items;
   }
 
   Widget _sectionTitle(ThemeData theme, String title) {
@@ -469,6 +486,108 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
             .toList(),
       ),
     );
+  }
+
+  Widget _testPlanList(ThemeData theme, TestSession session) {
+    if (session.testPlan.isEmpty) {
+      return Text(
+        tr('noTestPlan'),
+        style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+      );
+    }
+    final running = session.status == TestSessionStatus.running;
+    return Column(
+      children: [
+        for (var i = 0; i < session.testPlan.length; i++)
+          Card(
+            elevation: 0,
+            margin: const EdgeInsets.only(bottom: 8),
+            color: theme.colorScheme.surfaceContainerLow,
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _testPlanStatusIcon(theme, session.testPlan[i].status),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              session.testPlan[i].flowName.isEmpty
+                                  ? 'STEP-${(i + 1).toString().padLeft(3, '0')}'
+                                  : session.testPlan[i].flowName,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              session.testPlan[i].step,
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                            if (session.testPlan[i].message.isNotEmpty) ...[
+                              const SizedBox(height: 6),
+                              Text(
+                                session.testPlan[i].message,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: theme.colorScheme.error,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (running) ...[
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: () => _updateTestPlanItem(
+                            session.testPlan[i],
+                            TestSessionPlanStatus.passed,
+                          ),
+                          icon: const Icon(Icons.check, size: 14),
+                          label: Text(tr('testPlanPassed')),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: () =>
+                              _showTestPlanFailDialog(session.testPlan[i]),
+                          icon: const Icon(Icons.close, size: 14),
+                          label: Text(tr('testPlanFailed')),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _testPlanStatusIcon(ThemeData theme, TestSessionPlanStatus status) {
+    final (icon, color) = switch (status) {
+      TestSessionPlanStatus.passed => (Icons.check_circle, Colors.green),
+      TestSessionPlanStatus.failed => (Icons.cancel, theme.colorScheme.error),
+      TestSessionPlanStatus.pending => (
+          Icons.radio_button_unchecked,
+          theme.colorScheme.onSurfaceVariant
+        ),
+    };
+    return Icon(icon, size: 18, color: color);
   }
 
   Widget _issueList(ThemeData theme, TestSession session) {
@@ -628,11 +747,14 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
     }
     final displayName = device?.displayName ?? serial;
     final nameCtrl = TextEditingController(text: tr('defaultSessionName'));
-    final configPkg =
-        context.read<TestConfigProvider>().currentApp?.packageName ?? '';
+    final currentApp = context.read<TestConfigProvider>().currentApp;
+    final configPkg = currentApp?.packageName ?? '';
+    final flowsCtrl = TextEditingController(
+      text: currentApp == null ? '' : formatTestFlowText(currentApp.testFlows),
+    );
     final packageCtrl = TextEditingController(text: configPkg);
     final noteCtrl = TextEditingController();
-    final safeCtrls = [nameCtrl, packageCtrl, noteCtrl];
+    final safeCtrls = [nameCtrl, packageCtrl, noteCtrl, flowsCtrl];
     String type = tr('sessionTypeBug');
     final result = await showDialog<_CreateSessionResult>(
       context: context,
@@ -680,6 +802,16 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
                     maxLines: 3,
                     decoration: InputDecoration(labelText: tr('sessionNote')),
                   ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: flowsCtrl,
+                    maxLines: 8,
+                    decoration: InputDecoration(
+                      labelText: tr('configTestFlows'),
+                      hintText: tr('configTestFlowsHint'),
+                      alignLabelWithHint: true,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -696,6 +828,7 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
                     type: type,
                     packageName: packageCtrl.text,
                     note: noteCtrl.text,
+                    testFlows: flowsCtrl.text,
                   ),
                 ),
                 child: Text(tr('startSession')),
@@ -719,6 +852,8 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
         deviceDisplayName: displayName,
         packageName: result.packageName,
         note: result.note,
+        testPlanItems:
+            _buildSessionPlanItems(parseTestFlowText(result.testFlows)),
       );
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -932,6 +1067,60 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
             behavior: SnackBarBehavior.floating),
       );
     }
+  }
+
+  Future<void> _updateTestPlanItem(
+    TestSessionPlanItem item,
+    TestSessionPlanStatus status, {
+    String message = '',
+  }) async {
+    await context.read<TestSessionProvider>().updateTestPlanItem(
+          item.id,
+          status,
+          message: message,
+        );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(tr('testPlanUpdated')),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  Future<void> _showTestPlanFailDialog(TestSessionPlanItem item) async {
+    final ctrl = TextEditingController(text: item.message);
+    final message = await showDialog<String>(
+      context: context,
+      builder: (ctx) => _SafeDialog(
+        controllers: [ctrl],
+        builder: (_) => AlertDialog(
+          title: Text(tr('testPlanFailed')),
+          content: TextField(
+            controller: ctrl,
+            autofocus: true,
+            maxLines: 3,
+            decoration: InputDecoration(labelText: tr('testPlanMessage')),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(tr('cancel')),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, ctrl.text),
+              child: Text(tr('confirm')),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (message == null || !mounted) return;
+    await _updateTestPlanItem(
+      item,
+      TestSessionPlanStatus.failed,
+      message: message,
+    );
   }
 
   Future<void> _showNoteDialog() async {
@@ -1227,6 +1416,7 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
           tr('eventScreenRecordStarted'),
         TestSessionEventType.screenRecordStopped =>
           tr('eventScreenRecordSaved'),
+        TestSessionEventType.testPlanUpdated => tr('eventTestPlanUpdated'),
         TestSessionEventType.issueMarked => tr('eventIssueMarked'),
         TestSessionEventType.sessionFinished => tr('eventSessionFinished'),
       };
@@ -1240,6 +1430,7 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
       TestSessionEventType.screenshotTaken => Colors.blue,
       TestSessionEventType.screenRecordStarted => Colors.purple,
       TestSessionEventType.screenRecordStopped => Colors.purpleAccent,
+      TestSessionEventType.testPlanUpdated => Colors.teal,
       TestSessionEventType.issueMarked => Colors.deepOrange,
       TestSessionEventType.sessionFinished => theme.colorScheme.error,
     };
@@ -1491,12 +1682,14 @@ class _CreateSessionResult {
   final String type;
   final String packageName;
   final String note;
+  final String testFlows;
 
   const _CreateSessionResult({
     required this.name,
     required this.type,
     required this.packageName,
     required this.note,
+    required this.testFlows,
   });
 }
 

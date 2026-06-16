@@ -8,8 +8,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../i18n.dart';
 import '../models/test_config.dart';
-import '../providers/locale_provider.dart';
 import '../providers/test_config_provider.dart';
+import '../providers/locale_provider.dart';
+import '../utils/test_flow_text.dart';
 
 class TestConfigScreen extends StatefulWidget {
   const TestConfigScreen({super.key});
@@ -590,6 +591,8 @@ class _TestConfigScreenState extends State<TestConfigScreen> {
         text: isEdit
             ? existing.testTexts.map((t) => '${t.name}=${t.value}').join('\n')
             : '');
+    final flowsCtrl = TextEditingController(
+        text: isEdit ? formatTestFlowText(existing.testFlows) : '');
     final safeCtrls = [
       nameCtrl,
       pkgCtrl,
@@ -600,6 +603,7 @@ class _TestConfigScreenState extends State<TestConfigScreen> {
       deepLinksCtrl,
       pathsCtrl,
       textsCtrl,
+      flowsCtrl,
     ];
 
     final result = await showDialog<_AppConfigFormResult>(
@@ -711,6 +715,16 @@ class _TestConfigScreenState extends State<TestConfigScreen> {
                             labelText: tr('configTestTexts'),
                             hintText: '手机号=13800000000'),
                       ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: flowsCtrl,
+                        maxLines: 8,
+                        decoration: InputDecoration(
+                          labelText: tr('configTestFlows'),
+                          hintText: tr('configTestFlowsHint'),
+                          alignLabelWithHint: true,
+                        ),
+                      ),
                     ],
                   ],
                 ),
@@ -735,6 +749,7 @@ class _TestConfigScreenState extends State<TestConfigScreen> {
                     deepLinks: deepLinksCtrl.text,
                     filePaths: pathsCtrl.text,
                     testTexts: textsCtrl.text,
+                    testFlows: flowsCtrl.text,
                   ),
                 ),
                 child: Text(tr('saveConfig')),
@@ -784,7 +799,7 @@ class _TestConfigScreenState extends State<TestConfigScreen> {
       deepLinks: deepLinks,
       filePaths: filePaths,
       testTexts: testTexts,
-      testFlows: isEdit ? existing.testFlows : const [],
+      testFlows: parseTestFlowText(result.testFlows),
     );
 
     await provider.createOrUpdateApp(app);
@@ -876,6 +891,7 @@ class _AppConfigFormResult {
   final String deepLinks;
   final String filePaths;
   final String testTexts;
+  final String testFlows;
 
   const _AppConfigFormResult({
     required this.name,
@@ -888,5 +904,6 @@ class _AppConfigFormResult {
     required this.deepLinks,
     required this.filePaths,
     required this.testTexts,
+    required this.testFlows,
   });
 }

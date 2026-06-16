@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:adb_tool/models/test_config.dart';
 import 'package:adb_tool/providers/test_config_provider.dart';
+import 'package:adb_tool/utils/test_flow_text.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -17,7 +18,8 @@ void main() {
     }
   });
 
-  test('parseConfig imports multiple apps with logcat keywords and sensitive text',
+  test(
+      'parseConfig imports multiple apps with logcat keywords and sensitive text',
       () {
     final config = TestConfigFile.fromJsonString(_musicConfigJson);
 
@@ -28,6 +30,27 @@ void main() {
     expect(config.apps.first.logcat.keywords,
         containsAll(['网络请求', 'music/Http', 'FATAL EXCEPTION']));
     expect(config.apps.first.testTexts.last.sensitive, isTrue);
+  });
+
+  test('test flow text parser keeps flow names and ordered steps', () {
+    final flows = parseTestFlowText('''
+登录流程：
+1. 打开 App
+2. 输入账号密码
+3. 点击登录
+
+支付流程:
+- 进入收银台
+- 确认支付
+''');
+
+    expect(flows, hasLength(2));
+    expect(flows.first.name, '登录流程');
+    expect(flows.first.steps, ['打开 App', '输入账号密码', '点击登录']);
+    expect(flows.last.name, '支付流程');
+    expect(flows.last.steps, ['进入收银台', '确认支付']);
+    expect(formatTestFlowText(flows), contains('登录流程：'));
+    expect(formatTestFlowText(flows), contains('- 输入账号密码'));
   });
 
   test('parseConfig rejects app without packageName', () {
@@ -45,7 +68,8 @@ void main() {
     );
   });
 
-  test('provider imports config, selects first app and persists locally', () async {
+  test('provider imports config, selects first app and persists locally',
+      () async {
     final provider = TestConfigProvider(baseDirectory: tempDir);
 
     final result = await provider.importFromJsonString(_musicConfigJson);

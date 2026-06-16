@@ -58,7 +58,10 @@ class TestConfigProvider extends ChangeNotifier {
             .map(TestAppConfig.fromJson)
             .toList()
         : const [];
-    _currentAppId = '';
+    _currentAppId = json['currentAppId']?.toString() ?? '';
+    if (_currentAppId == null || !_apps.any((app) => app.id == _currentAppId)) {
+      _currentAppId = _apps.isEmpty ? '' : _apps.first.id;
+    }
     _loaded = true;
     notifyListeners();
   }
@@ -66,6 +69,7 @@ class TestConfigProvider extends ChangeNotifier {
   Future<TestConfigImportResult> importFromJsonString(String source) async {
     final config = TestConfigFile.fromJsonString(source);
     _apps = config.apps;
+    _currentAppId = _apps.isEmpty ? '' : _apps.first.id;
     _loaded = true;
     await _persist();
     notifyListeners();
@@ -94,6 +98,50 @@ class TestConfigProvider extends ChangeNotifier {
     }
     await _persist();
     notifyListeners();
+  }
+
+  Future<TestAppConfig> copyApp(String appId) async {
+    final idx = _apps.indexWhere((a) => a.id == appId);
+    if (idx == -1) throw StateError('appId not found: $appId');
+    final source = _apps[idx];
+    // Append "（副本）" to name; truncate if it exceeds a reasonable length
+    const suffix = '（副本）';
+    const maxBase = 60;
+    final base = source.appName.length > maxBase
+        ? source.appName.substring(0, maxBase)
+        : source.appName;
+    final newId = '${source.id}_copy_${DateTime.now().millisecondsSinceEpoch}';
+    final copy = TestAppConfig(
+      id: newId,
+      appName: '$base$suffix',
+      packageName: source.packageName,
+      appType: source.appType,
+      notes: source.notes,
+      logcat: TestLogcatConfig(
+        keywords: List<String>.from(source.logcat.keywords),
+        tags: List<String>.from(source.logcat.tags),
+        defaultLevel: source.logcat.defaultLevel,
+      ),
+      deepLinks: source.deepLinks
+          .map((d) => TestNamedValue(
+              name: d.name, value: d.value, sensitive: d.sensitive))
+          .toList(),
+      filePaths: source.filePaths
+          .map((p) => TestFilePathConfig(name: p.name, path: p.path))
+          .toList(),
+      testTexts: source.testTexts
+          .map((t) => TestNamedValue(
+              name: t.name, value: t.value, sensitive: t.sensitive))
+          .toList(),
+      testFlows: source.testFlows
+          .map((f) =>
+              TestFlowConfig(name: f.name, steps: List<String>.from(f.steps)))
+          .toList(),
+    );
+    _apps = [..._apps]..insert(idx + 1, copy);
+    await _persist();
+    notifyListeners();
+    return copy;
   }
 
   Future<void> deleteApp(String appId) async {

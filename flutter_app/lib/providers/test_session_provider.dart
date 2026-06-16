@@ -40,6 +40,7 @@ class TestSessionProvider extends ChangeNotifier {
     String deviceDisplayName = '',
     String packageName = '',
     String note = '',
+    List<TestSessionPlanItem> testPlanItems = const [],
   }) async {
     final now = DateTime.now();
     final id = '${_compactDate(now)}_${_safeName(name)}';
@@ -62,6 +63,7 @@ class TestSessionProvider extends ChangeNotifier {
       deviceSdk: sdk,
       packageName: packageName.trim(),
       note: note.trim(),
+      testPlan: _normalizeTestPlan(testPlanItems),
       events: [
         _event(
           TestSessionEventType.sessionCreated,
@@ -80,6 +82,43 @@ class TestSessionProvider extends ChangeNotifier {
     await _persist();
     notifyListeners();
     return session;
+  }
+
+  Future<void> updateTestPlanItem(
+    String itemId,
+    TestSessionPlanStatus status, {
+    String message = '',
+  }) async {
+    final session = _requireRunningSession();
+    final index = session.testPlan.indexWhere((item) => item.id == itemId);
+    if (index == -1) return;
+    final now = DateTime.now();
+    final updated = [
+      for (var i = 0; i < session.testPlan.length; i++)
+        if (i == index)
+          session.testPlan[i].copyWith(
+            status: status,
+            message: message.trim(),
+            updatedAt: now,
+          )
+        else
+          session.testPlan[i],
+    ];
+    final item = updated[index];
+    _currentSession = session.copyWith(
+      testPlan: updated,
+      events: [
+        ...session.events,
+        _event(
+          TestSessionEventType.testPlanUpdated,
+          _t('eventTestPlanUpdated'),
+          '${item.flowName} / ${item.step}',
+          now: now,
+        ),
+      ],
+    );
+    await _persist();
+    notifyListeners();
   }
 
   Future<void> addNote(String content) async {
@@ -180,10 +219,8 @@ class TestSessionProvider extends ChangeNotifier {
       ..writeln(_bracket('clipboardTestEnvironment'))
       ..writeln(
           '${_t('reportDevice')}：${session == null ? '-' : _deviceLabel(session)}')
-      ..writeln(
-          '${_t('reportBrand')}：${_emptyIfNone(session?.deviceBrand)}')
-      ..writeln(
-          '${_t('reportSdk')}：${_emptyIfNone(session?.deviceSdk)}')
+      ..writeln('${_t('reportBrand')}：${_emptyIfNone(session?.deviceBrand)}')
+      ..writeln('${_t('reportSdk')}：${_emptyIfNone(session?.deviceSdk)}')
       ..writeln(
           '${_t('reportPackageName')}：${_emptyIfNone(session?.packageName)}')
       ..writeln()
@@ -455,8 +492,8 @@ class TestSessionProvider extends ChangeNotifier {
       final jsonFile = File('${entity.path}/session.json');
       if (!await jsonFile.exists()) continue;
       try {
-        final json = jsonDecode(await jsonFile.readAsString())
-            as Map<String, dynamic>;
+        final json =
+            jsonDecode(await jsonFile.readAsString()) as Map<String, dynamic>;
         results.add(TestSession.fromJson(json));
       } catch (_) {
         // Skip corrupted / unreadable session directories.
@@ -472,13 +509,11 @@ class TestSessionProvider extends ChangeNotifier {
     final root = await _rootDirectory();
     final sessionDir = Directory('${root.path}/sessions/$sessionId');
     if (!await sessionDir.exists()) {
-      throw Exception(
-          _t('errorLogFileNotFound', {'path': sessionDir.path}));
+      throw Exception(_t('errorLogFileNotFound', {'path': sessionDir.path}));
     }
     final jsonFile = File('${sessionDir.path}/session.json');
     if (!await jsonFile.exists()) {
-      throw Exception(
-          _t('errorLogFileNotFound', {'path': jsonFile.path}));
+      throw Exception(_t('errorLogFileNotFound', {'path': jsonFile.path}));
     }
     final json =
         jsonDecode(await jsonFile.readAsString()) as Map<String, dynamic>;
@@ -522,6 +557,26 @@ class TestSessionProvider extends ChangeNotifier {
     );
     await _persist();
     notifyListeners();
+  }
+
+  List<TestSessionPlanItem> _normalizeTestPlan(
+      List<TestSessionPlanItem> items) {
+    final result = <TestSessionPlanItem>[];
+    for (var i = 0; i < items.length; i++) {
+      final item = items[i];
+      final step = item.step.trim();
+      if (step.isEmpty) continue;
+      result.add(
+        item.copyWith(
+          id: item.id.trim().isEmpty
+              ? 'STEP-${_issueNumber(result.length + 1)}'
+              : item.id,
+          status: TestSessionPlanStatus.pending,
+          message: '',
+        ),
+      );
+    }
+    return result;
   }
 
   TestSession _requireRunningSession() {
@@ -605,6 +660,25 @@ class TestSessionProvider extends ChangeNotifier {
       ..writeln(
           '- ${_t('reportPackageName')}: ${session.packageName.isEmpty ? '-' : session.packageName}')
       ..writeln()
+      ..writeln('## ${_t('sessionTestPlan')}')
+      ..writeln();
+    if (session.testPlan.isEmpty) {
+      buffer.writeln('-');
+    } else {
+      for (final item in session.testPlan) {
+        final status = switch (item.status) {
+          TestSessionPlanStatus.pending => _t('notFilled'),
+          TestSessionPlanStatus.passed => _t('testPlanPassed'),
+          TestSessionPlanStatus.failed => _t('testPlanFailed'),
+        };
+        buffer.writeln('- [$status] ${item.flowName} / ${item.step}');
+        if (item.message.isNotEmpty) {
+          buffer.writeln('  - ${item.message}');
+        }
+      }
+    }
+    buffer
+      ..writeln()
       ..writeln('## ${_t('reportInitialNote')}')
       ..writeln()
       ..writeln(session.note.isEmpty ? '-' : session.note)
@@ -662,10 +736,14 @@ class TestSessionProvider extends ChangeNotifier {
     'issueUntitled': '未命名问题',
     'issueTypeOther': '其他',
     'notFilled': '未填写',
+    'sessionTestPlan': '当前测试内容',
+    'testPlanPassed': '通过',
+    'testPlanFailed': '失败',
     'eventSessionCreated': '创建测试会话',
     'eventSessionCreatedDetail': '设备：{device}，包名：{package}',
     'eventNoteAdded': '添加备注',
     'eventIssueMarked': '标记问题',
+    'eventTestPlanUpdated': '更新测试步骤',
     'eventLogcatSaved': '保存 Logcat',
     'eventScreenshotSaved': '保存截屏',
     'eventScreenRecordStarted': '开始录屏',

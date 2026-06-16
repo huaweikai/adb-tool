@@ -9,6 +9,7 @@ enum TestSessionEventType {
   screenRecordStarted,
   screenRecordStopped,
   issueMarked,
+  testPlanUpdated,
   sessionFinished,
 }
 
@@ -30,6 +31,65 @@ enum TestSessionIssueSeverity {
   major,
   normal,
   minor,
+}
+
+enum TestSessionPlanStatus { pending, passed, failed }
+
+class TestSessionPlanItem {
+  final String id;
+  final String flowName;
+  final String step;
+  final TestSessionPlanStatus status;
+  final String message;
+  final DateTime? updatedAt;
+
+  const TestSessionPlanItem({
+    this.id = '',
+    required this.flowName,
+    required this.step,
+    this.status = TestSessionPlanStatus.pending,
+    this.message = '',
+    this.updatedAt,
+  });
+
+  TestSessionPlanItem copyWith({
+    String? id,
+    TestSessionPlanStatus? status,
+    String? message,
+    DateTime? updatedAt,
+  }) {
+    return TestSessionPlanItem(
+      id: id ?? this.id,
+      flowName: flowName,
+      step: step,
+      status: status ?? this.status,
+      message: message ?? this.message,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'flowName': flowName,
+        'step': step,
+        'status': status.name,
+        'message': message,
+        'updatedAt': updatedAt?.toIso8601String(),
+      };
+
+  factory TestSessionPlanItem.fromJson(Map<String, dynamic> json) {
+    return TestSessionPlanItem(
+      id: json['id']?.toString() ?? '',
+      flowName: json['flowName']?.toString() ?? '',
+      step: json['step']?.toString() ?? '',
+      status: TestSessionPlanStatus.values.firstWhere(
+        (status) => status.name == json['status'],
+        orElse: () => TestSessionPlanStatus.pending,
+      ),
+      message: json['message']?.toString() ?? '',
+      updatedAt: DateTime.tryParse(json['updatedAt']?.toString() ?? ''),
+    );
+  }
 }
 
 class TestSessionEvent {
@@ -231,6 +291,7 @@ class TestSession {
   final List<TestSessionArtifact> artifacts;
   final List<TestSessionNote> notes;
   final List<TestSessionIssue> issues;
+  final List<TestSessionPlanItem> testPlan;
 
   const TestSession({
     required this.id,
@@ -250,6 +311,7 @@ class TestSession {
     this.artifacts = const [],
     this.notes = const [],
     this.issues = const [],
+    this.testPlan = const [],
   });
 
   TestSession copyWith({
@@ -259,6 +321,7 @@ class TestSession {
     List<TestSessionArtifact>? artifacts,
     List<TestSessionNote>? notes,
     List<TestSessionIssue>? issues,
+    List<TestSessionPlanItem>? testPlan,
   }) {
     return TestSession(
       id: id,
@@ -278,6 +341,7 @@ class TestSession {
       artifacts: artifacts ?? this.artifacts,
       notes: notes ?? this.notes,
       issues: issues ?? this.issues,
+      testPlan: testPlan ?? this.testPlan,
     );
   }
 
@@ -299,6 +363,7 @@ class TestSession {
         'artifacts': artifacts.map((artifact) => artifact.toJson()).toList(),
         'notes': notes.map((note) => note.toJson()).toList(),
         'issues': issues.map((issue) => issue.toJson()).toList(),
+        'testPlan': testPlan.map((item) => item.toJson()).toList(),
       };
 
   factory TestSession.fromJson(Map<String, dynamic> json) {
@@ -339,6 +404,11 @@ class TestSession {
           .whereType<Map>()
           .map((issue) => TestSessionIssue.fromJson(
               issue.map((key, value) => MapEntry(key.toString(), value))))
+          .toList(),
+      testPlan: (json['testPlan'] as List? ?? [])
+          .whereType<Map>()
+          .map((item) => TestSessionPlanItem.fromJson(
+              item.map((key, value) => MapEntry(key.toString(), value))))
           .toList(),
     );
   }
