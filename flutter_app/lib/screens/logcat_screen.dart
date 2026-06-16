@@ -11,27 +11,7 @@ import '../providers/locale_provider.dart';
 import '../providers/device_provider.dart';
 import '../providers/test_session_provider.dart';
 import '../providers/test_config_provider.dart';
-
-class _HighlightRule {
-  final String label;
-  final String pattern;
-  final Color color;
-  final bool builtin;
-  bool enabled;
-
-  _HighlightRule({
-    required this.label,
-    required this.pattern,
-    required this.color,
-    required this.builtin,
-    required this.enabled,
-  });
-
-  bool matches(LogEntry entry) {
-    final target = entry.raw.isEmpty ? entry.message : entry.raw;
-    return target.toLowerCase().contains(pattern.toLowerCase());
-  }
-}
+import '../widgets/logcat/highlight_rule.dart';
 
 class LogcatScreen extends StatefulWidget {
   const LogcatScreen({
@@ -52,45 +32,9 @@ class _LogcatScreenState extends State<LogcatScreen> {
   String _keyword = '';
   String _packageName = '';
 
-  final List<_HighlightRule> _highlightRules = [
-    _HighlightRule(
-      label: 'Crash',
-      pattern: 'FATAL EXCEPTION',
-      color: Colors.red,
-      builtin: true,
-      enabled: true,
-    ),
-    _HighlightRule(
-      label: 'AndroidRuntime',
-      pattern: 'AndroidRuntime',
-      color: Colors.redAccent,
-      builtin: true,
-      enabled: true,
-    ),
-    _HighlightRule(
-      label: 'Network',
-      pattern: 'http',
-      color: Colors.cyan,
-      builtin: true,
-      enabled: true,
-    ),
-    _HighlightRule(
-      label: 'OkHttp',
-      pattern: 'okhttp',
-      color: Colors.lightBlue,
-      builtin: true,
-      enabled: true,
-    ),
-  ];
+  final List<HighlightRule> _highlightRules = HighlightRules.defaults();
 
-  final List<Color> _customRuleColors = [
-    Colors.amber,
-    Colors.pinkAccent,
-    Colors.deepPurpleAccent,
-    Colors.tealAccent,
-    Colors.limeAccent,
-    Colors.orangeAccent,
-  ];
+  final List<Color> _customRuleColors = HighlightRules.customPalette;
 
   final List<LogEntry> _allEntries = [];
   final List<LogEntry> _displayedEntries = [];
@@ -273,63 +217,6 @@ class _LogcatScreenState extends State<LogcatScreen> {
         ..clear()
         ..addAll(_allEntries.where((e) => e.matchesFilter(filter)));
     });
-  }
-
-  bool _isCrashEntry(LogEntry entry) {
-    final raw = entry.raw.toLowerCase();
-    final message = entry.message.toLowerCase();
-    return raw.contains('fatal exception') ||
-        raw.contains('androidruntime') ||
-        raw.contains('exception') ||
-        raw.contains('error') ||
-        message.startsWith('caused by:') ||
-        message.startsWith('at ') ||
-        entry.priority == 'E' ||
-        entry.priority == 'F';
-  }
-
-  bool _isNetworkEntry(LogEntry entry) {
-    final raw = entry.raw.toLowerCase();
-    return raw.contains('http://') ||
-        raw.contains('https://') ||
-        raw.contains(' okhttp') ||
-        raw.contains('okhttp') ||
-        raw.contains('retrofit') ||
-        raw.contains('volley') ||
-        raw.contains('grpc') ||
-        raw.contains('socket') ||
-        raw.contains('dns') ||
-        raw.contains('response') ||
-        raw.contains('request');
-  }
-
-  _HighlightRule? _matchingHighlightRule(LogEntry entry) {
-    for (final rule in _highlightRules) {
-      if (rule.enabled &&
-          rule.pattern.trim().isNotEmpty &&
-          rule.matches(entry)) {
-        return rule;
-      }
-    }
-    if (_isCrashEntry(entry)) {
-      return _HighlightRule(
-        label: tr('logRuleCrash'),
-        pattern: 'crash',
-        color: Colors.red,
-        builtin: true,
-        enabled: true,
-      );
-    }
-    if (_isNetworkEntry(entry)) {
-      return _HighlightRule(
-        label: tr('logRuleNetwork'),
-        pattern: 'network',
-        color: Colors.cyan,
-        builtin: true,
-        enabled: true,
-      );
-    }
-    return null;
   }
 
   void _tryAutoScroll() {
@@ -776,7 +663,7 @@ class _LogcatScreenState extends State<LogcatScreen> {
                             final keyword = _ruleCtrl.text.trim();
                             if (keyword.isEmpty) return;
                             setState(() {
-                              _highlightRules.add(_HighlightRule(
+                              _highlightRules.add(HighlightRule(
                                 label: keyword,
                                 pattern: keyword,
                                 color: selectedColor,
@@ -808,7 +695,7 @@ class _LogcatScreenState extends State<LogcatScreen> {
     _refreshDisplayedEntries();
   }
 
-  Widget _buildRuleTile(_HighlightRule rule, StateSetter setDialogState) {
+  Widget _buildRuleTile(HighlightRule rule, StateSetter setDialogState) {
     return CheckboxListTile(
       dense: true,
       value: rule.enabled,
@@ -890,7 +777,7 @@ class _LogcatScreenState extends State<LogcatScreen> {
   Widget _buildLogEntry(BuildContext context, LogEntry entry) {
     final theme = Theme.of(context);
     const mono = TextStyle(fontFamily: 'Menlo', height: 1.5);
-    final highlightRule = _matchingHighlightRule(entry);
+    final highlightRule = HighlightRules.match(_highlightRules, entry, tr);
     final highlightColor = highlightRule?.color;
     final rowBackground = highlightColor?.withAlpha(26);
     final messageColor = highlightColor ?? theme.colorScheme.onSurface;
