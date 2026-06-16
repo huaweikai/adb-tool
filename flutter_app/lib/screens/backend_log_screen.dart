@@ -83,7 +83,8 @@ class _BackendLogScreenState extends State<BackendLogScreen> {
         if (identity != null) {
           final pid = identity['pid']?.toString() ?? '?';
           final started = identity['started']?.toString() ?? '';
-          _serverInfo = tr('backendServerOnline', {'pid': pid, 'started': started});
+          _serverInfo =
+              tr('backendServerOnline', {'pid': pid, 'started': started});
         } else {
           _serverInfo = tr('backendServerOffline');
         }
@@ -152,10 +153,14 @@ class _BackendLogScreenState extends State<BackendLogScreen> {
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  _serverInfo.isEmpty ? tr('backendServerChecking') : _serverInfo,
+                  _serverInfo.isEmpty
+                      ? tr('backendServerChecking')
+                      : _serverInfo,
                   style: TextStyle(
                     fontSize: 11,
-                    color: _serverOnline ? Colors.green.shade700 : Colors.red.shade700,
+                    color: _serverOnline
+                        ? Colors.green.shade700
+                        : Colors.red.shade700,
                   ),
                 ),
               ),
@@ -343,92 +348,108 @@ class _BackendLogScreenState extends State<BackendLogScreen> {
   void _showDetail(BuildContext context, BackendLogEntry entry) {
     showDialog(
       context: context,
-      builder: (ctx) => Dialog(
-        constraints: const BoxConstraints(maxWidth: 700, maxHeight: 500),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(children: [
-                Text(entry.time,
-                    style: const TextStyle(fontSize: 11, fontFamily: 'Menlo')),
-                const Spacer(),
-                Text(entry.elapsed,
-                    style: const TextStyle(fontSize: 11, fontFamily: 'Menlo')),
-                const SizedBox(width: 8),
-                IconButton(
-                  icon: const Icon(Icons.close, size: 18),
-                  onPressed: () => Navigator.pop(ctx),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                ),
-              ]),
-              const Divider(),
-              const SizedBox(height: 4),
-              Text(tr('command'), style: Theme.of(ctx).textTheme.labelSmall),
-              const SizedBox(height: 4),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Theme.of(ctx).colorScheme.surfaceContainer,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: SelectableText(
-                  entry.command,
-                  style: const TextStyle(fontFamily: 'Menlo', fontSize: 11),
-                ),
-              ),
-              if (entry.isError) ...[
-                const SizedBox(height: 8),
-                Text(tr('error'),
-                    style: Theme.of(ctx)
-                        .textTheme
-                        .labelSmall
-                        ?.copyWith(color: Colors.red)),
-                const SizedBox(height: 4),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.red.withAlpha(15),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: SelectableText(
-                    entry.err,
-                    style: const TextStyle(
-                        fontFamily: 'Menlo', fontSize: 11, color: Colors.red),
-                  ),
-                ),
-              ],
-              if (entry.result.isNotEmpty && !entry.isError) ...[
-                const SizedBox(height: 8),
-                Text(tr('output'), style: Theme.of(ctx).textTheme.labelSmall),
-                const SizedBox(height: 4),
-                Expanded(
-                  child: Container(
+      builder: (ctx) {
+        final size = MediaQuery.sizeOf(ctx);
+        return Dialog(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: 700,
+              maxHeight: size.height * 0.85,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(children: [
+                    Text(entry.time,
+                        style:
+                            const TextStyle(fontSize: 11, fontFamily: 'Menlo')),
+                    const Spacer(),
+                    Text(entry.elapsed,
+                        style:
+                            const TextStyle(fontSize: 11, fontFamily: 'Menlo')),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 18),
+                      onPressed: () => Navigator.pop(ctx),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                  ]),
+                  const Divider(),
+                  const SizedBox(height: 4),
+                  Text(tr('command'),
+                      style: Theme.of(ctx).textTheme.labelSmall),
+                  const SizedBox(height: 4),
+                  Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
                       color: Theme.of(ctx).colorScheme.surfaceContainer,
                       borderRadius: BorderRadius.circular(4),
                     ),
-                    child: SingleChildScrollView(
-                      child: SelectableText(
-                        entry.result,
-                        style:
-                            const TextStyle(fontFamily: 'Menlo', fontSize: 11),
-                      ),
+                    child: SelectableText(
+                      entry.command,
+                      style: const TextStyle(fontFamily: 'Menlo', fontSize: 11),
                     ),
                   ),
-                ),
-              ],
-            ],
+                  if (entry.isError) ...[
+                    const SizedBox(height: 8),
+                    Text(tr('error'),
+                        style: Theme.of(ctx)
+                            .textTheme
+                            .labelSmall
+                            ?.copyWith(color: Colors.red)),
+                    const SizedBox(height: 4),
+                    SingleChildScrollView(
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withAlpha(15),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: SelectableText(
+                          entry.err,
+                          style: const TextStyle(
+                              fontFamily: 'Menlo',
+                              fontSize: 11,
+                              color: Colors.red),
+                        ),
+                      ),
+                    ),
+                  ],
+                  if (entry.result.isNotEmpty && !entry.isError) ...[
+                    const SizedBox(height: 8),
+                    Text(tr('output'),
+                        style: Theme.of(ctx).textTheme.labelSmall),
+                    const SizedBox(height: 4),
+                    Expanded(
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Theme.of(ctx).colorScheme.surfaceContainer,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: SingleChildScrollView(
+                          child: SelectableText(
+                            entry.result,
+                            style: const TextStyle(
+                                fontFamily: 'Menlo', fontSize: 11),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 

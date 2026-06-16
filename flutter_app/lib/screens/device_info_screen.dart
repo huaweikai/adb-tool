@@ -50,7 +50,8 @@ class _DeviceInfoScreenState extends State<DeviceInfoScreen> {
       _error = null;
     });
     try {
-      final props = await context.read<ApiClient>().getDeviceDetail(_selectedSerial!);
+      final props =
+          await context.read<ApiClient>().getDeviceDetail(_selectedSerial!);
       if (!mounted) return;
       setState(() {
         _props = props;
@@ -68,7 +69,8 @@ class _DeviceInfoScreenState extends State<DeviceInfoScreen> {
   Future<void> _takeScreenshot() async {
     if (_selectedSerial == null) return;
     try {
-      final b64 = await context.read<ApiClient>().takeScreenshot(_selectedSerial!);
+      final b64 =
+          await context.read<ApiClient>().takeScreenshot(_selectedSerial!);
       if (!mounted) return;
       if (b64 != null) {
         var bytes = base64Decode(b64);
@@ -84,7 +86,8 @@ class _DeviceInfoScreenState extends State<DeviceInfoScreen> {
         if (!mounted) return;
         if (opts.skipEdit) {
           final location = await getSaveLocation(
-            suggestedName: 'screenshot-${DateTime.now().millisecondsSinceEpoch}.png',
+            suggestedName:
+                'screenshot-${DateTime.now().millisecondsSinceEpoch}.png',
             confirmButtonText: tr('saveScreenshot'),
           );
           if (location != null) {
@@ -94,22 +97,24 @@ class _DeviceInfoScreenState extends State<DeviceInfoScreen> {
           if (!mounted) return;
           await Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => ProImageEditor.memory(
-            bytes,
-            configs: kImageEditorConfigs,
-            callbacks: ProImageEditorCallbacks(
-              onImageEditingComplete: (edited) async {
-                if (!context.mounted) return;
-                final location = await getSaveLocation(
-                  suggestedName: 'screenshot-${DateTime.now().millisecondsSinceEpoch}.png',
-                  confirmButtonText: tr('saveScreenshot'),
-                );
-                if (location != null) {
-                  await File(location.path).writeAsBytes(edited);
-                }
-              },
-            ),
-          )),
+            MaterialPageRoute(
+                builder: (_) => ProImageEditor.memory(
+                      bytes,
+                      configs: kImageEditorConfigs,
+                      callbacks: ProImageEditorCallbacks(
+                        onImageEditingComplete: (edited) async {
+                          if (!context.mounted) return;
+                          final location = await getSaveLocation(
+                            suggestedName:
+                                'screenshot-${DateTime.now().millisecondsSinceEpoch}.png',
+                            confirmButtonText: tr('saveScreenshot'),
+                          );
+                          if (location != null) {
+                            await File(location.path).writeAsBytes(edited);
+                          }
+                        },
+                      ),
+                    )),
           );
         }
       } else {

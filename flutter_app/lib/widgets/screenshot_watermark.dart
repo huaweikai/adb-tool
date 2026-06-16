@@ -26,6 +26,7 @@ Future<WatermarkOpts?> showWatermarkDialog(BuildContext context) {
         controllers: [stepCtrl],
         builder: (_) => StatefulBuilder(
           builder: (ctx, setDialogState) => AlertDialog(
+            scrollable: true,
             title: Text(tr('watermarkOptions')),
             content: Column(
               mainAxisSize: MainAxisSize.min,

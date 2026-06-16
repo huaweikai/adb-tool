@@ -54,8 +54,9 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
       _error = null;
     });
     try {
-      final pkgs =
-          await context.read<ApiClient>().getInstalledPackages(_selectedSerial!);
+      final pkgs = await context
+          .read<ApiClient>()
+          .getInstalledPackages(_selectedSerial!);
       if (!mounted) return;
       setState(() {
         _allPackages = pkgs;
@@ -95,6 +96,7 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        scrollable: true,
         title: Text(tr('clearData')),
         content: Text(tr('clearDataConfirm', {'pkg': pkg.packageName})),
         actions: [
@@ -109,10 +111,14 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
     );
     if (confirm != true) return;
     try {
-      final result = await api.executeAdbCommand(serial, ['shell', 'pm', 'clear', pkg.packageName]);
+      final result = await api
+          .executeAdbCommand(serial, ['shell', 'pm', 'clear', pkg.packageName]);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(result.ok ? tr('dataCleared', {'pkg': pkg.packageName}) : '${tr('operationFailed')}: ${result.error}')),
+        SnackBar(
+            content: Text(result.ok
+                ? tr('dataCleared', {'pkg': pkg.packageName})
+                : '${tr('operationFailed')}: ${result.error}')),
       );
     } catch (e) {
       if (!mounted) return;
@@ -130,6 +136,7 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        scrollable: true,
         title: Text(tr('forceStop')),
         content: Text(tr('forceStopConfirm', {'pkg': pkg.packageName})),
         actions: [
@@ -144,10 +151,14 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
     );
     if (confirm != true) return;
     try {
-      final result = await api.executeAdbCommand(serial, ['shell', 'am', 'force-stop', pkg.packageName]);
+      final result = await api.executeAdbCommand(
+          serial, ['shell', 'am', 'force-stop', pkg.packageName]);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(result.ok ? tr('appForceStopped', {'pkg': pkg.packageName}) : '${tr('operationFailed')}: ${result.error}')),
+        SnackBar(
+            content: Text(result.ok
+                ? tr('appForceStopped', {'pkg': pkg.packageName})
+                : '${tr('operationFailed')}: ${result.error}')),
       );
     } catch (e) {
       if (!mounted) return;
@@ -165,6 +176,7 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        scrollable: true,
         title: Text(tr('confirmUninstall')),
         content: Text(tr('uninstallConfirm', {'pkg': pkg.packageName})),
         actions: [
@@ -215,7 +227,8 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
       try {
         _installCancelToken = cancelToken;
         setState(() {
-          _installState = TransferState(mode: TransferMode.upload,
+          _installState = TransferState(
+            mode: TransferMode.upload,
             fileName: file.name,
             sent: 0,
             total: totalBytes,
@@ -229,7 +242,8 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
           onProgress: (progress) {
             if (!mounted) return;
             setState(() {
-              _installState = TransferState(mode: TransferMode.upload,
+              _installState = TransferState(
+                mode: TransferMode.upload,
                 fileName: file.name,
                 sent: progress.sent,
                 total: progress.total,
@@ -276,6 +290,7 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
+        scrollable: true,
         title: Row(children: [
           const Icon(Icons.error_outline, color: Colors.red, size: 24),
           const SizedBox(width: 8),
@@ -783,5 +798,4 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
       ),
     );
   }
-
 }

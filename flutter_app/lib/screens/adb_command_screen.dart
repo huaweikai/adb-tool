@@ -244,6 +244,7 @@ class _AdbCommandScreenState extends State<AdbCommandScreen> {
       final ok = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
+          scrollable: true,
           title:
               Text(action.destructive ? tr('dangerousOp') : tr('confirmExec')),
           content: Text(
@@ -292,6 +293,7 @@ class _AdbCommandScreenState extends State<AdbCommandScreen> {
       builder: (ctx) => _SafeDialog(
         controllers: [ctrl],
         builder: (_) => AlertDialog(
+          scrollable: true,
           title: Text(tr(labelKey)),
           content: TextField(
             controller: ctrl,
@@ -329,6 +331,7 @@ class _AdbCommandScreenState extends State<AdbCommandScreen> {
       builder: (ctx) => _SafeDialog(
         controllers: [actionCtrl, dataCtrl, categoryCtrl, extrasCtrl],
         builder: (_) => AlertDialog(
+          scrollable: true,
           title: Text(tr('quickActionCustomIntent')),
           content: SingleChildScrollView(
             child: Column(

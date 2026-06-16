@@ -706,6 +706,7 @@ class _LogcatScreenState extends State<LogcatScreen> {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
+              scrollable: true,
               title: Text(tr('highlightRules')),
               content: SizedBox(
                 width: 460,

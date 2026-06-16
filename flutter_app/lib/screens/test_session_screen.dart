@@ -762,6 +762,7 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
         controllers: safeCtrls,
         builder: (_) => StatefulBuilder(
           builder: (context, setDialogState) => AlertDialog(
+            scrollable: true,
             title: Text(tr('newSession')),
             content: SizedBox(
               width: 420,
@@ -1095,6 +1096,7 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
       builder: (ctx) => _SafeDialog(
         controllers: [ctrl],
         builder: (_) => AlertDialog(
+          scrollable: true,
           title: Text(tr('testPlanFailed')),
           content: TextField(
             controller: ctrl,
@@ -1130,6 +1132,7 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
       builder: (ctx) => _SafeDialog(
         controllers: [ctrl],
         builder: (_) => AlertDialog(
+          scrollable: true,
           title: Text(tr('addNote')),
           content: TextField(
             controller: ctrl,
@@ -1175,6 +1178,7 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
         controllers: safeCtrls,
         builder: (_) => StatefulBuilder(
           builder: (context, setDialogState) => AlertDialog(
+            scrollable: true,
             title: Text(tr('markIssue')),
             content: SizedBox(
               width: 420,
@@ -1457,6 +1461,7 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        scrollable: true,
         title: Text(tr('deleteArtifact')),
         content: Text(tr('deleteArtifactConfirm', {'name': name})),
         actions: [
@@ -1515,8 +1520,11 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
         return StatefulBuilder(
           builder: (context, setDialogState) => AlertDialog(
             title: Text(tr('sessionHistory')),
-            content: SizedBox(
-              width: 500,
+            content: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: 500,
+                maxHeight: MediaQuery.sizeOf(context).height * 0.65,
+              ),
               child: sessions.isEmpty
                   ? Text(tr('noHistorySessions'),
                       style:
@@ -1566,6 +1574,7 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
                                   final confirmed = await showDialog<bool>(
                                     context: context,
                                     builder: (c) => AlertDialog(
+                                      scrollable: true,
                                       title: Text(tr('deleteSession')),
                                       content: Text(tr('deleteSessionConfirm',
                                           {'name': s.name})),

@@ -484,6 +484,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
+        scrollable: true,
         title: Text(tr('confirmShutdown')),
         content: Text(tr('shutdownHint')),
         actions: [
@@ -676,6 +677,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        scrollable: true,
         title: Text(tr('disconnectConfirm')),
         content: Text(tr('disconnectConfirmBody', {'name': d.displayName})),
         actions: [
@@ -928,6 +930,7 @@ class _WirelessAdbDialogState extends State<_WirelessAdbDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
+      scrollable: true,
       title: Row(
         children: [
           const Icon(Icons.wifi_tethering, size: 22),

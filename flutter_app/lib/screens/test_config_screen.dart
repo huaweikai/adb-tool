@@ -410,6 +410,7 @@ class _TestConfigScreenState extends State<TestConfigScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        scrollable: true,
         title: Text(tr('clearConfig')),
         content: Text(tr('clearConfigConfirm')),
         actions: [
@@ -612,6 +613,7 @@ class _TestConfigScreenState extends State<TestConfigScreen> {
         controllers: safeCtrls,
         builder: (_) => StatefulBuilder(
           builder: (context, setDialogState) => AlertDialog(
+            scrollable: true,
             title: Text(isEdit ? tr('editAppConfig') : tr('newAppConfig')),
             content: SizedBox(
               width: 460,
@@ -837,6 +839,7 @@ class _TestConfigScreenState extends State<TestConfigScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        scrollable: true,
         title: Text(tr('deleteAppConfig')),
         content: Text(tr('deleteAppConfigConfirm', {'name': app.displayName})),
         actions: [

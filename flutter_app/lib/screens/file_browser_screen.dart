@@ -412,6 +412,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       builder: (ctx) => _SafeDialog(
         controllers: [controller],
         builder: (_) => AlertDialog(
+          scrollable: true,
           title: Text(title),
           content: TextField(
             controller: controller,
@@ -449,6 +450,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        scrollable: true,
         title: Text(title),
         content: Text(message),
         actions: [
@@ -1719,6 +1721,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
+        scrollable: true,
         title: Text(file.name),
         content: Column(
           mainAxisSize: MainAxisSize.min,
