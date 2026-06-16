@@ -1,20 +1,47 @@
-import 'dart:convert';
+// Test session — public entry point. The class only owns state + notifyListeners.
+//
+// Heavy lifting is delegated to helper classes under lib/providers/test_session/:
+//
+//   - repository.dart        session.json I/O + history scan + delete
+//   - attachment_store.dart  logs / screenshots / videos / issue_logs files
+//   - exporter.dart          report.md generation + clipboard text
+//   - formatter.dart         pure string formatters (dates, ids, labels)
+//
+// All public methods keep their original signatures so call sites are unchanged.
+
+import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 
 import '../models/test_session.dart';
+import 'test_session/attachment_store.dart';
+import 'test_session/exporter.dart';
+import 'test_session/formatter.dart';
+import 'test_session/repository.dart';
+import 'test_session/session_translate.dart';
 
-typedef SessionTranslate = String Function(String key,
-    [Map<String, String>? args]);
+export 'test_session/session_translate.dart' show SessionTranslate;
 
+/// Owns the active [TestSession] in memory. Persists every state change to disk
+/// (via [SessionRepository]) so a crash mid-test loses at most one tick.
 class TestSessionProvider extends ChangeNotifier {
   final Directory? baseDirectory;
+  final SessionRepository _repo;
+  final SessionAttachmentStore _attachments;
+  final SessionExporter _exporter;
+
   SessionTranslate _translate;
   String? _translationLanguage;
   TestSession? _currentSession;
+
   TestSessionProvider({this.baseDirectory, SessionTranslate? translate})
-      : _translate = translate ?? _fallbackTranslate;
+      : _translate = translate ?? _fallbackTranslate,
+        _repo = SessionRepository(baseDirectory),
+        _attachments = SessionAttachmentStore(),
+        _exporter = SessionExporter(translate ?? _fallbackTranslate);
+
+  // ===== Translator wiring =====
 
   void setTranslator(SessionTranslate translate, {String? language}) {
     if (language != null && language == _translationLanguage) {
@@ -30,6 +57,10 @@ class TestSessionProvider extends ChangeNotifier {
   bool get hasRunningSession =>
       _currentSession?.status == TestSessionStatus.running;
 
+  String _t(String key, [Map<String, String>? args]) => _translate(key, args);
+
+  // ===== Session lifecycle =====
+
   Future<TestSession> startSession({
     required String name,
     required String type,
@@ -43,8 +74,9 @@ class TestSessionProvider extends ChangeNotifier {
     List<TestSessionPlanItem> testPlanItems = const [],
   }) async {
     final now = DateTime.now();
-    final id = '${_compactDate(now)}_${_safeName(name)}';
-    final root = await _rootDirectory();
+    final id =
+        '${SessionFormatters.compactDate(now)}_${SessionFormatters.safeName(name)}';
+    final root = await _repo.rootDirectory();
     final sessionDir = Directory('${root.path}/sessions/$id');
     await Directory('${sessionDir.path}/logs').create(recursive: true);
     await Directory('${sessionDir.path}/screenshots').create(recursive: true);
@@ -63,9 +95,9 @@ class TestSessionProvider extends ChangeNotifier {
       deviceSdk: sdk,
       packageName: packageName.trim(),
       note: note.trim(),
-      testPlan: _normalizeTestPlan(testPlanItems),
+      testPlan: SessionFormatters.normalizeTestPlan(testPlanItems),
       events: [
-        _event(
+        SessionFormatters.buildEvent(
           TestSessionEventType.sessionCreated,
           _t('eventSessionCreated'),
           _t('eventSessionCreatedDetail', {
@@ -79,7 +111,7 @@ class TestSessionProvider extends ChangeNotifier {
       ],
     );
     _currentSession = session;
-    await _persist();
+    await _repo.persist(session);
     notifyListeners();
     return session;
   }
@@ -109,7 +141,7 @@ class TestSessionProvider extends ChangeNotifier {
       testPlan: updated,
       events: [
         ...session.events,
-        _event(
+        SessionFormatters.buildEvent(
           TestSessionEventType.testPlanUpdated,
           _t('eventTestPlanUpdated'),
           '${item.flowName} / ${item.step}',
@@ -117,7 +149,7 @@ class TestSessionProvider extends ChangeNotifier {
         ),
       ],
     );
-    await _persist();
+    await _repo.persist(_currentSession!);
     notifyListeners();
   }
 
@@ -127,7 +159,7 @@ class TestSessionProvider extends ChangeNotifier {
     if (text.isEmpty) return;
     final now = DateTime.now();
     final note = TestSessionNote(
-      id: _id(now),
+      id: SessionFormatters.id(now),
       createdAt: now,
       content: text,
     );
@@ -135,11 +167,12 @@ class TestSessionProvider extends ChangeNotifier {
       notes: [...session.notes, note],
       events: [
         ...session.events,
-        _event(TestSessionEventType.noteAdded, _t('eventNoteAdded'), text,
+        SessionFormatters.buildEvent(
+            TestSessionEventType.noteAdded, _t('eventNoteAdded'), text,
             now: now),
       ],
     );
-    await _persist();
+    await _repo.persist(_currentSession!);
     notifyListeners();
   }
 
@@ -157,15 +190,12 @@ class TestSessionProvider extends ChangeNotifier {
     final now = DateTime.now();
     final cleanTitle =
         title.trim().isEmpty ? _t('issueUntitled') : title.trim();
-    final issueId = _issueId(session.issues.length + 1);
-    final relatedArtifactIds = _recentArtifactIds(session);
+    final issueId =
+        SessionFormatters.issueId(session.issues.length + 1);
+    final relatedArtifactIds = SessionFormatters.recentArtifactIds(session);
     if (recentLogContent.trim().isNotEmpty) {
-      final artifact = await _writeIssueRecentLogArtifact(
-        session: session,
-        issueId: issueId,
-        content: recentLogContent,
-        now: now,
-      );
+      final artifact = await _attachments.writeIssueRecentLog(
+          session, issueId, recentLogContent, now);
       session = session.copyWith(artifacts: [...session.artifacts, artifact]);
       relatedArtifactIds.add(artifact.id);
     }
@@ -185,154 +215,68 @@ class TestSessionProvider extends ChangeNotifier {
       issues: [...session.issues, issue],
       events: [
         ...session.events,
-        _event(
+        SessionFormatters.buildEvent(
           TestSessionEventType.issueMarked,
           _t('eventIssueMarked'),
-          '${_severityLabel(severity)} / ${_issueTypeLabel(type)} / ${issue.title}',
+          '${SessionFormatters.severityLabel(_t, severity)} / ${SessionFormatters.issueTypeLabel(_t, type)} / ${issue.title}',
           now: now,
         ),
       ],
     );
-    await _persist();
+    await _repo.persist(_currentSession!);
     notifyListeners();
     return issue;
   }
 
   String buildIssueClipboardText(TestSessionIssue issue) {
-    final session = _currentSession;
-    final artifacts = session == null
-        ? <TestSessionArtifact>[]
-        : _issueArtifacts(session, issue);
-    final buffer = StringBuffer()
-      ..writeln(_bracket('clipboardIssueTitle'))
-      ..writeln(issue.title)
-      ..writeln()
-      ..writeln(_bracket('clipboardIssueType'))
-      ..writeln(_issueTypeLabel(issue.type))
-      ..writeln()
-      ..writeln(_bracket('clipboardIssueSeverity'))
-      ..writeln(_severityLabel(issue.severity))
-      ..writeln()
-      ..writeln('【发生时间】')
-      ..writeln(_dateTimeStr(issue.createdAt))
-      ..writeln()
-      ..writeln(_bracket('clipboardTestEnvironment'))
-      ..writeln(
-          '${_t('reportDevice')}：${session == null ? '-' : _deviceLabel(session)}')
-      ..writeln('${_t('reportBrand')}：${_emptyIfNone(session?.deviceBrand)}')
-      ..writeln('${_t('reportSdk')}：${_emptyIfNone(session?.deviceSdk)}')
-      ..writeln(
-          '${_t('reportPackageName')}：${_emptyIfNone(session?.packageName)}')
-      ..writeln()
-      ..writeln(_bracket('clipboardIssueSteps'))
-      ..writeln(issue.steps.isEmpty ? '-' : issue.steps)
-      ..writeln()
-      ..writeln(_bracket('clipboardIssueExpected'))
-      ..writeln(issue.expected.isEmpty ? '-' : issue.expected)
-      ..writeln()
-      ..writeln(_bracket('clipboardIssueActual'))
-      ..writeln(issue.actual.isEmpty ? '-' : issue.actual)
-      ..writeln()
-      ..writeln(_bracket('clipboardIssueNote'))
-      ..writeln(issue.note.isEmpty ? '-' : issue.note)
-      ..writeln()
-      ..writeln(_bracket('clipboardAttachments'));
-    buffer.write(artifacts.isEmpty
-        ? '-'
-        : artifacts
-            .map((artifact) => '${artifact.kind.name}：${artifact.path}')
-            .join('\n'));
-    return buffer.toString();
+    return _exporter.buildIssueClipboardText(_currentSession, issue);
   }
 
-  String _emptyIfNone(String? value) {
-    if (value == null || value.isEmpty) return '-';
-    return value;
-  }
-
-  String _dateTimeStr(DateTime time) {
-    return '${time.year}-${_pad2(time.month)}-${_pad2(time.day)} '
-        '${_pad2(time.hour)}:${_pad2(time.minute)}:${_pad2(time.second)}';
-  }
-
-  String _pad2(int value) => value.toString().padLeft(2, '0');
-
-  String _issueTypeLabel(TestSessionIssueType type) => switch (type) {
-        TestSessionIssueType.crash => _t('issueTypeCrash'),
-        TestSessionIssueType.anr => _t('issueTypeAnr'),
-        TestSessionIssueType.performance => _t('issueTypePerformance'),
-        TestSessionIssueType.ui => _t('issueTypeUi'),
-        TestSessionIssueType.api => _t('issueTypeApi'),
-        TestSessionIssueType.functional => _t('issueTypeFunctional'),
-        TestSessionIssueType.compatibility => _t('issueTypeCompatibility'),
-        TestSessionIssueType.other => _t('issueTypeOther'),
-      };
-
-  String _severityLabel(TestSessionIssueSeverity s) => switch (s) {
-        TestSessionIssueSeverity.blocker => _t('issueSeverityBlocker'),
-        TestSessionIssueSeverity.major => _t('issueSeverityMajor'),
-        TestSessionIssueSeverity.normal => _t('issueSeverityNormal'),
-        TestSessionIssueSeverity.minor => _t('issueSeverityMinor'),
-      };
+  // ===== Attachments =====
 
   Future<String> saveLogcat(String content) async {
     final session = _requireRunningSession();
     final now = DateTime.now();
-    final name = '${_fileDate(now)}.log';
-    final file = File('${session.directoryPath}/logs/$name');
-    await file.writeAsString(content);
-    final artifact = await _artifact(
-      kind: TestSessionArtifactKind.log,
-      name: name,
-      path: file.path,
-      now: now,
-    );
+    final artifact = await _attachments.writeLogcat(session, content, now);
     _currentSession = session.copyWith(
       artifacts: [...session.artifacts, artifact],
       events: [
         ...session.events,
-        _event(
+        SessionFormatters.buildEvent(
           TestSessionEventType.logcatSaved,
           _t('eventLogcatSaved'),
-          name,
-          filePath: file.path,
+          artifact.name,
+          filePath: artifact.path,
           now: now,
         ),
       ],
     );
-    await _persist();
+    await _repo.persist(_currentSession!);
     notifyListeners();
-    return file.path;
+    return artifact.path;
   }
 
   Future<String> saveScreenshotBytes(List<int> bytes) async {
     final session = _requireRunningSession();
     final now = DateTime.now();
-    final name = '${_fileDate(now)}.png';
-    final file = File('${session.directoryPath}/screenshots/$name');
-    await file.writeAsBytes(bytes);
-    final artifact = await _artifact(
-      kind: TestSessionArtifactKind.screenshot,
-      name: name,
-      path: file.path,
-      now: now,
-    );
+    final artifact =
+        await _attachments.writeScreenshot(session, bytes, now);
     _currentSession = session.copyWith(
       artifacts: [...session.artifacts, artifact],
       events: [
         ...session.events,
-        _event(
+        SessionFormatters.buildEvent(
           TestSessionEventType.screenshotTaken,
           _t('eventScreenshotSaved'),
-          name,
-          filePath: file.path,
+          artifact.name,
+          filePath: artifact.path,
           now: now,
         ),
       ],
     );
-    await _persist();
+    await _repo.persist(_currentSession!);
     notifyListeners();
-    return file.path;
+    return artifact.path;
   }
 
   Future<void> markScreenRecordStarted() async {
@@ -341,7 +285,7 @@ class TestSessionProvider extends ChangeNotifier {
     _currentSession = session.copyWith(
       events: [
         ...session.events,
-        _event(
+        SessionFormatters.buildEvent(
           TestSessionEventType.screenRecordStarted,
           _t('eventScreenRecordStarted'),
           _t('eventScreenRecordStartedDetail'),
@@ -349,7 +293,7 @@ class TestSessionProvider extends ChangeNotifier {
         ),
       ],
     );
-    await _persist();
+    await _repo.persist(_currentSession!);
     notifyListeners();
   }
 
@@ -359,12 +303,15 @@ class TestSessionProvider extends ChangeNotifier {
     _currentSession = session.copyWith(
       events: [
         ...session.events,
-        _event(TestSessionEventType.logcatStarted, _t('eventLogcatStarted'),
-            _t('eventLogcatStartedDetail'),
-            now: now),
+        SessionFormatters.buildEvent(
+          TestSessionEventType.logcatStarted,
+          _t('eventLogcatStarted'),
+          _t('eventLogcatStartedDetail'),
+          now: now,
+        ),
       ],
     );
-    await _persist();
+    await _repo.persist(_currentSession!);
     notifyListeners();
   }
 
@@ -378,7 +325,7 @@ class TestSessionProvider extends ChangeNotifier {
     final size = await file.length();
     final name = file.uri.pathSegments.last;
     final artifact = TestSessionArtifact(
-      id: _id(now),
+      id: SessionFormatters.id(now),
       kind: TestSessionArtifactKind.log,
       name: name,
       path: path,
@@ -389,7 +336,7 @@ class TestSessionProvider extends ChangeNotifier {
       artifacts: [...session.artifacts, artifact],
       events: [
         ...session.events,
-        _event(
+        SessionFormatters.buildEvent(
           TestSessionEventType.logcatSaved,
           _t('eventLogcatStopped'),
           name,
@@ -398,7 +345,7 @@ class TestSessionProvider extends ChangeNotifier {
         ),
       ],
     );
-    await _persist();
+    await _repo.persist(_currentSession!);
     notifyListeners();
     return path;
   }
@@ -406,32 +353,26 @@ class TestSessionProvider extends ChangeNotifier {
   Future<String> saveVideoBytes(List<int> bytes) async {
     final session = _requireRunningSession();
     final now = DateTime.now();
-    final name = '${_fileDate(now)}.mp4';
-    final file = File('${session.directoryPath}/videos/$name');
-    await file.writeAsBytes(bytes);
-    final artifact = await _artifact(
-      kind: TestSessionArtifactKind.video,
-      name: name,
-      path: file.path,
-      now: now,
-    );
+    final artifact = await _attachments.writeVideo(session, bytes, now);
     _currentSession = session.copyWith(
       artifacts: [...session.artifacts, artifact],
       events: [
         ...session.events,
-        _event(
+        SessionFormatters.buildEvent(
           TestSessionEventType.screenRecordStopped,
           _t('eventScreenRecordSaved'),
-          name,
-          filePath: file.path,
+          artifact.name,
+          filePath: artifact.path,
           now: now,
         ),
       ],
     );
-    await _persist();
+    await _repo.persist(_currentSession!);
     notifyListeners();
-    return file.path;
+    return artifact.path;
   }
+
+  // ===== Finish / report / export =====
 
   Future<TestSession> finishSession() async {
     final session = _requireRunningSession();
@@ -441,14 +382,17 @@ class TestSessionProvider extends ChangeNotifier {
       endedAt: now,
       events: [
         ...session.events,
-        _event(TestSessionEventType.sessionFinished, _t('eventSessionFinished'),
-            '',
-            now: now),
+        SessionFormatters.buildEvent(
+          TestSessionEventType.sessionFinished,
+          _t('eventSessionFinished'),
+          '',
+          now: now,
+        ),
       ],
     );
     _currentSession = finished;
-    await _writeReport();
-    await _persist();
+    await _exporter.writeReport(finished);
+    await _repo.persist(finished);
     notifyListeners();
     return _currentSession!;
   }
@@ -456,14 +400,13 @@ class TestSessionProvider extends ChangeNotifier {
   Future<String> writeReport() async {
     final session = _currentSession;
     if (session == null) throw StateError(_t('errorNoSession'));
-    await _writeReport();
-    return '${session.directoryPath}/report.md';
+    return _exporter.writeReport(session);
   }
 
   Future<String> exportSession({String? targetPath}) async {
     final session = _currentSession;
     if (session == null) throw StateError(_t('errorNoSession'));
-    await _writeReport();
+    await _exporter.writeReport(session);
     final destination = targetPath ?? '${session.directoryPath}.zip';
     final result = await Process.run(
       'zip',
@@ -478,106 +421,42 @@ class TestSessionProvider extends ChangeNotifier {
     return destination;
   }
 
-  // ── History & lifecycle ──────────────────────────────────────
+  // ===== History & lifecycle =====
 
-  /// Scans [ADBToolData/sessions/] and returns parsed [TestSession] instances
-  /// sorted by start time (newest first).
-  Future<List<TestSession>> scanHistory() async {
-    final root = await _rootDirectory();
-    final sessionsDir = Directory('${root.path}/sessions');
-    if (!await sessionsDir.exists()) return [];
-    final results = <TestSession>[];
-    await for (final entity in sessionsDir.list()) {
-      if (entity is! Directory) continue;
-      final jsonFile = File('${entity.path}/session.json');
-      if (!await jsonFile.exists()) continue;
-      try {
-        final json =
-            jsonDecode(await jsonFile.readAsString()) as Map<String, dynamic>;
-        results.add(TestSession.fromJson(json));
-      } catch (_) {
-        // Skip corrupted / unreadable session directories.
-      }
-    }
-    results.sort((a, b) => b.startedAt.compareTo(a.startedAt));
-    return results;
-  }
+  Future<List<TestSession>> scanHistory() => _repo.scanHistory();
 
-  /// Loads a historical session from disk and makes it the current session.
-  /// The loaded session is treated as read-only (its status is not changed).
   Future<TestSession> loadHistoricalSession(String sessionId) async {
-    final root = await _rootDirectory();
-    final sessionDir = Directory('${root.path}/sessions/$sessionId');
-    if (!await sessionDir.exists()) {
-      throw Exception(_t('errorLogFileNotFound', {'path': sessionDir.path}));
-    }
-    final jsonFile = File('${sessionDir.path}/session.json');
-    if (!await jsonFile.exists()) {
-      throw Exception(_t('errorLogFileNotFound', {'path': jsonFile.path}));
-    }
-    final json =
-        jsonDecode(await jsonFile.readAsString()) as Map<String, dynamic>;
-    _currentSession = TestSession.fromJson(json);
+    final loaded = await _repo.loadHistorical(sessionId);
+    _currentSession = loaded;
     notifyListeners();
-    return _currentSession!;
+    return loaded;
   }
 
-  /// Deletes an entire session directory (including all artifacts).
   Future<void> deleteSession(String sessionId) async {
-    final root = await _rootDirectory();
-    final sessionDir = Directory('${root.path}/sessions/$sessionId');
-    if (await sessionDir.exists()) {
-      await sessionDir.delete(recursive: true);
-    }
-    // If the deleted session is the one currently loaded, clear it.
+    await _repo.deleteSessionDir(sessionId);
     if (_currentSession?.id == sessionId) {
       _currentSession = null;
       notifyListeners();
     }
   }
 
-  /// Deletes a single artifact from the current session.
-  /// Removes the file from disk, drops the entry from the artifact list,
-  /// and persists the change.
   Future<void> deleteArtifact(String artifactId) async {
     final session = _requireRunningSession();
     final idx = session.artifacts.indexWhere((a) => a.id == artifactId);
     if (idx == -1) return;
     final artifact = session.artifacts[idx];
-    // Remove the file from disk (best effort).
-    try {
-      final file = File(artifact.path);
-      if (await file.exists()) await file.delete();
-    } catch (_) {}
+    await _attachments.deleteFile(artifact.path);
     _currentSession = session.copyWith(
       artifacts: [
         for (var i = 0; i < session.artifacts.length; i++)
           if (i != idx) session.artifacts[i],
       ],
     );
-    await _persist();
+    await _repo.persist(_currentSession!);
     notifyListeners();
   }
 
-  List<TestSessionPlanItem> _normalizeTestPlan(
-      List<TestSessionPlanItem> items) {
-    final result = <TestSessionPlanItem>[];
-    for (var i = 0; i < items.length; i++) {
-      final item = items[i];
-      final step = item.step.trim();
-      if (step.isEmpty) continue;
-      result.add(
-        item.copyWith(
-          id: item.id.trim().isEmpty
-              ? 'STEP-${_issueNumber(result.length + 1)}'
-              : item.id,
-          status: TestSessionPlanStatus.pending,
-          message: '',
-        ),
-      );
-    }
-    return result;
-  }
+  // ===== Internals =====
 
   TestSession _requireRunningSession() {
     final session = _currentSession;
@@ -585,140 +464,6 @@ class TestSessionProvider extends ChangeNotifier {
       throw StateError(_t('errorNoRunningSession'));
     }
     return session;
-  }
-
-  Future<Directory> _rootDirectory() async {
-    if (baseDirectory != null) return baseDirectory!;
-    final home = Platform.environment['HOME'] ?? Directory.current.path;
-    final dir = Directory('$home/ADBToolData');
-    await dir.create(recursive: true);
-    return dir;
-  }
-
-  Future<void> _persist() async {
-    final session = _currentSession;
-    if (session == null) return;
-    final file = File('${session.directoryPath}/session.json');
-    await file.writeAsString(
-        const JsonEncoder.withIndent('  ').convert(session.toJson()));
-  }
-
-  Future<void> _writeReport() async {
-    final session = _currentSession;
-    if (session == null) return;
-    final report = File('${session.directoryPath}/report.md');
-    final buffer = StringBuffer()
-      ..writeln('# ${session.name}')
-      ..writeln()
-      ..writeln('## ${_t('reportIssueSummary')}')
-      ..writeln();
-    if (session.issues.isEmpty) {
-      buffer.writeln('-');
-    } else {
-      for (var i = 0; i < session.issues.length; i++) {
-        final issue = session.issues[i];
-        final attachments = _issueArtifacts(session, issue);
-        buffer
-          ..writeln('### ISSUE-${_issueNumber(i + 1)} ${issue.title}')
-          ..writeln()
-          ..writeln('- ${_t('reportType')}: ${_issueTypeLabel(issue.type)}')
-          ..writeln(
-              '- ${_t('reportSeverity')}: ${_severityLabel(issue.severity)}')
-          ..writeln(
-              '- ${_t('reportOccurredAt')}: ${_displayDate(issue.createdAt)}')
-          ..writeln(
-              '- ${_t('reportRelatedAttachments')}: ${attachments.isEmpty ? '-' : attachments.map((artifact) => artifact.name).join(', ')}')
-          ..writeln()
-          ..writeln('${_t('reportSteps')}:')
-          ..writeln(issue.steps.isEmpty ? '-' : issue.steps)
-          ..writeln()
-          ..writeln('${_t('reportExpected')}:')
-          ..writeln(issue.expected.isEmpty ? '-' : issue.expected)
-          ..writeln()
-          ..writeln('${_t('reportActual')}:')
-          ..writeln(issue.actual.isEmpty ? '-' : issue.actual)
-          ..writeln();
-      }
-    }
-    buffer
-      ..writeln()
-      ..writeln('## ${_t('reportBasicInfo')}')
-      ..writeln()
-      ..writeln('- ${_t('reportTestType')}: ${session.type}')
-      ..writeln(
-          '- ${_t('reportStatus')}: ${session.status == TestSessionStatus.running ? _t('sessionRunning') : _t('sessionFinished')}')
-      ..writeln(
-          '- ${_t('reportStartedAt')}: ${_displayDate(session.startedAt)}')
-      ..writeln(
-          '- ${_t('reportEndedAt')}: ${session.endedAt == null ? '-' : _displayDate(session.endedAt!)}')
-      ..writeln(
-          '- ${_t('reportDevice')}: ${session.deviceModel.isEmpty ? session.deviceSerial : session.deviceModel}')
-      ..writeln(
-          '- ${_t('reportBrand')}: ${session.deviceBrand.isEmpty ? '-' : session.deviceBrand}')
-      ..writeln(
-          '- ${_t('reportSdk')}: ${session.deviceSdk.isEmpty ? '-' : session.deviceSdk}')
-      ..writeln(
-          '- ${_t('reportPackageName')}: ${session.packageName.isEmpty ? '-' : session.packageName}')
-      ..writeln()
-      ..writeln('## ${_t('sessionTestPlan')}')
-      ..writeln();
-    if (session.testPlan.isEmpty) {
-      buffer.writeln('-');
-    } else {
-      for (final item in session.testPlan) {
-        final status = switch (item.status) {
-          TestSessionPlanStatus.pending => _t('notFilled'),
-          TestSessionPlanStatus.passed => _t('testPlanPassed'),
-          TestSessionPlanStatus.failed => _t('testPlanFailed'),
-        };
-        buffer.writeln('- [$status] ${item.flowName} / ${item.step}');
-        if (item.message.isNotEmpty) {
-          buffer.writeln('  - ${item.message}');
-        }
-      }
-    }
-    buffer
-      ..writeln()
-      ..writeln('## ${_t('reportInitialNote')}')
-      ..writeln()
-      ..writeln(session.note.isEmpty ? '-' : session.note)
-      ..writeln()
-      ..writeln('## ${_t('reportNotes')}')
-      ..writeln();
-    if (session.notes.isEmpty) {
-      buffer.writeln('-');
-    } else {
-      for (final note in session.notes) {
-        buffer.writeln('- ${_displayDate(note.createdAt)} ${note.content}');
-      }
-    }
-    buffer
-      ..writeln()
-      ..writeln('## ${_t('reportTimeline')}')
-      ..writeln();
-    for (final event in session.events) {
-      buffer.writeln(
-          '- ${_displayDate(event.time)} ${event.title}${event.detail.isEmpty ? '' : '：${event.detail}'}');
-    }
-    buffer
-      ..writeln()
-      ..writeln('## ${_t('reportAttachments')}')
-      ..writeln();
-    if (session.artifacts.isEmpty) {
-      buffer.writeln('-');
-    } else {
-      for (final artifact in session.artifacts) {
-        buffer.writeln('- ${artifact.kind.name}：${artifact.name}');
-      }
-    }
-    await report.writeAsString(buffer.toString());
-  }
-
-  String _t(String key, [Map<String, String>? args]) => _translate(key, args);
-
-  String _bracket(String key) {
-    final label = _t(key);
-    return label.startsWith('[') || label.startsWith('【') ? label : '【$label】';
   }
 
   static String _fallbackTranslate(String key, [Map<String, String>? args]) {
@@ -801,113 +546,4 @@ class TestSessionProvider extends ChangeNotifier {
     'sessionFinished': '已结束',
     'exportFailed': '导出失败',
   };
-
-  TestSessionEvent _event(
-    TestSessionEventType type,
-    String title,
-    String detail, {
-    String? filePath,
-    DateTime? now,
-  }) {
-    final time = now ?? DateTime.now();
-    return TestSessionEvent(
-      id: _id(time),
-      type: type,
-      time: time,
-      title: title,
-      detail: detail,
-      filePath: filePath,
-    );
-  }
-
-  Future<TestSessionArtifact> _artifact({
-    required TestSessionArtifactKind kind,
-    required String name,
-    required String path,
-    required DateTime now,
-  }) async {
-    final file = File(path);
-    return TestSessionArtifact(
-      id: _id(now),
-      kind: kind,
-      name: name,
-      path: path,
-      createdAt: now,
-      size: await file.exists() ? await file.length() : 0,
-    );
-  }
-
-  Future<TestSessionArtifact> _writeIssueRecentLogArtifact({
-    required TestSession session,
-    required String issueId,
-    required String content,
-    required DateTime now,
-  }) async {
-    final dir = Directory('${session.directoryPath}/issue_logs');
-    await dir.create(recursive: true);
-    final name = '${issueId}_last_1000_${_fileDate(now)}.log';
-    final file = File('${dir.path}/$name');
-    await file.writeAsString(content.trimRight());
-    return _artifact(
-      kind: TestSessionArtifactKind.log,
-      name: name,
-      path: file.path,
-      now: now,
-    );
-  }
-
-  List<String> _recentArtifactIds(TestSession session) {
-    final selected = <TestSessionArtifact>[];
-    for (final kind in [
-      TestSessionArtifactKind.screenshot,
-      TestSessionArtifactKind.video,
-      TestSessionArtifactKind.log,
-    ]) {
-      final matches =
-          session.artifacts.where((artifact) => artifact.kind == kind).toList();
-      if (matches.isNotEmpty) selected.add(matches.last);
-    }
-    return selected.map((artifact) => artifact.id).toList();
-  }
-
-  List<TestSessionArtifact> _issueArtifacts(
-    TestSession session,
-    TestSessionIssue issue,
-  ) {
-    final ids = issue.relatedArtifactIds.toSet();
-    return session.artifacts
-        .where((artifact) => ids.contains(artifact.id))
-        .toList();
-  }
-
-  String _deviceLabel(TestSession session) {
-    return session.deviceModel.isEmpty
-        ? session.deviceSerial
-        : session.deviceModel;
-  }
-
-  String _issueId(int index) => 'ISSUE-${_issueNumber(index)}';
-
-  String _issueNumber(int index) => index.toString().padLeft(3, '0');
-
-  String _id(DateTime time) => '${time.microsecondsSinceEpoch}';
-
-  String _compactDate(DateTime time) {
-    return '${time.year}${_two(time.month)}${_two(time.day)}_${_two(time.hour)}${_two(time.minute)}${_two(time.second)}';
-  }
-
-  String _fileDate(DateTime time) {
-    return '${time.year}${_two(time.month)}${_two(time.day)}_${_two(time.hour)}${_two(time.minute)}${_two(time.second)}';
-  }
-
-  String _displayDate(DateTime time) {
-    return '${time.year}-${_two(time.month)}-${_two(time.day)} ${_two(time.hour)}:${_two(time.minute)}:${_two(time.second)}';
-  }
-
-  String _two(int value) => value.toString().padLeft(2, '0');
-
-  String _safeName(String name) {
-    final value = name.trim().isEmpty ? 'session' : name.trim();
-    return value.replaceAll(RegExp(r'[^a-zA-Z0-9\u4e00-\u9fa5_-]+'), '_');
-  }
 }

@@ -1,0 +1,48 @@
+// Clipboard screen.
+part of 'package:adb_tool/i18n.dart';
+
+const _locClipboardZh = <String, String>{
+  'installing': '正在安装剪贴板服务...',
+  'sentToClipboard': '已发送到设备剪贴板',
+  'sendFailed': '发送失败',
+  'uninstalled': '剪贴板服务已卸载',
+  'sendToDeviceClipboard': '发送文本到设备剪贴板',
+  'clipboardService': '剪贴板服务: ',
+  'installed': '已安装',
+  'notInstalledHint': '未安装（发送时自动安装）',
+  'installingText': '安装中...',
+  'sending': '发送中...',
+  'sendToClipboard': '发送到剪贴板',
+  'uninstalling': '卸载中...',
+  'uninstallService': '卸载服务',
+  'clipboardInputHint': '在此输入要发送的文本...',
+  'checking': '检测中...',
+  'clearInput': '清空',
+  'history': '发送历史',
+  'historyTapHint': '点击可重新填入，星标不会自动清理',
+  'clipboardFavorite': '收藏，避免被历史上限清理',
+  'clipboardUnfavorite': '取消收藏',
+};
+
+const _locClipboardEn = <String, String>{
+  'installing': 'Installing clipboard service...',
+  'sentToClipboard': 'Sent to device clipboard',
+  'sendFailed': 'Send failed',
+  'uninstalled': 'Clipboard service uninstalled',
+  'sendToDeviceClipboard': 'Send text to device clipboard',
+  'clipboardService': 'Clipboard service: ',
+  'installed': 'Installed',
+  'notInstalledHint': 'Not installed (auto-install on send)',
+  'installingText': 'Installing...',
+  'sending': 'Sending...',
+  'sendToClipboard': 'Send to clipboard',
+  'uninstalling': 'Uninstalling...',
+  'uninstallService': 'Uninstall service',
+  'clipboardInputHint': 'Enter text to send...',
+  'checking': 'Checking...',
+  'clearInput': 'Clear',
+  'history': 'History',
+  'historyTapHint': 'Tap to reuse. Starred items are kept',
+  'clipboardFavorite': 'Star to keep from history cleanup',
+  'clipboardUnfavorite': 'Unstar',
+};
