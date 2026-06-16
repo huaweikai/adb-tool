@@ -47,6 +47,8 @@
 │   ├── web/index.html
 │   └── internal/server/
 │       ├── server.go                   # HTTP 路由 + API 处理
+│       ├── recovery.go                # Panic 恢复中间件
+│       ├── security.go                # Loopback-only 安全限制
 │       ├── adb.go                      # ADB 命令封装
 │       ├── log_stream.go               # WebSocket logcat 流
 │       └── backend_logger.go           # 环形缓冲日志 (500条)
@@ -57,7 +59,14 @@
     │   ├── models/
     │   │   ├── device.dart             # Device, LogFilter, LogEntry
     │   │   ├── file_item.dart          # FileItem
-    │   │   └── app_package.dart        # AppPackage
+    │   │   ├── app_package.dart        # AppPackage
+    │   │   └── test_session.dart       # TestSession, events, artifacts, issues
+    │   ├── providers/
+    │   │   ├── device_provider.dart
+    │   │   ├── locale_provider.dart
+    │   │   ├── theme_provider.dart
+    │   │   ├── test_session_provider.dart  # Session CRUD, history, export
+    │   │   └── test_config_provider.dart
     │   ├── services/
     │   │   ├── api_client.dart         # HTTP API 客户端
     │   │   ├── log_stream.dart         # WebSocket logcat 流
@@ -70,6 +79,7 @@
     │       ├── app_manager_screen.dart # 应用管理
     │       ├── device_info_screen.dart # 设备信息
     │       ├── clipboard_screen.dart   # 剪贴板
+    │       ├── test_session_screen.dart # 测试会话管理
     │       └── backend_log_screen.dart # 后端日志
     ├── macos/                          # macOS 原生层
     │   └── Runner/
@@ -188,6 +198,13 @@ export ANDROID_HOME="$HOME/Library/Android/sdk"
 | `/api/clear` | GET | 清理 logcat 缓冲区 | `?serial=` |
 | `/ws/logs` | WebSocket | 实时 logcat 流 | JSON 命令: start/stop/pause/resume/clear/filter |
 
+#### 会话 Logcat
+
+| 路由 | 方法 | 功能 | 参数 |
+|---|---|---|---|
+| `/api/session-logcat` | POST | 会话绑定的 logcat | `?serial=&sessionDir=&packageName=&action=start/stop` |
+| `/api/logcat-recent` | GET | 获取最近 logcat 快照 | `?serial=&lines=` (默认 1000) |
+
 #### 剪贴板
 
 | 路由 | 方法 | 功能 | 参数 |
@@ -205,7 +222,16 @@ export ANDROID_HOME="$HOME/Library/Android/sdk"
 | `/api/backend-logs` | GET | 获取后端操作日志 | 无 |
 | `/` | GET | 静态文件 (web/index.html) | 无 |
 
-### 4.4 ADB 命令封装 (adb.go)
+### 4.4 Panic 恢复中间件 (`recovery.go`)
+
+防止单个请求 panic 导致整个 Go 进程崩溃：
+
+- `recoverHTTP(next http.Handler) http.Handler` — HTTP 中间件，捕获 handler panic 并返回 500 错误，同时记录完整堆栈到后端日志
+- `goSafe(name string, fn func())` — 安全启动 goroutine，内部捕获 panic 并写入日志
+- 已应用于：HTTP 中间件链（最外层）、设备属性采集 goroutine
+- 无线 ADB 操作通过 `r.Context()` 传递请求上下文，客户端断开时 ADB 子进程自动终止
+
+### 4.5 ADB 命令封装 (adb.go)
 
 核心函数：
 - `FindOrExtractADB()` — 提取 ADB 二进制，chmod 0755
@@ -263,6 +289,7 @@ JSON 命令格式：
 | Device Info | `device_info_screen.dart` | 系统属性分组，搜索，截图 |
 | Clipboard | `clipboard_screen.dart` | 文本发送，自动安装/卸载助手 |
 | Backend Logs | `backend_log_screen.dart` | 2 秒轮询日志，错误高亮，命令过滤 |
+| Test Session | `test_session_screen.dart` | 测试会话管理：时间线、附件归档、问题标记、历史浏览 |
 
 ### 5.3 核心服务
 
@@ -347,6 +374,37 @@ class AppPackage {
   bool isSystemApp;
 }
 ```
+
+#### TestSession (`models/test_session.dart`)
+
+```dart
+enum TestSessionStatus { running, finished }
+
+class TestSession {
+  String id, name, type, deviceSerial, deviceModel, packageName;
+  TestSessionStatus status;
+  DateTime startedAt, endedAt?;
+  List<TestSessionEvent> events;
+  List<TestSessionArtifact> artifacts; // screenshot, video, log
+  List<TestSessionIssue> issues;
+  List<TestSessionNote> notes;
+}
+```
+
+#### TestSessionProvider (`providers/test_session_provider.dart`)
+
+ChangeNotifier 模式，管理测试会话完整生命周期：
+
+- `startSession()` — 创建会话，建立目录结构（logs/screenshots/videos/），持久化 session.json
+- `markIssue()` / `addNote()` — 记录问题/备注，关联最近附件
+- `saveScreenshotBytes()` / `saveVideoBytes()` / `saveLogcat()` — 附件归档
+- `finishSession()` — 结束会话，生成 report.md
+- `exportSession()` — 导出为 ZIP
+- `scanHistory()` — 扫描 `ADBToolData/sessions/` 返回历史会话列表
+- `loadHistoricalSession(id)` — 只读加载历史会话
+- `deleteSession(id)` — 删除会话目录
+- `deleteArtifact(id)` — 删除单个附件（仅 running 会话）
+- 支持中英双语翻译注入
 
 ---
 
