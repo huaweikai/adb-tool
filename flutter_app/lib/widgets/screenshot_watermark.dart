@@ -19,98 +19,114 @@ Future<WatermarkOpts?> showWatermarkDialog(BuildContext context) {
   var addStep = false;
   final stepCtrl = TextEditingController();
 
-  void cleanup() {
-    stepCtrl.dispose();
-  }
-
   return showDialog<WatermarkOpts>(
     context: context,
     builder: (ctx) {
-      return StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: Text(tr('watermarkOptions')),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CheckboxListTile(
-                value: addTimestamp,
-                onChanged: (v) => setDialogState(() => addTimestamp = v ?? true),
-                title: Text(tr('addTimestamp'),
-                    style: const TextStyle(fontSize: 13)),
-                controlAffinity: ListTileControlAffinity.leading,
-                dense: true,
-              ),
-              CheckboxListTile(
-                value: addStep,
-                onChanged: (v) => setDialogState(() => addStep = v ?? true),
-                title: Text(tr('addStepNumber'),
-                    style: const TextStyle(fontSize: 13)),
-                controlAffinity: ListTileControlAffinity.leading,
-                dense: true,
-              ),
-              if (addStep)
-                Padding(
-                  padding: const EdgeInsets.only(left: 48, right: 16),
-                  child: TextField(
-                    controller: stepCtrl,
-                    autofocus: true,
-                    keyboardType: TextInputType.number,
-                    decoration: InputDecoration(
-                      hintText: tr('stepNumberHint'),
-                      border: const OutlineInputBorder(),
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 10),
-                    ),
-                    style: const TextStyle(fontSize: 13),
-                  ),
+      return _SafeDialog(
+        controllers: [stepCtrl],
+        builder: (_) => StatefulBuilder(
+          builder: (ctx, setDialogState) => AlertDialog(
+            title: Text(tr('watermarkOptions')),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CheckboxListTile(
+                  value: addTimestamp,
+                  onChanged: (v) =>
+                      setDialogState(() => addTimestamp = v ?? true),
+                  title: Text(tr('addTimestamp'),
+                      style: const TextStyle(fontSize: 13)),
+                  controlAffinity: ListTileControlAffinity.leading,
+                  dense: true,
                 ),
+                CheckboxListTile(
+                  value: addStep,
+                  onChanged: (v) => setDialogState(() => addStep = v ?? true),
+                  title: Text(tr('addStepNumber'),
+                      style: const TextStyle(fontSize: 13)),
+                  controlAffinity: ListTileControlAffinity.leading,
+                  dense: true,
+                ),
+                if (addStep)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 48, right: 16),
+                    child: TextField(
+                      controller: stepCtrl,
+                      autofocus: true,
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        hintText: tr('stepNumberHint'),
+                        border: const OutlineInputBorder(),
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 10),
+                      ),
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                  ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text(tr('cancel')),
+              ),
+              FilledButton(
+                onPressed: () {
+                  final step = int.tryParse(stepCtrl.text.trim());
+                  Navigator.pop(
+                      ctx,
+                      WatermarkOpts(
+                        addTimestamp: addTimestamp,
+                        stepNumber: addStep && step != null ? step.abs() : null,
+                      ));
+                },
+                child: Text(tr('edit')),
+              ),
+              const SizedBox(width: 8),
+              FilledButton.icon(
+                onPressed: () {
+                  final step = int.tryParse(stepCtrl.text.trim());
+                  Navigator.pop(
+                      ctx,
+                      WatermarkOpts(
+                        addTimestamp: addTimestamp,
+                        stepNumber: addStep && step != null ? step.abs() : null,
+                        skipEdit: true,
+                      ));
+                },
+                icon: const Icon(Icons.save, size: 16),
+                label: Text(tr('quickSave')),
+              ),
             ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                cleanup();
-                Navigator.pop(ctx);
-              },
-              child: Text(tr('cancel')),
-            ),
-            FilledButton(
-              onPressed: () {
-                final step = int.tryParse(stepCtrl.text.trim());
-                cleanup();
-                Navigator.pop(
-                    ctx,
-                    WatermarkOpts(
-                      addTimestamp: addTimestamp,
-                      stepNumber:
-                          addStep && step != null ? step.abs() : null,
-                    ));
-              },
-              child: Text(tr('edit')),
-            ),
-            const SizedBox(width: 8),
-            FilledButton.icon(
-              onPressed: () {
-                final step = int.tryParse(stepCtrl.text.trim());
-                cleanup();
-                Navigator.pop(
-                    ctx,
-                    WatermarkOpts(
-                      addTimestamp: addTimestamp,
-                      stepNumber:
-                          addStep && step != null ? step.abs() : null,
-                      skipEdit: true,
-                    ));
-              },
-              icon: const Icon(Icons.save, size: 16),
-              label: Text(tr('quickSave')),
-            ),
-          ],
         ),
       );
     },
   );
+}
+
+class _SafeDialog extends StatefulWidget {
+  final List<TextEditingController> controllers;
+  final Widget Function(List<TextEditingController> ctrls) builder;
+
+  const _SafeDialog({required this.controllers, required this.builder});
+
+  @override
+  State<_SafeDialog> createState() => _SafeDialogState();
+}
+
+class _SafeDialogState extends State<_SafeDialog> {
+  @override
+  void dispose() {
+    for (final c in widget.controllers) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(widget.controllers);
 }
 
 Future<Uint8List> addTimestampWatermark(Uint8List imageBytes) async {

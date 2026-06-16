@@ -217,8 +217,7 @@ class _TestConfigScreenState extends State<TestConfigScreen> {
             ),
           ),
           TextButton.icon(
-            onPressed: () =>
-                context.read<TestConfigProvider>().deselectApp(),
+            onPressed: () => context.read<TestConfigProvider>().deselectApp(),
             icon: const Icon(Icons.close, size: 14),
             label: Text(tr('deselectCurrentApp'),
                 style: const TextStyle(fontSize: 11)),
@@ -312,9 +311,11 @@ class _TestConfigScreenState extends State<TestConfigScreen> {
             const SizedBox(height: 8),
             _infoRow(context, tr('testConfigPackageName'), app.packageName),
             if (app.logcat.keywords.isNotEmpty)
-              _infoRow(context, tr('testConfigKeyword'), app.logcat.keywords.join('、')),
+              _infoRow(context, tr('testConfigKeyword'),
+                  app.logcat.keywords.join('、')),
             if (app.logcat.tags.isNotEmpty)
-              _infoRow(context, tr('testConfigLogcatTag'), app.logcat.tags.join('、')),
+              _infoRow(context, tr('testConfigLogcatTag'),
+                  app.logcat.tags.join('、')),
             if (app.filePaths.isNotEmpty)
               _infoRow(
                 context,
@@ -378,8 +379,9 @@ class _TestConfigScreenState extends State<TestConfigScreen> {
     try {
       final content = await File(file.path).readAsString();
       if (!mounted) return;
-      final result =
-          await context.read<TestConfigProvider>().importFromJsonString(content);
+      final result = await context
+          .read<TestConfigProvider>()
+          .importFromJsonString(content);
       if (!mounted) return;
       final message = result.hasSensitiveValues
           ? tr('testConfigImportedWithSensitive', {
@@ -388,7 +390,8 @@ class _TestConfigScreenState extends State<TestConfigScreen> {
           : tr('testConfigImported', {
               'count': result.importedCount.toString(),
             });
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message)));
     } on TestConfigException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
@@ -471,12 +474,11 @@ class _TestConfigScreenState extends State<TestConfigScreen> {
   ]
 }''';
     try {
-      await context
-          .read<TestConfigProvider>()
-          .importFromJsonString(sampleJson);
+      await context.read<TestConfigProvider>().importFromJsonString(sampleJson);
       if (!mounted) return;
       await SharedPreferences.getInstance()
           .then((prefs) => prefs.setBool('sample_config_loaded', true));
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(tr('sampleConfigLoaded'))),
       );
@@ -563,14 +565,13 @@ class _TestConfigScreenState extends State<TestConfigScreen> {
     TestAppConfig? existing,
   ) async {
     final isEdit = existing != null;
-    final nameCtrl = TextEditingController(
-        text: isEdit ? existing.appName : '');
-    final pkgCtrl = TextEditingController(
-        text: isEdit ? existing.packageName : '');
-    final typeCtrl = TextEditingController(
-        text: isEdit ? existing.appType : '');
-    final notesCtrl = TextEditingController(
-        text: isEdit ? existing.notes : '');
+    final nameCtrl =
+        TextEditingController(text: isEdit ? existing.appName : '');
+    final pkgCtrl =
+        TextEditingController(text: isEdit ? existing.packageName : '');
+    final typeCtrl =
+        TextEditingController(text: isEdit ? existing.appType : '');
+    final notesCtrl = TextEditingController(text: isEdit ? existing.notes : '');
     final kwCtrl = TextEditingController(
         text: isEdit ? existing.logcat.keywords.join(', ') : '');
     final tagCtrl = TextEditingController(
@@ -589,159 +590,164 @@ class _TestConfigScreenState extends State<TestConfigScreen> {
         text: isEdit
             ? existing.testTexts.map((t) => '${t.name}=${t.value}').join('\n')
             : '');
+    final safeCtrls = [
+      nameCtrl,
+      pkgCtrl,
+      typeCtrl,
+      notesCtrl,
+      kwCtrl,
+      tagCtrl,
+      deepLinksCtrl,
+      pathsCtrl,
+      textsCtrl,
+    ];
 
     final result = await showDialog<_AppConfigFormResult>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: Text(isEdit ? tr('editAppConfig') : tr('newAppConfig')),
-          content: SizedBox(
-            width: 460,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: nameCtrl,
-                    decoration: InputDecoration(labelText: tr('appName')),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: pkgCtrl,
-                    decoration: InputDecoration(labelText: tr('appPackageName')),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: typeCtrl,
-                    decoration: InputDecoration(labelText: tr('appType')),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: notesCtrl,
-                    maxLines: 2,
-                    decoration:
-                        InputDecoration(labelText: tr('testConfigNotes')),
-                  ),
-                  InkWell(
-                    onTap: () =>
-                        setDialogState(() => showAdvanced = !showAdvanced),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Row(
-                        children: [
-                          Icon(
-                            showAdvanced
-                                ? Icons.expand_less
-                                : Icons.expand_more,
-                            size: 18,
-                            color: Theme.of(ctx).colorScheme.primary,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(tr('advancedOptions'),
+      builder: (ctx) => _SafeDialog(
+        controllers: safeCtrls,
+        builder: (_) => StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: Text(isEdit ? tr('editAppConfig') : tr('newAppConfig')),
+            content: SizedBox(
+              width: 460,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: nameCtrl,
+                      decoration: InputDecoration(labelText: tr('appName')),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: pkgCtrl,
+                      decoration:
+                          InputDecoration(labelText: tr('appPackageName')),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: typeCtrl,
+                      decoration: InputDecoration(labelText: tr('appType')),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: notesCtrl,
+                      maxLines: 2,
+                      decoration:
+                          InputDecoration(labelText: tr('testConfigNotes')),
+                    ),
+                    InkWell(
+                      onTap: () =>
+                          setDialogState(() => showAdvanced = !showAdvanced),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Row(
+                          children: [
+                            Icon(
+                              showAdvanced
+                                  ? Icons.expand_less
+                                  : Icons.expand_more,
+                              size: 18,
+                              color: Theme.of(ctx).colorScheme.primary,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              tr('advancedOptions'),
                               style: TextStyle(
-                                  color:
-                                      Theme.of(ctx).colorScheme.primary)),
-                        ],
+                                color: Theme.of(ctx).colorScheme.primary,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                  if (showAdvanced) ...[
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: kwCtrl,
-                      decoration: InputDecoration(
-                          labelText: tr('configLogcatKeywords')),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: tagCtrl,
-                      decoration:
-                          InputDecoration(labelText: tr('configLogcatTags')),
-                    ),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      initialValue: level.isEmpty ? null : level,
-                      decoration: InputDecoration(
-                          labelText: tr('configLogcatLevel')),
-                      items: ['', 'V', 'D', 'I', 'W', 'E', 'F']
-                          .map((l) => DropdownMenuItem(
-                              value: l,
-                              child: Text(l.isEmpty ? tr('all') : l)))
-                          .toList(),
-                      onChanged: (v) =>
-                          setDialogState(() => level = v ?? ''),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: deepLinksCtrl,
-                      maxLines: 3,
-                      decoration: InputDecoration(
-                          labelText: tr('configDeepLinks'),
-                          hintText: '首页=myapp://home'),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: pathsCtrl,
-                      maxLines: 3,
-                      decoration: InputDecoration(
-                          labelText: tr('configFilePaths'),
-                          hintText:
-                              '下载=/storage/emulated/0/Download'),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: textsCtrl,
-                      maxLines: 3,
-                      decoration: InputDecoration(
-                          labelText: tr('configTestTexts'),
-                          hintText: '手机号=13800000000'),
-                    ),
+                    if (showAdvanced) ...[
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: kwCtrl,
+                        decoration: InputDecoration(
+                            labelText: tr('configLogcatKeywords')),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: tagCtrl,
+                        decoration:
+                            InputDecoration(labelText: tr('configLogcatTags')),
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        initialValue: level.isEmpty ? null : level,
+                        decoration:
+                            InputDecoration(labelText: tr('configLogcatLevel')),
+                        items: ['', 'V', 'D', 'I', 'W', 'E', 'F']
+                            .map((l) => DropdownMenuItem(
+                                value: l,
+                                child: Text(l.isEmpty ? tr('all') : l)))
+                            .toList(),
+                        onChanged: (v) => setDialogState(() => level = v ?? ''),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: deepLinksCtrl,
+                        maxLines: 3,
+                        decoration: InputDecoration(
+                            labelText: tr('configDeepLinks'),
+                            hintText: '首页=myapp://home'),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: pathsCtrl,
+                        maxLines: 3,
+                        decoration: InputDecoration(
+                            labelText: tr('configFilePaths'),
+                            hintText: '下载=/storage/emulated/0/Download'),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: textsCtrl,
+                        maxLines: 3,
+                        decoration: InputDecoration(
+                            labelText: tr('configTestTexts'),
+                            hintText: '手机号=13800000000'),
+                      ),
+                    ],
                   ],
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: Text(tr('cancel')),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(
-                ctx,
-                _AppConfigFormResult(
-                  name: nameCtrl.text.trim(),
-                  packageName: pkgCtrl.text.trim(),
-                  appType: typeCtrl.text.trim(),
-                  notes: notesCtrl.text.trim(),
-                  keywords: kwCtrl.text.trim(),
-                  tags: tagCtrl.text.trim(),
-                  level: level,
-                  deepLinks: deepLinksCtrl.text,
-                  filePaths: pathsCtrl.text,
-                  testTexts: textsCtrl.text,
                 ),
               ),
-              child: Text(tr('saveConfig')),
             ),
-          ],
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text(tr('cancel')),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(
+                  ctx,
+                  _AppConfigFormResult(
+                    name: nameCtrl.text.trim(),
+                    packageName: pkgCtrl.text.trim(),
+                    appType: typeCtrl.text.trim(),
+                    notes: notesCtrl.text.trim(),
+                    keywords: kwCtrl.text.trim(),
+                    tags: tagCtrl.text.trim(),
+                    level: level,
+                    deepLinks: deepLinksCtrl.text,
+                    filePaths: pathsCtrl.text,
+                    testTexts: textsCtrl.text,
+                  ),
+                ),
+                child: Text(tr('saveConfig')),
+              ),
+            ],
+          ),
         ),
       ),
     );
 
-    nameCtrl.dispose();
-    pkgCtrl.dispose();
-    typeCtrl.dispose();
-    notesCtrl.dispose();
-    kwCtrl.dispose();
-    tagCtrl.dispose();
-    deepLinksCtrl.dispose();
-    pathsCtrl.dispose();
-    textsCtrl.dispose();
-
     if (result == null || !mounted) return;
     if (result.packageName.isEmpty) {
-      if (!mounted) return;
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(tr('appPackageName'))),
       );
@@ -750,8 +756,7 @@ class _TestConfigScreenState extends State<TestConfigScreen> {
 
     final id = isEdit
         ? existing.id
-        : result.packageName.replaceAll('.', '_') +
-            '_${DateTime.now().millisecondsSinceEpoch}';
+        : '${result.packageName.replaceAll('.', '_')}_${DateTime.now().millisecondsSinceEpoch}';
 
     final deepLinks = _parseNamedValues(result.deepLinks);
     final filePaths = _parsePathValues(result.filePaths);
@@ -783,7 +788,7 @@ class _TestConfigScreenState extends State<TestConfigScreen> {
     );
 
     await provider.createOrUpdateApp(app);
-    if (!mounted) return;
+    if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(tr('configSaved'))),
     );
@@ -791,10 +796,7 @@ class _TestConfigScreenState extends State<TestConfigScreen> {
 
   List<TestNamedValue> _parseNamedValues(String raw) {
     if (raw.trim().isEmpty) return const [];
-    return raw
-        .split('\n')
-        .where((line) => line.contains('='))
-        .map((line) {
+    return raw.split('\n').where((line) => line.contains('=')).map((line) {
       final idx = line.indexOf('=');
       final name = line.substring(0, idx).trim();
       final value = line.substring(idx + 1).trim();
@@ -804,10 +806,7 @@ class _TestConfigScreenState extends State<TestConfigScreen> {
 
   List<TestFilePathConfig> _parsePathValues(String raw) {
     if (raw.trim().isEmpty) return const [];
-    return raw
-        .split('\n')
-        .where((line) => line.contains('='))
-        .map((line) {
+    return raw.split('\n').where((line) => line.contains('=')).map((line) {
       final idx = line.indexOf('=');
       final name = line.substring(0, idx).trim();
       final path = line.substring(idx + 1).trim();
@@ -841,6 +840,29 @@ class _TestConfigScreenState extends State<TestConfigScreen> {
       await provider.deleteApp(app.id);
     }
   }
+}
+
+class _SafeDialog extends StatefulWidget {
+  final List<TextEditingController> controllers;
+  final Widget Function(List<TextEditingController> ctrls) builder;
+
+  const _SafeDialog({required this.controllers, required this.builder});
+
+  @override
+  State<_SafeDialog> createState() => _SafeDialogState();
+}
+
+class _SafeDialogState extends State<_SafeDialog> {
+  @override
+  void dispose() {
+    for (final c in widget.controllers) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(widget.controllers);
 }
 
 class _AppConfigFormResult {

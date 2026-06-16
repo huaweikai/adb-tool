@@ -110,49 +110,49 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
                     ?.copyWith(fontWeight: FontWeight.w600),
               ),
               const SizedBox(width: 12),
-              if (session != null)
-                ...[
+              if (session != null) ...[
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: session.status == TestSessionStatus.running
+                        ? Colors.green.withAlpha(40)
+                        : theme.colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    session.status == TestSessionStatus.running
+                        ? tr('sessionRunning')
+                        : tr('sessionFinished'),
+                    style: const TextStyle(fontSize: 11),
+                  ),
+                ),
+                if (running) ...[
+                  const SizedBox(width: 10),
                   Container(
                     padding:
                         const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
-                      color: session.status == TestSessionStatus.running
-                          ? Colors.green.withAlpha(40)
-                          : theme.colorScheme.surfaceContainerHighest,
+                      color: theme.colorScheme.surfaceContainerHighest,
                       borderRadius: BorderRadius.circular(999),
                     ),
-                    child: Text(
-                      session.status == TestSessionStatus.running
-                          ? tr('sessionRunning')
-                          : tr('sessionFinished'),
-                      style: const TextStyle(fontSize: 11),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.timer_outlined,
+                            size: 12,
+                            color: theme.colorScheme.onSurfaceVariant),
+                        const SizedBox(width: 4),
+                        Text(
+                          _fmtElapsed(
+                              DateTime.now().difference(session.startedAt)),
+                          style: const TextStyle(fontSize: 11),
+                        ),
+                      ],
                     ),
                   ),
-                  if (running) ...[
-                    const SizedBox(width: 10),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.surfaceContainerHighest,
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.timer_outlined,
-                              size: 12,
-                              color: theme.colorScheme.onSurfaceVariant),
-                          const SizedBox(width: 4),
-                          Text(
-                            _fmtElapsed(DateTime.now().difference(session!.startedAt)),
-                            style: const TextStyle(fontSize: 11),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
                 ],
+              ],
             ],
           ),
           Wrap(
@@ -587,8 +587,7 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
                     child: Padding(
                       padding: const EdgeInsets.all(4),
                       child: Icon(Icons.close,
-                          size: 14,
-                          color: theme.colorScheme.onSurfaceVariant),
+                          size: 14, color: theme.colorScheme.onSurfaceVariant),
                     ),
                   ),
                 ],
@@ -629,85 +628,83 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
     }
     final displayName = device?.displayName ?? serial;
     final nameCtrl = TextEditingController(text: tr('defaultSessionName'));
-    final configPkg = context.read<TestConfigProvider>().currentApp?.packageName ?? '';
+    final configPkg =
+        context.read<TestConfigProvider>().currentApp?.packageName ?? '';
     final packageCtrl = TextEditingController(text: configPkg);
     final noteCtrl = TextEditingController();
+    final safeCtrls = [nameCtrl, packageCtrl, noteCtrl];
     String type = tr('sessionTypeBug');
     final result = await showDialog<_CreateSessionResult>(
       context: context,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              title: Text(tr('newSession')),
-              content: SizedBox(
-                width: 420,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(
-                      controller: nameCtrl,
-                      decoration: InputDecoration(labelText: tr('sessionName')),
-                    ),
-                    const SizedBox(height: 12),
-                    _readonlyField(tr('device'), displayName),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      initialValue: type,
-                      decoration: InputDecoration(labelText: tr('sessionType')),
-                      items: [
-                        tr('sessionTypeBug'),
-                        tr('sessionTypeSmoke'),
-                        tr('sessionTypeRegression'),
-                        tr('sessionTypeCompatibility'),
-                        tr('sessionTypeOther'),
-                      ]
-                          .map((item) =>
-                              DropdownMenuItem(value: item, child: Text(item)))
-                          .toList(),
-                      onChanged: (value) =>
-                          setDialogState(() => type = value ?? type),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: packageCtrl,
-                      decoration: InputDecoration(labelText: tr('packageName')),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: noteCtrl,
-                      maxLines: 3,
-                      decoration: InputDecoration(labelText: tr('sessionNote')),
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: Text(tr('cancel')),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.pop(
-                    ctx,
-                    _CreateSessionResult(
-                      name: nameCtrl.text,
-                      type: type,
-                      packageName: packageCtrl.text,
-                      note: noteCtrl.text,
-                    ),
+      builder: (ctx) => _SafeDialog(
+        controllers: safeCtrls,
+        builder: (_) => StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: Text(tr('newSession')),
+            content: SizedBox(
+              width: 420,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nameCtrl,
+                    decoration: InputDecoration(labelText: tr('sessionName')),
                   ),
-                  child: Text(tr('startSession')),
+                  const SizedBox(height: 12),
+                  _readonlyField(tr('device'), displayName),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    initialValue: type,
+                    decoration: InputDecoration(labelText: tr('sessionType')),
+                    items: [
+                      tr('sessionTypeBug'),
+                      tr('sessionTypeSmoke'),
+                      tr('sessionTypeRegression'),
+                      tr('sessionTypeCompatibility'),
+                      tr('sessionTypeOther'),
+                    ]
+                        .map((item) =>
+                            DropdownMenuItem(value: item, child: Text(item)))
+                        .toList(),
+                    onChanged: (value) =>
+                        setDialogState(() => type = value ?? type),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: packageCtrl,
+                    decoration: InputDecoration(labelText: tr('packageName')),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: noteCtrl,
+                    maxLines: 3,
+                    decoration: InputDecoration(labelText: tr('sessionNote')),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text(tr('cancel')),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(
+                  ctx,
+                  _CreateSessionResult(
+                    name: nameCtrl.text,
+                    type: type,
+                    packageName: packageCtrl.text,
+                    note: noteCtrl.text,
+                  ),
                 ),
-              ],
-            );
-          },
-        );
-      },
+                child: Text(tr('startSession')),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
-    nameCtrl.dispose();
-    packageCtrl.dispose();
-    noteCtrl.dispose();
     if (result == null || !mounted) return;
     final sessionProvider = context.read<TestSessionProvider>();
     setState(() => _busy = true);
@@ -729,8 +726,8 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
   }
 
   Widget _readonlyField(String label, String value) {
-    return TextField(
-      controller: TextEditingController(text: value),
+    return TextFormField(
+      initialValue: value,
       enabled: false,
       decoration: InputDecoration(
         labelText: label,
@@ -941,25 +938,27 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
     final ctrl = TextEditingController();
     final note = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(tr('addNote')),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          maxLines: 5,
-          decoration: InputDecoration(labelText: tr('noteContent')),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx), child: Text(tr('cancel'))),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, ctrl.text),
-            child: Text(tr('confirm')),
+      builder: (ctx) => _SafeDialog(
+        controllers: [ctrl],
+        builder: (_) => AlertDialog(
+          title: Text(tr('addNote')),
+          content: TextField(
+            controller: ctrl,
+            autofocus: true,
+            maxLines: 5,
+            decoration: InputDecoration(labelText: tr('noteContent')),
           ),
-        ],
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx), child: Text(tr('cancel'))),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, ctrl.text),
+              child: Text(tr('confirm')),
+            ),
+          ],
+        ),
       ),
     );
-    ctrl.dispose();
     if (note == null || note.trim().isEmpty) return;
     if (!mounted) return;
     await context.read<TestSessionProvider>().addNote(note);
@@ -974,10 +973,18 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
     TestSessionIssueSeverity severity = TestSessionIssueSeverity.major;
     TestSessionIssueType type = TestSessionIssueType.crash;
     bool showMore = false;
+    final safeCtrls = [
+      titleCtrl,
+      actualCtrl,
+      stepsCtrl,
+      expectedCtrl,
+      noteCtrl
+    ];
     final result = await showDialog<_IssueFormResult>(
       context: context,
-      builder: (ctx) {
-        return StatefulBuilder(
+      builder: (ctx) => _SafeDialog(
+        controllers: safeCtrls,
+        builder: (_) => StatefulBuilder(
           builder: (context, setDialogState) => AlertDialog(
             title: Text(tr('markIssue')),
             content: SizedBox(
@@ -1091,14 +1098,9 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
               ),
             ],
           ),
-        );
-      },
+        ),
+      ),
     );
-    titleCtrl.dispose();
-    stepsCtrl.dispose();
-    expectedCtrl.dispose();
-    actualCtrl.dispose();
-    noteCtrl.dispose();
     if (result == null || !mounted) return;
     final recentLogContent = await _loadRecentLogcatSnapshot();
     if (!mounted) return;
@@ -1326,19 +1328,20 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
               width: 500,
               child: sessions.isEmpty
                   ? Text(tr('noHistorySessions'),
-                      style: TextStyle(color: theme.colorScheme.onSurfaceVariant))
+                      style:
+                          TextStyle(color: theme.colorScheme.onSurfaceVariant))
                   : ListView.separated(
                       shrinkWrap: true,
                       itemCount: sessions.length,
-                      separatorBuilder: (_, __) =>
-                          const Divider(height: 1),
+                      separatorBuilder: (_, __) => const Divider(height: 1),
                       itemBuilder: (_, i) {
                         final s = sessions[i];
                         return ListTile(
                           dense: true,
                           contentPadding: EdgeInsets.zero,
                           title: Text(s.name,
-                              style: const TextStyle(fontWeight: FontWeight.w600)),
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w600)),
                           subtitle: Text(
                             [
                               s.type,
@@ -1377,8 +1380,8 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
                                           {'name': s.name})),
                                       actions: [
                                         TextButton(
-                                            onPressed: () => Navigator.pop(
-                                                c, false),
+                                            onPressed: () =>
+                                                Navigator.pop(c, false),
                                             child: Text(tr('cancel'))),
                                         FilledButton(
                                             onPressed: () =>
@@ -1390,24 +1393,20 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
                                   if (confirmed != true) return;
                                   try {
                                     await provider.deleteSession(s.id);
-                                    setDialogState(
-                                        () => sessions.removeAt(i));
-                                    ScaffoldMessenger.of(context)
-                                        .showSnackBar(
+                                    if (!context.mounted) return;
+                                    setDialogState(() => sessions.removeAt(i));
+                                    ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(
-                                          content: Text(
-                                              tr('sessionDeleted')),
-                                          behavior: SnackBarBehavior
-                                              .floating),
+                                          content: Text(tr('sessionDeleted')),
+                                          behavior: SnackBarBehavior.floating),
                                     );
                                   } catch (e) {
-                                    ScaffoldMessenger.of(context)
-                                        .showSnackBar(
+                                    if (!context.mounted) return;
+                                    ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(
-                                          content: Text(
-                                              '${tr('saveFailed')}: $e'),
-                                          behavior: SnackBarBehavior
-                                              .floating),
+                                          content:
+                                              Text('${tr('saveFailed')}: $e'),
+                                          behavior: SnackBarBehavior.floating),
                                     );
                                   }
                                 },
@@ -1499,4 +1498,25 @@ class _CreateSessionResult {
     required this.packageName,
     required this.note,
   });
+}
+
+class _SafeDialog extends StatefulWidget {
+  final List<TextEditingController> controllers;
+  final Widget Function(List<TextEditingController> ctrls) builder;
+  const _SafeDialog({required this.controllers, required this.builder});
+  @override
+  State<_SafeDialog> createState() => _SafeDialogState();
+}
+
+class _SafeDialogState extends State<_SafeDialog> {
+  @override
+  void dispose() {
+    for (final c in widget.controllers) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(widget.controllers);
 }

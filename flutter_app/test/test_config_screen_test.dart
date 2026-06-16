@@ -4,14 +4,18 @@ import 'package:adb_tool/providers/locale_provider.dart';
 import 'package:adb_tool/providers/test_config_provider.dart';
 import 'package:adb_tool/screens/test_config_screen.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   late Directory tempDir;
 
   setUp(() async {
-    tempDir = await Directory.systemTemp.createTemp('adb_tool_config_screen_test_');
+    SharedPreferences.setMockInitialValues({'sample_config_loaded': true});
+    tempDir =
+        await Directory.systemTemp.createTemp('adb_tool_config_screen_test_');
   });
 
   tearDown(() async {
@@ -29,7 +33,8 @@ void main() {
       MultiProvider(
         providers: [
           ChangeNotifierProvider<TestConfigProvider>.value(value: provider),
-          ChangeNotifierProvider<LocaleProvider>(create: (_) => LocaleProvider()),
+          ChangeNotifierProvider<LocaleProvider>(
+              create: (_) => LocaleProvider()),
         ],
         child: const MaterialApp(home: Scaffold(body: TestConfigScreen())),
       ),
@@ -41,6 +46,35 @@ void main() {
     expect(find.text('抽象音乐 - 正式包'), findsOneWidget);
     expect(find.text('当前测试 App'), findsOneWidget);
     expect(find.text('com.hua.music.debug'), findsOneWidget);
+  });
+
+  testWidgets(
+      'new app config dialog closes safely with Esc while input has focus',
+      (tester) async {
+    final provider = TestConfigProvider(baseDirectory: tempDir);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<TestConfigProvider>.value(value: provider),
+          ChangeNotifierProvider<LocaleProvider>(
+              create: (_) => LocaleProvider()),
+        ],
+        child: const MaterialApp(home: Scaffold(body: TestConfigScreen())),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.text('新增配置'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextField, '应用名称'));
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+
+    expect(find.text('新增配置'), findsOneWidget);
+    expect(find.widgetWithText(TextField, '应用名称'), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 }
 

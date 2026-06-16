@@ -409,27 +409,29 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     final controller = TextEditingController(text: initialValue);
     final result = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(title),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: InputDecoration(labelText: label),
-          onSubmitted: (value) => Navigator.pop(ctx, value.trim()),
+      builder: (ctx) => _SafeDialog(
+        controllers: [controller],
+        builder: (_) => AlertDialog(
+          title: Text(title),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            decoration: InputDecoration(labelText: label),
+            onSubmitted: (value) => Navigator.pop(ctx, value.trim()),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(tr('cancel')),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+              child: Text(tr('confirm')),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(tr('cancel')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: Text(tr('confirm')),
-          ),
-        ],
       ),
     );
-    controller.dispose();
     final trimmed = result?.trim();
     if (trimmed == null ||
         trimmed.isEmpty ||
@@ -1833,4 +1835,27 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       ],
     );
   }
+}
+
+class _SafeDialog extends StatefulWidget {
+  final List<TextEditingController> controllers;
+  final Widget Function(List<TextEditingController> ctrls) builder;
+
+  const _SafeDialog({required this.controllers, required this.builder});
+
+  @override
+  State<_SafeDialog> createState() => _SafeDialogState();
+}
+
+class _SafeDialogState extends State<_SafeDialog> {
+  @override
+  void dispose() {
+    for (final c in widget.controllers) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(widget.controllers);
 }

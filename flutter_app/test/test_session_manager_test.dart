@@ -240,12 +240,16 @@ void main() {
 
   group('History and lifecycle', () {
     test('scanHistory returns sessions sorted newest first', () async {
-      final s1 = await provider.startSession(
-        name: '测试A', type: '冒烟测试', serial: 'd1',
+      await provider.startSession(
+        name: '测试A',
+        type: '冒烟测试',
+        serial: 'd1',
         deviceDisplayName: 'd1',
       );
       final s2 = await provider.startSession(
-        name: '测试B', type: '缺陷复现', serial: 'd2',
+        name: '测试B',
+        type: '缺陷复现',
+        serial: 'd2',
         deviceDisplayName: 'd2',
       );
       await provider.finishSession();
@@ -259,7 +263,9 @@ void main() {
     test('deleteSession removes directory and clears current if loaded',
         () async {
       final session = await provider.startSession(
-        name: '待删除', type: '冒烟测试', serial: 'd1',
+        name: '待删除',
+        type: '冒烟测试',
+        serial: 'd1',
         deviceDisplayName: 'd1',
       );
       await provider.finishSession();
@@ -273,8 +279,11 @@ void main() {
 
     test('loadHistoricalSession reloads a finished session', () async {
       final session = await provider.startSession(
-        name: '历史测试', type: '回归测试', serial: 'hid',
-        model: 'Pixel 7', deviceDisplayName: 'Pixel 7',
+        name: '历史测试',
+        type: '回归测试',
+        serial: 'hid',
+        model: 'Pixel 7',
+        deviceDisplayName: 'Pixel 7',
       );
       await provider.markIssue(title: '仅有的问题');
       await provider.finishSession();
@@ -292,8 +301,10 @@ void main() {
     });
 
     test('deleteArtifact removes file and updates session', () async {
-      final session = await provider.startSession(
-        name: '附件测试', type: '冒烟测试', serial: 's1',
+      await provider.startSession(
+        name: '附件测试',
+        type: '冒烟测试',
+        serial: 's1',
         deviceDisplayName: 's1',
       );
       await provider.saveScreenshotBytes([1, 2, 3]);
@@ -313,12 +324,14 @@ void main() {
 
     test('scanHistory skips directories without session.json', () async {
       await provider.startSession(
-        name: '有效会话', type: '冒烟测试', serial: 'd1',
+        name: '有效会话',
+        type: '冒烟测试',
+        serial: 'd1',
         deviceDisplayName: 'd1',
       );
       final root = tempDir;
-      final orphan = await Directory(
-          '${root.path}/sessions/orphan_dir').create(recursive: true);
+      final orphan = await Directory('${root.path}/sessions/orphan_dir')
+          .create(recursive: true);
       await File('${orphan.path}/not_a_session.txt').writeAsString('junk');
 
       final history = await provider.scanHistory();
