@@ -10,6 +10,44 @@ import (
 	"time"
 )
 
+// dangerousCmdPatterns matches dangerous shell commands.
+// A match returns a human-readable warning.
+var dangerousCmdPatterns = []struct {
+	pattern *regexp.Regexp
+	msg     string
+}{
+	// Destructive file operations
+	{regexp.MustCompile(`(?i)^\s*(rm|rmdir|del)\s+(-[rfv]+\s+)*[/*]`), "删除系统根目录或通配符递归删除：可能永久丢失数据"},
+	{regexp.MustCompile(`(?i)^\s*dd\s+.*of=/`), "直接写入设备文件：可能导致磁盘数据丢失"},
+	// Device-level destructive commands
+	{regexp.MustCompile(`(?i)\breboot\s+(bootloader|recovery|sideload\b)`), "重启到 Bootloader / Recovery / Sideload：可能中断正在运行的测试"},
+	{regexp.MustCompile(`(?i)\bfastboot\b`), "Fastboot 模式：设备将脱离 ADB 连接"},
+	// Package removal
+	{regexp.MustCompile(`(?i)\bpm\s+(uninstall|clear)\b.* --user 0`), "卸载或清除系统用户 0 的应用：可能破坏系统组件"},
+	{regexp.MustCompile(`(?i)\bpm\s+hide\b`), "禁用系统组件：可能导致系统异常"},
+	{regexp.MustCompile(`(?i)\bpm\s+disable-user\b.* --user 0`), "禁用系统应用：可能影响设备正常运行"},
+	// ADB daemon control
+	{regexp.MustCompile(`(?i)\badb\s+kill-server\b`), "停止 ADB 服务：会导致当前所有 ADB 连接中断"},
+	{regexp.MustCompile(`(?i)\badb\s+start-server\b`), "重启 ADB 服务：可能导致设备重新授权"},
+}
+
+// isDangerousCommand checks whether the shell command (the first non-flag arg after
+// "shell") matches a known destructive pattern. It returns (warningMsg, isDangerous).
+// Pass confirm=true to bypass the warning.
+func isDangerousCommand(args []string) (string, bool) {
+	if len(args) == 0 {
+		return "", false
+	}
+	// Build the full command string for pattern matching
+	fullCmd := strings.Join(args, " ")
+	for _, entry := range dangerousCmdPatterns {
+		if entry.pattern.MatchString(fullCmd) {
+			return entry.msg, true
+		}
+	}
+	return "", false
+}
+
 func (m *AdbManager) run(args ...string) (string, error) {
 	outStr, err := m.runRaw(args...)
 	if err != nil {

@@ -79,7 +79,11 @@ class SessionExporter {
           TestSessionPlanStatus.passed => t('testPlanPassed'),
           TestSessionPlanStatus.failed => t('testPlanFailed'),
         };
-        buffer.writeln('- [$status] ${item.flowName} / ${item.step}');
+        final dur = item.duration;
+        final durStr = dur != null
+            ? ' (${dur.inMinutes}m ${dur.inSeconds.remainder(60)}s)'
+            : '';
+        buffer.writeln('- [$status] ${item.flowName} / ${item.step}$durStr');
         if (item.message.isNotEmpty) {
           buffer.writeln('  - ${item.message}');
         }

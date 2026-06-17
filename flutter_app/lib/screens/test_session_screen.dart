@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -17,6 +18,7 @@ import '../utils/test_flow_text.dart';
 import '../utils/time_formatters.dart';
 import '../widgets/safe_dialog.dart';
 import '../widgets/session_timeline_item.dart';
+import '../widgets/video_preview.dart';
 import '../mixins/screen_capture_mixin.dart';
 
 class TestSessionScreen extends StatefulWidget {
@@ -660,43 +662,117 @@ class _TestSessionScreenState extends State<TestSessionScreen>
             elevation: 0,
             margin: const EdgeInsets.only(bottom: 6),
             color: theme.colorScheme.surfaceContainerLow,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              child: Row(
-                children: [
-                  Icon(_artifactIcon(artifact.kind),
-                      size: 18, color: theme.colorScheme.primary),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(artifact.name,
-                            style: const TextStyle(fontSize: 12),
-                            overflow: TextOverflow.ellipsis),
-                        if (artifact.size > 0)
-                          Text(fmtBytes(artifact.size),
-                              style: TextStyle(
-                                  fontSize: 10,
-                                  color: theme.colorScheme.onSurfaceVariant)),
-                      ],
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () => _previewArtifact(artifact),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                child: Row(
+                  children: [
+                    Icon(_artifactIcon(artifact.kind),
+                        size: 18, color: theme.colorScheme.primary),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(artifact.name,
+                              style: const TextStyle(fontSize: 12),
+                              overflow: TextOverflow.ellipsis),
+                          if (artifact.size > 0)
+                            Text(fmtBytes(artifact.size),
+                                style: TextStyle(
+                                    fontSize: 10,
+                                    color: theme.colorScheme.onSurfaceVariant)),
+                        ],
+                      ),
                     ),
+                    InkWell(
+                      borderRadius: BorderRadius.circular(999),
+                      onTap: () => _deleteArtifact(artifact.id, artifact.name),
+                      child: Padding(
+                        padding: const EdgeInsets.all(4),
+                        child: Icon(Icons.close,
+                            size: 14, color: theme.colorScheme.onSurfaceVariant),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Future<void> _previewArtifact(TestSessionArtifact artifact) async {
+    final file = File(artifact.path);
+    if (!await file.exists()) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('File not found: ${artifact.name}'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    switch (artifact.kind) {
+      case TestSessionArtifactKind.screenshot:
+        final bytes = await file.readAsBytes();
+        if (!mounted) return;
+        showDialog(
+          context: context,
+          builder: (ctx) => Dialog(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 900, maxHeight: 700),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AppBar(
+                    title: Text(artifact.name, style: const TextStyle(fontSize: 14)),
+                    automaticallyImplyLeading: false,
+                    actions: [
+                      IconButton(
+                        icon: const Icon(Icons.close, size: 18),
+                        onPressed: () => Navigator.pop(ctx),
+                      ),
+                    ],
                   ),
-                  InkWell(
-                    borderRadius: BorderRadius.circular(999),
-                    onTap: () => _deleteArtifact(artifact.id, artifact.name),
-                    child: Padding(
-                      padding: const EdgeInsets.all(4),
-                      child: Icon(Icons.close,
-                          size: 14, color: theme.colorScheme.onSurfaceVariant),
+                  Flexible(
+                    child: InteractiveViewer(
+                      child: Image.memory(bytes, fit: BoxFit.contain),
                     ),
                   ),
                 ],
               ),
             ),
           ),
-      ],
-    );
+        );
+
+      case TestSessionArtifactKind.video:
+        final bytes = await file.readAsBytes();
+        if (!mounted) return;
+        showDialog(
+          context: context,
+          builder: (ctx) => VideoPreview(videoBytes: bytes),
+        );
+
+      case TestSessionArtifactKind.log:
+      case TestSessionArtifactKind.report:
+        // Open with system default app
+        if (Platform.isWindows) {
+          await Process.start('cmd', ['/c', 'start', '', artifact.path],
+              mode: ProcessStartMode.detached);
+        } else if (Platform.isMacOS) {
+          await Process.start('open', [artifact.path],
+              mode: ProcessStartMode.detached);
+        } else if (Platform.isLinux) {
+          await Process.start('xdg-open', [artifact.path],
+              mode: ProcessStartMode.detached);
+        }
+    }
   }
 
   static IconData _artifactIcon(TestSessionArtifactKind kind) => switch (kind) {

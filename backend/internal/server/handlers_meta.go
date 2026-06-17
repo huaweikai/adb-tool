@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -9,9 +10,18 @@ import (
 	"time"
 )
 
-// handleBackendLogs returns the in-memory ring buffer of recent backend operations.
+// handleBackendLogs returns the in-memory ring buffer by default, or the
+// last N entries from the on-disk log file when ?tail=N is specified.
 func (s *Server) handleBackendLogs(w http.ResponseWriter, r *http.Request) {
-	entries := Log.Snapshot()
+	q := r.URL.Query()
+	var entries []LogEntry
+	if n := q.Get("tail"); n != "" {
+		var count int
+		fmt.Sscanf(n, "%d", &count)
+		entries = Log.FileTail(count)
+	} else {
+		entries = Log.Snapshot()
+	}
 	if entries == nil {
 		entries = []LogEntry{}
 	}
@@ -19,8 +29,12 @@ func (s *Server) handleBackendLogs(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleAdbExec runs a generic adb command against a device. Args are passed
-// straight to `adb -s <serial> <args...>`. Use with care — see C.3 in the
-// optimization proposal for a future dangerous-command guard.
+// straight to `adb -s <serial> <args...>`.
+//
+// A dangerous-command guard is applied when the user sends a shell command
+// that matches a known destructive pattern (see isDangerousCommand).
+// To bypass the guard, pass ?confirm=true — intended for automated / scripted
+// callers that understand the risk.
 func (s *Server) handleAdbExec(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		writeAPIError(w, http.StatusMethodNotAllowed, "POST required")
@@ -31,6 +45,7 @@ func (s *Server) handleAdbExec(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, "serial required")
 		return
 	}
+	confirm := r.URL.Query().Get("confirm") == "true"
 	defer r.Body.Close()
 	var req struct {
 		Args []string `json:"args"`
@@ -49,6 +64,20 @@ func (s *Server) handleAdbExec(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+
+	// Dangerous command guard
+	if !confirm {
+		if warning, ok := isDangerousCommand(req.Args); ok {
+			writeJSON(w, map[string]interface{}{
+				"ok":      false,
+				"blocked": true,
+				"warning": warning,
+				"confirm": "pass ?confirm=true to execute anyway",
+			})
+			return
+		}
+	}
+
 	output, err := s.adb.Execute(serial, req.Args)
 	if err != nil {
 		writeAPIErrorData(w, http.StatusBadRequest, err.Error(), map[string]interface{}{"ok": false, "output": output})

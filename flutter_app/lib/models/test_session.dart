@@ -41,6 +41,7 @@ class TestSessionPlanItem {
   final String step;
   final TestSessionPlanStatus status;
   final String message;
+  final DateTime? startedAt;  // first time step was marked passed/failed
   final DateTime? updatedAt;
 
   const TestSessionPlanItem({
@@ -49,13 +50,21 @@ class TestSessionPlanItem {
     required this.step,
     this.status = TestSessionPlanStatus.pending,
     this.message = '',
+    this.startedAt,
     this.updatedAt,
   });
+
+  /// Duration from startedAt to updatedAt, null if not yet completed.
+  Duration? get duration {
+    if (startedAt == null || updatedAt == null) return null;
+    return updatedAt!.difference(startedAt!);
+  }
 
   TestSessionPlanItem copyWith({
     String? id,
     TestSessionPlanStatus? status,
     String? message,
+    DateTime? startedAt,
     DateTime? updatedAt,
   }) {
     return TestSessionPlanItem(
@@ -64,6 +73,7 @@ class TestSessionPlanItem {
       step: step,
       status: status ?? this.status,
       message: message ?? this.message,
+      startedAt: startedAt ?? this.startedAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }
@@ -74,6 +84,7 @@ class TestSessionPlanItem {
         'step': step,
         'status': status.name,
         'message': message,
+        'startedAt': startedAt?.toIso8601String(),
         'updatedAt': updatedAt?.toIso8601String(),
       };
 
@@ -87,6 +98,7 @@ class TestSessionPlanItem {
         orElse: () => TestSessionPlanStatus.pending,
       ),
       message: json['message']?.toString() ?? '',
+      startedAt: DateTime.tryParse(json['startedAt']?.toString() ?? ''),
       updatedAt: DateTime.tryParse(json['updatedAt']?.toString() ?? ''),
     );
   }

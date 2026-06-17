@@ -151,12 +151,18 @@ class TestSessionProvider extends ChangeNotifier {
     final index = session.testPlan.indexWhere((item) => item.id == itemId);
     if (index == -1) return;
     final now = DateTime.now();
+    final currentItem = session.testPlan[index];
+    // Set startedAt on first mark (when step moves out of pending)
+    final startedAt = currentItem.startedAt ??
+        (status != TestSessionPlanStatus.pending ? now : null);
+
     final updated = [
-      for (var i = 0; i < session.testPlan.length; i++)
+      for ( var i = 0; i < session.testPlan.length; i++)
         if (i == index)
           session.testPlan[i].copyWith(
             status: status,
             message: message.trim(),
+            startedAt: startedAt,
             updatedAt: now,
           )
         else
