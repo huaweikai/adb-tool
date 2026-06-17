@@ -102,6 +102,7 @@ class _TestSessionScreenState extends State<TestSessionScreen>
     final session = provider.currentSession;
     final theme = Theme.of(context);
 
+    // Start tick timer only when there's an active running session.
     if (provider.hasRunningSession) {
       _sessionTimer ??= Timer.periodic(const Duration(seconds: 1), (_) {
         if (mounted) setState(() => _sessionTick++);
@@ -112,6 +113,7 @@ class _TestSessionScreenState extends State<TestSessionScreen>
       _sessionTick = 0;
     }
 
+    // Show session content for both running and historical (finished) sessions.
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1383,160 +1385,22 @@ class _TestSessionScreenState extends State<TestSessionScreen>
     }
   }
 
-  Future<void> _showHistoryDialog() async {
-    setState(() => _busy = true);
-    final TestSessionProvider provider = context.read<TestSessionProvider>();
-    List<TestSession> sessions;
-    try {
-      sessions = await provider.scanHistory();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('${tr('saveFailed')}: $e'),
-        behavior: SnackBarBehavior.floating,
-      ));
-      setState(() => _busy = false);
-      return;
-    }
-    if (!mounted) {
-      setState(() => _busy = false);
-      return;
-    }
-    setState(() => _busy = false);
-    await showDialog(
+  void _showHistoryDialog() {
+    showDialog(
       context: context,
-      builder: (dialogCtx) {
-        final theme = Theme.of(dialogCtx);
-        return StatefulBuilder(
-          builder: (sbCtx, setDialogState) => AlertDialog(
-            title: Text(tr('sessionHistory')),
-            content: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxWidth: 500,
-                maxHeight: MediaQuery.sizeOf(dialogCtx).height * 0.65,
-              ),
-              child: sessions.isEmpty
-                  ? Text(tr('noHistorySessions'),
-                      style:
-                          TextStyle(color: theme.colorScheme.onSurfaceVariant))
-                  : ListView.separated(
-                      shrinkWrap: true,
-                      itemCount: sessions.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
-                      itemBuilder: (_, i) {
-                        final s = sessions[i];
-                        return ListTile(
-                          dense: true,
-                          contentPadding: EdgeInsets.zero,
-                          title: Text(s.name,
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.w600)),
-                          subtitle: Text(
-                            [
-                              s.type,
-                              s.deviceModel.isEmpty
-                                  ? s.deviceSerial
-                                  : s.deviceModel,
-                              fmtDateTime(s.startedAt),
-                              tr('historyIssues',
-                                  {'count': '${s.issues.length}'}),
-                            ].join(' · '),
-                            style: TextStyle(
-                                fontSize: 12,
-                                color: theme.colorScheme.onSurfaceVariant),
-                          ),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              IconButton(
-                                icon: const Icon(Icons.open_in_new, size: 18),
-                                tooltip: tr('reopenSession'),
-                                onPressed: () async {
-                                  Navigator.pop(dialogCtx);
-                                  await _loadHistorySession(provider, s.id);
-                                },
-                              ),
-                              IconButton(
-                                icon: Icon(Icons.delete_outline,
-                                    size: 18, color: theme.colorScheme.error),
-                                tooltip: tr('deleteSession'),
-                                onPressed: () async {
-                                  final confirmed = await showDialog<bool>(
-                                    context: dialogCtx,
-                                    builder: (c) => AlertDialog(
-                                      scrollable: true,
-                                      title: Text(tr('deleteSession')),
-                                      content: Text(tr('deleteSessionConfirm',
-                                          {'name': s.name})),
-                                      actions: [
-                                        TextButton(
-                                            onPressed: () =>
-                                                Navigator.pop(c, false),
-                                            child: Text(tr('cancel'))),
-                                        FilledButton(
-                                            onPressed: () =>
-                                                Navigator.pop(c, true),
-                                            child: Text(tr('delete'))),
-                                      ],
-                                    ),
-                                  );
-                                  if (confirmed != true) return;
-                                  try {
-                                    await provider.deleteSession(s.id);
-                                    if (!sbCtx.mounted) return;
-                                    setDialogState(() => sessions.removeAt(i));
-                                    ScaffoldMessenger.of(sbCtx).showSnackBar(
-                                      SnackBar(
-                                          content: Text(tr('sessionDeleted')),
-                                          behavior: SnackBarBehavior.floating),
-                                    );
-                                  } catch (e) {
-                                    if (!sbCtx.mounted) return;
-                                    ScaffoldMessenger.of(sbCtx).showSnackBar(
-                                      SnackBar(
-                                          content:
-                                              Text('${tr('saveFailed')}: $e'),
-                                          behavior: SnackBarBehavior.floating),
-                                    );
-                                  }
-                                },
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
+      builder: (ctx) => _SessionHistoryDialog(
+        provider: context.read<TestSessionProvider>(),
+        tr: tr,
+        onSessionOpened: () {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(tr('sessionReopened')),
+              behavior: SnackBarBehavior.floating,
             ),
-            actions: [
-              TextButton(
-                  onPressed: () => Navigator.pop(dialogCtx),
-                  child: Text(tr('close'))),
-            ],
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
-  }
-
-  Future<void> _loadHistorySession(
-      TestSessionProvider provider, String id) async {
-    setState(() => _busy = true);
-    try {
-      await provider.loadHistoricalSession(id);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(tr('sessionReopened')),
-        behavior: SnackBarBehavior.floating,
-      ));
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('${tr('saveFailed')}: $e'),
-        behavior: SnackBarBehavior.floating,
-      ));
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
   }
 
 }
@@ -1582,4 +1446,196 @@ class _CreateSessionResult {
     required this.note,
     required this.testFlows,
   });
+}
+
+/// Standalone widget for browsing and reopening historical test sessions.
+/// Owns all its own state — scanning, loading, deletion — completely
+/// independent from the parent screen's _busy flag.
+class _SessionHistoryDialog extends StatefulWidget {
+  final TestSessionProvider provider;
+  final String Function(String, [Map<String, String>?]) tr;
+  final VoidCallback? onSessionOpened;
+
+  const _SessionHistoryDialog({
+    required this.provider,
+    required this.tr,
+    this.onSessionOpened,
+  });
+
+  @override
+  State<_SessionHistoryDialog> createState() => _SessionHistoryDialogState();
+}
+
+class _SessionHistoryDialogState extends State<_SessionHistoryDialog> {
+  List<TestSession> _sessions = [];
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _scan();
+  }
+
+  Future<void> _scan() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final sessions = await widget.provider.scanHistory();
+      if (!mounted) return;
+      setState(() {
+        _sessions = sessions;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _reopenSession(TestSession s) async {
+    // Load the session and mark as manually set so _tryResume won't override it
+    await widget.provider.loadHistoricalSession(s.id);
+    if (!mounted) return;
+    Navigator.of(context).pop(); // close history dialog
+    widget.onSessionOpened?.call();
+  }
+
+  Future<void> _deleteSession(int index, TestSession s) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(widget.tr('deleteSession')),
+        content: Text(widget.tr('deleteSessionConfirm', {'name': s.name})),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(widget.tr('cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(widget.tr('delete')),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    try {
+      await widget.provider.deleteSession(s.id);
+      if (!mounted) return;
+      setState(() => _sessions.removeAt(index));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(widget.tr('sessionDeleted')),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${widget.tr('saveFailed')}: $e'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return AlertDialog(
+      title: Text(widget.tr('sessionHistory')),
+      content: SizedBox(
+        width: 500,
+        height: MediaQuery.of(context).size.height * 0.65,
+        child: _buildBody(theme),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(widget.tr('close')),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBody(ThemeData theme) {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_error != null) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.error_outline, color: theme.colorScheme.error),
+            const SizedBox(height: 12),
+            Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
+            const SizedBox(height: 12),
+            FilledButton(
+              onPressed: _scan,
+              child: Text(widget.tr('retry')),
+            ),
+          ],
+        ),
+      );
+    }
+    if (_sessions.isEmpty) {
+      return Center(
+        child: Text(
+          widget.tr('noHistorySessions'),
+          style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+        ),
+      );
+    }
+    return ListView.separated(
+      shrinkWrap: true,
+      itemCount: _sessions.length,
+      separatorBuilder: (_, __) => const Divider(height: 1),
+      itemBuilder: (ctx, i) {
+        final s = _sessions[i];
+        return ListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: Text(
+            s.name,
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+          subtitle: Text(
+            [
+              s.type,
+              s.deviceModel.isEmpty ? s.deviceSerial : s.deviceModel,
+              fmtDateTime(s.startedAt),
+              widget.tr('historyIssues', {'count': '${s.issues.length}'}),
+            ].join(' · '),
+            style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.open_in_new, size: 18),
+                tooltip: widget.tr('reopenSession'),
+                onPressed: () => _reopenSession(s),
+              ),
+              IconButton(
+                icon: Icon(Icons.delete_outline,
+                    size: 18, color: theme.colorScheme.error),
+                tooltip: widget.tr('deleteSession'),
+                onPressed: () => _deleteSession(i, s),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
 }
