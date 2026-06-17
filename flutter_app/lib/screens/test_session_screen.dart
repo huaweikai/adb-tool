@@ -16,6 +16,7 @@ import '../services/api_client.dart';
 import '../utils/test_flow_text.dart';
 import '../utils/time_formatters.dart';
 import '../widgets/safe_dialog.dart';
+import '../widgets/session_timeline_item.dart';
 import '../mixins/screen_capture_mixin.dart';
 
 class TestSessionScreen extends StatefulWidget {
@@ -355,67 +356,11 @@ class _TestSessionScreenState extends State<TestSessionScreen>
   }
 
   Widget _buildTimelineItem(ThemeData theme, TestSessionEvent event) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 72,
-          child: Text(
-            fmtTime(event.time),
-            style: TextStyle(
-                fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
-          ),
-        ),
-        Container(
-          margin: const EdgeInsets.only(top: 2),
-          width: 8,
-          height: 8,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: _eventColor(event.type, theme),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.surfaceContainerLow,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: theme.dividerColor),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(_eventTitle(event.type),
-                    style: const TextStyle(
-                        fontSize: 13, fontWeight: FontWeight.w600)),
-                if (event.detail.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    event.detail,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-                if (event.filePath != null) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    event.filePath!,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: theme.colorScheme.primary,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-      ],
+    return SessionTimelineItem(
+      theme: theme,
+      event: event,
+      eventTitle: (t) => sessionEventTitle(t, tr),
+      eventColor: sessionEventColor,
     );
   }
 
@@ -624,15 +569,7 @@ class _TestSessionScreenState extends State<TestSessionScreen>
   }
 
   Widget _testPlanStatusIcon(ThemeData theme, TestSessionPlanStatus status) {
-    final (icon, color) = switch (status) {
-      TestSessionPlanStatus.passed => (Icons.check_circle, Colors.green),
-      TestSessionPlanStatus.failed => (Icons.cancel, theme.colorScheme.error),
-      TestSessionPlanStatus.pending => (
-          Icons.radio_button_unchecked,
-          theme.colorScheme.onSurfaceVariant
-        ),
-    };
-    return Icon(icon, size: 18, color: color);
+    return PlanStatusIcon(status);
   }
 
   Widget _issueList(ThemeData theme, TestSession session) {
@@ -891,11 +828,11 @@ class _TestSessionScreenState extends State<TestSessionScreen>
       await sessionProvider.startSession(
         name: result.name,
         type: result.type,
-        serial: s!,
+        serial: s,
         model: device?.model ?? '',
         brand: device?.brand ?? '',
         sdk: device?.sdk ?? '',
-        deviceDisplayName: displayName ?? s,
+        deviceDisplayName: displayName,
         packageName: result.packageName,
         note: result.note,
         testPlanItems:
@@ -1330,36 +1267,6 @@ class _TestSessionScreenState extends State<TestSessionScreen>
         TestSessionIssueType.compatibility => tr('issueTypeCompatibility'),
         TestSessionIssueType.other => tr('issueTypeOther'),
       };
-
-  String _eventTitle(TestSessionEventType type) => switch (type) {
-        TestSessionEventType.sessionCreated => tr('eventSessionCreated'),
-        TestSessionEventType.noteAdded => tr('eventNoteAdded'),
-        TestSessionEventType.logcatStarted => tr('eventLogcatStarted'),
-        TestSessionEventType.logcatSaved => tr('eventLogcatSaved'),
-        TestSessionEventType.screenshotTaken => tr('eventScreenshotSaved'),
-        TestSessionEventType.screenRecordStarted =>
-          tr('eventScreenRecordStarted'),
-        TestSessionEventType.screenRecordStopped =>
-          tr('eventScreenRecordSaved'),
-        TestSessionEventType.testPlanUpdated => tr('eventTestPlanUpdated'),
-        TestSessionEventType.issueMarked => tr('eventIssueMarked'),
-        TestSessionEventType.sessionFinished => tr('eventSessionFinished'),
-      };
-
-  Color _eventColor(TestSessionEventType type, ThemeData theme) {
-    return switch (type) {
-      TestSessionEventType.sessionCreated => theme.colorScheme.primary,
-      TestSessionEventType.noteAdded => Colors.amber,
-      TestSessionEventType.logcatStarted => Colors.green,
-      TestSessionEventType.logcatSaved => Colors.green,
-      TestSessionEventType.screenshotTaken => Colors.blue,
-      TestSessionEventType.screenRecordStarted => Colors.purple,
-      TestSessionEventType.screenRecordStopped => Colors.purpleAccent,
-      TestSessionEventType.testPlanUpdated => Colors.teal,
-      TestSessionEventType.issueMarked => Colors.deepOrange,
-      TestSessionEventType.sessionFinished => theme.colorScheme.error,
-    };
-  }
 
   Future<void> _deleteArtifact(String id, String name) async {
     final confirmed = await showDialog<bool>(

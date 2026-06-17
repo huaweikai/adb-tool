@@ -15,6 +15,8 @@ import '../widgets/file_transfer.dart';
 import '../widgets/video_preview.dart';
 import '../widgets/safe_dialog.dart';
 import '../widgets/transfer_progress_overlay.dart';
+import '../widgets/file_sheet_actions.dart';
+import '../widgets/info_row.dart';
 import '../mixins/screen_capture_mixin.dart';
 import '../providers/test_session_provider.dart';
 import '../providers/locale_provider.dart';
@@ -1066,7 +1068,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
 
   Widget _buildFileRow(BuildContext context, FileItem file) {
     final theme = Theme.of(context);
-    final isText = _isTextFile(file.name);
+    final isText = isTextFile(file.name);
 
     return GestureDetector(
       onSecondaryTapDown: isTransferring
@@ -1184,7 +1186,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
 
   Widget _buildFileGridItem(BuildContext context, FileItem file) {
     final theme = Theme.of(context);
-    final isText = _isTextFile(file.name);
+    final isText = isTextFile(file.name);
 
     return GestureDetector(
       onSecondaryTapDown: isTransferring
@@ -1331,91 +1333,32 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
                 style: Theme.of(context).textTheme.titleSmall,
               ),
             ),
-            for (final entry in _fileSheetActions(ctx, file)) entry,
+            FileSheetActions(
+              sheetContext: ctx,
+              file: file,
+              tr: tr,
+              onOpen: file.isDir ? () => _enterDir(file) : null,
+              onDownload:
+                  !file.isDir ? () => _downloadFile(file) : null,
+              onUploadToDir:
+                  file.isDir ? () => _uploadFile(targetDir: file.path) : null,
+              onCopyPath: () => _copyPath(file),
+              onRename: () => _renameFile(file),
+              onDelete: () => _deleteFile(file),
+              onNewFile: file.isDir
+                  ? () => _createFileOrFolder(
+                      directory: false, targetDir: file.path)
+                  : null,
+              onNewFolder: file.isDir
+                  ? () => _createFileOrFolder(
+                      directory: true, targetDir: file.path)
+                  : null,
+              onDetails: () => _showFileInfoWithStat(file),
+            ),
             const SizedBox(height: 8),
           ],
         ),
       ),
-    );
-  }
-
-  List<Widget> _fileSheetActions(BuildContext sheetContext, FileItem file) {
-    return [
-      if (file.isDir)
-        _sheetAction(
-          sheetContext,
-          Icons.folder_open,
-          tr('open'),
-          () => _enterDir(file),
-        ),
-      if (!file.isDir)
-        _sheetAction(
-          sheetContext,
-          Icons.download,
-          tr('downloadTooltip'),
-          () => _downloadFile(file),
-        ),
-      if (file.isDir)
-        _sheetAction(
-          sheetContext,
-          Icons.upload,
-          tr('uploadToDir'),
-          () => _uploadFile(targetDir: file.path),
-        ),
-      _sheetAction(
-        sheetContext,
-        Icons.copy,
-        tr('copyPath'),
-        () => _copyPath(file),
-      ),
-      _sheetAction(
-        sheetContext,
-        Icons.drive_file_rename_outline,
-        tr('rename'),
-        () => _renameFile(file),
-      ),
-      _sheetAction(
-        sheetContext,
-        Icons.delete_outline,
-        tr('delete'),
-        () => _deleteFile(file),
-      ),
-      if (file.isDir)
-        _sheetAction(
-          sheetContext,
-          Icons.note_add_outlined,
-          tr('newFile'),
-          () => _createFileOrFolder(directory: false, targetDir: file.path),
-        ),
-      if (file.isDir)
-        _sheetAction(
-          sheetContext,
-          Icons.create_new_folder_outlined,
-          tr('newFolder'),
-          () => _createFileOrFolder(directory: true, targetDir: file.path),
-        ),
-      _sheetAction(
-        sheetContext,
-        Icons.info_outline,
-        tr('details'),
-        () => _showFileInfoWithStat(file),
-      ),
-    ];
-  }
-
-  Widget _sheetAction(
-    BuildContext sheetContext,
-    IconData icon,
-    String title,
-    VoidCallback action,
-  ) {
-    return ListTile(
-      leading: Icon(icon),
-      title: Text(title),
-      onTap: () {
-        Navigator.pop(sheetContext);
-        action();
-      },
     );
   }
 
@@ -1452,15 +1395,15 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _infoRow(tr('type'),
+            InfoRow(tr('type'),
                 (stat?.isDir ?? file.isDir) ? tr('directory') : tr('file')),
-            _infoRow(tr('path'), stat?.path ?? file.path),
+            InfoRow(tr('path'), stat?.path ?? file.path),
             if (!(stat?.isDir ?? file.isDir))
-              _infoRow(tr('size'), stat?.sizeFormatted ?? file.sizeFormatted),
-            _infoRow(tr('permissions'), stat?.permissions ?? file.permissions),
-            _infoRow(tr('modified'), stat?.modified ?? file.modified),
+              InfoRow(tr('size'), stat?.sizeFormatted ?? file.sizeFormatted),
+            InfoRow(tr('permissions'), stat?.permissions ?? file.permissions),
+            InfoRow(tr('modified'), stat?.modified ?? file.modified),
             if (stat != null && stat.raw.isNotEmpty)
-              _infoRow(tr('rawInfo'), stat.raw),
+              InfoRow(tr('rawInfo'), stat.raw),
           ],
         ),
         actions: [
@@ -1471,51 +1414,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
     );
   }
 
-  Widget _infoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-              width: 80,
-              child: Text('$label:',
-                  style: const TextStyle(fontSize: 12, color: Colors.grey))),
-          Expanded(
-              child: Text(value,
-                  style: const TextStyle(fontSize: 12, fontFamily: 'Menlo'))),
-        ],
-      ),
-    );
-  }
 
-  bool _isTextFile(String name) {
-    final ext = name.split('.').last.toLowerCase();
-    return [
-      'txt',
-      'xml',
-      'json',
-      'html',
-      'css',
-      'js',
-      'kt',
-      'java',
-      'py',
-      'log',
-      'cfg',
-      'conf',
-      'prop',
-      'ini',
-      'md',
-      'csv',
-      'yaml',
-      'yml',
-      'sh',
-      'bat',
-      'gradle',
-      'pro'
-    ].contains(ext);
-  }
 
   Widget _buildFileViewer() {
     final theme = Theme.of(context);

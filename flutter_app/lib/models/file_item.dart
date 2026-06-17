@@ -72,3 +72,13 @@ class FileItem {
 
   String get sizeFormatted => formatFileSize(size, isDir: isDir);
 }
+
+/// Returns true if [name] has a text-file extension.
+bool isTextFile(String name) {
+  final ext = name.split('.').last.toLowerCase();
+  return [
+    'txt', 'xml', 'json', 'html', 'css', 'js', 'kt', 'java', 'py', 'log',
+    'cfg', 'conf', 'prop', 'ini', 'md', 'csv', 'yaml', 'yml', 'sh', 'bat',
+    'gradle', 'pro',
+  ].contains(ext);
+}

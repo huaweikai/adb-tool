@@ -811,7 +811,7 @@ class _LogcatScreenState extends State<LogcatScreen> {
             style: mono.copyWith(fontSize: 12, color: theme.dividerColor)),
         Expanded(
           child: Text(
-            entry.message,
+            entry.message.replaceAll('\n', '\u21B5 '),
             style: mono.copyWith(
               fontSize: 12,
               color: highlightColor ?? theme.colorScheme.onSurfaceVariant,
@@ -854,12 +854,12 @@ class _LogcatScreenState extends State<LogcatScreen> {
                 fontSize: 11, fontWeight: FontWeight.w700, color: prioColor)),
       ),
       const SizedBox(width: 4),
-      Text(entry.tag,
+      Text(entry.tag.replaceAll('\n', '\u21B5 '),
           style: mono.copyWith(fontSize: 11, color: theme.colorScheme.primary)),
       const SizedBox(width: 4),
       Expanded(
         child: Text(
-          entry.message,
+          entry.message.replaceAll('\n', '\u21B5 '),
           style: mono.copyWith(fontSize: 11, color: messageColor),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
