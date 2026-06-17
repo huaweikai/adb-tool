@@ -16,7 +16,6 @@ import 'package:flutter/foundation.dart';
 
 import '../models/test_session.dart';
 import '../services/database.dart';
-import 'device_provider.dart';
 import 'test_session/attachment_store.dart';
 import 'test_session/exporter.dart';
 import 'test_session/formatter.dart';
@@ -38,6 +37,10 @@ class TestSessionProvider extends ChangeNotifier {
   String? _translationLanguage;
   TestSession? _currentSession;
 
+  /// Prevents _tryResume from overwriting the session after the user manually
+  /// loaded a historical one (e.g. from the history dialog).
+  bool _sessionManuallySet = false;
+
   TestSessionProvider({
     this.baseDirectory,
     SessionTranslate? translate,
@@ -52,7 +55,7 @@ class TestSessionProvider extends ChangeNotifier {
 
   /// Try to resume a running session from disk on startup.
   Future<void> _tryResume() async {
-    if (_currentSession != null) return;
+    if (_currentSession != null || _sessionManuallySet) return;
     try {
       final running = await scanHistory();
       final ongoing = running.where((s) => s.status == TestSessionStatus.running).toList();
@@ -136,6 +139,7 @@ class TestSessionProvider extends ChangeNotifier {
       ],
     );
     _currentSession = session;
+    _sessionManuallySet = true;
     await _repo.persist(session);
     await _persistCurrentSessionId();
     notifyListeners();
@@ -461,6 +465,7 @@ class TestSessionProvider extends ChangeNotifier {
   Future<TestSession> loadHistoricalSession(String sessionId) async {
     final loaded = await _repo.loadHistorical(sessionId);
     _currentSession = loaded;
+    _sessionManuallySet = true;
     notifyListeners();
     return loaded;
   }
@@ -469,6 +474,7 @@ class TestSessionProvider extends ChangeNotifier {
     await _repo.deleteSessionDir(sessionId);
     if (_currentSession?.id == sessionId) {
       _currentSession = null;
+      _sessionManuallySet = false;
       await _persistCurrentSessionId();
       notifyListeners();
     }
