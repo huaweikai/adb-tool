@@ -1,93 +1,236 @@
-// Test session — public entry point. The class only owns state + notifyListeners.
+// Test session — DB-backed implementation.
 //
-// Heavy lifting is delegated to helper classes under lib/providers/test_session/:
+// All state lives in `adb_tool.db`. This provider exposes:
 //
-//   - repository.dart        session.json I/O + history scan + delete
-//   - attachment_store.dart  logs / screenshots / videos / issue_logs files
-//   - exporter.dart          report.md generation + clipboard text
-//   - formatter.dart         pure string formatters (dates, ids, labels)
+//   1. **Stream accessors** (preferred for new UI) —
+//        watchSessionsForDevice, watchAllActiveSessions,
+//        watchActiveSessionForDevice, watchSessionById,
+//        watchEventsForSession, watchArtifactsForSession,
+//        watchIssuesForSession, watchNotesForSession,
+//        watchPlanItemsForSession.
 //
-// All public methods keep their original signatures so call sites are unchanged.
-
+//   2. **Legacy accessors** (kept working for the in-flight test_session_screen
+//      rewrite; removed in step 7) — `currentSession` and
+//      `hasRunningSession`, which return a hydrated TestSession model.
+//
+//   3. **Mutations** — `startSession`, `finishSession`, `addNote`,
+//      `markIssue`, `updateTestPlanItem`, `saveScreenshotBytes`,
+//      `saveVideoBytes`, `saveLogcat`, `saveLogcatFile`,
+//      `markLogcatStarted`, `markScreenRecordStarted`, `deleteArtifact`,
+//      `deleteSession`, `loadHistoricalSession`, `exportSession`,
+//      `writeReport`, `buildIssueClipboardText`. Every multi-row write
+//      runs inside `db.transaction(...)` so partial state never escapes.
+//
+// File I/O for screenshots / videos / logs is delegated to
+// `SessionAttachmentStore`; this provider wraps the file write and the
+// DB row insert into the same transaction.
 import 'dart:async';
 import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart';
 
-import '../models/test_session.dart';
 import '../db/database.dart';
+import '../db/dao/test_sessions_dao.dart';
+import '../models/test_session.dart';
 import 'test_session/attachment_store.dart';
 import 'test_session/exporter.dart';
 import 'test_session/formatter.dart';
-import 'test_session/repository.dart';
 import 'test_session/session_translate.dart';
 
 export 'test_session/session_translate.dart' show SessionTranslate;
 
-/// Owns the active [TestSession] in memory. Persists every state change to disk
-/// (via [SessionRepository]) so a crash mid-test loses at most one tick.
 class TestSessionProvider extends ChangeNotifier {
-  final Directory? baseDirectory;
-  final SessionRepository _repo;
+  final AppDatabase _db;
+  late final TestSessionsDao _dao;
   final SessionAttachmentStore _attachments;
   final SessionExporter _exporter;
-  final AppDatabase _db;
 
   SessionTranslate _translate;
   String? _translationLanguage;
-  TestSession? _currentSession;
 
-  /// Prevents _tryResume from overwriting the session after the user manually
-  /// loaded a historical one (e.g. from the history dialog).
-  bool _sessionManuallySet = false;
+  /// The session the provider currently considers "active" — the one that
+  /// was started most recently and not yet finished. Mutations without
+  /// an explicit sessionId operate against this. Cleared on finish.
+  String? _activeSessionId;
+  TestSession? _currentHydrated;
 
   TestSessionProvider({
-    this.baseDirectory,
-    SessionTranslate? translate,
     AppDatabase? db,
-  })  : _translate = translate ?? _fallbackTranslate,
-        _repo = SessionRepository(baseDirectory),
+    SessionTranslate? translate,
+  })  : _db = db ?? AppDatabase(),
         _attachments = SessionAttachmentStore(),
         _exporter = SessionExporter(translate ?? _fallbackTranslate),
-        _db = db ?? AppDatabase() {
-    _tryResume();
+        _translate = translate ?? _fallbackTranslate {
+    _dao = _db.testSessionsDao;
+    // Best-effort: rehydrate the most recent running session so the UI
+    // can show "resume" after a restart. Failure is non-fatal.
+    unawaited(_tryResume());
   }
 
-  /// Try to resume a running session from disk on startup.
   Future<void> _tryResume() async {
-    if (_currentSession != null || _sessionManuallySet) return;
     try {
-      final running = await scanHistory();
-      final ongoing = running.where((s) => s.status == TestSessionStatus.running).toList();
-      if (ongoing.isEmpty) return;
-      if (ongoing.length == 1) {
-        _currentSession = ongoing.first;
-        await _persistCurrentSessionId();
-        notifyListeners();
+      final running = await _dao.watchAllActiveSessions().first;
+      if (running.isNotEmpty) {
+        _activeSessionId = running.first.id;
+        await _refreshCurrentHydrated();
       }
-      // Multiple running sessions: let the user pick via history screen.
     } catch (_) {}
   }
 
-  // ===== Translator wiring =====
+  // ===== Translator ========================================================
 
-  void setTranslator(SessionTranslate translate, {String? language}) {
+  void setTranslator(SessionTranslate t, {String? language}) {
     if (language != null && language == _translationLanguage) {
-      _translate = translate;
+      _translate = t;
       return;
     }
-    _translate = translate;
+    _translate = t;
     _translationLanguage = language;
     notifyListeners();
   }
 
-  TestSession? get currentSession => _currentSession;
-  bool get hasRunningSession =>
-      _currentSession?.status == TestSessionStatus.running;
-
   String _t(String key, [Map<String, String>? args]) => _translate(key, args);
 
-  // ===== Session lifecycle =====
+  // ===== Stream accessors (preferred) ======================================
+
+  Stream<List<TestSessionRow>> watchSessionsForDevice(String serial) =>
+      _dao.watchSessionsForDevice(serial);
+
+  Stream<List<TestSessionRow>> watchAllActiveSessions() =>
+      _dao.watchAllActiveSessions();
+
+  Stream<TestSessionRow?> watchActiveSessionForDevice(String serial) =>
+      _dao.watchActiveSessionForDevice(serial);
+
+  Stream<TestSessionRow?> watchSessionById(String id) =>
+      _dao.watchSessionById(id);
+
+  Stream<List<TestSessionEventRow>> watchEventsForSession(String sessionId) =>
+      _dao.watchEventsForSession(sessionId);
+
+  Stream<List<TestSessionArtifactRow>> watchArtifactsForSession(
+          String sessionId) =>
+      _dao.watchArtifactsForSession(sessionId);
+
+  Stream<List<TestSessionIssueRow>> watchIssuesForSession(String sessionId) =>
+      _dao.watchIssuesForSession(sessionId);
+
+  Stream<List<TestSessionNoteRow>> watchNotesForSession(String sessionId) =>
+      _dao.watchNotesForSession(sessionId);
+
+  Stream<List<TestSessionPlanItemRow>> watchPlanItemsForSession(
+          String sessionId) =>
+      _dao.watchPlanItemsForSession(sessionId);
+
+  // ===== Legacy accessors (kept until step 7) =============================
+
+  /// Hydrated full TestSession for the active session, or null. Use
+  /// `watch*ForSession` streams in new code instead.
+  TestSession? get currentSession => _currentHydrated;
+  bool get hasRunningSession =>
+      _currentHydrated?.status == TestSessionStatus.running;
+
+  Future<void> _refreshCurrentHydrated() async {
+    final id = _activeSessionId;
+    if (id == null) {
+      _currentHydrated = null;
+      notifyListeners();
+      return;
+    }
+    _currentHydrated = await _hydrate(id);
+    notifyListeners();
+  }
+
+  Future<TestSession?> _hydrate(String sessionId) async {
+    final s = await _dao.findSessionById(sessionId);
+    if (s == null) return null;
+    final events = await _dao.watchEventsForSession(sessionId).first;
+    final artifacts = await _dao.watchArtifactsForSession(sessionId).first;
+    final issues = await _dao.watchIssuesForSession(sessionId).first;
+    final notes = await _dao.watchNotesForSession(sessionId).first;
+    final planItems = await _dao.watchPlanItemsForSession(sessionId).first;
+    return _rowToModel(s, events, artifacts, notes, issues, planItems);
+  }
+
+  TestSession _rowToModel(
+    TestSessionRow s,
+    List<TestSessionEventRow> events,
+    List<TestSessionArtifactRow> artifacts,
+    List<TestSessionNoteRow> notes,
+    List<TestSessionIssueRow> issues,
+    List<TestSessionPlanItemRow> planItems,
+  ) {
+    return TestSession(
+      id: s.id,
+      name: s.name,
+      type: s.type,
+      status: s.status,
+      startedAt: s.startedAt,
+      endedAt: s.endedAt,
+      directoryPath: '', // legacy field — base dir is derived per-call now
+      deviceSerial: s.deviceSerial,
+      deviceModel: s.deviceModel,
+      deviceBrand: s.deviceBrand,
+      deviceSdk: s.deviceSdk,
+      packageName: s.packageName,
+      note: s.note,
+      events: events
+          .map((e) => TestSessionEvent(
+                id: e.id,
+                type: e.type,
+                time: e.time,
+                title: e.title,
+                detail: e.detail,
+                filePath: e.filePath,
+              ))
+          .toList(),
+      artifacts: artifacts
+          .map((a) => TestSessionArtifact(
+                id: a.id,
+                kind: a.kind,
+                name: a.name,
+                path: a.path,
+                createdAt: a.createdAt,
+                size: a.size,
+              ))
+          .toList(),
+      notes: notes
+          .map((n) => TestSessionNote(
+                id: n.id,
+                createdAt: n.createdAt,
+                content: n.content,
+              ))
+          .toList(),
+      issues: issues
+          .map((i) => TestSessionIssue(
+                id: i.id,
+                createdAt: i.createdAt,
+                title: i.title,
+                type: i.type,
+                severity: i.severity,
+                steps: i.steps,
+                expected: i.expected,
+                actual: i.actual,
+                note: i.note,
+                relatedArtifactIds: const [], // populated by hydration
+              ))
+          .toList(),
+      testPlan: planItems
+          .map((p) => TestSessionPlanItem(
+                id: p.id,
+                flowName: p.flowName,
+                step: p.step,
+                status: p.status,
+                message: p.message,
+                startedAt: p.startedAt,
+                updatedAt: p.updatedAt,
+              ))
+          .toList(),
+    );
+  }
+
+  // ===== Session lifecycle =================================================
 
   Future<TestSession> startSession({
     required String name,
@@ -101,115 +244,185 @@ class TestSessionProvider extends ChangeNotifier {
     String note = '',
     List<TestSessionPlanItem> testPlanItems = const [],
   }) async {
+    // 1. App-level guard: at most one running session per device.
+    final existing = await _dao.watchActiveSessionForDevice(serial).first;
+    if (existing != null) {
+      throw StateError(_t('errorDeviceAlreadyHasRunningSession'));
+    }
+
     final now = DateTime.now();
     final id =
         '${SessionFormatters.compactDate(now)}_${SessionFormatters.safeName(name)}';
-    final root = await _repo.rootDirectory();
-    final sessionDir = Directory('${root.path}/sessions/$id');
-    await Directory('${sessionDir.path}/logs').create(recursive: true);
-    await Directory('${sessionDir.path}/screenshots').create(recursive: true);
-    await Directory('${sessionDir.path}/videos').create(recursive: true);
 
-    final session = TestSession(
-      id: id,
-      name: name.trim().isEmpty ? _t('sessionUntitled') : name.trim(),
-      type: type.trim().isEmpty ? _t('issueTypeOther') : type.trim(),
-      status: TestSessionStatus.running,
-      startedAt: now,
-      directoryPath: sessionDir.path,
-      deviceSerial: serial,
-      deviceModel: model,
-      deviceBrand: brand,
-      deviceSdk: sdk,
-      packageName: packageName.trim(),
-      note: note.trim(),
-      testPlan: SessionFormatters.normalizeTestPlan(testPlanItems),
-      events: [
-        SessionFormatters.buildEvent(
-          TestSessionEventType.sessionCreated,
-          _t('eventSessionCreated'),
-          _t('eventSessionCreatedDetail', {
-            'device': deviceDisplayName,
-            'package': packageName.trim().isEmpty
-                ? _t('notFilled')
-                : packageName.trim(),
-          }),
-          now: now,
-        ),
-      ],
-    );
-    _currentSession = session;
-    _sessionManuallySet = true;
-    await _repo.persist(session);
-    await _persistCurrentSessionId();
-    notifyListeners();
-    return session;
+    // 2. Ensure base + subdirs on disk.
+    final base = await _attachments.artifactsDir(id);
+    for (final sub in ['screenshots', 'videos', 'logs', 'issue_logs']) {
+      await Directory('${base.path}/$sub').create(recursive: true);
+    }
+
+    // 3. Transactional write of session + initial event + plan items.
+    await _db.transaction(() async {
+      await _dao.insertSession(TestSessionsCompanion.insert(
+        id: id,
+        name: name.trim().isEmpty ? _t('sessionUntitled') : name.trim(),
+        type: type.trim().isEmpty ? _t('issueTypeOther') : type.trim(),
+        status: TestSessionStatus.running,
+        startedAt: now,
+        deviceSerial: serial,
+        deviceModel: Value(model),
+        deviceBrand: Value(brand),
+        deviceSdk: Value(sdk),
+        packageName: Value(packageName.trim()),
+        note: Value(note.trim()),
+      ));
+
+      await _dao.insertEvent(TestSessionEventsCompanion.insert(
+        id: SessionFormatters.id(now),
+        sessionId: id,
+        type: TestSessionEventType.sessionCreated,
+        time: now,
+        title: _t('eventSessionCreated'),
+        detail: Value(_t('eventSessionCreatedDetail', {
+          'device': deviceDisplayName,
+          'package': packageName.trim().isEmpty
+              ? _t('notFilled')
+              : packageName.trim(),
+        })),
+      ));
+
+      if (testPlanItems.isNotEmpty) {
+        final normalized = SessionFormatters.normalizeTestPlan(testPlanItems);
+        await _dao.insertPlanItems([
+          for (var i = 0; i < normalized.length; i++)
+            TestSessionPlanItemsCompanion.insert(
+              id: normalized[i].id.isEmpty
+                  ? 'STEP-${SessionFormatters.issueNumber(i + 1)}'
+                  : normalized[i].id,
+              sessionId: id,
+              flowName: normalized[i].flowName,
+              step: normalized[i].step,
+              status: TestSessionPlanStatus.pending,
+              message: Value(normalized[i].message),
+              sortOrder: Value(i),
+            ),
+        ]);
+      }
+    });
+
+    _activeSessionId = id;
+    await _refreshCurrentHydrated();
+    return _currentHydrated!;
   }
+
+  Future<TestSession> finishSession() async {
+    final id = _requireActiveId();
+    final now = DateTime.now();
+    await _db.transaction(() async {
+      await _dao.updateSessionStatus(id, TestSessionStatus.finished,
+          endedAt: now);
+      await _dao.insertEvent(TestSessionEventsCompanion.insert(
+        id: SessionFormatters.id(now),
+        sessionId: id,
+        type: TestSessionEventType.sessionFinished,
+        time: now,
+        title: _t('eventSessionFinished'),
+      ));
+    });
+    final session = await _dao.findSessionById(id);
+    if (session != null) {
+      await _exporter.writeReport(session, db: _db);
+    }
+    _activeSessionId = null;
+    await _refreshCurrentHydrated();
+    return _currentHydrated!;
+  }
+
+  /// Mark the active session as abandoned (device dropped / user force-end).
+  /// The report is still written; no further mutations will be accepted.
+  Future<void> abandonActiveSession() async {
+    final id = _requireActiveId();
+    final now = DateTime.now();
+    await _db.transaction(() async {
+      await _dao.updateSessionStatus(id, TestSessionStatus.abandoned,
+          endedAt: now);
+      await _dao.insertEvent(TestSessionEventsCompanion.insert(
+        id: SessionFormatters.id(now),
+        sessionId: id,
+        type: TestSessionEventType.sessionFinished,
+        time: now,
+        title: _t('eventSessionAbandoned'),
+        detail: Value(_t('eventSessionAbandonedDetail')),
+      ));
+    });
+    final session = await _dao.findSessionById(id);
+    if (session != null) {
+      await _exporter.writeReport(session, db: _db);
+    }
+    _activeSessionId = null;
+    await _refreshCurrentHydrated();
+  }
+
+  // ===== Mutations: test plan =============================================
 
   Future<void> updateTestPlanItem(
     String itemId,
     TestSessionPlanStatus status, {
     String message = '',
   }) async {
-    final session = _requireRunningSession();
-    final index = session.testPlan.indexWhere((item) => item.id == itemId);
-    if (index == -1) return;
+    final id = _requireActiveId();
     final now = DateTime.now();
-    final currentItem = session.testPlan[index];
-    // Set startedAt on first mark (when step moves out of pending)
-    final startedAt = currentItem.startedAt ??
+    final items = await _dao.watchPlanItemsForSession(id).first;
+    final current = items.firstWhere(
+      (p) => p.id == itemId,
+      orElse: () => throw StateError('plan item not found: $itemId'),
+    );
+    final startedAt = current.startedAt ??
         (status != TestSessionPlanStatus.pending ? now : null);
 
-    final updated = [
-      for ( var i = 0; i < session.testPlan.length; i++)
-        if (i == index)
-          session.testPlan[i].copyWith(
-            status: status,
-            message: message.trim(),
-            startedAt: startedAt,
-            updatedAt: now,
-          )
-        else
-          session.testPlan[i],
-    ];
-    final item = updated[index];
-    _currentSession = session.copyWith(
-      testPlan: updated,
-      events: [
-        ...session.events,
-        SessionFormatters.buildEvent(
-          TestSessionEventType.testPlanUpdated,
-          _t('eventTestPlanUpdated'),
-          '${item.flowName} / ${item.step}',
-          now: now,
-        ),
-      ],
-    );
-    await _repo.persist(_currentSession!);
-    notifyListeners();
+    await _db.transaction(() async {
+      await _dao.updatePlanItem(
+        itemId,
+        status: status,
+        message: message,
+        startedAt: startedAt,
+        updatedAt: now,
+      );
+      await _dao.insertEvent(TestSessionEventsCompanion.insert(
+        id: SessionFormatters.id(now),
+        sessionId: id,
+        type: TestSessionEventType.testPlanUpdated,
+        time: now,
+        title: _t('eventTestPlanUpdated'),
+        detail: Value('${current.flowName} / ${current.step}'),
+      ));
+    });
+    await _refreshCurrentHydrated();
   }
 
+  // ===== Mutations: notes & issues ========================================
+
   Future<void> addNote(String content) async {
-    final session = _requireRunningSession();
+    final id = _requireActiveId();
     final text = content.trim();
     if (text.isEmpty) return;
     final now = DateTime.now();
-    final note = TestSessionNote(
-      id: SessionFormatters.id(now),
-      createdAt: now,
-      content: text,
-    );
-    _currentSession = session.copyWith(
-      notes: [...session.notes, note],
-      events: [
-        ...session.events,
-        SessionFormatters.buildEvent(
-            TestSessionEventType.noteAdded, _t('eventNoteAdded'), text,
-            now: now),
-      ],
-    );
-    await _repo.persist(_currentSession!);
-    notifyListeners();
+    await _db.transaction(() async {
+      await _dao.insertNote(TestSessionNotesCompanion.insert(
+        id: SessionFormatters.id(now),
+        sessionId: id,
+        createdAt: now,
+        content: text,
+      ));
+      await _dao.insertEvent(TestSessionEventsCompanion.insert(
+        id: SessionFormatters.id(now),
+        sessionId: id,
+        type: TestSessionEventType.noteAdded,
+        time: now,
+        title: _t('eventNoteAdded'),
+        detail: Value(text),
+      ));
+    });
+    await _refreshCurrentHydrated();
   }
 
   Future<TestSessionIssue> markIssue({
@@ -222,233 +435,388 @@ class TestSessionProvider extends ChangeNotifier {
     String note = '',
     String recentLogContent = '',
   }) async {
-    var session = _requireRunningSession();
+    final id = _requireActiveId();
     final now = DateTime.now();
-    final cleanTitle =
-        title.trim().isEmpty ? _t('issueUntitled') : title.trim();
-    final issueId =
-        SessionFormatters.issueId(session.issues.length + 1);
-    final relatedArtifactIds = SessionFormatters.recentArtifactIds(session);
+    final issueNumber = (await _dao.watchIssuesForSession(id).first).length + 1;
+    final issueId = SessionFormatters.issueId(issueNumber);
+
+    // Snapshot the most-recent logcat to disk first; this is best-effort
+    // (a failure here shouldn't block issue creation).
+    String? snapshotRelPath;
+    String? snapshotName;
     if (recentLogContent.trim().isNotEmpty) {
-      final artifact = await _attachments.writeIssueRecentLog(
-          session, issueId, recentLogContent, now);
-      session = session.copyWith(artifacts: [...session.artifacts, artifact]);
-      relatedArtifactIds.add(artifact.id);
+      final snap = await _attachments.writeIssueRecentLog(
+        sessionId: id,
+        issueId: issueId,
+        content: recentLogContent,
+        now: now,
+      );
+      snapshotRelPath = snap.relativePath;
+      snapshotName = snap.name;
     }
-    final issue = TestSessionIssue(
-      id: issueId,
-      createdAt: now,
-      title: cleanTitle,
-      type: type,
-      severity: severity,
-      steps: steps.trim(),
-      expected: expected.trim(),
-      actual: actual.trim(),
-      note: note.trim(),
-      relatedArtifactIds: relatedArtifactIds,
-    );
-    _currentSession = session.copyWith(
-      issues: [...session.issues, issue],
-      events: [
-        ...session.events,
-        SessionFormatters.buildEvent(
-          TestSessionEventType.issueMarked,
-          _t('eventIssueMarked'),
-          '${SessionFormatters.severityLabel(_t, severity)} / ${SessionFormatters.issueTypeLabel(_t, type)} / ${issue.title}',
-          now: now,
-        ),
-      ],
-    );
-    await _repo.persist(_currentSession!);
-    notifyListeners();
-    return issue;
+
+    await _db.transaction(() async {
+      // 1. Optional log snapshot artifact.
+      String? snapshotArtifactId;
+      if (snapshotRelPath != null) {
+        snapshotArtifactId = SessionFormatters.id(now);
+        await _dao.insertArtifact(TestSessionArtifactsCompanion.insert(
+          id: snapshotArtifactId,
+          sessionId: id,
+          kind: TestSessionArtifactKind.log,
+          name: snapshotName!,
+          path: snapshotRelPath,
+          createdAt: now,
+          size: Value(0),
+        ));
+      }
+
+      // 2. The issue itself.
+      await _dao.insertIssue(TestSessionIssuesCompanion.insert(
+        id: issueId,
+        sessionId: id,
+        createdAt: now,
+        title: title.trim().isEmpty ? _t('issueUntitled') : title.trim(),
+        type: type,
+        severity: severity,
+        steps: Value(steps.trim()),
+        expected: Value(expected.trim()),
+        actual: Value(actual.trim()),
+        note: Value(note.trim()),
+      ));
+
+      // 3. Auto-link the most recent screenshot / video / log artifacts.
+      final all = await _dao.watchArtifactsForSession(id).first;
+      for (final kind in [
+        TestSessionArtifactKind.screenshot,
+        TestSessionArtifactKind.video,
+        TestSessionArtifactKind.log,
+      ]) {
+        final matches = all.where((a) => a.kind == kind).toList();
+        if (matches.isNotEmpty) {
+          await _dao.linkIssueArtifact(issueId, matches.last.id);
+        }
+      }
+
+      // 4. Issue-marked event.
+      await _dao.insertEvent(TestSessionEventsCompanion.insert(
+        id: SessionFormatters.id(now),
+        sessionId: id,
+        type: TestSessionEventType.issueMarked,
+        time: now,
+        title: _t('eventIssueMarked'),
+        detail: Value(
+            '${SessionFormatters.severityLabel(_t, severity)} / ${SessionFormatters.issueTypeLabel(_t, type)} / ${title.trim().isEmpty ? _t('issueUntitled') : title.trim()}'),
+      ));
+    });
+    await _refreshCurrentHydrated();
+    return _currentHydrated!.issues
+        .firstWhere((i) => i.id == issueId);
   }
 
   String buildIssueClipboardText(TestSessionIssue issue) {
-    return _exporter.buildIssueClipboardText(_currentSession, issue);
-  }
-
-  // ===== Attachments =====
-
-  Future<String> saveLogcat(String content) async {
-    final session = _requireRunningSession();
-    final now = DateTime.now();
-    final artifact = await _attachments.writeLogcat(session, content, now);
-    _currentSession = session.copyWith(
-      artifacts: [...session.artifacts, artifact],
-      events: [
-        ...session.events,
-        SessionFormatters.buildEvent(
-          TestSessionEventType.logcatSaved,
-          _t('eventLogcatSaved'),
-          artifact.name,
-          filePath: artifact.path,
-          now: now,
-        ),
-      ],
+    final s = _currentHydrated;
+    if (s == null) return '';
+    final issueRow = s.issues.firstWhere((i) => i.id == issue.id,
+        orElse: () => issue);
+    final linkedArtifacts = <TestSessionArtifact>[];
+    for (final a in s.artifacts) {
+      if (issue.relatedArtifactIds.contains(a.id)) linkedArtifacts.add(a);
+    }
+    return _exporter.buildIssueClipboardText(
+      session: _sessionToRow(s),
+      issue: _issueToRow(issueRow),
+      linkedArtifacts:
+          linkedArtifacts.map(_artifactToRow).toList(),
     );
-    await _repo.persist(_currentSession!);
-    notifyListeners();
-    return artifact.path;
   }
+
+  TestSessionRow _sessionToRow(TestSession s) {
+    return TestSessionRow(
+      id: s.id,
+      name: s.name,
+      type: s.type,
+      status: s.status,
+      startedAt: s.startedAt,
+      endedAt: s.endedAt,
+      deviceSerial: s.deviceSerial,
+      deviceModel: s.deviceModel,
+      deviceBrand: s.deviceBrand,
+      deviceSdk: s.deviceSdk,
+      packageName: s.packageName,
+      note: s.note,
+    );
+  }
+
+  TestSessionIssueRow _issueToRow(TestSessionIssue i) {
+    return TestSessionIssueRow(
+      id: i.id,
+      sessionId: _requireActiveId(),
+      createdAt: i.createdAt,
+      title: i.title,
+      type: i.type,
+      severity: i.severity,
+      steps: i.steps,
+      expected: i.expected,
+      actual: i.actual,
+      note: i.note,
+    );
+  }
+
+  TestSessionArtifactRow _artifactToRow(TestSessionArtifact a) {
+    return TestSessionArtifactRow(
+      id: a.id,
+      sessionId: _requireActiveId(),
+      kind: a.kind,
+      name: a.name,
+      path: a.path,
+      createdAt: a.createdAt,
+      size: a.size,
+    );
+  }
+
+  // ===== Mutations: artifacts =============================================
 
   Future<String> saveScreenshotBytes(List<int> bytes) async {
-    final session = _requireRunningSession();
+    final id = _requireActiveId();
     final now = DateTime.now();
-    final artifact =
-        await _attachments.writeScreenshot(session, bytes, now);
-    _currentSession = session.copyWith(
-      artifacts: [...session.artifacts, artifact],
-      events: [
-        ...session.events,
-        SessionFormatters.buildEvent(
-          TestSessionEventType.screenshotTaken,
-          _t('eventScreenshotSaved'),
-          artifact.name,
-          filePath: artifact.path,
-          now: now,
-        ),
-      ],
+    final desc = await _attachments.writeScreenshot(
+      sessionId: id,
+      bytes: bytes,
+      now: now,
     );
-    await _repo.persist(_currentSession!);
-    notifyListeners();
-    return artifact.path;
+    final artifactId = SessionFormatters.id(now);
+    await _db.transaction(() async {
+      await _dao.insertArtifact(TestSessionArtifactsCompanion.insert(
+        id: artifactId,
+        sessionId: id,
+        kind: TestSessionArtifactKind.screenshot,
+        name: desc.name,
+        path: desc.relativePath,
+        createdAt: now,
+        size: Value(desc.size),
+      ));
+      await _dao.insertEvent(TestSessionEventsCompanion.insert(
+        id: SessionFormatters.id(now),
+        sessionId: id,
+        type: TestSessionEventType.screenshotTaken,
+        time: now,
+        title: _t('eventScreenshotSaved'),
+        detail: Value(desc.name),
+        filePath: Value(desc.relativePath),
+      ));
+    });
+    await _refreshCurrentHydrated();
+    return desc.relativePath;
   }
 
-  Future<void> markScreenRecordStarted() async {
-    final session = _requireRunningSession();
+  Future<String> saveVideoBytes(List<int> bytes) async {
+    final id = _requireActiveId();
     final now = DateTime.now();
-    _currentSession = session.copyWith(
-      events: [
-        ...session.events,
-        SessionFormatters.buildEvent(
-          TestSessionEventType.screenRecordStarted,
-          _t('eventScreenRecordStarted'),
-          _t('eventScreenRecordStartedDetail'),
-          now: now,
-        ),
-      ],
-    );
-    await _repo.persist(_currentSession!);
-    notifyListeners();
+    final desc =
+        await _attachments.writeVideo(sessionId: id, bytes: bytes, now: now);
+    final artifactId = SessionFormatters.id(now);
+    await _db.transaction(() async {
+      await _dao.insertArtifact(TestSessionArtifactsCompanion.insert(
+        id: artifactId,
+        sessionId: id,
+        kind: TestSessionArtifactKind.video,
+        name: desc.name,
+        path: desc.relativePath,
+        createdAt: now,
+        size: Value(desc.size),
+      ));
+      await _dao.insertEvent(TestSessionEventsCompanion.insert(
+        id: SessionFormatters.id(now),
+        sessionId: id,
+        type: TestSessionEventType.screenRecordStopped,
+        time: now,
+        title: _t('eventScreenRecordSaved'),
+        detail: Value(desc.name),
+        filePath: Value(desc.relativePath),
+      ));
+    });
+    await _refreshCurrentHydrated();
+    return desc.relativePath;
   }
 
-  Future<void> markLogcatStarted() async {
-    final session = _requireRunningSession();
+  Future<String> saveLogcat(String content) async {
+    final id = _requireActiveId();
     final now = DateTime.now();
-    _currentSession = session.copyWith(
-      events: [
-        ...session.events,
-        SessionFormatters.buildEvent(
-          TestSessionEventType.logcatStarted,
-          _t('eventLogcatStarted'),
-          _t('eventLogcatStartedDetail'),
-          now: now,
-        ),
-      ],
-    );
-    await _repo.persist(_currentSession!);
-    notifyListeners();
+    final desc = await _attachments.writeLogcat(
+        sessionId: id, content: content, now: now);
+    final artifactId = SessionFormatters.id(now);
+    await _db.transaction(() async {
+      await _dao.insertArtifact(TestSessionArtifactsCompanion.insert(
+        id: artifactId,
+        sessionId: id,
+        kind: TestSessionArtifactKind.log,
+        name: desc.name,
+        path: desc.relativePath,
+        createdAt: now,
+        size: Value(desc.size),
+      ));
+      await _dao.insertEvent(TestSessionEventsCompanion.insert(
+        id: SessionFormatters.id(now),
+        sessionId: id,
+        type: TestSessionEventType.logcatSaved,
+        time: now,
+        title: _t('eventLogcatSaved'),
+        detail: Value(desc.name),
+        filePath: Value(desc.relativePath),
+      ));
+    });
+    await _refreshCurrentHydrated();
+    return desc.relativePath;
   }
 
+  /// Adopt a file that the backend (session-logcat) already wrote for us.
+  /// Records the artifact in the DB and emits a "logcat stopped" event.
   Future<String> saveLogcatFile(String path) async {
-    final session = _requireRunningSession();
-    final now = DateTime.now();
+    final id = _requireActiveId();
     final file = File(path);
     if (!await file.exists()) {
       throw Exception(_t('errorLogFileNotFound', {'path': path}));
     }
     final size = await file.length();
     final name = file.uri.pathSegments.last;
-    final artifact = TestSessionArtifact(
-      id: SessionFormatters.id(now),
-      kind: TestSessionArtifactKind.log,
-      name: name,
-      path: path,
-      createdAt: now,
-      size: size,
-    );
-    _currentSession = session.copyWith(
-      artifacts: [...session.artifacts, artifact],
-      events: [
-        ...session.events,
-        SessionFormatters.buildEvent(
-          TestSessionEventType.logcatSaved,
-          _t('eventLogcatStopped'),
-          name,
-          filePath: path,
-          now: now,
-        ),
-      ],
-    );
-    await _repo.persist(_currentSession!);
-    notifyListeners();
+    final now = DateTime.now();
+    final artifactId = SessionFormatters.id(now);
+    // The backend writes logcat files into `<sessionDir>/logcat.log` (or
+    // similar). We treat that absolute path as the artifact and record
+    // it as-is — the legacy UI uses it directly via `file.readAsBytes()`.
+    await _db.transaction(() async {
+      await _dao.insertArtifact(TestSessionArtifactsCompanion.insert(
+        id: artifactId,
+        sessionId: id,
+        kind: TestSessionArtifactKind.log,
+        name: name,
+        path: path,
+        createdAt: now,
+        size: Value(size),
+      ));
+      await _dao.insertEvent(TestSessionEventsCompanion.insert(
+        id: SessionFormatters.id(now),
+        sessionId: id,
+        type: TestSessionEventType.logcatSaved,
+        time: now,
+        title: _t('eventLogcatStopped'),
+        detail: Value(name),
+        filePath: Value(path),
+      ));
+    });
+    await _refreshCurrentHydrated();
     return path;
   }
 
-  Future<String> saveVideoBytes(List<int> bytes) async {
-    final session = _requireRunningSession();
+  Future<void> markLogcatStarted() async {
+    final id = _requireActiveId();
     final now = DateTime.now();
-    final artifact = await _attachments.writeVideo(session, bytes, now);
-    _currentSession = session.copyWith(
-      artifacts: [...session.artifacts, artifact],
-      events: [
-        ...session.events,
-        SessionFormatters.buildEvent(
-          TestSessionEventType.screenRecordStopped,
-          _t('eventScreenRecordSaved'),
-          artifact.name,
-          filePath: artifact.path,
-          now: now,
-        ),
-      ],
-    );
-    await _repo.persist(_currentSession!);
-    notifyListeners();
-    return artifact.path;
+    await _db.transaction(() async {
+      await _dao.insertEvent(TestSessionEventsCompanion.insert(
+        id: SessionFormatters.id(now),
+        sessionId: id,
+        type: TestSessionEventType.logcatStarted,
+        time: now,
+        title: _t('eventLogcatStarted'),
+        detail: Value(_t('eventLogcatStartedDetail')),
+      ));
+    });
+    await _refreshCurrentHydrated();
   }
 
-  // ===== Finish / report / export =====
-
-  Future<TestSession> finishSession() async {
-    final session = _requireRunningSession();
+  Future<void> markScreenRecordStarted() async {
+    final id = _requireActiveId();
     final now = DateTime.now();
-    final finished = session.copyWith(
-      status: TestSessionStatus.finished,
-      endedAt: now,
-      events: [
-        ...session.events,
-        SessionFormatters.buildEvent(
-          TestSessionEventType.sessionFinished,
-          _t('eventSessionFinished'),
-          '',
-          now: now,
-        ),
-      ],
-    );
-    _currentSession = finished;
-    await _exporter.writeReport(finished);
-    await _repo.persist(finished);
-    await _persistCurrentSessionId();
-    notifyListeners();
-    return _currentSession!;
+    await _db.transaction(() async {
+      await _dao.insertEvent(TestSessionEventsCompanion.insert(
+        id: SessionFormatters.id(now),
+        sessionId: id,
+        type: TestSessionEventType.screenRecordStarted,
+        time: now,
+        title: _t('eventScreenRecordStarted'),
+        detail: Value(_t('eventScreenRecordStartedDetail')),
+      ));
+    });
+    await _refreshCurrentHydrated();
   }
+
+  Future<void> deleteArtifact(String artifactId) async {
+    final id = _requireActiveId();
+    final artifacts = await _dao.watchArtifactsForSession(id).first;
+    final target = artifacts.firstWhere(
+      (a) => a.id == artifactId,
+      orElse: () => throw StateError('artifact not found: $artifactId'),
+    );
+    await _attachments.deleteFile(target.path);
+    await _dao.deleteArtifact(artifactId);
+    await _refreshCurrentHydrated();
+  }
+
+  // ===== History & lifecycle ==============================================
+
+  /// All sessions for the given device, newest first. One-shot read used
+  /// by the legacy history dialog.
+  Future<List<TestSession>> scanHistoryForDevice(String serial) async {
+    final rows = await _dao.watchSessionsForDevice(serial).first;
+    final out = <TestSession>[];
+    for (final r in rows) {
+      final hydrated = await _hydrate(r.id);
+      if (hydrated != null) out.add(hydrated);
+    }
+    return out;
+  }
+
+  /// Backwards-compat: scan across all devices (used by the old "all
+  /// history" dialog). Iterates each saved device.
+  Future<List<TestSession>> scanHistory() async {
+    final devices = await _db.savedDevicesDao.getAllSavedDevices();
+    final all = <TestSession>[];
+    for (final d in devices) {
+      all.addAll(await scanHistoryForDevice(d.serial));
+    }
+    all.sort((a, b) => b.startedAt.compareTo(a.startedAt));
+    return all;
+  }
+
+  /// Make the given session the "active" one (legacy UI compatibility).
+  /// Hydrates and notifies so the existing screen re-renders.
+  Future<TestSession> loadHistoricalSession(String sessionId) async {
+    _activeSessionId = sessionId;
+    await _refreshCurrentHydrated();
+    return _currentHydrated!;
+  }
+
+  Future<void> deleteSession(String sessionId) async {
+    await _dao.deleteSession(sessionId);
+    await _attachments.deleteSessionDir(sessionId);
+    if (_activeSessionId == sessionId) {
+      _activeSessionId = null;
+      await _refreshCurrentHydrated();
+    }
+  }
+
+  // ===== Report / export ===================================================
 
   Future<String> writeReport() async {
-    final session = _currentSession;
+    final id = _requireActiveId();
+    final session = await _dao.findSessionById(id);
     if (session == null) throw StateError(_t('errorNoSession'));
-    return _exporter.writeReport(session);
+    return _exporter.writeReport(session, db: _db);
   }
 
+  /// Export a ZIP of the session directory + report.md.
   Future<String> exportSession({String? targetPath}) async {
-    final session = _currentSession;
+    final id = _requireActiveId();
+    final session = await _dao.findSessionById(id);
     if (session == null) throw StateError(_t('errorNoSession'));
-    await _exporter.writeReport(session);
-    final destination = targetPath ?? '${session.directoryPath}.zip';
+    await _exporter.writeReport(session, db: _db);
+    final base = await _attachments.artifactsDir(id);
+    final destination = targetPath ?? '${base.path}.zip';
     final result = await Process.run(
       'zip',
       ['-r', destination, '.'],
-      workingDirectory: session.directoryPath,
+      workingDirectory: base.path,
     );
     if (result.exitCode != 0) {
       throw Exception(result.stderr.toString().isEmpty
@@ -458,60 +826,14 @@ class TestSessionProvider extends ChangeNotifier {
     return destination;
   }
 
-  // ===== History & lifecycle =====
+  // ===== Internals ========================================================
 
-  Future<List<TestSession>> scanHistory() => _repo.scanHistory();
-
-  Future<TestSession> loadHistoricalSession(String sessionId) async {
-    final loaded = await _repo.loadHistorical(sessionId);
-    _currentSession = loaded;
-    _sessionManuallySet = true;
-    notifyListeners();
-    return loaded;
-  }
-
-  Future<void> deleteSession(String sessionId) async {
-    await _repo.deleteSessionDir(sessionId);
-    if (_currentSession?.id == sessionId) {
-      _currentSession = null;
-      _sessionManuallySet = false;
-      await _persistCurrentSessionId();
-      notifyListeners();
-    }
-  }
-
-  /// Persist the current session ID to database so we can resume it after restart.
-  /// TODO(step 4): rewrite against the new test-sessions table.
-  Future<void> _persistCurrentSessionId() async {
-    // No-op stub. The old currentSessionId/recentSessionIds fields on
-    // AppStates have been removed. Step 4 replaces this with a query on
-    // test_sessions WHERE status=0.
-  }
-
-  Future<void> deleteArtifact(String artifactId) async {
-    final session = _requireRunningSession();
-    final idx = session.artifacts.indexWhere((a) => a.id == artifactId);
-    if (idx == -1) return;
-    final artifact = session.artifacts[idx];
-    await _attachments.deleteFile(artifact.path);
-    _currentSession = session.copyWith(
-      artifacts: [
-        for (var i = 0; i < session.artifacts.length; i++)
-          if (i != idx) session.artifacts[i],
-      ],
-    );
-    await _repo.persist(_currentSession!);
-    notifyListeners();
-  }
-
-  // ===== Internals =====
-
-  TestSession _requireRunningSession() {
-    final session = _currentSession;
-    if (session == null || session.status != TestSessionStatus.running) {
+  String _requireActiveId() {
+    final id = _activeSessionId;
+    if (id == null) {
       throw StateError(_t('errorNoRunningSession'));
     }
-    return session;
+    return id;
   }
 
   static String _fallbackTranslate(String key, [Map<String, String>? args]) {
@@ -537,7 +859,7 @@ class TestSessionProvider extends ChangeNotifier {
     'eventNoteAdded': '添加备注',
     'eventIssueMarked': '标记问题',
     'eventTestPlanUpdated': '更新测试步骤',
-    'eventLogcatSaved': '保存 Logcat',
+    'eventLogcatSaved': '保存日志',
     'eventScreenshotSaved': '保存截屏',
     'eventScreenRecordStarted': '开始录屏',
     'eventScreenRecordStartedDetail': '最长建议 3 分钟',
@@ -546,8 +868,11 @@ class TestSessionProvider extends ChangeNotifier {
     'eventLogcatStopped': '停止采集日志',
     'eventScreenRecordSaved': '保存录屏',
     'eventSessionFinished': '结束测试会话',
+    'eventSessionAbandoned': '会话被强制结束',
+    'eventSessionAbandonedDetail': '设备已离线',
     'errorNoSession': '没有测试会话',
     'errorNoRunningSession': '没有进行中的测试会话',
+    'errorDeviceAlreadyHasRunningSession': '该设备已有进行中的测试会话',
     'errorLogFileNotFound': '日志文件不存在: {path}',
     'issueTypeCrash': '崩溃',
     'issueTypeAnr': 'ANR',

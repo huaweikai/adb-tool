@@ -24,6 +24,7 @@ import 'package:path_provider/path_provider.dart';
 import '../models/test_session.dart';
 import 'dao/app_states_dao.dart';
 import 'dao/saved_devices_dao.dart';
+import 'dao/test_sessions_dao.dart';
 import 'tables/app_states.dart';
 import 'tables/saved_devices.dart';
 import 'tables/test_session_artifacts.dart';
@@ -48,7 +49,7 @@ part 'database.g.dart';
     TestSessionPlanItems,
     TestSessionIssueArtifacts,
   ],
-  daos: [SavedDevicesDao, AppStatesDao],
+  daos: [SavedDevicesDao, AppStatesDao, TestSessionsDao],
 )
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
