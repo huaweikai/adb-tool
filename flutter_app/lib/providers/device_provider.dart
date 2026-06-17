@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/device.dart';
-import '../services/database.dart';
+import '../db/database.dart';
 import '../services/api_client.dart';
 
 class DeviceSerialScope {
@@ -46,7 +46,7 @@ class DeviceProvider extends ChangeNotifier {
 
   Future<void> _init() async {
     // Watch saved devices for changes - auto-updates when DB changes
-    _savedDevicesSub = db.watchAllSavedDevices().listen((devices) {
+    _savedDevicesSub = db.savedDevicesDao.watchAllSavedDevices().listen((devices) {
       _savedDevices = devices;
       notifyListeners();
     });
@@ -60,13 +60,13 @@ class DeviceProvider extends ChangeNotifier {
   void select(String? serial) {
     if (_activeSerial == serial) return;
     _activeSerial = serial;
-    db.updateAppState(activeSerial: serial);
+    db.appStatesDao.updateAppState(activeSerial: serial);
     notifyListeners();
   }
 
   /// Add or update a device in the saved list
   Future<void> _saveDevice(Device device) async {
-    await db.upsertSavedDevice(
+    await db.savedDevicesDao.upsertSavedDevice(
       serial: device.serial,
       model: device.model,
       brand: device.brand,
@@ -77,14 +77,14 @@ class DeviceProvider extends ChangeNotifier {
 
   /// Remove a device from saved list
   Future<void> removeDevice(String serial) async {
-    await db.deleteSavedDevice(serial);
-    
+    await db.savedDevicesDao.deleteSavedDevice(serial);
+
     // Clear selection if this was the active device
     if (_activeSerial == serial) {
       _activeSerial = null;
-      await db.updateAppState(activeSerial: null);
+      await db.appStatesDao.updateAppState(activeSerial: null);
     }
-    
+
     notifyListeners();
   }
 
@@ -136,7 +136,7 @@ class DeviceProvider extends ChangeNotifier {
             .map((d) => d.serial)
             .toSet();
 
-        await db.updateAllDevicesConnection(onlineSerials);
+        await db.savedDevicesDao.updateAllDevicesConnection(onlineSerials);
 
         for (final device in devices) {
           if (device.isOnline &&
@@ -145,7 +145,7 @@ class DeviceProvider extends ChangeNotifier {
           }
         }
 
-        await db.updateAppState(
+        await db.appStatesDao.updateAppState(
           lastSuccessfulRefresh: _lastSuccessfulRefresh,
         );
       } catch (dbErr, dbSt) {

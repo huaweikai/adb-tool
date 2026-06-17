@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'services/api_client.dart';
-import 'services/database.dart';
+import 'db/database.dart';
 import 'services/log_stream.dart';
 import 'services/server_launcher.dart';
 import 'screens/home_screen.dart';

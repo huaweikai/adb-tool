@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import '../services/database.dart';
+import '../db/database.dart';
 import '../services/api_client.dart';
 import '../providers/theme_provider.dart';
 import '../providers/device_provider.dart';
@@ -94,8 +94,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final dp = context.read<DeviceProvider>();
     final db = dp.db;
 
-    final activeKey = await db.getActiveKey();
-    final expandedSerials = await db.getExpandedSerials();
+    final activeKey = await db.appStatesDao.getActiveKey();
+    final expandedSerials = await db.appStatesDao.getExpandedSerials();
 
     if (!mounted) return;
 
@@ -369,7 +369,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Future<void> _persistState() async {
     final dp = context.read<DeviceProvider>();
-    await dp.db.updateAppState(
+    await dp.db.appStatesDao.updateAppState(
       activeKey: _activeKey,
       expandedSerials: _expandedSerials.toList(),
     );

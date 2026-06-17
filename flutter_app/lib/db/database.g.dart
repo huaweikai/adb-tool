@@ -437,28 +437,9 @@ class $AppStatesTable extends AppStates
   late final GeneratedColumn<DateTime> lastSuccessfulRefresh =
       GeneratedColumn<DateTime>('last_successful_refresh', aliasedName, true,
           type: DriftSqlType.dateTime, requiredDuringInsert: false);
-  static const VerificationMeta _currentSessionIdMeta =
-      const VerificationMeta('currentSessionId');
   @override
-  late final GeneratedColumn<String> currentSessionId = GeneratedColumn<String>(
-      'current_session_id', aliasedName, true,
-      type: DriftSqlType.string, requiredDuringInsert: false);
-  static const VerificationMeta _recentSessionIdsMeta =
-      const VerificationMeta('recentSessionIds');
-  @override
-  late final GeneratedColumn<String> recentSessionIds = GeneratedColumn<String>(
-      'recent_session_ids', aliasedName, false,
-      type: DriftSqlType.string, requiredDuringInsert: true);
-  @override
-  List<GeneratedColumn> get $columns => [
-        id,
-        activeSerial,
-        activeKey,
-        expandedSerials,
-        lastSuccessfulRefresh,
-        currentSessionId,
-        recentSessionIds
-      ];
+  List<GeneratedColumn> get $columns =>
+      [id, activeSerial, activeKey, expandedSerials, lastSuccessfulRefresh];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -496,20 +477,6 @@ class $AppStatesTable extends AppStates
           lastSuccessfulRefresh.isAcceptableOrUnknown(
               data['last_successful_refresh']!, _lastSuccessfulRefreshMeta));
     }
-    if (data.containsKey('current_session_id')) {
-      context.handle(
-          _currentSessionIdMeta,
-          currentSessionId.isAcceptableOrUnknown(
-              data['current_session_id']!, _currentSessionIdMeta));
-    }
-    if (data.containsKey('recent_session_ids')) {
-      context.handle(
-          _recentSessionIdsMeta,
-          recentSessionIds.isAcceptableOrUnknown(
-              data['recent_session_ids']!, _recentSessionIdsMeta));
-    } else if (isInserting) {
-      context.missing(_recentSessionIdsMeta);
-    }
     return context;
   }
 
@@ -530,10 +497,6 @@ class $AppStatesTable extends AppStates
       lastSuccessfulRefresh: attachedDatabase.typeMapping.read(
           DriftSqlType.dateTime,
           data['${effectivePrefix}last_successful_refresh']),
-      currentSessionId: attachedDatabase.typeMapping.read(
-          DriftSqlType.string, data['${effectivePrefix}current_session_id']),
-      recentSessionIds: attachedDatabase.typeMapping.read(
-          DriftSqlType.string, data['${effectivePrefix}recent_session_ids'])!,
     );
   }
 
@@ -549,16 +512,12 @@ class AppState extends DataClass implements Insertable<AppState> {
   final String? activeKey;
   final String expandedSerials;
   final DateTime? lastSuccessfulRefresh;
-  final String? currentSessionId;
-  final String recentSessionIds;
   const AppState(
       {required this.id,
       this.activeSerial,
       this.activeKey,
       required this.expandedSerials,
-      this.lastSuccessfulRefresh,
-      this.currentSessionId,
-      required this.recentSessionIds});
+      this.lastSuccessfulRefresh});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -574,10 +533,6 @@ class AppState extends DataClass implements Insertable<AppState> {
       map['last_successful_refresh'] =
           Variable<DateTime>(lastSuccessfulRefresh);
     }
-    if (!nullToAbsent || currentSessionId != null) {
-      map['current_session_id'] = Variable<String>(currentSessionId);
-    }
-    map['recent_session_ids'] = Variable<String>(recentSessionIds);
     return map;
   }
 
@@ -594,10 +549,6 @@ class AppState extends DataClass implements Insertable<AppState> {
       lastSuccessfulRefresh: lastSuccessfulRefresh == null && nullToAbsent
           ? const Value.absent()
           : Value(lastSuccessfulRefresh),
-      currentSessionId: currentSessionId == null && nullToAbsent
-          ? const Value.absent()
-          : Value(currentSessionId),
-      recentSessionIds: Value(recentSessionIds),
     );
   }
 
@@ -611,8 +562,6 @@ class AppState extends DataClass implements Insertable<AppState> {
       expandedSerials: serializer.fromJson<String>(json['expandedSerials']),
       lastSuccessfulRefresh:
           serializer.fromJson<DateTime?>(json['lastSuccessfulRefresh']),
-      currentSessionId: serializer.fromJson<String?>(json['currentSessionId']),
-      recentSessionIds: serializer.fromJson<String>(json['recentSessionIds']),
     );
   }
   @override
@@ -625,8 +574,6 @@ class AppState extends DataClass implements Insertable<AppState> {
       'expandedSerials': serializer.toJson<String>(expandedSerials),
       'lastSuccessfulRefresh':
           serializer.toJson<DateTime?>(lastSuccessfulRefresh),
-      'currentSessionId': serializer.toJson<String?>(currentSessionId),
-      'recentSessionIds': serializer.toJson<String>(recentSessionIds),
     };
   }
 
@@ -635,9 +582,7 @@ class AppState extends DataClass implements Insertable<AppState> {
           Value<String?> activeSerial = const Value.absent(),
           Value<String?> activeKey = const Value.absent(),
           String? expandedSerials,
-          Value<DateTime?> lastSuccessfulRefresh = const Value.absent(),
-          Value<String?> currentSessionId = const Value.absent(),
-          String? recentSessionIds}) =>
+          Value<DateTime?> lastSuccessfulRefresh = const Value.absent()}) =>
       AppState(
         id: id ?? this.id,
         activeSerial:
@@ -647,10 +592,6 @@ class AppState extends DataClass implements Insertable<AppState> {
         lastSuccessfulRefresh: lastSuccessfulRefresh.present
             ? lastSuccessfulRefresh.value
             : this.lastSuccessfulRefresh,
-        currentSessionId: currentSessionId.present
-            ? currentSessionId.value
-            : this.currentSessionId,
-        recentSessionIds: recentSessionIds ?? this.recentSessionIds,
       );
   AppState copyWithCompanion(AppStatesCompanion data) {
     return AppState(
@@ -665,12 +606,6 @@ class AppState extends DataClass implements Insertable<AppState> {
       lastSuccessfulRefresh: data.lastSuccessfulRefresh.present
           ? data.lastSuccessfulRefresh.value
           : this.lastSuccessfulRefresh,
-      currentSessionId: data.currentSessionId.present
-          ? data.currentSessionId.value
-          : this.currentSessionId,
-      recentSessionIds: data.recentSessionIds.present
-          ? data.recentSessionIds.value
-          : this.recentSessionIds,
     );
   }
 
@@ -681,16 +616,14 @@ class AppState extends DataClass implements Insertable<AppState> {
           ..write('activeSerial: $activeSerial, ')
           ..write('activeKey: $activeKey, ')
           ..write('expandedSerials: $expandedSerials, ')
-          ..write('lastSuccessfulRefresh: $lastSuccessfulRefresh, ')
-          ..write('currentSessionId: $currentSessionId, ')
-          ..write('recentSessionIds: $recentSessionIds')
+          ..write('lastSuccessfulRefresh: $lastSuccessfulRefresh')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, activeSerial, activeKey, expandedSerials,
-      lastSuccessfulRefresh, currentSessionId, recentSessionIds);
+  int get hashCode => Object.hash(
+      id, activeSerial, activeKey, expandedSerials, lastSuccessfulRefresh);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -699,9 +632,7 @@ class AppState extends DataClass implements Insertable<AppState> {
           other.activeSerial == this.activeSerial &&
           other.activeKey == this.activeKey &&
           other.expandedSerials == this.expandedSerials &&
-          other.lastSuccessfulRefresh == this.lastSuccessfulRefresh &&
-          other.currentSessionId == this.currentSessionId &&
-          other.recentSessionIds == this.recentSessionIds);
+          other.lastSuccessfulRefresh == this.lastSuccessfulRefresh);
 }
 
 class AppStatesCompanion extends UpdateCompanion<AppState> {
@@ -710,16 +641,12 @@ class AppStatesCompanion extends UpdateCompanion<AppState> {
   final Value<String?> activeKey;
   final Value<String> expandedSerials;
   final Value<DateTime?> lastSuccessfulRefresh;
-  final Value<String?> currentSessionId;
-  final Value<String> recentSessionIds;
   const AppStatesCompanion({
     this.id = const Value.absent(),
     this.activeSerial = const Value.absent(),
     this.activeKey = const Value.absent(),
     this.expandedSerials = const Value.absent(),
     this.lastSuccessfulRefresh = const Value.absent(),
-    this.currentSessionId = const Value.absent(),
-    this.recentSessionIds = const Value.absent(),
   });
   AppStatesCompanion.insert({
     this.id = const Value.absent(),
@@ -727,18 +654,13 @@ class AppStatesCompanion extends UpdateCompanion<AppState> {
     this.activeKey = const Value.absent(),
     required String expandedSerials,
     this.lastSuccessfulRefresh = const Value.absent(),
-    this.currentSessionId = const Value.absent(),
-    required String recentSessionIds,
-  })  : expandedSerials = Value(expandedSerials),
-        recentSessionIds = Value(recentSessionIds);
+  }) : expandedSerials = Value(expandedSerials);
   static Insertable<AppState> custom({
     Expression<int>? id,
     Expression<String>? activeSerial,
     Expression<String>? activeKey,
     Expression<String>? expandedSerials,
     Expression<DateTime>? lastSuccessfulRefresh,
-    Expression<String>? currentSessionId,
-    Expression<String>? recentSessionIds,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -747,8 +669,6 @@ class AppStatesCompanion extends UpdateCompanion<AppState> {
       if (expandedSerials != null) 'expanded_serials': expandedSerials,
       if (lastSuccessfulRefresh != null)
         'last_successful_refresh': lastSuccessfulRefresh,
-      if (currentSessionId != null) 'current_session_id': currentSessionId,
-      if (recentSessionIds != null) 'recent_session_ids': recentSessionIds,
     });
   }
 
@@ -757,9 +677,7 @@ class AppStatesCompanion extends UpdateCompanion<AppState> {
       Value<String?>? activeSerial,
       Value<String?>? activeKey,
       Value<String>? expandedSerials,
-      Value<DateTime?>? lastSuccessfulRefresh,
-      Value<String?>? currentSessionId,
-      Value<String>? recentSessionIds}) {
+      Value<DateTime?>? lastSuccessfulRefresh}) {
     return AppStatesCompanion(
       id: id ?? this.id,
       activeSerial: activeSerial ?? this.activeSerial,
@@ -767,8 +685,6 @@ class AppStatesCompanion extends UpdateCompanion<AppState> {
       expandedSerials: expandedSerials ?? this.expandedSerials,
       lastSuccessfulRefresh:
           lastSuccessfulRefresh ?? this.lastSuccessfulRefresh,
-      currentSessionId: currentSessionId ?? this.currentSessionId,
-      recentSessionIds: recentSessionIds ?? this.recentSessionIds,
     );
   }
 
@@ -791,12 +707,6 @@ class AppStatesCompanion extends UpdateCompanion<AppState> {
       map['last_successful_refresh'] =
           Variable<DateTime>(lastSuccessfulRefresh.value);
     }
-    if (currentSessionId.present) {
-      map['current_session_id'] = Variable<String>(currentSessionId.value);
-    }
-    if (recentSessionIds.present) {
-      map['recent_session_ids'] = Variable<String>(recentSessionIds.value);
-    }
     return map;
   }
 
@@ -807,9 +717,7 @@ class AppStatesCompanion extends UpdateCompanion<AppState> {
           ..write('activeSerial: $activeSerial, ')
           ..write('activeKey: $activeKey, ')
           ..write('expandedSerials: $expandedSerials, ')
-          ..write('lastSuccessfulRefresh: $lastSuccessfulRefresh, ')
-          ..write('currentSessionId: $currentSessionId, ')
-          ..write('recentSessionIds: $recentSessionIds')
+          ..write('lastSuccessfulRefresh: $lastSuccessfulRefresh')
           ..write(')'))
         .toString();
   }
@@ -820,6 +728,9 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
   late final $SavedDevicesTable savedDevices = $SavedDevicesTable(this);
   late final $AppStatesTable appStates = $AppStatesTable(this);
+  late final SavedDevicesDao savedDevicesDao =
+      SavedDevicesDao(this as AppDatabase);
+  late final AppStatesDao appStatesDao = AppStatesDao(this as AppDatabase);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -1036,8 +947,6 @@ typedef $$AppStatesTableCreateCompanionBuilder = AppStatesCompanion Function({
   Value<String?> activeKey,
   required String expandedSerials,
   Value<DateTime?> lastSuccessfulRefresh,
-  Value<String?> currentSessionId,
-  required String recentSessionIds,
 });
 typedef $$AppStatesTableUpdateCompanionBuilder = AppStatesCompanion Function({
   Value<int> id,
@@ -1045,8 +954,6 @@ typedef $$AppStatesTableUpdateCompanionBuilder = AppStatesCompanion Function({
   Value<String?> activeKey,
   Value<String> expandedSerials,
   Value<DateTime?> lastSuccessfulRefresh,
-  Value<String?> currentSessionId,
-  Value<String> recentSessionIds,
 });
 
 class $$AppStatesTableFilterComposer
@@ -1073,14 +980,6 @@ class $$AppStatesTableFilterComposer
 
   ColumnFilters<DateTime> get lastSuccessfulRefresh => $composableBuilder(
       column: $table.lastSuccessfulRefresh,
-      builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<String> get currentSessionId => $composableBuilder(
-      column: $table.currentSessionId,
-      builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<String> get recentSessionIds => $composableBuilder(
-      column: $table.recentSessionIds,
       builder: (column) => ColumnFilters(column));
 }
 
@@ -1110,14 +1009,6 @@ class $$AppStatesTableOrderingComposer
   ColumnOrderings<DateTime> get lastSuccessfulRefresh => $composableBuilder(
       column: $table.lastSuccessfulRefresh,
       builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<String> get currentSessionId => $composableBuilder(
-      column: $table.currentSessionId,
-      builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<String> get recentSessionIds => $composableBuilder(
-      column: $table.recentSessionIds,
-      builder: (column) => ColumnOrderings(column));
 }
 
 class $$AppStatesTableAnnotationComposer
@@ -1143,12 +1034,6 @@ class $$AppStatesTableAnnotationComposer
 
   GeneratedColumn<DateTime> get lastSuccessfulRefresh => $composableBuilder(
       column: $table.lastSuccessfulRefresh, builder: (column) => column);
-
-  GeneratedColumn<String> get currentSessionId => $composableBuilder(
-      column: $table.currentSessionId, builder: (column) => column);
-
-  GeneratedColumn<String> get recentSessionIds => $composableBuilder(
-      column: $table.recentSessionIds, builder: (column) => column);
 }
 
 class $$AppStatesTableTableManager extends RootTableManager<
@@ -1179,8 +1064,6 @@ class $$AppStatesTableTableManager extends RootTableManager<
             Value<String?> activeKey = const Value.absent(),
             Value<String> expandedSerials = const Value.absent(),
             Value<DateTime?> lastSuccessfulRefresh = const Value.absent(),
-            Value<String?> currentSessionId = const Value.absent(),
-            Value<String> recentSessionIds = const Value.absent(),
           }) =>
               AppStatesCompanion(
             id: id,
@@ -1188,8 +1071,6 @@ class $$AppStatesTableTableManager extends RootTableManager<
             activeKey: activeKey,
             expandedSerials: expandedSerials,
             lastSuccessfulRefresh: lastSuccessfulRefresh,
-            currentSessionId: currentSessionId,
-            recentSessionIds: recentSessionIds,
           ),
           createCompanionCallback: ({
             Value<int> id = const Value.absent(),
@@ -1197,8 +1078,6 @@ class $$AppStatesTableTableManager extends RootTableManager<
             Value<String?> activeKey = const Value.absent(),
             required String expandedSerials,
             Value<DateTime?> lastSuccessfulRefresh = const Value.absent(),
-            Value<String?> currentSessionId = const Value.absent(),
-            required String recentSessionIds,
           }) =>
               AppStatesCompanion.insert(
             id: id,
@@ -1206,8 +1085,6 @@ class $$AppStatesTableTableManager extends RootTableManager<
             activeKey: activeKey,
             expandedSerials: expandedSerials,
             lastSuccessfulRefresh: lastSuccessfulRefresh,
-            currentSessionId: currentSessionId,
-            recentSessionIds: recentSessionIds,
           ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))

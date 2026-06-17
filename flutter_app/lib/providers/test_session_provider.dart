@@ -15,7 +15,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 import '../models/test_session.dart';
-import '../services/database.dart';
+import '../db/database.dart';
 import 'test_session/attachment_store.dart';
 import 'test_session/exporter.dart';
 import 'test_session/formatter.dart';
@@ -481,18 +481,11 @@ class TestSessionProvider extends ChangeNotifier {
   }
 
   /// Persist the current session ID to database so we can resume it after restart.
+  /// TODO(step 4): rewrite against the new test-sessions table.
   Future<void> _persistCurrentSessionId() async {
-    try {
-      // Keep recent session list trimmed.
-      final recent = _currentSession != null
-          ? [_currentSession!.id]
-          : <String>[];
-      
-      await _db.updateAppState(
-        currentSessionId: _currentSession?.id,
-        recentSessionIds: recent,
-      );
-    } catch (_) {}
+    // No-op stub. The old currentSessionId/recentSessionIds fields on
+    // AppStates have been removed. Step 4 replaces this with a query on
+    // test_sessions WHERE status=0.
   }
 
   Future<void> deleteArtifact(String artifactId) async {
