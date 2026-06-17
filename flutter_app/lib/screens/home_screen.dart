@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../services/database.dart';
 import '../services/api_client.dart';
@@ -281,6 +282,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       body: Column(
         children: [
           if (!backendOnline) _buildOfflineBanner(context),
+          if (deviceProvider.lastDbError != null)
+            _buildDbErrorBanner(context, deviceProvider.lastDbError!),
           Expanded(
             child: Row(
               children: [
@@ -552,7 +555,59 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           onPressed: () => deviceProvider.refresh(api),
           child: Text(tr('refresh'),
               style: TextStyle(
-                  fontSize: 12, color: theme.colorScheme.onErrorContainer)),
+                    fontSize: 12, color: theme.colorScheme.onErrorContainer)),
+        ),
+      ],
+    );
+  }
+
+  /// Warning (not error) banner for DB persistence failures. Backend is
+  /// healthy, so this is rendered in amber instead of red and offers a
+  /// Copy button so the user can paste the actual error to share/grep.
+  Widget _buildDbErrorBanner(BuildContext context, String error) {
+    final theme = Theme.of(context);
+    final fg = theme.colorScheme.onErrorContainer;
+    return MaterialBanner(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      backgroundColor: const Color(0xFFFFE0B2), // amber 100 — distinct from red
+      leading: Icon(Icons.warning_amber_rounded, color: fg),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: 96),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                tr('dbErrorTitle'),
+                style: TextStyle(
+                    fontSize: 12, fontWeight: FontWeight.w600, color: fg),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                tr('dbErrorBody', {'error': error}),
+                style: TextStyle(fontSize: 11, color: fg),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () async {
+            await Clipboard.setData(ClipboardData(text: error));
+            if (!context.mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(tr('copyError')),
+                duration: const Duration(seconds: 2),
+              ),
+            );
+          },
+          child: Text(
+            tr('copyError'),
+            style: TextStyle(fontSize: 12, color: fg),
+          ),
         ),
       ],
     );

@@ -20,6 +20,7 @@ class DeviceProvider extends ChangeNotifier {
   bool _online = true;
   String? _activeSerial;
   DateTime? _lastSuccessfulRefresh;
+  String? _lastDbError;
 
   StreamSubscription<List<SavedDevice>>? _savedDevicesSub;
   AppDatabase? _db;
@@ -31,6 +32,7 @@ class DeviceProvider extends ChangeNotifier {
   bool get online => _online;
   String? get activeSerial => _activeSerial;
   DateTime? get lastSuccessfulRefresh => _lastSuccessfulRefresh;
+  String? get lastDbError => _lastDbError;
 
   AppDatabase get db {
     _db ??= AppDatabase();
@@ -114,30 +116,50 @@ class DeviceProvider extends ChangeNotifier {
       final devices = await api.getDevices();
       debugPrint('[DeviceProvider] getDevices() -> ${devices.length} devices');
 
-      // Update online devices
+      // Backend is healthy — flip UI to online FIRST so the user sees the
+      // connected state even if the persistence step below misbehaves.
+      // The previous ordering (set flags → db ops → notify) meant a single
+      // DB exception rolled the UI back to "offline" even though the Go
+      // backend was responding fine.
       _onlineDevices = devices;
       _online = true;
       _lastSuccessfulRefresh = DateTime.now();
-      
-      // Update saved devices connection status
-      final onlineSerials = devices
-          .where((d) => d.isOnline)
-          .map((d) => d.serial)
-          .toSet();
-      
-      await db.updateAllDevicesConnection(onlineSerials);
-      
-      // Also save any new devices that are connected
-      for (final device in devices) {
-        if (device.isOnline && !_savedDevices.any((d) => d.serial == device.serial)) {
-          await _saveDevice(device);
-        }
-      }
-      
-      // Update last successful refresh time
-      await db.updateAppState(lastSuccessfulRefresh: _lastSuccessfulRefresh);
-      
       notifyListeners();
+
+      // Persistence is best-effort: a DB hiccup must never make the
+      // backend look disconnected to the user. Capture the failure into
+      // _lastDbError so the UI can show a separate, non-fatal warning.
+      String? dbError;
+      try {
+        final onlineSerials = devices
+            .where((d) => d.isOnline)
+            .map((d) => d.serial)
+            .toSet();
+
+        await db.updateAllDevicesConnection(onlineSerials);
+
+        for (final device in devices) {
+          if (device.isOnline &&
+              !_savedDevices.any((d) => d.serial == device.serial)) {
+            await _saveDevice(device);
+          }
+        }
+
+        await db.updateAppState(
+          lastSuccessfulRefresh: _lastSuccessfulRefresh,
+        );
+      } catch (dbErr, dbSt) {
+        debugPrint('[DeviceProvider] db persistence failed: $dbErr');
+        debugPrint('[DeviceProvider] STACK: $dbSt');
+        dbError = dbErr.toString();
+        // intentionally do NOT call _markOffline()
+      }
+
+      // Update the DB error indicator (clear it on success, set on failure).
+      if (_lastDbError != dbError) {
+        _lastDbError = dbError;
+        notifyListeners();
+      }
     } catch (e, st) {
       debugPrint('[DeviceProvider] _refresh EXCEPTION: $e');
       debugPrint('[DeviceProvider] STACK: $st');

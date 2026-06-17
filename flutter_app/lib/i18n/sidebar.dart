@@ -104,6 +104,9 @@ const _locSidebarZh = <String, String>{
   'running': '执行中...',
   'backendOffline': '后端服务已断开，请检查 Go 服务是否运行',
   'backendOnline': '后端服务已恢复',
+  'dbErrorTitle': '数据库写入失败（功能可能受限）',
+  'dbErrorBody': '后端正常，但保存设备状态时出错：{error}',
+  'copyError': '复制错误',
   'dismiss': '忽略',
   'confirmShutdown': '确认关闭',
   'shutdownHint': '关闭后端服务后，需要手动重启应用或点击重启按钮',
@@ -223,6 +226,10 @@ const _locSidebarEn = <String, String>{
   'running': 'Running...',
   'backendOffline': 'Backend disconnected. Check if Go server is running',
   'backendOnline': 'Backend reconnected',
+  'dbErrorTitle': 'Database write failed (features may be limited)',
+  'dbErrorBody':
+      'Backend is healthy, but saving device state failed: {error}',
+  'copyError': 'Copy error',
   'dismiss': 'Dismiss',
   'confirmShutdown': 'Confirm Shutdown',
   'shutdownHint':
