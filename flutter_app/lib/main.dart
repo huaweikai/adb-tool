@@ -12,12 +12,18 @@ import 'providers/device_provider.dart';
 import 'providers/locale_provider.dart';
 import 'providers/test_session_provider.dart';
 import 'providers/test_config_provider.dart';
+import 'utils/legacy_session_cleanup.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Singleton DB shared by DeviceProvider and TestSessionProvider
   final db = AppDatabase();
+
+  // Fire-and-forget: remove the pre-DB test-session on-disk storage on
+  // first launch. Safe to re-run; a marker file short-circuits subsequent
+  // startups. Must never block app launch.
+  unawaited(LegacySessionCleanup.run());
 
   runApp(
     MultiProvider(
