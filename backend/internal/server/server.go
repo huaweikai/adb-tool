@@ -137,5 +137,5 @@ func (s *Server) Handler() http.Handler {
 		mux.Handle("/", http.FileServer(http.FS(webFS)))
 	}
 
-	return recoverHTTP(requireLoopback(mux))
+	return recoverHTTP(observeHTTP(requireLoopback(mux)))
 }

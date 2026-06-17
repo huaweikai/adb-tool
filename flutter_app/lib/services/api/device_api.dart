@@ -5,14 +5,18 @@ import 'package:adb_tool/services/api_client.dart';
 import 'package:adb_tool/models/device.dart';
 import 'package:adb_tool/models/device_status.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 
 mixin DeviceApi on ApiBase {
   Future<List<Device>> getDevices() async {
     final resp = await dio.get('/api/devices');
+    debugPrint('[getDevices] status=${resp.statusCode} dataType=${resp.data.runtimeType} data=${resp.data}');
     if (!isOk(resp)) {
+      debugPrint('[getDevices] isOk=false err=${errorMessage(resp)}');
       throw Exception(errorMessage(resp));
     }
     final list = asList(responseData(resp));
+    debugPrint('[getDevices] parsed list length=${list.length}');
     return list.map((e) => Device.fromJson(asMap(e))).toList();
   }
 
@@ -50,8 +54,11 @@ mixin DeviceApi on ApiBase {
     try {
       final resp =
           await dio.get('/api/adb-path').timeout(const Duration(seconds: 2));
-      return isOk(resp);
-    } catch (_) {
+      final ok = isOk(resp);
+      debugPrint('[isReady] status=${resp.statusCode} ok=$ok data=${resp.data}');
+      return ok;
+    } catch (e) {
+      debugPrint('[isReady] EXCEPTION: $e');
       return false;
     }
   }

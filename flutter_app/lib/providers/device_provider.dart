@@ -100,14 +100,20 @@ class DeviceProvider extends ChangeNotifier {
   }
 
   Future<void> _refresh(ApiClient api) async {
+    debugPrint('[DeviceProvider] _refresh start');
     try {
-      if (!await api.isReady()) {
+      final ready = await api.isReady();
+      debugPrint('[DeviceProvider] isReady() -> $ready');
+      if (!ready) {
+        debugPrint('[DeviceProvider] isReady returned false -> markOffline');
         _markOffline();
         return;
       }
-      
+
+      debugPrint('[DeviceProvider] calling getDevices()...');
       final devices = await api.getDevices();
-      
+      debugPrint('[DeviceProvider] getDevices() -> ${devices.length} devices');
+
       // Update online devices
       _onlineDevices = devices;
       _online = true;
@@ -132,12 +138,15 @@ class DeviceProvider extends ChangeNotifier {
       await db.updateAppState(lastSuccessfulRefresh: _lastSuccessfulRefresh);
       
       notifyListeners();
-    } catch (_) {
+    } catch (e, st) {
+      debugPrint('[DeviceProvider] _refresh EXCEPTION: $e');
+      debugPrint('[DeviceProvider] STACK: $st');
       _markOffline();
     }
   }
 
   void _markOffline() {
+    debugPrint('[DeviceProvider] _markOffline() called');
     _online = false;
     _onlineDevices = [];
     _lastSuccessfulRefresh = null;

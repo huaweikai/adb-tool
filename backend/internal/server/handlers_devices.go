@@ -1,19 +1,36 @@
 package server
 
 import (
+	"fmt"
 	"net/http"
+	"time"
 )
 
 // handleDevices returns the list of currently connected devices.
 func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	Log.Add("handle devices start", "", nil, 0)
+
 	devices, err := s.adb.DevicesContext(r.Context())
 	if err != nil {
+		Log.Add("handle devices error", err.Error(), err, time.Since(start))
 		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if devices == nil {
 		devices = []Device{}
 	}
+	onlineCount := 0
+	for _, d := range devices {
+		if d.State == "device" {
+			onlineCount++
+		}
+	}
+	Log.Add(
+		"handle devices done",
+		fmt.Sprintf("total=%d online=%d", len(devices), onlineCount),
+		nil, time.Since(start),
+	)
 	writeJSON(w, devices)
 }
 

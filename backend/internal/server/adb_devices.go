@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -61,8 +63,25 @@ func parseDeviceLines(out string) []Device {
 }
 
 func (m *AdbManager) enrichDevicesProps(devices []Device) {
+	enrichStart := time.Now()
+
+	// Snapshot the serials we'll enrich, so we can log them even after the
+	// loop below mutates devices[i].Serial in unusual paths.
+	serials := make([]string, 0, len(devices))
+	for i := range devices {
+		if devices[i].State == "device" {
+			serials = append(serials, devices[i].Serial)
+		}
+	}
+	Log.Add(
+		"enrich props start",
+		fmt.Sprintf("count=%d serials=%v", len(serials), serials),
+		nil, 0,
+	)
+
 	var wg sync.WaitGroup
 	var mu sync.Mutex
+	perSerialElapsed := make(map[string]time.Duration, len(serials))
 	for i := range devices {
 		if devices[i].State != "device" {
 			continue
@@ -72,7 +91,12 @@ func (m *AdbManager) enrichDevicesProps(devices []Device) {
 		serial := devices[i].Serial
 		goSafe("enrich-props", func() {
 			defer wg.Done()
+			serialStart := time.Now()
 			props := m.devicePropsForList(serial)
+			elapsed := time.Since(serialStart)
+			mu.Lock()
+			perSerialElapsed[serial] = elapsed
+			mu.Unlock()
 			if props == nil {
 				return
 			}
@@ -84,6 +108,22 @@ func (m *AdbManager) enrichDevicesProps(devices []Device) {
 		})
 	}
 	wg.Wait()
+
+	// Log per-serial prop shell timings so we can tell which device (if any)
+	// blocked enrichDevicesProps (e.g. adb was being held by Android Studio).
+	pairs := make([]string, 0, len(perSerialElapsed))
+	for s, d := range perSerialElapsed {
+		pairs = append(pairs, fmt.Sprintf("%s=%dms", s, d.Milliseconds()))
+	}
+	sort.Slice(pairs, func(i, j int) bool {
+		// Stable-ish ordering by serial; not critical for readability.
+		return pairs[i] < pairs[j]
+	})
+	Log.Add(
+		"enrich props done",
+		fmt.Sprintf("total=%dms per=%v", time.Since(enrichStart).Milliseconds(), pairs),
+		nil, time.Since(enrichStart),
+	)
 }
 
 func (m *AdbManager) devicePropsForList(serial string) map[string]string {
