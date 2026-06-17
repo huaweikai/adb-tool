@@ -838,11 +838,12 @@ class _LogcatScreenState extends State<LogcatScreen> {
           child: Text(entry.time,
               style: mono.copyWith(
                   fontSize: 11, color: theme.colorScheme.onSurfaceVariant))),
-      SizedBox(
-          width: 70,
-          child: Text('${entry.pid} ${entry.tid}',
+      Flexible(
+          child: Text('${entry.pid}-${entry.tid}',
               style:
-                  mono.copyWith(fontSize: 11, color: Colors.green.shade300))),
+                  mono.copyWith(fontSize: 11, color: Colors.green.shade300),
+              overflow: TextOverflow.ellipsis,
+              softWrap: false)),
       Container(
         width: 24,
         alignment: Alignment.center,
