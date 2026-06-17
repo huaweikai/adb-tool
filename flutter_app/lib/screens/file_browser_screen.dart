@@ -1,24 +1,24 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:file_selector/file_selector.dart';
+import 'package:provider/provider.dart';
+
 import '../services/drop_target.dart';
 import '../models/file_item.dart';
 import '../services/api_client.dart';
 import '../i18n.dart';
-import 'package:provider/provider.dart';
 import '../widgets/loading_view.dart';
 import '../widgets/error_view.dart';
 import '../widgets/file_transfer.dart';
 import '../widgets/video_preview.dart';
-import '../widgets/editor_i18n.dart';
-import '../widgets/screenshot_watermark.dart';
-import 'package:pro_image_editor/pro_image_editor.dart';
+import '../widgets/safe_dialog.dart';
+import '../widgets/transfer_progress_overlay.dart';
+import '../mixins/screen_capture_mixin.dart';
+import '../providers/test_session_provider.dart';
 import '../providers/locale_provider.dart';
 import '../providers/device_provider.dart';
-import '../providers/test_session_provider.dart';
 import '../providers/test_config_provider.dart';
 
 enum _SortKey { name, date, size }
@@ -44,7 +44,8 @@ class FileBrowserScreen extends StatefulWidget {
   State<FileBrowserScreen> createState() => _FileBrowserScreenState();
 }
 
-class _FileBrowserScreenState extends State<FileBrowserScreen> {
+class _FileBrowserScreenState extends State<FileBrowserScreen>
+    with ScreenCaptureMixin<FileBrowserScreen> {
   String? get _selectedSerial => context.read<DeviceSerialScope>().serial;
 
   String trPhase(String phaseKey) =>
@@ -63,16 +64,6 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   _SortKey _sortKey = _SortKey.name;
   bool _sortAsc = true;
 
-  bool _recording = false;
-  bool _recordSaving = false;
-  int _recordSeconds = 0;
-  Timer? _recordTimer;
-  bool _screenshotting = false;
-  TransferState? _transfer;
-  TransferCancelToken? _transferCancelToken;
-
-  bool get _isTransferring => _transfer != null;
-
   static const _quickPaths = [
     ('/', 'root'),
     ('/storage/emulated/0', 'storage'),
@@ -83,8 +74,62 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   @override
   void initState() {
     super.initState();
+    recording = false;
+    recordSaving = false;
+    recordSeconds = 0;
+    screenshotting = false;
+    recordTimer = null;
     _loadFiles();
   }
+
+  // ── ScreenCaptureMixin 实现 ──────────────────────────────────
+  ApiClient get apiClient => context.read<ApiClient>();
+  TestSessionProvider get sessionProvider =>
+      context.read<TestSessionProvider>();
+  String? get serial => _selectedSerial;
+
+  @override
+  Future<void> onScreenshotSaved(Uint8List bytes, String? localPath) async {
+    final location = await getSaveLocation(
+      suggestedName: 'screenshot-${DateTime.now().millisecondsSinceEpoch}.png',
+      confirmButtonText: tr('saveScreenshot'),
+    );
+    if (location != null) {
+      await File(location.path).writeAsBytes(bytes);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(tr('savedTo', {'path': location.path})),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  @override
+  Future<void> onVideoSaved(Uint8List bytes) async {
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (_) => VideoPreview(videoBytes: bytes),
+    );
+  }
+
+  // 传输中状态（mixin 需要通过它判断是否可以开始录屏/截图）
+  TransferState? _transfer;
+  TransferCancelToken? _transferCancelToken;
+
+  // ── mixin 字段 ────────────────────────────────────────────────
+  @override
+  late bool recording;
+  @override
+  late bool recordSaving;
+  @override
+  late int recordSeconds;
+  @override
+  late bool screenshotting;
+  @override
+  late Timer? recordTimer;
 
   String get _sortLabel {
     final base = _sortKey == _SortKey.name
@@ -118,7 +163,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   }
 
   void _navigateTo(String path) {
-    if (_isTransferring) return;
+    if (isTransferring) return;
     setState(() {
       _history.add(_currentPath);
       _currentPath = path;
@@ -127,7 +172,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   }
 
   Future<void> _loadFiles() async {
-    if (_isTransferring) return;
+    if (isTransferring) return;
     if (_selectedSerial == null) {
       setState(() {
         _files = [];
@@ -160,7 +205,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   }
 
   Future<void> _enterDir(FileItem dir) async {
-    if (_isTransferring) return;
+    if (isTransferring) return;
     if (_selectedSerial == null) return;
     setState(() {
       _history.add(_currentPath);
@@ -193,7 +238,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   }
 
   void _goUp() {
-    if (_isTransferring) return;
+    if (isTransferring) return;
     if (_history.isEmpty) return;
     setState(() {
       _currentPath = _history.removeLast();
@@ -202,7 +247,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   }
 
   void _goHome() {
-    if (_isTransferring) return;
+    if (isTransferring) return;
     setState(() {
       _history.clear();
       _currentPath = '/';
@@ -211,7 +256,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   }
 
   Future<void> _viewFile(FileItem file) async {
-    if (_isTransferring) return;
+    if (isTransferring) return;
     if (_selectedSerial == null) return;
     setState(() {
       _loading = true;
@@ -236,7 +281,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   }
 
   Future<void> _downloadFile(FileItem file) async {
-    if (_isTransferring) return;
+    if (isTransferring) return;
     final serial = _selectedSerial;
     if (serial == null) return;
     final api = context.read<ApiClient>();
@@ -259,6 +304,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
           total: 0,
           phaseKey: 'deviceReading',
         );
+        isTransferring = true;
       });
       await api.downloadFileToPath(
         serial,
@@ -283,7 +329,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       );
       if (!mounted) return;
       _transferCancelToken = null;
-      setState(() => _transfer = null);
+      setState(() { _transfer = null; isTransferring = false; });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
             content: Text(tr('savedTo', {'path': location.path})),
@@ -300,7 +346,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         } catch (_) {}
         if (!mounted) return;
         _transferCancelToken = null;
-        setState(() => _transfer = null);
+        setState(() { _transfer = null; isTransferring = false; });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
               content: Text(tr('downloadCancelled')),
@@ -309,7 +355,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         return;
       }
       _transferCancelToken = null;
-      setState(() => _transfer = null);
+      setState(() { _transfer = null; isTransferring = false; });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
             content: Text('${tr('downloadFailed')}: $e'),
@@ -319,7 +365,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   }
 
   Future<void> _uploadFile({String? targetDir}) async {
-    if (_isTransferring) return;
+    if (isTransferring) return;
     final serial = _selectedSerial;
     if (serial == null) return;
     final api = context.read<ApiClient>();
@@ -338,6 +384,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
           total: totalBytes,
           phaseKey: 'preparing',
         );
+        isTransferring = true;
       });
       await api.pushLocalFile(
         serial,
@@ -361,7 +408,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       );
       if (!mounted) return;
       _transferCancelToken = null;
-      setState(() => _transfer = null);
+      setState(() { _transfer = null; isTransferring = false; });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
             content: Text(tr('uploadedTo', {'path': remotePath})),
@@ -373,7 +420,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       if (e is TransferCanceledException || cancelToken.canceled) {
         if (!mounted) return;
         _transferCancelToken = null;
-        setState(() => _transfer = null);
+        setState(() { _transfer = null; isTransferring = false; });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
               content: Text(tr('uploadCancelled')),
@@ -382,7 +429,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         return;
       }
       _transferCancelToken = null;
-      setState(() => _transfer = null);
+      setState(() { _transfer = null; isTransferring = false; });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
             content: Text('${tr('uploadFailed')}: $e'),
@@ -409,7 +456,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     final controller = TextEditingController(text: initialValue);
     final result = await showDialog<String>(
       context: context,
-      builder: (ctx) => _SafeDialog(
+      builder: (ctx) => SafeDialog(
         controllers: [controller],
         builder: (_) => AlertDialog(
           scrollable: true,
@@ -480,7 +527,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   }
 
   Future<void> _renameFile(FileItem file) async {
-    if (_isTransferring) return;
+    if (isTransferring) return;
     final serial = _selectedSerial;
     if (serial == null) return;
     final api = context.read<ApiClient>();
@@ -513,7 +560,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   }
 
   Future<void> _deleteFile(FileItem file) async {
-    if (_isTransferring) return;
+    if (isTransferring) return;
     final serial = _selectedSerial;
     if (serial == null) return;
     final api = context.read<ApiClient>();
@@ -554,7 +601,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     required bool directory,
     String? targetDir,
   }) async {
-    if (_isTransferring) return;
+    if (isTransferring) return;
     final serial = _selectedSerial;
     if (serial == null) return;
     final api = context.read<ApiClient>();
@@ -609,171 +656,8 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     }
   }
 
-  Future<void> _startRecording() async {
-    if (_selectedSerial == null) return;
-    if (_recordSaving || _recording) return;
-    final api = context.read<ApiClient>();
-    final sessionProvider = context.read<TestSessionProvider>();
-    try {
-      await api.screenRecordAction(_selectedSerial!, 'start');
-      if (sessionProvider.hasRunningSession) {
-        await sessionProvider.markScreenRecordStarted();
-      }
-      if (!mounted) return;
-      setState(() {
-        _recording = true;
-        _recordSaving = false;
-        _recordSeconds = 0;
-      });
-      _recordTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-        if (mounted) setState(() => _recordSeconds++);
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text(tr('recordingStarted')),
-            behavior: SnackBarBehavior.floating),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text('${tr('recordingFailed')}: $e'),
-            behavior: SnackBarBehavior.floating),
-      );
-    }
-  }
-
-  Future<void> _stopRecording() async {
-    final serial = _selectedSerial;
-    if (serial == null) return;
-    final api = context.read<ApiClient>();
-    final sessionProvider = context.read<TestSessionProvider>();
-    if (_recordSaving || !_recording) return;
-    _recordTimer?.cancel();
-    setState(() => _recordSaving = true);
-    try {
-      await api.screenRecordAction(serial, 'stop');
-      if (!mounted) return;
-      final bytes = await api.pullRecordedVideo(serial);
-      if (!mounted) return;
-      setState(() {
-        _recording = false;
-        _recordSaving = false;
-        _recordSeconds = 0;
-      });
-      if (!mounted) return;
-      if (sessionProvider.hasRunningSession) {
-        await sessionProvider.saveVideoBytes(bytes);
-      }
-      if (!mounted) return;
-      showDialog(
-        context: context,
-        builder: (_) => VideoPreview(videoBytes: bytes),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _recording = false;
-        _recordSaving = false;
-        _recordSeconds = 0;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text('${tr('recordingStopFailed')}: $e'),
-            behavior: SnackBarBehavior.floating),
-      );
-    }
-  }
-
-  Future<void> _takeScreenshot() async {
-    if (_selectedSerial == null || _screenshotting) return;
-    setState(() => _screenshotting = true);
-    final sessionProvider = context.read<TestSessionProvider>();
-    try {
-      final b64 =
-          await context.read<ApiClient>().takeScreenshot(_selectedSerial!);
-      if (b64 == null) {
-        if (!mounted) return;
-        setState(() => _screenshotting = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text(tr('screenshotFailed')),
-              behavior: SnackBarBehavior.floating),
-        );
-        return;
-      }
-      if (!mounted) return;
-      setState(() => _screenshotting = false);
-      var bytes = base64Decode(b64);
-      if (!mounted) return;
-      final opts = await showWatermarkDialog(context);
-      if (opts == null) return;
-      if (opts.addTimestamp) {
-        bytes = await addTimestampWatermark(bytes);
-      }
-      if (opts.stepNumber != null) {
-        bytes = await addStepNumber(bytes, opts.stepNumber!);
-      }
-      if (!mounted) return;
-      if (opts.skipEdit) {
-        if (sessionProvider.hasRunningSession) {
-          await sessionProvider.saveScreenshotBytes(bytes);
-        }
-        final location = await getSaveLocation(
-          suggestedName:
-              'screenshot-${DateTime.now().millisecondsSinceEpoch}.png',
-          confirmButtonText: tr('saveScreenshot'),
-        );
-        if (location != null) {
-          await File(location.path).writeAsBytes(bytes);
-        }
-      } else {
-        if (!mounted) return;
-        await Navigator.push(
-          context,
-          MaterialPageRoute(
-              builder: (_) => ProImageEditor.memory(
-                    bytes,
-                    configs: kImageEditorConfigs,
-                    callbacks: ProImageEditorCallbacks(
-                      onImageEditingComplete: (edited) async {
-                        if (!context.mounted) return;
-                        final location = await getSaveLocation(
-                          suggestedName:
-                              'screenshot-${DateTime.now().millisecondsSinceEpoch}.png',
-                          confirmButtonText: tr('saveScreenshot'),
-                        );
-                        if (!context.mounted) return;
-                        if (sessionProvider.hasRunningSession) {
-                          await sessionProvider.saveScreenshotBytes(edited);
-                        }
-                        if (location != null) {
-                          await File(location.path).writeAsBytes(edited);
-                        }
-                      },
-                    ),
-                  )),
-        );
-      }
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _screenshotting = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text('${tr('screenshotFailed')}: $e'),
-            behavior: SnackBarBehavior.floating),
-      );
-    }
-  }
-
-  String _formatSeconds(int total) {
-    final m = total ~/ 60;
-    final s = total % 60;
-    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
-  }
-
   Future<void> _onDropFile(DropDoneDetails details) async {
-    if (_isTransferring) return;
+    if (isTransferring) return;
     final serial = _selectedSerial;
     if (serial == null) return;
     final api = context.read<ApiClient>();
@@ -794,6 +678,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
             total: totalBytes,
             phaseKey: 'preparing',
           );
+          isTransferring = true;
         });
         await api.pushLocalFile(
           serial,
@@ -817,7 +702,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         );
         if (!mounted) return;
         _transferCancelToken = null;
-        setState(() => _transfer = null);
+        setState(() { _transfer = null; isTransferring = false; });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(tr('uploadedTo', {'path': remotePath})),
@@ -828,7 +713,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         if (!mounted) return;
         if (e is TransferCanceledException || cancelToken.canceled) {
           _transferCancelToken = null;
-          setState(() => _transfer = null);
+          setState(() { _transfer = null; isTransferring = false; });
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(tr('uploadCancelled')),
@@ -839,7 +724,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         }
         if (!mounted) return;
         _transferCancelToken = null;
-        setState(() => _transfer = null);
+        setState(() { _transfer = null; isTransferring = false; });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('${tr('uploadFailed')}: $e'),
@@ -875,11 +760,11 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
 
     return DropTarget(
       onDragEntered: () {
-        if (_isTransferring) return;
+        if (isTransferring) return;
         setState(() => _dragOver = true);
       },
       onDragExited: () {
-        if (_isTransferring) return;
+        if (isTransferring) return;
         setState(() => _dragOver = false);
       },
       onDragDone: _onDropFile,
@@ -916,7 +801,11 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
           ),
           if (_transfer != null)
             Positioned.fill(
-              child: _buildTransferOverlay(_transfer!),
+              child: TransferProgressOverlay(
+                transfer: _transfer!,
+                trPhase: trPhase,
+                onCancel: _cancelTransfer,
+              ),
             ),
         ],
       ),
@@ -948,109 +837,6 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     );
   }
 
-  Widget _buildTransferOverlay(TransferState transfer) {
-    final theme = Theme.of(context);
-    final isUpload = transfer.mode == TransferMode.upload;
-    final progress = transfer.progress;
-    final percent = progress == null
-        ? tr('processing')
-        : '${(progress * 100).clamp(0, 100).toStringAsFixed(1)}%';
-    return AbsorbPointer(
-      absorbing: false,
-      child: Container(
-        color: theme.colorScheme.scrim.withAlpha(80),
-        child: Center(
-          child: Container(
-            width: 420,
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.surface,
-              borderRadius: BorderRadius.circular(14),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withAlpha(40),
-                  blurRadius: 24,
-                  offset: const Offset(0, 12),
-                ),
-              ],
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Icon(isUpload ? Icons.upload_file : Icons.download,
-                        color: theme.colorScheme.primary),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        isUpload ? tr('uploadingFile') : tr('downloadingFile'),
-                        style: theme.textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                    Text(percent,
-                        style: const TextStyle(
-                            fontFamily: 'Menlo', fontWeight: FontWeight.w600)),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                Text(
-                  transfer.fileName,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontFamily: 'Menlo', fontSize: 12),
-                ),
-                const SizedBox(height: 12),
-                progress == null
-                    ? const LinearProgressIndicator()
-                    : LinearProgressIndicator(
-                        value: progress.clamp(0.0, 1.0).toDouble()),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        trPhase(transfer.phaseKey),
-                        style: TextStyle(
-                            fontSize: 12,
-                            color: theme.colorScheme.onSurfaceVariant),
-                      ),
-                    ),
-                    Text(
-                      '${formatBytes(transfer.sent)} / ${transfer.total > 0 ? formatBytes(transfer.total) : tr('unknownSize')}',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontFamily: 'Menlo',
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  tr('transferWarning'),
-                  style: TextStyle(
-                      fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
-                ),
-                const SizedBox(height: 14),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: FilledButton.tonalIcon(
-                    onPressed: _cancelTransfer,
-                    icon: const Icon(Icons.close, size: 16),
-                    label: Text(tr('cancel')),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _buildPathBar() {
     final theme = Theme.of(context);
     final parts = _currentPath.split('/').where((p) => p.isNotEmpty).toList();
@@ -1064,14 +850,14 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         children: [
           IconButton(
             icon: const Icon(Icons.home, size: 20),
-            onPressed: _isTransferring ? null : _goHome,
+            onPressed: isTransferring ? null : _goHome,
             tooltip: tr('rootDir'),
           ),
           const SizedBox(width: 4),
           if (_history.isNotEmpty)
             IconButton(
               icon: const Icon(Icons.arrow_upward, size: 20),
-              onPressed: _isTransferring ? null : _goUp,
+              onPressed: isTransferring ? null : _goUp,
               tooltip: tr('parentDir'),
             ),
           const SizedBox(width: 4),
@@ -1094,7 +880,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
                       const Icon(Icons.chevron_right,
                           size: 14, color: Colors.grey),
                     GestureDetector(
-                      onTap: !_isTransferring && i < parts.length - 1
+                      onTap: !isTransferring && i < parts.length - 1
                           ? () {
                               final path =
                                   '/${parts.sublist(0, i + 1).join('/')}';
@@ -1125,63 +911,22 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
           const SizedBox(width: 4),
           IconButton(
             icon: Icon(_gridMode ? Icons.list : Icons.grid_view, size: 20),
-            onPressed: _isTransferring
+            onPressed: isTransferring
                 ? null
                 : () => setState(() => _gridMode = !_gridMode),
             tooltip: _gridMode ? tr('listMode') : tr('gridMode'),
           ),
           const SizedBox(width: 4),
-          _recordSaving
-              ? FilledButton.tonal(
-                  onPressed: null,
-                  style: FilledButton.styleFrom(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    textStyle: const TextStyle(fontSize: 12),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(tr('saving')),
-                    ],
-                  ),
-                )
-              : _recording
-                  ? _buildRecordingBtn()
-                  : FilledButton.tonal(
-                      onPressed: _isTransferring ? null : _startRecording,
-                      style: FilledButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 8),
-                        textStyle: const TextStyle(fontSize: 12),
-                        backgroundColor: Colors.red.shade100,
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.fiber_manual_record,
-                              size: 16, color: Colors.red),
-                          const SizedBox(width: 4),
-                          Text(tr('record'),
-                              style: const TextStyle(color: Colors.red)),
-                        ],
-                      ),
-                    ),
+          isTransferring ? const SizedBox(width: 80) : buildRecordingButton(),
           const SizedBox(width: 4),
           FilledButton.tonal(
             onPressed:
-                _screenshotting || _isTransferring ? null : _takeScreenshot,
+                screenshotting || isTransferring ? null : takeScreenshot,
             style: FilledButton.styleFrom(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               textStyle: const TextStyle(fontSize: 12),
             ),
-            child: _screenshotting
+            child: screenshotting
                 ? const SizedBox(
                     width: 16,
                     height: 16,
@@ -1197,7 +942,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
           ),
           const SizedBox(width: 4),
           FilledButton.tonal(
-            onPressed: _isTransferring ? null : _uploadFile,
+            onPressed: isTransferring ? null : _uploadFile,
             style: FilledButton.styleFrom(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               textStyle: const TextStyle(fontSize: 12),
@@ -1214,7 +959,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
           const SizedBox(width: 4),
           IconButton(
             icon: const Icon(Icons.refresh, size: 20),
-            onPressed: _isTransferring ? null : _loadFiles,
+            onPressed: isTransferring ? null : _loadFiles,
             tooltip: tr('refresh'),
           ),
         ],
@@ -1231,7 +976,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         borderRadius: BorderRadius.circular(4),
         child: InkWell(
           borderRadius: BorderRadius.circular(4),
-          onTap: isActive || _isTransferring ? null : () => _navigateTo(path),
+          onTap: isActive || isTransferring ? null : () => _navigateTo(path),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
@@ -1248,29 +993,9 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
 
   @override
   void dispose() {
-    _recordTimer?.cancel();
+    recordTimer?.cancel();
     _transferCancelToken?.cancel();
     super.dispose();
-  }
-
-  Widget _buildRecordingBtn() {
-    return FilledButton.tonal(
-      onPressed: _recordSaving ? null : _stopRecording,
-      style: FilledButton.styleFrom(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        textStyle: const TextStyle(fontSize: 12),
-        backgroundColor: Colors.red.shade400,
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.stop, size: 16, color: Colors.white),
-          const SizedBox(width: 4),
-          Text(_formatSeconds(_recordSeconds),
-              style: const TextStyle(color: Colors.white, fontFamily: 'Menlo')),
-        ],
-      ),
-    );
   }
 
   Widget _sortBtn() {
@@ -1344,11 +1069,11 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     final isText = _isTextFile(file.name);
 
     return GestureDetector(
-      onSecondaryTapDown: _isTransferring
+      onSecondaryTapDown: isTransferring
           ? null
           : (details) => _showFileContextMenu(details.globalPosition, file),
       child: InkWell(
-        onTap: _isTransferring
+        onTap: isTransferring
             ? null
             : () {
                 if (file.isDir) {
@@ -1358,7 +1083,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
                 }
               },
         onLongPress:
-            _isTransferring ? null : () => _showFileMenu(context, file),
+            isTransferring ? null : () => _showFileMenu(context, file),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
           child: Row(
@@ -1408,7 +1133,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
                 _iconBtn(
                   Icons.download,
                   tr('downloadTooltip'),
-                  _isTransferring ? null : () => _downloadFile(file),
+                  isTransferring ? null : () => _downloadFile(file),
                 ),
               ],
               if (file.isDir) ...[
@@ -1416,7 +1141,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
                 _iconBtn(
                   Icons.upload,
                   tr('uploadToDir'),
-                  _isTransferring
+                  isTransferring
                       ? null
                       : () => _uploadFile(targetDir: file.path),
                 ),
@@ -1462,7 +1187,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     final isText = _isTextFile(file.name);
 
     return GestureDetector(
-      onSecondaryTapDown: _isTransferring
+      onSecondaryTapDown: isTransferring
           ? null
           : (details) => _showFileContextMenu(details.globalPosition, file),
       child: Card(
@@ -1470,7 +1195,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
         color: theme.colorScheme.surfaceContainer,
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
-          onTap: _isTransferring
+          onTap: isTransferring
               ? null
               : () {
                   if (file.isDir) {
@@ -1480,7 +1205,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
                   }
                 },
           onLongPress:
-              _isTransferring ? null : () => _showFileMenu(context, file),
+              isTransferring ? null : () => _showFileMenu(context, file),
           child: Padding(
             padding: const EdgeInsets.all(8),
             child: Column(
@@ -1838,27 +1563,4 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       ],
     );
   }
-}
-
-class _SafeDialog extends StatefulWidget {
-  final List<TextEditingController> controllers;
-  final Widget Function(List<TextEditingController> ctrls) builder;
-
-  const _SafeDialog({required this.controllers, required this.builder});
-
-  @override
-  State<_SafeDialog> createState() => _SafeDialogState();
-}
-
-class _SafeDialogState extends State<_SafeDialog> {
-  @override
-  void dispose() {
-    for (final c in widget.controllers) {
-      c.dispose();
-    }
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => widget.builder(widget.controllers);
 }

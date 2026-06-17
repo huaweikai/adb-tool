@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -15,6 +14,9 @@ import '../providers/test_session_provider.dart';
 import '../providers/test_config_provider.dart';
 import '../services/api_client.dart';
 import '../utils/test_flow_text.dart';
+import '../utils/time_formatters.dart';
+import '../widgets/safe_dialog.dart';
+import '../mixins/screen_capture_mixin.dart';
 
 class TestSessionScreen extends StatefulWidget {
   const TestSessionScreen({super.key});
@@ -23,24 +25,68 @@ class TestSessionScreen extends StatefulWidget {
   State<TestSessionScreen> createState() => _TestSessionScreenState();
 }
 
-class _TestSessionScreenState extends State<TestSessionScreen> {
+class _TestSessionScreenState extends State<TestSessionScreen>
+    with ScreenCaptureMixin<TestSessionScreen> {
   bool _busy = false;
-  bool _screenshotting = false;
-  bool _recording = false;
-  bool _recordSaving = false;
   bool _logcatRunning = false;
-  int _recordSeconds = 0;
   int _logcatSeconds = 0;
   int _sessionTick = 0;
-  Timer? _recordTimer;
   Timer? _logcatTimer;
   Timer? _sessionTimer;
 
-  String? get _serial => context.read<DeviceSerialScope>().serial;
+  String? get serial => context.read<DeviceSerialScope>().serial;
+
+  // ── ScreenCaptureMixin 实现 ──────────────────────────────────
+  @override
+  late bool recording;
+  @override
+  late bool recordSaving;
+  @override
+  late int recordSeconds;
+  @override
+  late bool screenshotting;
+  @override
+  late Timer? recordTimer;
+
+  ApiClient get apiClient => context.read<ApiClient>();
+  TestSessionProvider get sessionProvider =>
+      context.read<TestSessionProvider>();
+
+  @override
+  Future<void> onScreenshotSaved(Uint8List bytes, String? localPath) async {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+          content: Text(tr('screenshotSavedToSession')),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2)),
+    );
+  }
+
+  @override
+  Future<void> onVideoSaved(Uint8List bytes) async {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+          content: Text(tr('recordSavedToSession')),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2)),
+    );
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    recording = false;
+    recordSaving = false;
+    recordSeconds = 0;
+    screenshotting = false;
+    recordTimer = null;
+  }
 
   @override
   void dispose() {
-    _recordTimer?.cancel();
+    recordTimer?.cancel();
     _logcatTimer?.cancel();
     _sessionTimer?.cancel();
     super.dispose();
@@ -146,7 +192,7 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
                             color: theme.colorScheme.onSurfaceVariant),
                         const SizedBox(width: 4),
                         Text(
-                          _fmtElapsed(
+                          fmtElapsed(
                               DateTime.now().difference(session.startedAt)),
                           style: const TextStyle(fontSize: 11),
                         ),
@@ -172,29 +218,28 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
                 icon: const Icon(Icons.history, size: 16),
                 label: Text(tr('sessionHistory')),
               ),
-              if (_recording)
+              if (recording)
                 FilledButton.icon(
-                  onPressed: _recordSaving ? null : _stopRecording,
+                  onPressed: recordSaving ? null : stopRecording,
                   icon: const Icon(Icons.stop, size: 16),
-                  label: Text(_fmtDuration(_recordSeconds)),
+                  label: Text(fmtDuration(recordSeconds)),
                   style: FilledButton.styleFrom(
                     backgroundColor: theme.colorScheme.error,
                   ),
                 )
               else
                 FilledButton.tonalIcon(
-                  onPressed: canCapture && !_busy && _serial != null
-                      ? _startRecording
-                      : null,
+                  onPressed:
+                      canCapture && !_busy && serial != null ? startRecording : null,
                   icon: const Icon(Icons.fiber_manual_record, size: 16),
                   label: Text(tr('record')),
                 ),
               FilledButton.tonalIcon(
                 onPressed:
-                    canCapture && !_busy && !_screenshotting && _serial != null
-                        ? _takeScreenshot
+                    canCapture && !_busy && !screenshotting && serial != null
+                        ? takeScreenshot
                         : null,
-                icon: _screenshotting
+                icon: screenshotting
                     ? const SizedBox(
                         width: 14,
                         height: 14,
@@ -207,14 +252,14 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
                 FilledButton.icon(
                   onPressed: _busy ? null : _stopLogcat,
                   icon: const Icon(Icons.stop, size: 16),
-                  label: Text(_fmtDuration(_logcatSeconds)),
+                  label: Text(fmtDuration(_logcatSeconds)),
                   style: FilledButton.styleFrom(
                     backgroundColor: theme.colorScheme.primary,
                   ),
                 )
               else
                 FilledButton.tonalIcon(
-                  onPressed: canCapture && !_busy && _serial != null
+                  onPressed: canCapture && !_busy && serial != null
                       ? _startLogcat
                       : null,
                   icon: const Icon(Icons.list_alt, size: 16),
@@ -316,7 +361,7 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
         SizedBox(
           width: 72,
           child: Text(
-            _time(event.time),
+            fmtTime(event.time),
             style: TextStyle(
                 fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
           ),
@@ -389,7 +434,7 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
                   : session.deviceModel),
           _InfoLine(tr('package'),
               session.packageName.isEmpty ? '-' : session.packageName),
-          _InfoLine(tr('startedAt'), _date(session.startedAt)),
+          _InfoLine(tr('startedAt'), fmtDateTime(session.startedAt)),
           _InfoLine(tr('sessionDirectory'), session.directoryPath),
         ]),
         const SizedBox(height: 16),
@@ -415,7 +460,7 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(_date(note.createdAt),
+                      Text(fmtDateTime(note.createdAt),
                           style: TextStyle(
                               fontSize: 11,
                               color: theme.colorScheme.onSurfaceVariant)),
@@ -639,7 +684,7 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    '${_issueTypeLabel(session.issues[i].type, context)} · ${_date(session.issues[i].createdAt)}',
+                    '${_issueTypeLabel(session.issues[i].type, context)} · ${fmtDateTime(session.issues[i].createdAt)}',
                     style: TextStyle(
                         fontSize: 11,
                         color: theme.colorScheme.onSurfaceVariant),
@@ -693,7 +738,7 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
                             style: const TextStyle(fontSize: 12),
                             overflow: TextOverflow.ellipsis),
                         if (artifact.size > 0)
-                          Text(_fmtSize(artifact.size),
+                          Text(fmtBytes(artifact.size),
                               style: TextStyle(
                                   fontSize: 10,
                                   color: theme.colorScheme.onSurfaceVariant)),
@@ -725,8 +770,8 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
       };
 
   Future<void> _showCreateDialog() async {
-    final serial = _serial;
-    if (serial == null) {
+    final s = serial;
+    if (s == null) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -740,12 +785,12 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
     Device? device;
     try {
       device = deviceProvider.devices.firstWhere(
-        (d) => d.serial == serial,
+        (d) => d.serial == s,
       );
     } catch (_) {
       device = null;
     }
-    final displayName = device?.displayName ?? serial;
+    final displayName = device?.displayName ?? s;
     final nameCtrl = TextEditingController(text: tr('defaultSessionName'));
     final currentApp = context.read<TestConfigProvider>().currentApp;
     final configPkg = currentApp?.packageName ?? '';
@@ -758,7 +803,7 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
     String type = tr('sessionTypeBug');
     final result = await showDialog<_CreateSessionResult>(
       context: context,
-      builder: (ctx) => _SafeDialog(
+      builder: (ctx) => SafeDialog(
         controllers: safeCtrls,
         builder: (_) => StatefulBuilder(
           builder: (context, setDialogState) => AlertDialog(
@@ -846,11 +891,11 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
       await sessionProvider.startSession(
         name: result.name,
         type: result.type,
-        serial: serial,
+        serial: s!,
         model: device?.model ?? '',
         brand: device?.brand ?? '',
         sdk: device?.sdk ?? '',
-        deviceDisplayName: displayName,
+        deviceDisplayName: displayName ?? s,
         packageName: result.packageName,
         note: result.note,
         testPlanItems:
@@ -872,127 +917,9 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
     );
   }
 
-  Future<void> _takeScreenshot() async {
-    final serial = _serial;
-    if (serial == null) return;
-    final api = context.read<ApiClient>();
-    final sessionProvider = context.read<TestSessionProvider>();
-    setState(() => _screenshotting = true);
-    try {
-      final b64 = await api.takeScreenshot(serial);
-      if (b64 == null) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text('${tr('saveFailed')}: screenshot returned null'),
-              behavior: SnackBarBehavior.floating),
-        );
-        return;
-      }
-      final bytes = base64Decode(b64);
-      if (sessionProvider.hasRunningSession) {
-        await sessionProvider.saveScreenshotBytes(bytes);
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text(tr('screenshotSavedToSession')),
-              behavior: SnackBarBehavior.floating,
-              duration: const Duration(seconds: 2)),
-        );
-      }
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text('${tr('saveFailed')}: $e'),
-            behavior: SnackBarBehavior.floating),
-      );
-    } finally {
-      if (mounted) setState(() => _screenshotting = false);
-    }
-  }
-
-  Future<void> _startRecording() async {
-    final serial = _serial;
-    if (serial == null || _recording || _recordSaving) return;
-    final api = context.read<ApiClient>();
-    final sessionProvider = context.read<TestSessionProvider>();
-    try {
-      await api.screenRecordAction(serial, 'start');
-      if (sessionProvider.hasRunningSession) {
-        await sessionProvider.markScreenRecordStarted();
-      }
-      if (!mounted) return;
-      setState(() {
-        _recording = true;
-        _recordSaving = false;
-        _recordSeconds = 0;
-      });
-      _recordTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-        if (mounted) setState(() => _recordSeconds++);
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text(tr('recordingStarted')),
-            behavior: SnackBarBehavior.floating),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text('${tr('recordingFailed')}: $e'),
-            behavior: SnackBarBehavior.floating),
-      );
-    }
-  }
-
-  Future<void> _stopRecording() async {
-    final serial = _serial;
-    if (serial == null) return;
-    final api = context.read<ApiClient>();
-    final sessionProvider = context.read<TestSessionProvider>();
-    if (_recordSaving || !_recording) return;
-    _recordTimer?.cancel();
-    setState(() => _recordSaving = true);
-    try {
-      await api.screenRecordAction(serial, 'stop');
-      if (!mounted) return;
-      final bytes = await api.pullRecordedVideo(serial);
-      if (!mounted) return;
-      setState(() {
-        _recording = false;
-        _recordSaving = false;
-        _recordSeconds = 0;
-      });
-      if (!mounted) return;
-      if (sessionProvider.hasRunningSession) {
-        await sessionProvider.saveVideoBytes(bytes);
-      }
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text(tr('recordSavedToSession')),
-            behavior: SnackBarBehavior.floating,
-            duration: const Duration(seconds: 2)),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _recording = false;
-        _recordSaving = false;
-        _recordSeconds = 0;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text('${tr('recordingStopFailed')}: $e'),
-            behavior: SnackBarBehavior.floating),
-      );
-    }
-  }
-
   Future<void> _startLogcat() async {
-    final serial = _serial;
-    if (serial == null || _logcatRunning) return;
+    final s = serial;
+    if (s == null || _logcatRunning) return;
     final api = context.read<ApiClient>();
     final sessionProvider = context.read<TestSessionProvider>();
     final session = sessionProvider.currentSession;
@@ -1000,7 +927,7 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
     try {
       await api.sessionLogcatAction(
         'start',
-        serial: serial,
+        serial: s,
         sessionDir: session.directoryPath,
         packageName: session.packageName,
       );
@@ -1093,7 +1020,7 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
     final ctrl = TextEditingController(text: item.message);
     final message = await showDialog<String>(
       context: context,
-      builder: (ctx) => _SafeDialog(
+      builder: (ctx) => SafeDialog(
         controllers: [ctrl],
         builder: (_) => AlertDialog(
           scrollable: true,
@@ -1129,7 +1056,7 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
     final ctrl = TextEditingController();
     final note = await showDialog<String>(
       context: context,
-      builder: (ctx) => _SafeDialog(
+      builder: (ctx) => SafeDialog(
         controllers: [ctrl],
         builder: (_) => AlertDialog(
           scrollable: true,
@@ -1174,7 +1101,7 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
     ];
     final result = await showDialog<_IssueFormResult>(
       context: context,
-      builder: (ctx) => _SafeDialog(
+      builder: (ctx) => SafeDialog(
         controllers: safeCtrls,
         builder: (_) => StatefulBuilder(
           builder: (context, setDialogState) => AlertDialog(
@@ -1317,12 +1244,12 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
   }
 
   Future<String> _loadRecentLogcatSnapshot() async {
-    final serial = _serial;
-    if (serial == null || serial.isEmpty) return '';
+    final s = serial;
+    if (s == null || s.isEmpty) return '';
     try {
       return await context
           .read<ApiClient>()
-          .getRecentLogcat(serial, lines: 1000);
+          .getRecentLogcat(s, lines: 1000);
     } catch (_) {
       return '';
     }
@@ -1373,12 +1300,6 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
-  }
-
-  String _fmtDuration(int seconds) {
-    final m = seconds ~/ 60;
-    final s = seconds % 60;
-    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
 
   Color _severityColor(TestSessionIssueSeverity severity) {
@@ -1438,23 +1359,6 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
       TestSessionEventType.issueMarked => Colors.deepOrange,
       TestSessionEventType.sessionFinished => theme.colorScheme.error,
     };
-  }
-
-  String _fmtElapsed(Duration d) {
-    final h = d.inHours;
-    final m = d.inMinutes.remainder(60);
-    final s = d.inSeconds.remainder(60);
-    return '${h.toString().padLeft(2, '0')}:'
-        '${m.toString().padLeft(2, '0')}:'
-        '${s.toString().padLeft(2, '0')}';
-  }
-
-  static String _fmtSize(int bytes) {
-    if (bytes < 1024) return '$bytes B';
-    if (bytes < 1024 * 1024) {
-      return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    }
-    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
 
   Future<void> _deleteArtifact(String id, String name) async {
@@ -1547,7 +1451,7 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
                               s.deviceModel.isEmpty
                                   ? s.deviceSerial
                                   : s.deviceModel,
-                              _date(s.startedAt),
+                              fmtDateTime(s.startedAt),
                               tr('historyIssues',
                                   {'count': '${s.issues.length}'}),
                             ].join(' · '),
@@ -1649,14 +1553,6 @@ class _TestSessionScreenState extends State<TestSessionScreen> {
     }
   }
 
-  String _time(DateTime time) =>
-      '${_two(time.hour)}:${_two(time.minute)}:${_two(time.second)}';
-
-  String _date(DateTime time) {
-    return '${time.year}-${_two(time.month)}-${_two(time.day)} ${_time(time)}';
-  }
-
-  String _two(int value) => value.toString().padLeft(2, '0');
 }
 
 class _InfoLine {
@@ -1700,25 +1596,4 @@ class _CreateSessionResult {
     required this.note,
     required this.testFlows,
   });
-}
-
-class _SafeDialog extends StatefulWidget {
-  final List<TextEditingController> controllers;
-  final Widget Function(List<TextEditingController> ctrls) builder;
-  const _SafeDialog({required this.controllers, required this.builder});
-  @override
-  State<_SafeDialog> createState() => _SafeDialogState();
-}
-
-class _SafeDialogState extends State<_SafeDialog> {
-  @override
-  void dispose() {
-    for (final c in widget.controllers) {
-      c.dispose();
-    }
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => widget.builder(widget.controllers);
 }

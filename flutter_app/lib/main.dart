@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'services/api_client.dart';
@@ -93,6 +94,7 @@ class ServerBootScreen extends StatefulWidget {
 class _ServerBootScreenState extends State<ServerBootScreen>
     with WidgetsBindingObserver {
   String _status = 'Starting ...';
+  final List<String> _steps = [];
   bool _ready = false;
   bool _stoppedByUser = false;
   bool _canRetry = false;
@@ -126,26 +128,41 @@ class _ServerBootScreenState extends State<ServerBootScreen>
     super.dispose();
   }
 
+  void _log(String step) {
+    if (!mounted) return;
+    setState(() => _steps.add('[${DateTime.now().millisecondsSinceEpoch % 100000}] $step'));
+    debugPrint('[BOOT] $step');
+  }
+
   Future<void> _boot() async {
     final api = context.read<ApiClient>();
     _launcher ??= ServerLauncher();
     final launcher = _launcher!;
     try {
       if (!mounted || _disposed) return;
+      _log('开始启动...');
       setState(() {
         _status = tr('launchingBackend');
         _stoppedByUser = false;
         _canRetry = false;
       });
+      _log('调用 launcher.start()...');
       await launcher.start();
+      _log('launcher.start() 完成');
       if (!mounted || _disposed) return;
       setState(() => _status = tr('waitingForServer'));
+      _log('等待 800ms...');
       await Future.delayed(const Duration(milliseconds: 800));
+      _log('开始轮询 isReady()...');
       for (int i = 0; i < 60; i++) {
         await _waitForBootRetry();
         if (!mounted || _disposed) return;
-        if (await api.isReady()) {
+        _log('isReady() 第${i + 1}次尝试...');
+        final ready = await api.isReady();
+        _log('isReady() = $ready');
+        if (ready) {
           if (!mounted || _disposed) return;
+          _log('后端就绪，切换到 HomeScreen');
           setState(() {
             _ready = true;
             _canRetry = false;
@@ -153,6 +170,7 @@ class _ServerBootScreenState extends State<ServerBootScreen>
           return;
         }
       }
+      _log('轮询超时，停止后端');
       await launcher.stop();
       if (!mounted || _disposed) return;
       _launcher = null;
@@ -160,7 +178,9 @@ class _ServerBootScreenState extends State<ServerBootScreen>
         _status = tr('serverTimeout');
         _canRetry = true;
       });
-    } catch (e) {
+    } catch (e, st) {
+      _log('异常: $e');
+      debugPrint('[BOOT ERROR] $e\n$st');
       await launcher.stop();
       if (!mounted || _disposed) return;
       _launcher = null;
@@ -205,6 +225,35 @@ class _ServerBootScreenState extends State<ServerBootScreen>
     await _boot();
   }
 
+  void _showBootLog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('启动日志'),
+        content: SizedBox(
+          width: 500,
+          height: 400,
+          child: ListView.builder(
+            itemCount: _steps.length,
+            itemBuilder: (ctx, i) => Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Text(
+                _steps[i],
+                style: const TextStyle(fontFamily: 'Menlo', fontSize: 11),
+              ),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('关闭'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_ready) {
@@ -235,6 +284,25 @@ class _ServerBootScreenState extends State<ServerBootScreen>
             Text(_status,
                 style: theme.textTheme.bodyMedium
                     ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+            if (_steps.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              ..._steps.reversed.take(3).map(
+                (s) => Padding(
+                  padding: const EdgeInsets.only(bottom: 2),
+                  child: Text(s,
+                    style: TextStyle(
+                      fontFamily: 'Menlo',
+                      fontSize: 10,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: _showBootLog,
+                child: Text('查看完整日志 (${_steps.length}步)'),
+              ),
+            ],
             if (_stoppedByUser || _canRetry) ...[
               const SizedBox(height: 20),
               FilledButton.icon(
