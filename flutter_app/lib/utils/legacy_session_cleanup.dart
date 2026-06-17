@@ -98,7 +98,7 @@ class LegacySessionCleanup {
       try {
         final dir = Directory(path);
         if (await dir.exists()) {
-          final absolute = await dir.absolute.path;
+          final absolute = dir.absolute.path;
           if (seen.add(absolute)) {
             result.add(absolute);
             return true;

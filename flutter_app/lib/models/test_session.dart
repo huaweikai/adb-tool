@@ -1,4 +1,4 @@
-enum TestSessionStatus { running, finished }
+enum TestSessionStatus { running, finished, abandoned }
 
 enum TestSessionEventType {
   sessionCreated,
