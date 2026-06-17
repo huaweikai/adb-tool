@@ -25,6 +25,10 @@ const _locCommonZh = <String, String>{
   'device': '设备',
   'saveFailed': '保存失败',
   'exportFailed': '导出失败',
+  'deviceDisconnected': '设备已断开',
+  'waitingReconnect': '等待设备重新连接...',
+  'removeDevice': '移除设备',
+  'giveUp': '放弃',
 
   // ServerBootScreen
   'starting': 'Starting ...',
@@ -62,6 +66,10 @@ const _locCommonEn = <String, String>{
   'device': 'Device',
   'saveFailed': 'Save failed',
   'exportFailed': 'Export failed',
+  'deviceDisconnected': 'Device disconnected',
+  'waitingReconnect': 'Waiting for device to reconnect...',
+  'removeDevice': 'Remove device',
+  'giveUp': 'Give up',
 
   'starting': 'Starting ...',
   'launchingBackend': 'Launching backend ...',

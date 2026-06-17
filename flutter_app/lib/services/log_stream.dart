@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../models/device.dart';
 
@@ -11,6 +12,10 @@ class LogStreamService {
   String _serial = '';
   LogFilter? _filter;
 
+  Timer? _reconnectTimer;
+  int _reconnectAttempt = 0;
+  static const _maxBackoffSeconds = 30;
+
   Stream<List<LogEntry>> get logStream => _controller.stream;
   Stream<bool> get connectionState => _connectionController.stream;
   String get serial => _serial;
@@ -18,18 +23,24 @@ class LogStreamService {
   void connect(String serial, LogFilter filter) {
     _subscription?.cancel();
     _channel?.sink.close();
+    _reconnectTimer?.cancel();
 
     _serial = serial;
     _filter = filter;
 
+    _doConnect();
+  }
+
+  void _doConnect() {
     const wsUrl = 'ws://127.0.0.1:9876/ws/logs';
     _channel = WebSocketChannel.connect(Uri.parse(wsUrl));
 
     _channel!.ready.then((_) {
+      _reconnectAttempt = 0;
       _send({
         'action': 'start',
-        'serial': serial,
-        'filters': filter.toJson(),
+        'serial': _serial,
+        'filters': _filter?.toJson() ?? {},
       });
       _connectionController.add(true);
     });
@@ -65,11 +76,30 @@ class LogStreamService {
       onError: (e) {
         _controller.addError(e);
         _connectionController.add(false);
+        _scheduleReconnect();
       },
       onDone: () {
         _connectionController.add(false);
+        _scheduleReconnect();
       },
     );
+  }
+
+  void _scheduleReconnect() {
+    if (_serial.isEmpty) return;
+
+    _reconnectAttempt++;
+    final delaySeconds = min(
+      _maxBackoffSeconds,
+      1 << _reconnectAttempt.clamp(0, 5),
+    );
+
+    _reconnectTimer?.cancel();
+    _reconnectTimer = Timer(Duration(seconds: delaySeconds), () {
+      if (_serial.isNotEmpty) {
+        _doConnect();
+      }
+    });
   }
 
   void updateFilter(LogFilter filter) {
@@ -82,6 +112,8 @@ class LogStreamService {
 
   void stop() {
     _send({'action': 'stop'});
+    _reconnectTimer?.cancel();
+    _reconnectAttempt = 0;
     _channel?.sink.close();
     _channel = null;
   }
@@ -100,6 +132,7 @@ class LogStreamService {
   }
 
   void dispose() {
+    _reconnectTimer?.cancel();
     _subscription?.cancel();
     _channel?.sink.close();
     _controller.close();

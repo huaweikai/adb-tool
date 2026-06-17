@@ -1,8 +1,8 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'services/api_client.dart';
+import 'services/database.dart';
 import 'services/log_stream.dart';
 import 'services/server_launcher.dart';
 import 'screens/home_screen.dart';
@@ -13,11 +13,16 @@ import 'providers/locale_provider.dart';
 import 'providers/test_session_provider.dart';
 import 'providers/test_config_provider.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Singleton DB shared by DeviceProvider and TestSessionProvider
+  final db = AppDatabase();
+
   runApp(
     MultiProvider(
       providers: [
+        Provider<AppDatabase>.value(value: db),
         Provider<ApiClient>(
           create: (_) => ApiClient('http://127.0.0.1:9876'),
         ),
@@ -28,13 +33,13 @@ void main() {
           create: (_) => ThemeProvider(),
         ),
         ChangeNotifierProvider<DeviceProvider>(
-          create: (_) => DeviceProvider(),
+          create: (_) => DeviceProvider(db: db),
         ),
         ChangeNotifierProvider<LocaleProvider>(
           create: (_) => LocaleProvider(),
         ),
         ChangeNotifierProvider<TestSessionProvider>(
-          create: (_) => TestSessionProvider(),
+          create: (_) => TestSessionProvider(db: db),
         ),
         ChangeNotifierProvider<TestConfigProvider>(
           create: (_) => TestConfigProvider()..load(),

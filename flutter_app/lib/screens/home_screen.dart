@@ -1,13 +1,14 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../models/device.dart';
+import '../services/database.dart';
 import '../services/api_client.dart';
 import '../providers/theme_provider.dart';
 import '../providers/device_provider.dart';
 import '../providers/locale_provider.dart';
 import '../providers/test_config_provider.dart';
 import '../i18n.dart';
+import '../widgets/disconnected_banner.dart';
 import 'device_status_screen.dart';
 import 'logcat_screen.dart';
 import 'file_browser_screen.dart';
@@ -78,15 +79,39 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final Set<String> _expandedSerials = {};
   final Map<String, _CachedScreen> _screens = {};
   String? _activeKey;
+  bool _restoredFromState = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _restoreState();
+    _startRefresh();
+  }
+
+  Future<void> _restoreState() async {
+    final dp = context.read<DeviceProvider>();
+    final db = dp.db;
+
+    final activeKey = await db.getActiveKey();
+    final expandedSerials = await db.getExpandedSerials();
+
+    if (!mounted) return;
+
+    setState(() {
+      if (activeKey != null && activeKey.isNotEmpty) {
+        _activeKey = activeKey;
+      }
+      _expandedSerials
+        ..clear()
+        ..addAll(expandedSerials);
+    });
+  }
+
+  Future<void> _startRefresh() async {
     final api = context.read<ApiClient>();
     final dp = context.read<DeviceProvider>();
     dp.refresh(api);
-    dp.addListener(_onDevicesChanged);
     _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       context.read<DeviceProvider>().refresh(context.read<ApiClient>());
     });
@@ -96,7 +121,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _refreshTimer?.cancel();
-    context.read<DeviceProvider>().removeListener(_onDevicesChanged);
     super.dispose();
   }
 
@@ -123,6 +147,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         }
       }
     });
+    _persistState();
   }
 
   static const int _maxCachedScreens = 20;
@@ -154,6 +179,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _evictCache();
     }
     setState(() => _activeKey = key);
+    _persistState();
   }
 
   void _evictCache() {
@@ -189,12 +215,67 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     setState(() => _activeKey = _testConfigKey);
   }
 
+  /// Restore the active page from saved _activeKey
+  void _restoreActivePage(List<SavedDevice> savedDevices) {
+    if (_activeKey == null) return;
+
+    // Check if it's a backend log or test config page
+    if (_activeKey == _backendLogKey) {
+      _openBackendLogs();
+      return;
+    }
+    if (_activeKey == _testConfigKey) {
+      _openTestConfig();
+      return;
+    }
+
+    // Parse device serial and nav item from _activeKey (format: "serial_itemName")
+    final parts = _activeKey!.split('_');
+    if (parts.length < 2) return;
+
+    final serial = parts.sublist(0, parts.length - 1).join('_');
+    final itemName = parts.last;
+
+    // Check if the device still exists in saved devices
+    final deviceExists = savedDevices.any((d) => d.serial == serial);
+    if (!deviceExists) {
+      // Device no longer exists, clear the state
+      setState(() {
+        _activeKey = null;
+        _restoredFromState = false;
+      });
+      return;
+    }
+
+    // Find the NavItem
+    final navItem = NavItem.values.where((item) => item.name == itemName).firstOrNull;
+    if (navItem == null) return;
+
+    // Expand the device in sidebar
+    if (!_expandedSerials.contains(serial)) {
+      setState(() {
+        _expandedSerials.add(serial);
+      });
+    }
+
+    // Navigate to the page
+    _navigateTo(serial, navItem);
+  }
+
   @override
   Widget build(BuildContext context) {
     final deviceProvider = context.watch<DeviceProvider>();
     context.watch<LocaleProvider>();
-    final devices = deviceProvider.devices;
+    final savedDevices = deviceProvider.savedDevices;
     final backendOnline = deviceProvider.online;
+
+    // Restore page from saved state when devices are loaded
+    if (savedDevices.isNotEmpty && _activeKey != null && !_restoredFromState) {
+      _restoredFromState = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _restoreActivePage(savedDevices);
+      });
+    }
 
     return Scaffold(
       body: Column(
@@ -203,7 +284,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           Expanded(
             child: Row(
               children: [
-                _buildSidebar(context, devices, backendOnline),
+                _buildSidebar(context, savedDevices, backendOnline),
                 Expanded(child: _buildContent()),
               ],
             ),
@@ -213,71 +294,86 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  void _onDevicesChanged() {
-    if (!mounted) return;
-    _schedulePruneDisconnectedScreens(context.read<DeviceProvider>().devices);
-  }
-
-  void _schedulePruneDisconnectedScreens(List<Device> devices) {
-    final onlineSerials = devices
-        .where((device) => device.isOnline)
-        .map((device) => device.serial)
-        .toSet();
-    final removedSerials = _screens.values
-        .map((screen) => screen.serial)
-        .whereType<String>()
-        .where((serial) => !onlineSerials.contains(serial))
-        .toSet();
-    if (removedSerials.isEmpty) return;
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      setState(() {
-        _screens.removeWhere((_, screen) =>
-            screen.serial != null && removedSerials.contains(screen.serial));
-        _expandedSerials.removeWhere(removedSerials.contains);
-        if (_activeKey != null && !_screens.containsKey(_activeKey)) {
-          _activeKey = null;
-        }
-      });
-    });
-  }
-
   Widget _buildContent() {
     if (_activeKey == null || !_screens.containsKey(_activeKey)) {
-      final theme = Theme.of(context);
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.android,
-                size: 64,
-                color: theme.colorScheme.onSurfaceVariant.withAlpha(60)),
-            const SizedBox(height: 16),
-            Text(tr('welcome'),
-                style: theme.textTheme.bodyMedium
-                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-          ],
-        ),
-      );
+      return _buildWelcome();
     }
 
+    final screen = _screens[_activeKey]!;
+    final serial = screen.serial;
+    final dp = context.read<DeviceProvider>();
+    final isDisconnected = serial != null && !dp.isDeviceConnected(serial);
+
     return Stack(
-      children: _screens.entries.map((entry) {
-        final active = entry.key == _activeKey;
-        return Offstage(
-          offstage: !active,
+      children: [
+        // Normal page content
+        Offstage(
+          offstage: false,
           child: Provider<DeviceScreenActiveScope>.value(
-            value: DeviceScreenActiveScope(active),
-            child: SizedBox.expand(child: entry.value),
+            value: DeviceScreenActiveScope(true),
+            child: SizedBox.expand(child: screen),
           ),
-        );
-      }).toList(),
+        ),
+        // Disconnected banner overlay at top
+        if (isDisconnected)
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: DisconnectedBanner(
+              serial: serial,
+              onRefresh: () {
+                final api = context.read<ApiClient>();
+                context.read<DeviceProvider>().refresh(api);
+              },
+              onRemove: () => _removeDevice(serial),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildWelcome() {
+    final theme = Theme.of(context);
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.android,
+              size: 64,
+              color: theme.colorScheme.onSurfaceVariant.withAlpha(60)),
+          const SizedBox(height: 16),
+          Text(tr('welcome'),
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+        ],
+      ),
+    );
+  }
+
+  void _removeDevice(String serial) async {
+    await context.read<DeviceProvider>().removeDevice(serial);
+    setState(() {
+      _screens.removeWhere((_, screen) => screen.serial == serial);
+      _expandedSerials.remove(serial);
+      if (_activeKey != null &&
+          !_screens.containsKey(_activeKey)) {
+        _activeKey = null;
+      }
+    });
+    _persistState();
+  }
+
+  Future<void> _persistState() async {
+    final dp = context.read<DeviceProvider>();
+    await dp.db.updateAppState(
+      activeKey: _activeKey,
+      expandedSerials: _expandedSerials.toList(),
     );
   }
 
   Widget _buildSidebar(
-      BuildContext context, List<Device> devices, bool online) {
+      BuildContext context, List<SavedDevice> devices, bool online) {
     final theme = Theme.of(context);
     return Container(
       width: 240,
@@ -559,7 +655,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildDeviceTree(ThemeData theme, List<Device> devices) {
+  Widget _buildDeviceTree(ThemeData theme, List<SavedDevice> devices) {
     if (devices.isEmpty) {
       return Center(
         child: Padding(
@@ -593,10 +689,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildDeviceNode(BuildContext context, Device d, ThemeData theme) {
+  Widget _buildDeviceNode(BuildContext context, SavedDevice d, ThemeData theme) {
     final isExpanded = _expandedSerials.contains(d.serial);
     final hasActiveScreen =
         _screens.keys.any((k) => k.startsWith('${d.serial}_'));
+    final isConnected = d.isConnected;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -622,7 +719,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     height: 8,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: d.isOnline ? Colors.green : Colors.red,
+                      color: isConnected ? Colors.green : Colors.red,
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -630,7 +727,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     child: Text(
                       d.displayName,
                       style: const TextStyle(
-                          fontSize: 12, fontWeight: FontWeight.w500),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
@@ -639,9 +737,33 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         ? '...${d.serial.substring(d.serial.length - 8)}'
                         : d.serial,
                     style: TextStyle(
-                        fontSize: 9, color: theme.colorScheme.onSurfaceVariant),
+                        fontSize: 9,
+                        color: theme.colorScheme.onSurfaceVariant),
                   ),
-                  if (d.isOnline &&
+                  if (!isConnected)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 4),
+                      child: Icon(
+                        Icons.sync_problem,
+                        size: 14,
+                        color: Colors.orange.withAlpha(200),
+                      ),
+                    ),
+                  // Remove device button (only show when disconnected)
+                  if (!isConnected)
+                    Tooltip(
+                      message: tr('removeDevice'),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(4),
+                        onTap: () => _removeDevice(d.serial),
+                        child: const Padding(
+                          padding: EdgeInsets.only(left: 4),
+                          child: Icon(Icons.close, size: 14),
+                        ),
+                      ),
+                    ),
+                  // Disconnect wireless button (only for wireless devices)
+                  if (isConnected &&
                       (d.serial.contains(':') || d.serial.contains('_tcp')))
                     _disconnectButton(context, d),
                 ],
@@ -657,7 +779,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _disconnectButton(BuildContext context, Device d) {
+  Widget _disconnectButton(BuildContext context, SavedDevice d) {
     return Tooltip(
       message: tr('disconnect'),
       child: InkWell(
@@ -671,7 +793,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  Future<void> _disconnect(BuildContext context, Device d) async {
+  Future<void> _disconnect(BuildContext context, SavedDevice d) async {
     final api = context.read<ApiClient>();
     final deviceProvider = context.read<DeviceProvider>();
 
@@ -717,7 +839,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildFunctionItem(
-      BuildContext context, Device d, NavItem item, ThemeData theme) {
+      BuildContext context, SavedDevice d, NavItem item, ThemeData theme) {
     final key = '${d.serial}_${item.name}';
     final c = _navConfig[item]!;
     final isActive = _activeKey == key;

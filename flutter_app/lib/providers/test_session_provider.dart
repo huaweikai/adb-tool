@@ -15,6 +15,8 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 import '../models/test_session.dart';
+import '../services/database.dart';
+import 'device_provider.dart';
 import 'test_session/attachment_store.dart';
 import 'test_session/exporter.dart';
 import 'test_session/formatter.dart';
@@ -30,16 +32,39 @@ class TestSessionProvider extends ChangeNotifier {
   final SessionRepository _repo;
   final SessionAttachmentStore _attachments;
   final SessionExporter _exporter;
+  final AppDatabase _db;
 
   SessionTranslate _translate;
   String? _translationLanguage;
   TestSession? _currentSession;
 
-  TestSessionProvider({this.baseDirectory, SessionTranslate? translate})
-      : _translate = translate ?? _fallbackTranslate,
+  TestSessionProvider({
+    this.baseDirectory,
+    SessionTranslate? translate,
+    AppDatabase? db,
+  })  : _translate = translate ?? _fallbackTranslate,
         _repo = SessionRepository(baseDirectory),
         _attachments = SessionAttachmentStore(),
-        _exporter = SessionExporter(translate ?? _fallbackTranslate);
+        _exporter = SessionExporter(translate ?? _fallbackTranslate),
+        _db = db ?? AppDatabase() {
+    _tryResume();
+  }
+
+  /// Try to resume a running session from disk on startup.
+  Future<void> _tryResume() async {
+    if (_currentSession != null) return;
+    try {
+      final running = await scanHistory();
+      final ongoing = running.where((s) => s.status == TestSessionStatus.running).toList();
+      if (ongoing.isEmpty) return;
+      if (ongoing.length == 1) {
+        _currentSession = ongoing.first;
+        await _persistCurrentSessionId();
+        notifyListeners();
+      }
+      // Multiple running sessions: let the user pick via history screen.
+    } catch (_) {}
+  }
 
   // ===== Translator wiring =====
 
@@ -112,6 +137,7 @@ class TestSessionProvider extends ChangeNotifier {
     );
     _currentSession = session;
     await _repo.persist(session);
+    await _persistCurrentSessionId();
     notifyListeners();
     return session;
   }
@@ -393,6 +419,7 @@ class TestSessionProvider extends ChangeNotifier {
     _currentSession = finished;
     await _exporter.writeReport(finished);
     await _repo.persist(finished);
+    await _persistCurrentSessionId();
     notifyListeners();
     return _currentSession!;
   }
@@ -436,8 +463,24 @@ class TestSessionProvider extends ChangeNotifier {
     await _repo.deleteSessionDir(sessionId);
     if (_currentSession?.id == sessionId) {
       _currentSession = null;
+      await _persistCurrentSessionId();
       notifyListeners();
     }
+  }
+
+  /// Persist the current session ID to database so we can resume it after restart.
+  Future<void> _persistCurrentSessionId() async {
+    try {
+      // Keep recent session list trimmed.
+      final recent = _currentSession != null
+          ? [_currentSession!.id]
+          : <String>[];
+      
+      await _db.updateAppState(
+        currentSessionId: _currentSession?.id,
+        recentSessionIds: recent,
+      );
+    } catch (_) {}
   }
 
   Future<void> deleteArtifact(String artifactId) async {

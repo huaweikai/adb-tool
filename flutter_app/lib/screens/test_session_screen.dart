@@ -821,7 +821,10 @@ class _TestSessionScreenState extends State<TestSessionScreen>
         ),
       ),
     );
-    if (result == null || !mounted) return;
+    if (result == null || !mounted) {
+      setState(() => _busy = false);
+      return;
+    }
     final sessionProvider = context.read<TestSessionProvider>();
     setState(() => _busy = true);
     try {
@@ -1326,15 +1329,15 @@ class _TestSessionScreenState extends State<TestSessionScreen>
     setState(() => _busy = false);
     await showDialog(
       context: context,
-      builder: (ctx) {
-        final theme = Theme.of(ctx);
+      builder: (dialogCtx) {
+        final theme = Theme.of(dialogCtx);
         return StatefulBuilder(
-          builder: (context, setDialogState) => AlertDialog(
+          builder: (sbCtx, setDialogState) => AlertDialog(
             title: Text(tr('sessionHistory')),
             content: ConstrainedBox(
               constraints: BoxConstraints(
                 maxWidth: 500,
-                maxHeight: MediaQuery.sizeOf(context).height * 0.65,
+                maxHeight: MediaQuery.sizeOf(dialogCtx).height * 0.65,
               ),
               child: sessions.isEmpty
                   ? Text(tr('noHistorySessions'),
@@ -1373,7 +1376,7 @@ class _TestSessionScreenState extends State<TestSessionScreen>
                                 icon: const Icon(Icons.open_in_new, size: 18),
                                 tooltip: tr('reopenSession'),
                                 onPressed: () async {
-                                  Navigator.pop(ctx);
+                                  Navigator.pop(dialogCtx);
                                   await _loadHistorySession(provider, s.id);
                                 },
                               ),
@@ -1383,7 +1386,7 @@ class _TestSessionScreenState extends State<TestSessionScreen>
                                 tooltip: tr('deleteSession'),
                                 onPressed: () async {
                                   final confirmed = await showDialog<bool>(
-                                    context: context,
+                                    context: dialogCtx,
                                     builder: (c) => AlertDialog(
                                       scrollable: true,
                                       title: Text(tr('deleteSession')),
@@ -1404,16 +1407,16 @@ class _TestSessionScreenState extends State<TestSessionScreen>
                                   if (confirmed != true) return;
                                   try {
                                     await provider.deleteSession(s.id);
-                                    if (!context.mounted) return;
+                                    if (!sbCtx.mounted) return;
                                     setDialogState(() => sessions.removeAt(i));
-                                    ScaffoldMessenger.of(context).showSnackBar(
+                                    ScaffoldMessenger.of(sbCtx).showSnackBar(
                                       SnackBar(
                                           content: Text(tr('sessionDeleted')),
                                           behavior: SnackBarBehavior.floating),
                                     );
                                   } catch (e) {
-                                    if (!context.mounted) return;
-                                    ScaffoldMessenger.of(context).showSnackBar(
+                                    if (!sbCtx.mounted) return;
+                                    ScaffoldMessenger.of(sbCtx).showSnackBar(
                                       SnackBar(
                                           content:
                                               Text('${tr('saveFailed')}: $e'),
@@ -1430,7 +1433,7 @@ class _TestSessionScreenState extends State<TestSessionScreen>
             ),
             actions: [
               TextButton(
-                  onPressed: () => Navigator.pop(ctx),
+                  onPressed: () => Navigator.pop(dialogCtx),
                   child: Text(tr('close'))),
             ],
           ),
