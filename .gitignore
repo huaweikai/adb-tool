@@ -25,3 +25,9 @@ flutter_app/windows/runner/resources/*.exe
 dist/
 .wix/
 .idea/
+
+# ADB Tool user runtime data
+# - dev mode: flutter_app/ADBToolData (CWD-relative, from `flutter run`)
+# - release: ~/ADBToolData (per-user), e.g. ~/Library/Application Support/... on macOS
+flutter_app/ADBToolData/
+/ADBToolData/

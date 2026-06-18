@@ -65,13 +65,23 @@ Runtime flow:
 ├── api/                     # Backend API response protocol and field documentation
 ├── assets/                  # Screenshots used by README files
 ├── backend/                 # Go backend service and ADB operation wrappers
-│   └── internal/server/     # HTTP routes, WebSocket, and layered ADB implementation
+│   ├── internal/server/     # HTTP routes, WebSocket, and layered ADB (split by concern)
+│   └── uninstall/           # Windows MSI uninstaller entry point
 ├── flutter_app/             # Flutter desktop project
-│   └── lib/
-│       ├── models/          # Frontend data models
-│       ├── screens/         # Feature screens
-│       └── services/        # API client, log stream, server launcher, and drag/drop support
-├── scripts/                 # macOS and Windows build scripts
+│   ├── lib/
+│   │   ├── models/          # Frontend data models (Device / DeviceStatus / FileItem / ...)
+│   │   ├── db/              # Local SQLite persistence (drift: tables/ + dao/)
+│   │   ├── providers/       # Global state (device / theme / locale / test_session / test_config)
+│   │   ├── services/        # API client, log stream, server launcher, capture, drag/drop
+│   │   │   └── api/         # REST clients split by domain (9 files)
+│   │   ├── screens/         # Feature screens (test_session split into hub/active/preview)
+│   │   ├── widgets/         # Cross-screen reusable widgets
+│   │   ├── mixins/          # Screenshot / screen-record capture mixins
+│   │   ├── utils/           # Test-flow text parser, time formatters, legacy cleanup
+│   │   └── i18n/            # Per-screen Chinese/English dictionaries + i18n.dart entry
+│   └── test/                # Unit / widget tests
+├── scripts/                 # macOS and Windows build scripts + i18n check
+├── docs/                    # Design documents (e.g. OPTIMIZATION_PROPOSAL.md)
 └── PROJECT_OVERVIEW.md      # Detailed project architecture document
 ```
 

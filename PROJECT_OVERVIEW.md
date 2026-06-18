@@ -17,10 +17,14 @@
 ## 二、目录结构
 
 ```
-/Users/huaweikai/AndroidStudioProjects/adb tool/
+.
 ├── scripts/
-│   ├── build.sh                        # 主构建脚本 (macOS)
-│   └── build.ps1                       # Windows 构建脚本
+│   ├── build.sh                        # macOS 主构建脚本
+│   ├── build.ps1                       # Windows 构建脚本 (PowerShell)
+│   ├── idea-build.ps1                  # IDEA 复用 build.ps1 的封装
+│   ├── installer.wxs                   # WiX 安装器源文件
+│   ├── check_i18n_tr_keys.py           # CI 用的 i18n key 完整性检查
+│   └── reset-db.ps1                    # 重置本地 SQLite 数据库 (开发用)
 ├── adb_tool_app/                       # Android 剪贴板辅助 APK
 │   ├── settings.gradle.kts
 │   ├── build.gradle.kts
@@ -45,50 +49,135 @@
 │   ├── platform-tools-latest-windows.zip
 │   ├── build.sh / build.bat
 │   ├── web/index.html
-│   └── internal/server/
-│       ├── server.go                   # HTTP 路由 + API 处理
-│       ├── recovery.go                # Panic 恢复中间件
+│   ├── uninstall/                      # Windows MSI 卸载入口
+│   └── internal/server/                # HTTP 路由 + ADB 封装（按功能拆）
+│       ├── server.go                   # 路由注册 + 启动
+│       ├── recovery.go                # Panic 恢复中间件 (recoverHTTP, goSafe)
 │       ├── security.go                # Loopback-only 安全限制
-│       ├── adb.go                      # ADB 命令封装
-│       ├── log_stream.go               # WebSocket logcat 流
-│       └── backend_logger.go           # 环形缓冲日志 (500条)
+│       ├── response.go                # 统一 envelope {ok,data,error}
+│       ├── backend_logger.go           # 环形缓冲日志 (500 条)
+│       ├── backend_logger_darwin.go    # 平台特定日志路径
+│       ├── backend_logger_windows.go
+│       ├── log_stream.go               # WebSocket /ws/logs
+│       ├── session_logcat.go           # 会话绑定 logcat
+│       ├── adb.go / adb_binary.go      # ADB 二进制查找、提取、chmod
+│       ├── adb_types.go                # Device / FileItem / 公共结构体
+│       ├── adb_devices.go              # 设备列表 (adb devices -l)
+│       ├── adb_status.go               # 设备状态 (getprop / 实时指标)
+│       ├── adb_files.go                # 文件操作 (ls/cat/pull/push)
+│       ├── adb_packages.go             # 应用列表 / 安装 / 卸载
+│       ├── adb_media.go                # 截图 / 录屏
+│       ├── adb_logcat.go               # logcat 控制
+│       ├── adb_clipboard.go            # 剪贴板助手 APK 操作
+│       ├── adb_exec.go                 # 通用 adb shell / adb 命令透传
+│       ├── handlers_devices.go         # 设备 / 状态 / info 相关路由
+│       ├── handlers_files.go           # 文件路由 + 增删改
+│       ├── handlers_packages.go        # 应用管理路由
+│       ├── handlers_screen.go          # 截图 / 录屏路由
+│       ├── handlers_logcat.go          # logcat / session-logcat 路由
+│       ├── handlers_clipboard.go       # 剪贴板路由
+│       ├── handlers_wireless.go        # 无线 ADB 路由
+│       ├── handlers_meta.go            # identify / shutdown / adb-exec / backend-logs
+│       └── *_test.go                   # 单元测试 (adb_*, backend_logger, recovery, security)
 └── flutter_app/                        # Flutter 桌面应用
-    ├── pubspec.yaml                    # web_socket_channel, http, file_selector, cross_file
+    ├── pubspec.yaml                    # drift, provider, shared_preferences, dio, video_player, ...
     ├── lib/
-    │   ├── main.dart                   # 入口
-    │   ├── models/
+    │   ├── main.dart                   # 入口 + Provider 装配
+    │   ├── i18n.dart                   # i18n 入口 (按文件 part 分片)
+    │   ├── i18n/                       # 各页面中英文字典
+    │   │   ├── common.dart / sidebar.dart / device_monitor.dart
+    │   │   ├── logcat.dart / file_browser.dart / app_manager.dart
+    │   │   ├── device_info.dart / clipboard.dart / adb_command.dart
+    │   │   ├── backend_log.dart / test_session.dart / session_history.dart
+    │   ├── models/                     # 纯数据模型
     │   │   ├── device.dart             # Device, LogFilter, LogEntry
-    │   │   ├── file_item.dart          # FileItem
-    │   │   ├── app_package.dart        # AppPackage
-    │   │   └── test_session.dart       # TestSession, events, artifacts, issues, test plan items
-    │   ├── providers/
-    │   │   ├── device_provider.dart
+    │   │   ├── device_status.dart      # 实时设备状态指标
+    │   │   ├── file_item.dart
+    │   │   ├── app_package.dart
+    │   │   ├── test_session.dart       # TestSession + events/artifacts/issues/notes/plan
+    │   │   └── test_config.dart        # App 配置 + 测试流程/步骤
+    │   ├── db/                         # 本地 SQLite (drift) 持久化
+    │   │   ├── database.dart           # AppDatabase 主类 + schema
+    │   │   ├── database.g.dart         # drift 生成的代码 (commit 进仓库)
+    │   │   ├── tables/                 # 7 张表: test_sessions / *_events / *_artifacts / ...
+    │   │   │   ├── app_states.dart
+    │   │   │   ├── saved_devices.dart
+    │   │   │   ├── test_sessions.dart
+    │   │   │   ├── test_session_events.dart
+    │   │   │   ├── test_session_artifacts.dart
+    │   │   │   ├── test_session_issues.dart
+    │   │   │   ├── test_session_issue_artifacts.dart
+    │   │   │   ├── test_session_notes.dart
+    │   │   │   └── test_session_plan_items.dart
+    │   │   └── dao/                    # 表对应的 DAO (含 .g.dart)
+    │   │       ├── app_states_dao.dart
+    │   │       ├── saved_devices_dao.dart
+    │   │       └── test_sessions_dao.dart
+    │   ├── providers/                  # ChangeNotifier 全局状态
+    │   │   ├── device_provider.dart    # 设备列表 / activeSerial / 离线软状态
     │   │   ├── locale_provider.dart
     │   │   ├── theme_provider.dart
-    │   │   ├── test_session_provider.dart  # Session CRUD, test plan status, history, export
-    │   │   └── test_config_provider.dart   # App test config, copy, flow steps
+    │   │   ├── test_config_provider.dart
+    │   │   ├── test_session_provider.dart  # Session CRUD + 附件归档 + 导出
+    │   │   └── test_session/           # test_session_provider 的辅助模块
+    │   │       ├── attachment_store.dart   # 截图/录屏/logcat 落盘
+    │   │       ├── exporter.dart           # 导出 ZIP
+    │   │       ├── formatter.dart          # report.md / 测试报告生成
+    │   │       └── session_translate.dart  # 中英文翻译注入
     │   ├── services/
-    │   │   ├── api_client.dart         # HTTP API 客户端
-    │   │   ├── log_stream.dart         # WebSocket logcat 流
-    │   │   ├── server_launcher.dart    # 后端进程管理
-    │   │   └── mac_drop.dart           # macOS 拖放支持
+    │   │   ├── api_client.dart         # 拼装所有 REST 调用 (facade)
+    │   │   ├── api/                    # 按域拆分的 API 客户端 (9 个文件)
+    │   │   │   ├── device_api.dart / file_api.dart / logcat_api.dart
+    │   │   │   ├── packages_api.dart / screen_api.dart / wireless_api.dart
+    │   │   │   ├── clipboard_api.dart / backend_log_api.dart / adb_command_api.dart
+    │   │   ├── log_stream.dart         # WebSocket logcat, Stream<LogEntry>
+    │   │   ├── server_launcher.dart    # 后端进程管理 (mac/win 端口清理)
+    │   │   ├── mac_drop.dart / win_drop.dart / drop_target.dart  # 平台拖放统一封装
+    │   │   ├── screen_capture_service.dart
+    │   │   └── screen_record_owner.dart
+    │   ├── mixins/                     # 截图 / 录屏捕获混入
+    │   │   ├── screen_capture_mixin.dart
+    │   │   ├── file_browser_capture_mixin.dart
+    │   │   └── test_session_capture_mixin.dart
+    │   ├── widgets/                    # 跨页面复用组件 (17 个)
+    │   │   ├── widgets/                # 顶层: 截图水印 / 录制 FAB / 文件传输 ...
+    │   │   └── logcat/                 # 子目录: 高亮规则等 logcat 专用组件
     │   ├── utils/
-    │   │   └── test_flow_text.dart     # 测试流程/步骤文本解析与格式化
-    │   └── screens/
-    │       ├── home_screen.dart        # 主界面 (侧边栏 + 内容区)
-    │       ├── logcat_screen.dart      # Logcat 日志
-    │       ├── file_browser_screen.dart# 文件浏览器
-    │       ├── app_manager_screen.dart # 应用管理
-    │       ├── device_info_screen.dart # 设备信息
-    │       ├── clipboard_screen.dart   # 剪贴板
-    │       ├── test_session_screen.dart # 测试会话管理，流程步骤回显与结果标记
-    │       └── backend_log_screen.dart # 后端日志
+    │   │   ├── test_flow_text.dart     # 测试流程/步骤文本解析与格式化
+    │   │   ├── time_formatters.dart
+    │   │   └── legacy_session_cleanup.dart  # 老版本 JSON session 一次性清理
+    │   └── screens/                    # 12 个屏幕 (home / test_session 已拆子包)
+    │       ├── home_screen.dart        # 主框架 + 侧边栏
+    │       ├── logcat_screen.dart
+    │       ├── file_browser_screen.dart
+    │       ├── app_manager_screen.dart
+    │       ├── device_info_screen.dart
+    │       ├── device_status_screen.dart   # 实时指标 (CPU/内存/电池/...)
+    │       ├── clipboard_screen.dart
+    │       ├── adb_command_screen.dart     # ADB 指令面板
+    │       ├── test_config_screen.dart     # 测试配置编辑
+    │       ├── backend_log_screen.dart
+    │       └── test_session/           # 测试会话 (hub + active + 预览组件)
+    │           ├── test_session_hub_screen.dart    # 会话列表 / 历史浏览 / 创建入口
+    │           ├── test_session_active_screen.dart  # 进行中会话 (步骤标记/附件归档)
+    │           └── session_preview_widgets.dart     # 截图/视频/日志预览
     ├── macos/                          # macOS 原生层
     │   └── Runner/
     │       ├── AppDelegate.swift
     │       ├── MainFlutterWindow.swift
     │       └── ...
-    └── test/widget_test.dart
+    ├── windows/                        # Windows 原生层 (C++ 拖放 + Flutter runner)
+    │   └── runner/
+    │       ├── main.cpp / flutter_window.{h,cpp}
+    │       ├── drop_target.{h,cpp}     # IDropTarget COM 实现
+    │       └── utils.{h,cpp}
+    └── test/                           # Flutter 单元/widget 测试
+        ├── highlight_rule_test.dart
+        ├── session_formatter_test.dart
+        ├── test_config_provider_test.dart
+        ├── test_config_screen_test.dart
+        ├── test_session_hub_device_switch_test.dart
+        └── video_preview_test.dart
 ```
 
 ---
@@ -155,18 +244,20 @@ export ANDROID_HOME="$HOME/Library/Android/sdk"
 
 ### 4.3 HTTP API 完整列表
 
-所有 API 基于 `http://localhost:9876`，通过 `ApiClient` (Flutter端) 调用。
+所有 API 基于 `http://localhost:9876`，通过 `ApiClient` (Flutter 端 facade) 转发到 `lib/services/api/*` 下的领域客户端。统一响应 envelope 见 `response.go` 与 `api/README.md`。
 
-#### 设备管理
+#### 设备与基础信息
 
 | 路由 | 方法 | 功能 | 参数 | 返回值 |
 |---|---|---|---|---|
 | `/api/devices` | GET | 获取已连接设备列表 | 无 | Device[] (JSON) |
 | `/api/info` | GET | 获取设备属性 (getprop) | `?serial=` | 属性键值对 JSON |
 | `/api/device-detail` | GET | 获取设备所有属性 | `?serial=` | 完整属性 JSON |
+| `/api/device-status` | GET | 获取实时设备指标 (CPU/内存/电池/...) | `?serial=` | 状态 JSON |
 | `/api/package-pid` | GET | 根据包名查 PID | `?serial=&pkg=` | PID 文本 |
 | `/api/running-packages` | GET | 获取运行中应用列表 | `?serial=` | 包名列表 JSON |
 | `/api/identify` | GET | 服务标识 (健康检查) | 无 | 标识、PID、启动时间 |
+| `/api/adb-path` | GET | 获取 ADB 路径 | 无 | 路径字符串 |
 
 #### 应用管理
 
@@ -182,6 +273,11 @@ export ANDROID_HOME="$HOME/Library/Android/sdk"
 |---|---|---|---|---|
 | `/api/files` | GET | 列出目录文件 | `?serial=&path=` | FileItem[] JSON |
 | `/api/file-content` | GET | 读取文本文件内容 | `?serial=&path=` | 文本内容 |
+| `/api/file-stat` | GET | 单个文件元信息 | `?serial=&path=` | FileItem JSON |
+| `/api/file-mkdir` | POST | 新建目录 | `?serial=&path=` | 结果 JSON |
+| `/api/file-touch` | POST | 新建空文件 | `?serial=&path=` | 结果 JSON |
+| `/api/file-rename` | POST | 重命名 / 移动 | `?serial=&from=&to=` | 结果 JSON |
+| `/api/file-delete` | POST | 删除文件 / 空目录 | `?serial=&path=` | 结果 JSON |
 | `/api/push-file` | POST | 推送文件到设备 | `?serial=&path=` + multipart file | 结果 JSON |
 | `/api/pull-file` | GET | 从设备拉取文件 | `?serial=&path=` | 文件二进制流 |
 | `/api/screenshot` | GET | 截图 | `?serial=` | PNG 图片 |
@@ -190,7 +286,7 @@ export ANDROID_HOME="$HOME/Library/Android/sdk"
 
 | 路由 | 方法 | 功能 | 参数 | 返回值 |
 |---|---|---|---|---|
-| `/api/screen-record` | GET | 录屏控制 | `?serial=&action=` (start/stop/status) | 状态 JSON |
+| `/api/screen-record` | GET/POST | 录屏控制 | `?serial=&action=` (start/stop/status) | 状态 JSON |
 | `/api/screen-record-video` | GET | 获取录屏视频 | `?serial=` | MP4 视频流 |
 
 #### Logcat
@@ -198,14 +294,9 @@ export ANDROID_HOME="$HOME/Library/Android/sdk"
 | 路由 | 方法 | 功能 | 参数 |
 |---|---|---|---|
 | `/api/clear` | GET | 清理 logcat 缓冲区 | `?serial=` |
-| `/ws/logs` | WebSocket | 实时 logcat 流 | JSON 命令: start/stop/pause/resume/clear/filter |
-
-#### 会话 Logcat
-
-| 路由 | 方法 | 功能 | 参数 |
-|---|---|---|---|
-| `/api/session-logcat` | POST | 会话绑定的 logcat | `?serial=&sessionDir=&packageName=&action=start/stop` |
 | `/api/logcat-recent` | GET | 获取最近 logcat 快照 | `?serial=&lines=` (默认 1000) |
+| `/api/session-logcat` | POST | 会话绑定的 logcat | `?serial=&sessionDir=&packageName=&action=start/stop` |
+| `/ws/logs` | WebSocket | 实时 logcat 流 | JSON 命令: start/stop/pause/resume/clear/filter |
 
 #### 剪贴板
 
@@ -216,12 +307,22 @@ export ANDROID_HOME="$HOME/Library/Android/sdk"
 | `/api/clipboard-send` | POST | 发送文本到剪贴板 | `?serial=&text=` |
 | `/api/clipboard-uninstall` | POST | 卸载剪贴板助手 | `?serial=` |
 
-#### 系统
+#### 无线 ADB
 
 | 路由 | 方法 | 功能 | 参数 |
 |---|---|---|---|
-| `/api/adb-path` | GET | 获取 ADB 路径 | 无 |
-| `/api/backend-logs` | GET | 获取后端操作日志 | 无 |
+| `/api/adb-wireless-pair` | POST | 配对 | `?host=&port=&code=` |
+| `/api/adb-wireless-connect` | POST | 连接 | `?host=&port=` |
+| `/api/adb-wireless-disconnect` | POST | 断开 | `?serial=` |
+| `/api/adb-wireless-scan` | GET | 扫描局域网端口 | `?host=` |
+
+#### 通用 / 系统
+
+| 路由 | 方法 | 功能 | 参数 |
+|---|---|---|---|
+| `/api/adb-exec` | POST | 透传任意 ADB 命令 | `args=...` |
+| `/api/backend-logs` | GET | 后端操作日志 (环形缓冲) | 无 |
+| `/api/shutdown` | POST | 关闭后端进程 (loopback only) | 无 |
 | `/` | GET | 静态文件 (web/index.html) | 无 |
 
 ### 4.4 Panic 恢复中间件 (`recovery.go`)
@@ -233,20 +334,22 @@ export ANDROID_HOME="$HOME/Library/Android/sdk"
 - 已应用于：HTTP 中间件链（最外层）、设备属性采集 goroutine
 - 无线 ADB 操作通过 `r.Context()` 传递请求上下文，客户端断开时 ADB 子进程自动终止
 
-### 4.5 ADB 命令封装 (adb.go)
+### 4.5 ADB 命令封装
 
-核心函数：
-- `FindOrExtractADB()` — 提取 ADB 二进制，chmod 0755
-- `Devices()` — `adb devices -l` 解析
-- `StartLogcat()` / `ClearLogcat()` — logcat 控制
-- `ListFiles()` / `ReadFile()` / `PullFile()` / `PushFile()` — 文件操作
-- `InstalledPackages()` — `pm list packages -f` 解析
-- `InstallPackage()` — 安装 APK（自动处理签名冲突）
-- `UninstallPackage()` — 卸载
-- `Screenshot()` — `exec-out screencap`
-- `Shell()` — 通用 shell 命令
-- `StartScreenRecord()` / `StopScreenRecord()` — 录屏
-- `InstallClipboardHelper()` / `SendClipboard()` / `IsClipboardHelperInstalled()` / `UninstallClipboardHelper()`
+按功能拆分为 `adb_xxx.go`，核心函数分布：
+
+- `adb.go` / `adb_binary.go` — `FindOrExtractADB()` 提取 ADB 二进制，chmod 0755
+- `adb_devices.go` — `Devices()` / `DevicesContext()` 解析 `adb devices -l`
+- `adb_status.go` — `DeviceStatus()` (CPU/内存/电池/前台应用等实时指标)
+- `adb_logcat.go` — `StartLogcat()` / `ClearLogcat()`
+- `adb_files.go` — `ListFiles()` / `ReadFile()` / `PullFile()` / `PushFile()` / 增删改
+- `adb_packages.go` — `InstalledPackages()` (解析 `pm list packages -f`) / `InstallPackage()` (自动处理签名冲突) / `UninstallPackage()`
+- `adb_media.go` — `Screenshot()` (`exec-out screencap`) / `StartScreenRecord()` / `StopScreenRecord()`
+- `adb_clipboard.go` — `InstallClipboardHelper()` / `SendClipboard()` / `IsClipboardHelperInstalled()` / `UninstallClipboardHelper()`
+- `adb_exec.go` — `Shell()` 通用 shell 命令 / `ExecAdb()` 透传任意 ADB 命令
+- `adb_types.go` — Device / FileItem / 公共结构体定义
+
+每个 `adb_xxx.go` 配套 `adb_xxx_test.go` 单元测试。
 
 ### 4.5 Logcat WebSocket 协议 (log_stream.go)
 
@@ -284,16 +387,31 @@ JSON 命令格式：
 
 | 页面 | 文件 | 功能 |
 |---|---|---|
-| Home | `home_screen.dart` | 240px 侧边栏，设备树，语言/主题切换，服务重启 |
+| Home | `home_screen.dart` | 240px 侧边栏，设备树，语言/主题切换，服务重启，导航缓存 |
 | Logcat | `logcat_screen.dart` | 实时日志，Tag/优先级/关键词/PID 过滤，暂停/自动滚动 |
-| File Browser | `file_browser_screen.dart` | 列表/网格视图，上传/下载，截图，录屏(≤30min)，路径面包屑 |
+| File Browser | `file_browser_screen.dart` | 列表/网格视图，上传/下载，截图，录屏(≤30min)，增删改查，路径面包屑 |
 | App Manager | `app_manager_screen.dart` | APK 拖放安装，搜索，卸载确认，错误详情弹窗 |
 | Device Info | `device_info_screen.dart` | 系统属性分组，搜索，截图 |
+| Device Status | `device_status_screen.dart` | 实时指标 (CPU/内存/电池/存储/前台应用) |
 | Clipboard | `clipboard_screen.dart` | 文本发送，自动安装/卸载助手 |
+| ADB Command | `adb_command_screen.dart` | ADB 指令面板：参数/命令输入 + 快捷指令分类 |
+| Test Config | `test_config_screen.dart` | 测试 App 配置、流程/步骤编辑，复制配置 |
 | Backend Logs | `backend_log_screen.dart` | 2 秒轮询日志，错误高亮，命令过滤 |
-| Test Session | `test_session_screen.dart` | 测试会话管理：时间线、附件归档、问题标记、历史浏览 |
+| Test Session (Hub) | `screens/test_session/test_session_hub_screen.dart` | 会话列表、历史浏览、创建入口、设备切换 |
+| Test Session (Active) | `screens/test_session/test_session_active_screen.dart` | 进行中会话：步骤标记、附件归档、问题/备注 |
+| Test Session (Preview) | `screens/test_session/session_preview_widgets.dart` | 截图/视频/日志预览组件 |
 
 ### 5.3 核心服务
+
+#### ApiClient + services/api/ 分片
+
+`api_client.dart` 作为 facade，内部把每个域的调用委托给 `services/api/` 下的独立客户端：
+
+- `device_api.dart` / `file_api.dart` / `logcat_api.dart` / `packages_api.dart`
+- `screen_api.dart` / `wireless_api.dart` / `clipboard_api.dart`
+- `backend_log_api.dart` / `adb_command_api.dart`
+
+这样新加 endpoint 时影响面小，单测也好写。
 
 #### ServerLauncher (server_launcher.dart)
 
@@ -304,23 +422,27 @@ JSON 命令格式：
   2. App 同级目录
   3. 项目 `macos/Runner/` 目录
   4. `build/` 等其他目录
+- Windows 路径走 `windows/runner/Resources/runtime.exe` 或同目录
 - `start()` — 启动后端进程，设置 PATH 环境变量
 - `stop()` — 终止进程
-- `_stopOldServerIfAny()` — HTTP shutdown + `lsof` 杀端口 (macOS 专用)
+- `_stopOldServerIfAny()` — HTTP shutdown + `lsof` 杀端口 (macOS) / `netstat -ano` 杀端口 (Windows)
 
-#### mac_drop.dart
+#### 拖放（drop_target / mac_drop / win_drop）
 
-macOS 拖放平台通道：
+- `drop_target.dart` — 跨平台统一 `DropTarget` Widget，按 `defaultTargetPlatform` 选择实现
+- `mac_drop.dart` — macOS 拖放 MethodChannel (`mac_drop`)，Swift 端 `DropOverlayView` + NSDraggingInfo
+- `win_drop.dart` — Windows 拖放 MethodChannel (`win_drop`)，C++ 端 `IDropTarget` COM 实现 + `OleInitialize`
+- App Manager 页面通过 `DropTarget` 接收 APK 拖放安装
 
-- MethodChannel `mac_drop` 通信
-- `MacDropTarget` Widget：`onDragEntered`, `onDragExited`, `onDragDone` 回调
-- 仅 `TargetPlatform.macOS` 激活
-- 活跃注册机制管理拖放监听
+#### 截图与录屏
+
+- `screen_capture_service.dart` — 调 `/api/screenshot`，支持加水印 (`widgets/screenshot_watermark.dart`)
+- `screen_record_owner.dart` — 录屏状态机（idle / recording），FAB (`widgets/recording_fab.dart`) 触发
+- `mixins/screen_capture_mixin.dart` + `mixins/file_browser_capture_mixin.dart` + `mixins/test_session_capture_mixin.dart` — 三个 capture mixin，给不同页面复用截图/录屏能力
 
 #### 其他服务
 
-- `api_client.dart` — 封装所有 REST API 调用
-- `log_stream.dart` — WebSocket logcat，`Stream<LogEntry>` 广播
+- `log_stream.dart` — WebSocket logcat，`Stream<LogEntry>` 广播 + 连接状态流
 
 ### 5.4 数据模型
 
@@ -333,6 +455,22 @@ class Device {
   final String state;
   final String product;
   final String transportId;
+}
+```
+
+#### DeviceStatus (`models/device_status.dart`)
+
+实时设备指标，对应后端 `/api/device-status`：
+
+```dart
+class DeviceStatus {
+  String serial;
+  double cpuPercent;
+  int memUsedKb, memTotalKb;
+  int batteryLevel, batteryTemperature;
+  String storageUsed, storageTotal;
+  String foregroundPackage;
+  DateTime capturedAt;
 }
 ```
 
@@ -393,6 +531,8 @@ class TestSession {
   List<TestSessionPlanItem> testPlan; // configured flow/step snapshot
 }
 ```
+
+`TestSession` 的 CRUD、附件归档、报告生成、ZIP 导出由 `providers/test_session_provider.dart` 承担，附件落盘 / 报告格式化 / 翻译注入拆到同目录的 `test_session/` 子包模块。
 
 #### TestSessionProvider (`providers/test_session_provider.dart`)
 
