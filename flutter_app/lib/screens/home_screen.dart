@@ -50,7 +50,7 @@ class _CachedScreen extends StatelessWidget {
   final String? serial;
   final Widget child;
 
-  const _CachedScreen({required this.serial, required this.child});
+  const _CachedScreen({super.key, required this.serial, required this.child});
 
   @override
   Widget build(BuildContext context) {
@@ -178,7 +178,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         case NavItem.session:
           screen = const TestSessionHubScreen();
       }
-      _screens[key] = _CachedScreen(serial: serial, child: screen);
+      _screens[key] = _CachedScreen(
+        key: ValueKey(key),
+        serial: serial,
+        child: KeyedSubtree(
+          key: ValueKey('screen:$key'),
+          child: screen,
+        ),
+      );
       _evictCache();
     }
     // Also expand the device in the sidebar so the user can see where they are.

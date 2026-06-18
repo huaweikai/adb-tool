@@ -1,6 +1,7 @@
 package server
 
 import (
+	"archive/zip"
 	"bytes"
 	"encoding/base64"
 	"fmt"
@@ -15,13 +16,16 @@ func validateClipboardApk(apkBytes []byte) error {
 	if len(apkBytes) < 1024 {
 		return fmt.Errorf("clipboard helper apk missing or too small")
 	}
-	if apkBytes[0] != 'P' || apkBytes[1] != 'K' {
+	reader, err := zip.NewReader(bytes.NewReader(apkBytes), int64(len(apkBytes)))
+	if err != nil {
 		return fmt.Errorf("clipboard helper apk is not a valid apk archive")
 	}
-	if !bytes.Contains(apkBytes, []byte(clipboardHelperPackage)) {
-		return fmt.Errorf("clipboard helper apk package mismatch: want %s", clipboardHelperPackage)
+	for _, file := range reader.File {
+		if file.Name == "AndroidManifest.xml" || strings.HasSuffix(file.Name, ".dex") {
+			return nil
+		}
 	}
-	return nil
+	return fmt.Errorf("clipboard helper apk missing manifest or dex files")
 }
 
 func (m *AdbManager) IsClipboardHelperInstalled(serial string) bool {

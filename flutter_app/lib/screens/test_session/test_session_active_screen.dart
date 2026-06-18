@@ -91,11 +91,12 @@ class _TestSessionActiveContentState extends State<TestSessionActiveContent>
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<TestSessionProvider>();
+    final currentSerial = context.watch<DeviceSerialScope>().serial;
     context.watch<LocaleProvider>();
     final session = provider.currentSession;
     final theme = Theme.of(context);
 
-    if (session == null) {
+    if (session == null || session.id != widget.resumeSessionId) {
       return const Center(child: CircularProgressIndicator());
     }
 
@@ -148,14 +149,14 @@ class _TestSessionActiveContentState extends State<TestSessionActiveContent>
               else if (isOurRecording)
                 _btn(theme.colorScheme.error, Icons.stop, fmtDuration(elapsedSeconds), stopRecording)
               else
-                _btn(null, Icons.fiber_manual_record, tr('record'), serial != null && !_busy ? startRecording : null),
+                _btn(null, Icons.fiber_manual_record, tr('record'), currentSerial != null && !_busy ? startRecording : null),
               // Screenshot
               _buildScreenshotButton(theme),
               // Logcat
               if (_logcatRunning)
                 _btn(theme.colorScheme.primary, Icons.stop, fmtDuration(_logcatSeconds), _busy ? null : _stopLogcat)
               else
-                _btn(null, Icons.list_alt, tr('logcat'), serial != null && !_busy ? _startLogcat : null),
+                _btn(null, Icons.list_alt, tr('logcat'), currentSerial != null && !_busy ? _startLogcat : null),
               // Issue
               _btn(null, Icons.bug_report_outlined, tr('markIssue'), !_busy ? _showIssueDialog : null),
               // Note

@@ -159,6 +159,16 @@ class TestSessionProvider extends ChangeNotifier {
   bool get hasRunningSession =>
       _currentHydrated?.status == TestSessionStatus.running;
 
+  void clearCurrentSessionIfDifferentDevice(String serial) {
+    final current = _currentHydrated;
+    if (current == null && _activeSessionId == null) return;
+    if (current == null || current.deviceSerial != serial) {
+      _activeSessionId = null;
+      _currentHydrated = null;
+      notifyListeners();
+    }
+  }
+
   /// Absolute on-disk path of the active session's logcat directory. The
   /// backend's session-logcat endpoint needs a real path; the legacy
   /// `TestSession.directoryPath` field is left empty, so the UI must use

@@ -32,7 +32,7 @@ class TestSessionHubScreen extends StatefulWidget {
 }
 
 class _TestSessionHubScreenState extends State<TestSessionHubScreen> {
-  String? get serial => context.read<DeviceSerialScope>().serial;
+  String? _lastSerial;
 
   /// When non-null, the right panel shows a read-only preview of this session
   /// instead of the start card or active session.
@@ -47,17 +47,29 @@ class _TestSessionHubScreenState extends State<TestSessionHubScreen> {
   }
 
   void _openNewSession() {
+    final s = context.read<DeviceSerialScope>().serial;
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => _NewSessionDialog(serial: serial ?? ''),
+      builder: (ctx) => _NewSessionDialog(serial: s ?? ''),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final s = serial;
+    final s = context.watch<DeviceSerialScope>().serial;
+    if (_lastSerial != s) {
+      _lastSerial = s;
+      _previewSessionId = null;
+      if (s != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            context.read<TestSessionProvider>().clearCurrentSessionIfDifferentDevice(s);
+          }
+        });
+      }
+    }
 
     if (s == null) {
       return Center(
@@ -78,6 +90,7 @@ class _TestSessionHubScreenState extends State<TestSessionHubScreen> {
     return Scaffold(
       resizeToAvoidBottomInset: false,
       body: StreamBuilder<TestSessionRow?>(
+        key: ValueKey('active-session:$s'),
         stream: db.testSessionsDao.watchActiveSessionForDevice(s),
         builder: (context, snap) {
           final active = snap.data;
@@ -89,6 +102,7 @@ class _TestSessionHubScreenState extends State<TestSessionHubScreen> {
               Expanded(
                 flex: 2,
                 child: _HistoryPanel(
+                  key: ValueKey('history:$s'),
                   serial: s,
                   onItemTap: _openPreview,
                 ),
@@ -117,7 +131,7 @@ class _TestSessionHubScreenState extends State<TestSessionHubScreen> {
     // 2. Active running session
     if (active != null) {
       return TestSessionActiveContent(
-        key: ValueKey(active.id),
+        key: ValueKey('$s:${active.id}'),
         resumeSessionId: active.id,
       );
     }
@@ -144,6 +158,7 @@ class _StartCard extends StatelessWidget {
     final sessionProvider = context.read<TestSessionProvider>();
 
     return StreamBuilder<TestSessionRow?>(
+      key: ValueKey('start-card-active:$serial'),
       stream: db.testSessionsDao.watchActiveSessionForDevice(serial),
       builder: (context, snap) {
         final active = snap.data;
@@ -242,7 +257,7 @@ class _HistoryPanel extends StatelessWidget {
   final String serial;
   final void Function(String sessionId) onItemTap;
 
-  const _HistoryPanel({required this.serial, required this.onItemTap});
+  const _HistoryPanel({super.key, required this.serial, required this.onItemTap});
 
   @override
   Widget build(BuildContext context) {
@@ -250,6 +265,7 @@ class _HistoryPanel extends StatelessWidget {
     final db = context.read<AppDatabase>();
 
     return StreamBuilder<List<TestSessionRow>>(
+      key: ValueKey('history-stream:$serial'),
       stream: db.testSessionsDao.watchSessionsForDevice(serial),
       builder: (context, snap) {
         // Exclude running sessions from the history list (they're shown in the right panel)
