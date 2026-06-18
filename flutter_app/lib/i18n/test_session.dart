@@ -45,6 +45,7 @@ const _locTestSessionZh = <String, String>{
   'copyIssue': '复制缺陷信息',
   'issueCopied': '缺陷信息已复制',
   'issueMarkedTip': '已标记问题：{title}',
+  'issueMarkedTipWithLog': '已标记问题并附带最近日志：{title}',
   'issueMoreFields': '更多字段',
   'issueTitle': '问题标题',
   'issueType': '问题类型',
@@ -121,8 +122,12 @@ const _locTestSessionZh = <String, String>{
   'reportAttachments': '附件',
   // Hub screen
   'continueSession': '继续会话',
+  'exportingSession': '正在导出会话...',
   'sessions': '个会话',
   'endedAt': '结束时间',
+  'duration': '时长',
+  'deleteEvent': '删除事件',
+  'deleteEventConfirm': '确定要删除事件“{title}”吗？',
   // Exit confirm
   'sessionExitConfirm': '确认退出',
   'sessionExitConfirmBody': '会话仍在进行中，退出后将丢失未保存的内容。',
@@ -175,6 +180,7 @@ const _locTestSessionEn = <String, String>{
   'copyIssue': 'Copy Bug Info',
   'issueCopied': 'Bug info copied',
   'issueMarkedTip': 'Issue marked: {title}',
+  'issueMarkedTipWithLog': 'Issue marked with recent logs: {title}',
   'issueMoreFields': 'More fields',
   'issueTitle': 'Issue Title',
   'issueType': 'Issue Type',
@@ -251,8 +257,12 @@ const _locTestSessionEn = <String, String>{
   'reportAttachments': 'Attachments',
   // Hub screen
   'continueSession': 'Continue Session',
+  'exportingSession': 'Exporting session...',
   'sessions': 'sessions',
   'endedAt': 'Ended At',
+  'duration': 'Duration',
+  'deleteEvent': 'Delete Event',
+  'deleteEventConfirm': 'Delete event "{title}"?',
   // Exit confirm
   'sessionExitConfirm': 'Confirm Exit',
   'sessionExitConfirmBody':
