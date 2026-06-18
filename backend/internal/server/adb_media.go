@@ -12,9 +12,11 @@ import (
 
 const recordedVideoPath = "/sdcard/adb-tool-record.mp4"
 
-// Minimum viable video size: ~10KB for a usable recording.
-// Anything smaller means the file is incomplete or still being written.
-const minViableVideoSize = 10 * 1024
+// Minimum viable video size: 1KB. Short recordings (sub-2s) often produce
+// sub-10KB files while Android's buffer cache is still flushing — accept
+// anything at least 1KB rather than failing. Caller-side handles the
+// "too short" UX.
+const minViableVideoSize = 1 * 1024
 
 func (m *AdbManager) Screenshot(serial string) ([]byte, error) {
 	return m.runOut("-s", serial, "exec-out", "screencap", "-p")
@@ -109,14 +111,16 @@ func (m *AdbManager) StopScreenRecord(serial string) error {
 
 	// KEY FIX: Force Android filesystem sync before waiting for the file.
 	// screenrecord exits, but Android's buffer cache may not have flushed
-	// the MP4 data to storage yet. "sync; sync" improves reliability on
-	// devices with slower storage controllers.
-	// Suppress errors — sync is best-effort on some devices.
-	if _, err := m.run("-s", serial, "shell", "sync"); err != nil {
-		Log.Add("screenrecord sync", "", err, 0)
+	// the MP4 data to storage yet. Run sync multiple times — some slow
+	// storage controllers need more than one round to actually flush.
+	// Errors are best-effort: sync may not be available on all devices.
+	for i := 0; i < 3; i++ {
+		if _, err := m.run("-s", serial, "shell", "sync"); err != nil {
+			Log.Add(fmt.Sprintf("screenrecord sync round %d", i+1), "", err, 0)
+		}
 	}
 
-	return m.waitRecordedVideo(serial, 10*time.Second)
+	return m.waitRecordedVideo(serial, 20*time.Second)
 }
 
 // killScreenRecordOnDevice sends SIGINT to the running screenrecord process
@@ -156,8 +160,20 @@ func (m *AdbManager) PullRecordedVideo(serial string) ([]byte, error) {
 }
 
 func (m *AdbManager) CleanRecordedVideo(serial string) {
-	if _, err := m.run("-s", serial, "shell", "rm", "-f", recordedVideoPath); err != nil {
-		Log.Add("screenrecord clean remote video", "", err, 0)
+	// Capture the file size before deleting so the log entry has a
+	// concrete number to grep for. Use Log.Add for both success (with
+	// size) and failure (with stderr) so the user can see in the
+	// backend log whether the rm actually went through.
+	size, _ := m.remoteFileSize(serial, recordedVideoPath)
+	out, err := m.run("-s", serial, "shell", "rm", "-f", recordedVideoPath)
+	if err != nil {
+		Log.Add(
+			fmt.Sprintf("screenrecord clean remote video (size=%d before delete)", size),
+			out, err, 0)
+	} else {
+		Log.Add(
+			fmt.Sprintf("screenrecord clean remote video (size=%d deleted)", size),
+			out, nil, 0)
 	}
 }
 
