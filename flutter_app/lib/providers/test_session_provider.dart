@@ -33,6 +33,7 @@ import 'package:flutter/foundation.dart';
 import '../db/database.dart';
 import '../db/dao/test_sessions_dao.dart';
 import '../models/test_session.dart';
+import '../services/screen_record_owner.dart' show ScreenRecordOwner, ScreenRecordOwnerX;
 import 'test_session/attachment_store.dart';
 import 'test_session/exporter.dart';
 import 'test_session/formatter.dart';
@@ -320,6 +321,9 @@ class TestSessionProvider extends ChangeNotifier {
     await _db.transaction(() async {
       await _dao.updateSessionStatus(id, TestSessionStatus.finished,
           endedAt: now);
+      // Clear any screen-record owner flag — once the session is
+      // finished, no recording can still be attached to it.
+      await _dao.updateSessionScreenRecordOwner(id, null);
       await _dao.insertEvent(TestSessionEventsCompanion.insert(
         id: SessionFormatters.id(now),
         sessionId: id,
@@ -345,6 +349,9 @@ class TestSessionProvider extends ChangeNotifier {
     await _db.transaction(() async {
       await _dao.updateSessionStatus(id, TestSessionStatus.abandoned,
           endedAt: now);
+      // Same as finishSession — drop the screen-record owner marker
+      // so the cross-screen lookup doesn't return a stale row.
+      await _dao.updateSessionScreenRecordOwner(id, null);
       await _dao.insertEvent(TestSessionEventsCompanion.insert(
         id: SessionFormatters.id(now),
         sessionId: id,
@@ -738,6 +745,32 @@ class TestSessionProvider extends ChangeNotifier {
         detail: Value(_t('eventScreenRecordStartedDetail')),
       ));
     });
+    await _refreshCurrentHydrated();
+  }
+
+  /// Mark the active session as the owner of the in-flight screen
+  /// recording. Persists `test_sessions.screen_record_owner` so the
+  /// file-browser screen can see "someone is recording on this device"
+  /// even when the user jumps between pages. Idempotent: re-setting
+  /// the same owner is a no-op.
+  ///
+  /// Pass [ScreenRecordOwner.testSession] for the session screen,
+  /// [ScreenRecordOwner.fileBrowser] only if the file-browser has a
+  /// reason to also flag the session (currently it doesn't — it
+  /// runs in its own local flow).
+  Future<void> setScreenRecordOwner(ScreenRecordOwner owner) async {
+    if (_activeSessionId == null) return;
+    final id = _activeSessionId!;
+    await _dao.updateSessionScreenRecordOwner(id, owner.dbValue);
+    await _refreshCurrentHydrated();
+  }
+
+  /// Drop the screen-record owner marker. Called on stop / abandon /
+  /// any failure path so the cross-screen lookup returns idle.
+  Future<void> clearScreenRecordOwner() async {
+    if (_activeSessionId == null) return;
+    final id = _activeSessionId!;
+    await _dao.updateSessionScreenRecordOwner(id, null);
     await _refreshCurrentHydrated();
   }
 

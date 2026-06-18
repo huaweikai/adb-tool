@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../db/database.dart';
+import '../db/dao/saved_devices_dao.dart';
 import '../i18n.dart';
 import '../models/device.dart';
 import '../models/test_config.dart';
@@ -14,12 +16,13 @@ import '../providers/locale_provider.dart';
 import '../providers/test_session_provider.dart';
 import '../providers/test_config_provider.dart';
 import '../services/api_client.dart';
+import '../services/screen_record_owner.dart';
 import '../utils/test_flow_text.dart';
 import '../utils/time_formatters.dart';
 import '../widgets/safe_dialog.dart';
 import '../widgets/session_timeline_item.dart';
 import '../widgets/video_preview.dart';
-import '../mixins/screen_capture_mixin.dart';
+import '../mixins/test_session_capture_mixin.dart';
 
 class TestSessionScreen extends StatefulWidget {
   const TestSessionScreen({super.key});
@@ -29,7 +32,7 @@ class TestSessionScreen extends StatefulWidget {
 }
 
 class _TestSessionScreenState extends State<TestSessionScreen>
-    with ScreenCaptureMixin<TestSessionScreen> {
+    with TestSessionCaptureMixin<TestSessionScreen> {
   bool _busy = false;
   bool _logcatRunning = false;
   int _logcatSeconds = 0;
@@ -39,21 +42,18 @@ class _TestSessionScreenState extends State<TestSessionScreen>
 
   String? get serial => context.read<DeviceSerialScope>().serial;
 
-  // ── ScreenCaptureMixin 实现 ──────────────────────────────────
-  @override
-  late bool recording;
-  @override
-  late bool recordSaving;
-  @override
-  late int recordSeconds;
+  // ── TestSessionCaptureMixin state ─────────────────────────────
+  // No local screen-record fields. Everything (recording, recordSaving,
+  // recordSeconds, recordTimer) is derived from `recordSnap` so that
+  // navigating away and back does NOT reset the in-flight recording.
   @override
   late bool screenshotting;
-  @override
-  late Timer? recordTimer;
 
   ApiClient get apiClient => context.read<ApiClient>();
   TestSessionProvider get sessionProvider =>
       context.read<TestSessionProvider>();
+  SavedDevicesDao get savedDevicesDao =>
+      context.read<AppDatabase>().savedDevicesDao;
 
   @override
   Future<void> onScreenshotSaved(Uint8List bytes, String? localPath) async {
@@ -67,7 +67,7 @@ class _TestSessionScreenState extends State<TestSessionScreen>
   }
 
   @override
-  Future<void> onVideoSaved(Uint8List bytes) async {
+  Future<void> onVideoSaved(Uint8List bytes, String relativePath) async {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -80,16 +80,13 @@ class _TestSessionScreenState extends State<TestSessionScreen>
   @override
   void initState() {
     super.initState();
-    recording = false;
-    recordSaving = false;
-    recordSeconds = 0;
     screenshotting = false;
-    recordTimer = null;
+    initScreenRecordState();
   }
 
   @override
   void dispose() {
-    recordTimer?.cancel();
+    disposeScreenRecordState();
     _logcatTimer?.cancel();
     _sessionTimer?.cancel();
     super.dispose();
@@ -99,6 +96,13 @@ class _TestSessionScreenState extends State<TestSessionScreen>
   Widget build(BuildContext context) {
     final provider = context.watch<TestSessionProvider>();
     context.watch<LocaleProvider>();
+    // The mixin's initScreenRecordState() opened a stream subscription
+    // on this device's SavedDevices row. The mixin calls setState() on
+    // every row update, so this widget naturally rebuilds whenever
+    // the row changes (e.g. another surface flipped the recording
+    // owner). The first stream event is also a row update, so a fresh
+    // build runs right after the widget is mounted.
+
     final session = provider.currentSession;
     final theme = Theme.of(context);
 
@@ -223,11 +227,43 @@ class _TestSessionScreenState extends State<TestSessionScreen>
                 icon: const Icon(Icons.history, size: 16),
                 label: Text(tr('sessionHistory')),
               ),
-              if (recording)
+              // ── Record button: 4 visual states, all derived from the
+              //   device row the mixin is subscribed to ─────────────
+              // 1. Another owner is mid-record → disabled hint
+              // 2. We are saving (pulling the mp4 back) → spinner + 保存中
+              // 3. We are recording → red stop button with timer
+              // 4. Idle → 录屏
+              if (isOtherOwnerRecording())
+                FilledButton.tonalIcon(
+                  onPressed: null,
+                  icon: const Icon(Icons.fiber_manual_record,
+                      size: 14, color: Colors.grey),
+                  label: Text(
+                    () {
+                      final other = otherOwnerForRecording();
+                      return tr('recordInProgressOtherFmt',
+                          {'owner': tr(other!.pageNameKey)});
+                    }(),
+                    style: TextStyle(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        fontSize: 12),
+                  ),
+                )
+              else if (isOurSaving)
+                FilledButton.tonalIcon(
+                  onPressed: null,
+                  icon: const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  label: Text(tr('recordSaving')),
+                )
+              else if (isOurRecording)
                 FilledButton.icon(
-                  onPressed: recordSaving ? null : stopRecording,
+                  onPressed: stopRecording,
                   icon: const Icon(Icons.stop, size: 16),
-                  label: Text(fmtDuration(recordSeconds)),
+                  label: Text(fmtDuration(elapsedSeconds)),
                   style: FilledButton.styleFrom(
                     backgroundColor: theme.colorScheme.error,
                   ),

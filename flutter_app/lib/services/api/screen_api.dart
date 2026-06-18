@@ -1,4 +1,4 @@
-// Screen recording control: start / stop / status / pull video.
+// Screen recording control: start / stop / status / pull video / show_touches.
 import 'package:adb_tool/services/api_client.dart';
 import 'package:dio/dio.dart';
 
@@ -32,5 +32,29 @@ mixin ScreenApi on ApiBase {
       throw Exception('pull video failed: ${resp.statusCode}');
     }
     return resp.data ?? [];
+  }
+
+  /// Toggle the Android "show touches" developer setting on a device.
+  /// Used by the screen-record flow so the recording shows a visible dot
+  /// wherever the user taps. Returns true on success.
+  Future<bool> setShowTouches(String serial, bool enabled) async {
+    final resp = await dio.post(
+      '/api/adb-exec',
+      queryParameters: {'serial': serial},
+      data: {
+        'args': [
+          'shell',
+          'settings',
+          'put',
+          'system',
+          'show_touches',
+          enabled ? '1' : '0',
+        ],
+      },
+      options: Options(contentType: Headers.jsonContentType),
+    );
+    if (!isOk(resp)) return false;
+    final data = responseMap(resp);
+    return data['ok'] == true;
   }
 }

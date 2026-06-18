@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:provider/provider.dart';
 
+import '../db/database.dart';
+import '../db/dao/saved_devices_dao.dart';
 import '../services/drop_target.dart';
 import '../models/file_item.dart';
 import '../services/api_client.dart';
@@ -17,7 +19,7 @@ import '../widgets/safe_dialog.dart';
 import '../widgets/transfer_progress_overlay.dart';
 import '../widgets/file_sheet_actions.dart';
 import '../widgets/info_row.dart';
-import '../mixins/screen_capture_mixin.dart';
+import '../mixins/file_browser_capture_mixin.dart';
 import '../providers/test_session_provider.dart';
 import '../providers/locale_provider.dart';
 import '../providers/device_provider.dart';
@@ -47,7 +49,7 @@ class FileBrowserScreen extends StatefulWidget {
 }
 
 class _FileBrowserScreenState extends State<FileBrowserScreen>
-    with ScreenCaptureMixin<FileBrowserScreen> {
+    with FileBrowserCaptureMixin<FileBrowserScreen> {
   String? get _selectedSerial => context.read<DeviceSerialScope>().serial;
 
   String trPhase(String phaseKey) =>
@@ -76,18 +78,17 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
   @override
   void initState() {
     super.initState();
-    recording = false;
-    recordSaving = false;
-    recordSeconds = 0;
     screenshotting = false;
-    recordTimer = null;
+    initScreenRecordState();
     _loadFiles();
   }
 
-  // ── ScreenCaptureMixin 实现 ──────────────────────────────────
+  // ── FileBrowserCaptureMixin 实现 ─────────────────────────────
   ApiClient get apiClient => context.read<ApiClient>();
   TestSessionProvider get sessionProvider =>
       context.read<TestSessionProvider>();
+  SavedDevicesDao get savedDevicesDao =>
+      context.read<AppDatabase>().savedDevicesDao;
   String? get serial => _selectedSerial;
 
   @override
@@ -122,16 +123,12 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
   TransferCancelToken? _transferCancelToken;
 
   // ── mixin 字段 ────────────────────────────────────────────────
-  @override
-  late bool recording;
-  @override
-  late bool recordSaving;
-  @override
-  late int recordSeconds;
+  // No local screen-record fields. All of recording / recordSaving /
+  // recordSeconds / recordTimer are derived from recordState.stateOf
+  // inside the mixin, so navigating away and back does not reset the
+  // in-flight recording.
   @override
   late bool screenshotting;
-  @override
-  late Timer? recordTimer;
 
   String get _sortLabel {
     final base = _sortKey == _SortKey.name
@@ -742,6 +739,11 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
   Widget build(BuildContext context) {
     context.watch<LocaleProvider>();
     context.watch<TestConfigProvider>();
+    // The mixin's initScreenRecordState() opened a stream subscription
+    // on this device's SavedDevices row. The mixin calls setState() on
+    // every row update, so this widget naturally rebuilds whenever
+    // the row changes. The first stream event is also a row update,
+    // so a fresh build runs right after the widget is mounted.
     if (_selectedSerial == null) {
       return Center(
         child: Column(
@@ -995,7 +997,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
 
   @override
   void dispose() {
-    recordTimer?.cancel();
+    disposeScreenRecordState();
     _transferCancelToken?.cancel();
     super.dispose();
   }

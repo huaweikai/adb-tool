@@ -37,6 +37,11 @@ class TestSessions extends Table {
   TextColumn get packageName => text().withDefault(const Constant(''))();
   TextColumn get note => text().withDefault(const Constant(''))();
 
+  /// Who owns the currently-active screen recording for this session.
+  /// One of 'file_browser' / 'test_session' / null. Set when a recording
+  /// starts, cleared when it ends (success, failure, or session finish).
+  TextColumn get screenRecordOwner => text().nullable()();
+
   @override
   Set<Column> get primaryKey => {id};
 }

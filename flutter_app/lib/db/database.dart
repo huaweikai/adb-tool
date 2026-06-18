@@ -13,6 +13,22 @@
 //   v2 — adds test_sessions + children (events, artifacts, notes, issues,
 //        plan_items, issue_artifacts) plus the
 //        idx_one_running_per_device partial unique index.
+//   v3 — adds test_sessions.screen_record_owner to track who initiated
+//        the current screen-recording on this session's device
+//        (file_browser / test_session). Indexed for the cross-screen
+//        "is anyone recording" lookup.
+//   v4 — moves the screen-recording state OFF test_sessions and onto
+//        saved_devices itself. Reason: file_browser often runs without
+//        an active test_session, so test_sessions.screen_record_owner
+//        was NULL in that case and the cross-screen "is anyone
+//        recording on this device?" lookup missed it. The state is
+//        really per-device, not per-session. New columns on
+//        saved_devices: recording_owner, recording_started_at,
+//        recording_is_saving. v3's screen_record_owner column is left
+//        in place for the in-flight test_sessions family but no
+//        longer read by the UI. (We're formatting the DB during the
+//        refactor anyway, so v3→v4 migration isn't strictly needed
+//        — the onCreate path will rebuild cleanly.)
 import 'dart:io';
 
 import 'package:drift/drift.dart';
@@ -55,7 +71,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -76,6 +92,16 @@ class AppDatabase extends _$AppDatabase {
             await m.createTable(testSessionIssueArtifacts);
             await _createTestSessionIndices();
           }
+          if (from < 3) {
+            // v2 → v3: add the screen-record-owner column and a
+            // supporting index for the "is anyone recording on this
+            // device" query.
+            await m.addColumn(testSessions, testSessions.screenRecordOwner);
+            await customStatement(
+              'CREATE INDEX IF NOT EXISTS idx_sessions_recording_owner '
+              'ON test_sessions (device_serial) WHERE screen_record_owner IS NOT NULL',
+            );
+          }
         },
         beforeOpen: (details) async {
           await customStatement('PRAGMA foreign_keys = ON');
@@ -93,11 +119,16 @@ class AppDatabase extends _$AppDatabase {
       'CREATE UNIQUE INDEX IF NOT EXISTS idx_one_running_per_device '
       'ON test_sessions (device_serial) WHERE status = 0',
     );
-    await customStatement(
-      'CREATE INDEX IF NOT EXISTS idx_sessions_device_started '
-      'ON test_sessions (device_serial, started_at DESC)',
-    );
-  }
+  await customStatement(
+    'CREATE INDEX IF NOT EXISTS idx_sessions_device_started '
+    'ON test_sessions (device_serial, started_at DESC)',
+  );
+  // Partial index: "which device currently has a screen recording open"
+  await customStatement(
+    'CREATE INDEX IF NOT EXISTS idx_sessions_recording_owner '
+    'ON test_sessions (device_serial) WHERE screen_record_owner IS NOT NULL',
+  );
+}
 }
 
 LazyDatabase _openConnection() {

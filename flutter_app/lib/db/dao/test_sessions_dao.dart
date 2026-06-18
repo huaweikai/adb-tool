@@ -156,6 +156,38 @@ class TestSessionsDao extends DatabaseAccessor<AppDatabase>
     return (delete(testSessions)..where((t) => t.id.equals(id))).go();
   }
 
+  /// Stamp the session as the "owner" of a screen recording that's
+  /// currently in flight on the session's device. Only the file_browser
+  /// and test_session values are meaningful; anything else is treated
+  /// as a clear (pass null). The supporting partial index
+  /// (`idx_sessions_recording_owner`) makes the cross-screen
+  /// "is anyone recording on this device" lookup O(1).
+  Future<void> updateSessionScreenRecordOwner(
+    String id,
+    String? owner,
+  ) async {
+    await (update(testSessions)..where((t) => t.id.equals(id))).write(
+      TestSessionsCompanion(
+        screenRecordOwner: owner == null
+            ? const Value(null)
+            : Value(owner),
+      ),
+    );
+  }
+
+  /// All sessions across all devices that currently have a screen
+  /// recording attached. Returns at most one row per device (the
+  /// partial index ensures it). Used by the file-browser to detect
+  /// when a recording was started on the test-session side.
+  Stream<List<TestSessionRow>> watchRecordingOwnersForDevice(String serial) {
+    return (select(testSessions)
+          ..where((t) =>
+              t.deviceSerial.equals(serial) &
+              t.screenRecordOwner.isNotNull())
+          ..limit(1))
+        .watch();
+  }
+
   // ===== Mutations: children ==============================================
 
   Future<void> insertEvent(TestSessionEventsCompanion entry) {

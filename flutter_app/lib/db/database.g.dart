@@ -50,9 +50,41 @@ class $SavedDevicesTable extends SavedDevices
   late final GeneratedColumn<DateTime> lastSeenAt = GeneratedColumn<DateTime>(
       'last_seen_at', aliasedName, true,
       type: DriftSqlType.dateTime, requiredDuringInsert: false);
+  static const VerificationMeta _recordingOwnerMeta =
+      const VerificationMeta('recordingOwner');
   @override
-  List<GeneratedColumn> get $columns =>
-      [serial, model, brand, sdk, isConnected, firstSeenAt, lastSeenAt];
+  late final GeneratedColumn<String> recordingOwner = GeneratedColumn<String>(
+      'recording_owner', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _recordingStartedAtMeta =
+      const VerificationMeta('recordingStartedAt');
+  @override
+  late final GeneratedColumn<int> recordingStartedAt = GeneratedColumn<int>(
+      'recording_started_at', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
+  static const VerificationMeta _recordingIsSavingMeta =
+      const VerificationMeta('recordingIsSaving');
+  @override
+  late final GeneratedColumn<bool> recordingIsSaving = GeneratedColumn<bool>(
+      'recording_is_saving', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: false,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'CHECK ("recording_is_saving" IN (0, 1))'),
+      defaultValue: const Constant(false));
+  @override
+  List<GeneratedColumn> get $columns => [
+        serial,
+        model,
+        brand,
+        sdk,
+        isConnected,
+        firstSeenAt,
+        lastSeenAt,
+        recordingOwner,
+        recordingStartedAt,
+        recordingIsSaving
+      ];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -109,6 +141,24 @@ class $SavedDevicesTable extends SavedDevices
           lastSeenAt.isAcceptableOrUnknown(
               data['last_seen_at']!, _lastSeenAtMeta));
     }
+    if (data.containsKey('recording_owner')) {
+      context.handle(
+          _recordingOwnerMeta,
+          recordingOwner.isAcceptableOrUnknown(
+              data['recording_owner']!, _recordingOwnerMeta));
+    }
+    if (data.containsKey('recording_started_at')) {
+      context.handle(
+          _recordingStartedAtMeta,
+          recordingStartedAt.isAcceptableOrUnknown(
+              data['recording_started_at']!, _recordingStartedAtMeta));
+    }
+    if (data.containsKey('recording_is_saving')) {
+      context.handle(
+          _recordingIsSavingMeta,
+          recordingIsSaving.isAcceptableOrUnknown(
+              data['recording_is_saving']!, _recordingIsSavingMeta));
+    }
     return context;
   }
 
@@ -132,6 +182,12 @@ class $SavedDevicesTable extends SavedDevices
           DriftSqlType.dateTime, data['${effectivePrefix}first_seen_at'])!,
       lastSeenAt: attachedDatabase.typeMapping
           .read(DriftSqlType.dateTime, data['${effectivePrefix}last_seen_at']),
+      recordingOwner: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}recording_owner']),
+      recordingStartedAt: attachedDatabase.typeMapping.read(
+          DriftSqlType.int, data['${effectivePrefix}recording_started_at']),
+      recordingIsSaving: attachedDatabase.typeMapping.read(
+          DriftSqlType.bool, data['${effectivePrefix}recording_is_saving'])!,
     );
   }
 
@@ -149,6 +205,23 @@ class SavedDevice extends DataClass implements Insertable<SavedDevice> {
   final bool isConnected;
   final DateTime firstSeenAt;
   final DateTime? lastSeenAt;
+
+  /// Who owns the in-flight screen recording on this device. One of
+  /// `null` (idle) / `'file_browser'` / `'test_session'`. Set when a
+  /// recording starts, cleared when it ends (success, failure, or
+  /// abandoned).
+  final String? recordingOwner;
+
+  /// Wall-clock time the in-flight recording started. `null` when
+  /// [recordingOwner] is null. Used by the UI to compute elapsed
+  /// seconds = `DateTime.now() - recordingStartedAt` without needing
+  /// a per-second DB write.
+  final int? recordingStartedAt;
+
+  /// True while the recording has been stopped on the adb side and
+  /// the bytes are being pulled / written to disk. While true, the
+  /// "停止" button is disabled and shows a "保存中..." spinner.
+  final bool recordingIsSaving;
   const SavedDevice(
       {required this.serial,
       required this.model,
@@ -156,7 +229,10 @@ class SavedDevice extends DataClass implements Insertable<SavedDevice> {
       required this.sdk,
       required this.isConnected,
       required this.firstSeenAt,
-      this.lastSeenAt});
+      this.lastSeenAt,
+      this.recordingOwner,
+      this.recordingStartedAt,
+      required this.recordingIsSaving});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -169,6 +245,13 @@ class SavedDevice extends DataClass implements Insertable<SavedDevice> {
     if (!nullToAbsent || lastSeenAt != null) {
       map['last_seen_at'] = Variable<DateTime>(lastSeenAt);
     }
+    if (!nullToAbsent || recordingOwner != null) {
+      map['recording_owner'] = Variable<String>(recordingOwner);
+    }
+    if (!nullToAbsent || recordingStartedAt != null) {
+      map['recording_started_at'] = Variable<int>(recordingStartedAt);
+    }
+    map['recording_is_saving'] = Variable<bool>(recordingIsSaving);
     return map;
   }
 
@@ -183,6 +266,13 @@ class SavedDevice extends DataClass implements Insertable<SavedDevice> {
       lastSeenAt: lastSeenAt == null && nullToAbsent
           ? const Value.absent()
           : Value(lastSeenAt),
+      recordingOwner: recordingOwner == null && nullToAbsent
+          ? const Value.absent()
+          : Value(recordingOwner),
+      recordingStartedAt: recordingStartedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(recordingStartedAt),
+      recordingIsSaving: Value(recordingIsSaving),
     );
   }
 
@@ -197,6 +287,9 @@ class SavedDevice extends DataClass implements Insertable<SavedDevice> {
       isConnected: serializer.fromJson<bool>(json['isConnected']),
       firstSeenAt: serializer.fromJson<DateTime>(json['firstSeenAt']),
       lastSeenAt: serializer.fromJson<DateTime?>(json['lastSeenAt']),
+      recordingOwner: serializer.fromJson<String?>(json['recordingOwner']),
+      recordingStartedAt: serializer.fromJson<int?>(json['recordingStartedAt']),
+      recordingIsSaving: serializer.fromJson<bool>(json['recordingIsSaving']),
     );
   }
   @override
@@ -210,6 +303,9 @@ class SavedDevice extends DataClass implements Insertable<SavedDevice> {
       'isConnected': serializer.toJson<bool>(isConnected),
       'firstSeenAt': serializer.toJson<DateTime>(firstSeenAt),
       'lastSeenAt': serializer.toJson<DateTime?>(lastSeenAt),
+      'recordingOwner': serializer.toJson<String?>(recordingOwner),
+      'recordingStartedAt': serializer.toJson<int?>(recordingStartedAt),
+      'recordingIsSaving': serializer.toJson<bool>(recordingIsSaving),
     };
   }
 
@@ -220,7 +316,10 @@ class SavedDevice extends DataClass implements Insertable<SavedDevice> {
           String? sdk,
           bool? isConnected,
           DateTime? firstSeenAt,
-          Value<DateTime?> lastSeenAt = const Value.absent()}) =>
+          Value<DateTime?> lastSeenAt = const Value.absent(),
+          Value<String?> recordingOwner = const Value.absent(),
+          Value<int?> recordingStartedAt = const Value.absent(),
+          bool? recordingIsSaving}) =>
       SavedDevice(
         serial: serial ?? this.serial,
         model: model ?? this.model,
@@ -229,6 +328,12 @@ class SavedDevice extends DataClass implements Insertable<SavedDevice> {
         isConnected: isConnected ?? this.isConnected,
         firstSeenAt: firstSeenAt ?? this.firstSeenAt,
         lastSeenAt: lastSeenAt.present ? lastSeenAt.value : this.lastSeenAt,
+        recordingOwner:
+            recordingOwner.present ? recordingOwner.value : this.recordingOwner,
+        recordingStartedAt: recordingStartedAt.present
+            ? recordingStartedAt.value
+            : this.recordingStartedAt,
+        recordingIsSaving: recordingIsSaving ?? this.recordingIsSaving,
       );
   SavedDevice copyWithCompanion(SavedDevicesCompanion data) {
     return SavedDevice(
@@ -242,6 +347,15 @@ class SavedDevice extends DataClass implements Insertable<SavedDevice> {
           data.firstSeenAt.present ? data.firstSeenAt.value : this.firstSeenAt,
       lastSeenAt:
           data.lastSeenAt.present ? data.lastSeenAt.value : this.lastSeenAt,
+      recordingOwner: data.recordingOwner.present
+          ? data.recordingOwner.value
+          : this.recordingOwner,
+      recordingStartedAt: data.recordingStartedAt.present
+          ? data.recordingStartedAt.value
+          : this.recordingStartedAt,
+      recordingIsSaving: data.recordingIsSaving.present
+          ? data.recordingIsSaving.value
+          : this.recordingIsSaving,
     );
   }
 
@@ -254,14 +368,26 @@ class SavedDevice extends DataClass implements Insertable<SavedDevice> {
           ..write('sdk: $sdk, ')
           ..write('isConnected: $isConnected, ')
           ..write('firstSeenAt: $firstSeenAt, ')
-          ..write('lastSeenAt: $lastSeenAt')
+          ..write('lastSeenAt: $lastSeenAt, ')
+          ..write('recordingOwner: $recordingOwner, ')
+          ..write('recordingStartedAt: $recordingStartedAt, ')
+          ..write('recordingIsSaving: $recordingIsSaving')
           ..write(')'))
         .toString();
   }
 
   @override
   int get hashCode => Object.hash(
-      serial, model, brand, sdk, isConnected, firstSeenAt, lastSeenAt);
+      serial,
+      model,
+      brand,
+      sdk,
+      isConnected,
+      firstSeenAt,
+      lastSeenAt,
+      recordingOwner,
+      recordingStartedAt,
+      recordingIsSaving);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -272,7 +398,10 @@ class SavedDevice extends DataClass implements Insertable<SavedDevice> {
           other.sdk == this.sdk &&
           other.isConnected == this.isConnected &&
           other.firstSeenAt == this.firstSeenAt &&
-          other.lastSeenAt == this.lastSeenAt);
+          other.lastSeenAt == this.lastSeenAt &&
+          other.recordingOwner == this.recordingOwner &&
+          other.recordingStartedAt == this.recordingStartedAt &&
+          other.recordingIsSaving == this.recordingIsSaving);
 }
 
 class SavedDevicesCompanion extends UpdateCompanion<SavedDevice> {
@@ -283,6 +412,9 @@ class SavedDevicesCompanion extends UpdateCompanion<SavedDevice> {
   final Value<bool> isConnected;
   final Value<DateTime> firstSeenAt;
   final Value<DateTime?> lastSeenAt;
+  final Value<String?> recordingOwner;
+  final Value<int?> recordingStartedAt;
+  final Value<bool> recordingIsSaving;
   final Value<int> rowid;
   const SavedDevicesCompanion({
     this.serial = const Value.absent(),
@@ -292,6 +424,9 @@ class SavedDevicesCompanion extends UpdateCompanion<SavedDevice> {
     this.isConnected = const Value.absent(),
     this.firstSeenAt = const Value.absent(),
     this.lastSeenAt = const Value.absent(),
+    this.recordingOwner = const Value.absent(),
+    this.recordingStartedAt = const Value.absent(),
+    this.recordingIsSaving = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   SavedDevicesCompanion.insert({
@@ -302,6 +437,9 @@ class SavedDevicesCompanion extends UpdateCompanion<SavedDevice> {
     required bool isConnected,
     required DateTime firstSeenAt,
     this.lastSeenAt = const Value.absent(),
+    this.recordingOwner = const Value.absent(),
+    this.recordingStartedAt = const Value.absent(),
+    this.recordingIsSaving = const Value.absent(),
     this.rowid = const Value.absent(),
   })  : serial = Value(serial),
         model = Value(model),
@@ -317,6 +455,9 @@ class SavedDevicesCompanion extends UpdateCompanion<SavedDevice> {
     Expression<bool>? isConnected,
     Expression<DateTime>? firstSeenAt,
     Expression<DateTime>? lastSeenAt,
+    Expression<String>? recordingOwner,
+    Expression<int>? recordingStartedAt,
+    Expression<bool>? recordingIsSaving,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -327,6 +468,10 @@ class SavedDevicesCompanion extends UpdateCompanion<SavedDevice> {
       if (isConnected != null) 'is_connected': isConnected,
       if (firstSeenAt != null) 'first_seen_at': firstSeenAt,
       if (lastSeenAt != null) 'last_seen_at': lastSeenAt,
+      if (recordingOwner != null) 'recording_owner': recordingOwner,
+      if (recordingStartedAt != null)
+        'recording_started_at': recordingStartedAt,
+      if (recordingIsSaving != null) 'recording_is_saving': recordingIsSaving,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -339,6 +484,9 @@ class SavedDevicesCompanion extends UpdateCompanion<SavedDevice> {
       Value<bool>? isConnected,
       Value<DateTime>? firstSeenAt,
       Value<DateTime?>? lastSeenAt,
+      Value<String?>? recordingOwner,
+      Value<int?>? recordingStartedAt,
+      Value<bool>? recordingIsSaving,
       Value<int>? rowid}) {
     return SavedDevicesCompanion(
       serial: serial ?? this.serial,
@@ -348,6 +496,9 @@ class SavedDevicesCompanion extends UpdateCompanion<SavedDevice> {
       isConnected: isConnected ?? this.isConnected,
       firstSeenAt: firstSeenAt ?? this.firstSeenAt,
       lastSeenAt: lastSeenAt ?? this.lastSeenAt,
+      recordingOwner: recordingOwner ?? this.recordingOwner,
+      recordingStartedAt: recordingStartedAt ?? this.recordingStartedAt,
+      recordingIsSaving: recordingIsSaving ?? this.recordingIsSaving,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -376,6 +527,15 @@ class SavedDevicesCompanion extends UpdateCompanion<SavedDevice> {
     if (lastSeenAt.present) {
       map['last_seen_at'] = Variable<DateTime>(lastSeenAt.value);
     }
+    if (recordingOwner.present) {
+      map['recording_owner'] = Variable<String>(recordingOwner.value);
+    }
+    if (recordingStartedAt.present) {
+      map['recording_started_at'] = Variable<int>(recordingStartedAt.value);
+    }
+    if (recordingIsSaving.present) {
+      map['recording_is_saving'] = Variable<bool>(recordingIsSaving.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -392,6 +552,9 @@ class SavedDevicesCompanion extends UpdateCompanion<SavedDevice> {
           ..write('isConnected: $isConnected, ')
           ..write('firstSeenAt: $firstSeenAt, ')
           ..write('lastSeenAt: $lastSeenAt, ')
+          ..write('recordingOwner: $recordingOwner, ')
+          ..write('recordingStartedAt: $recordingStartedAt, ')
+          ..write('recordingIsSaving: $recordingIsSaving, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -810,6 +973,12 @@ class $TestSessionsTable extends TestSessions
       type: DriftSqlType.string,
       requiredDuringInsert: false,
       defaultValue: const Constant(''));
+  static const VerificationMeta _screenRecordOwnerMeta =
+      const VerificationMeta('screenRecordOwner');
+  @override
+  late final GeneratedColumn<String> screenRecordOwner =
+      GeneratedColumn<String>('screen_record_owner', aliasedName, true,
+          type: DriftSqlType.string, requiredDuringInsert: false);
   @override
   List<GeneratedColumn> get $columns => [
         id,
@@ -823,7 +992,8 @@ class $TestSessionsTable extends TestSessions
         deviceBrand,
         deviceSdk,
         packageName,
-        note
+        note,
+        screenRecordOwner
       ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -896,6 +1066,12 @@ class $TestSessionsTable extends TestSessions
       context.handle(
           _noteMeta, note.isAcceptableOrUnknown(data['note']!, _noteMeta));
     }
+    if (data.containsKey('screen_record_owner')) {
+      context.handle(
+          _screenRecordOwnerMeta,
+          screenRecordOwner.isAcceptableOrUnknown(
+              data['screen_record_owner']!, _screenRecordOwnerMeta));
+    }
     return context;
   }
 
@@ -930,6 +1106,8 @@ class $TestSessionsTable extends TestSessions
           .read(DriftSqlType.string, data['${effectivePrefix}package_name'])!,
       note: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}note'])!,
+      screenRecordOwner: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}screen_record_owner']),
     );
   }
 
@@ -955,6 +1133,11 @@ class TestSessionRow extends DataClass implements Insertable<TestSessionRow> {
   final String deviceSdk;
   final String packageName;
   final String note;
+
+  /// Who owns the currently-active screen recording for this session.
+  /// One of 'file_browser' / 'test_session' / null. Set when a recording
+  /// starts, cleared when it ends (success, failure, or session finish).
+  final String? screenRecordOwner;
   const TestSessionRow(
       {required this.id,
       required this.name,
@@ -967,7 +1150,8 @@ class TestSessionRow extends DataClass implements Insertable<TestSessionRow> {
       required this.deviceBrand,
       required this.deviceSdk,
       required this.packageName,
-      required this.note});
+      required this.note,
+      this.screenRecordOwner});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -988,6 +1172,9 @@ class TestSessionRow extends DataClass implements Insertable<TestSessionRow> {
     map['device_sdk'] = Variable<String>(deviceSdk);
     map['package_name'] = Variable<String>(packageName);
     map['note'] = Variable<String>(note);
+    if (!nullToAbsent || screenRecordOwner != null) {
+      map['screen_record_owner'] = Variable<String>(screenRecordOwner);
+    }
     return map;
   }
 
@@ -1007,6 +1194,9 @@ class TestSessionRow extends DataClass implements Insertable<TestSessionRow> {
       deviceSdk: Value(deviceSdk),
       packageName: Value(packageName),
       note: Value(note),
+      screenRecordOwner: screenRecordOwner == null && nullToAbsent
+          ? const Value.absent()
+          : Value(screenRecordOwner),
     );
   }
 
@@ -1027,6 +1217,8 @@ class TestSessionRow extends DataClass implements Insertable<TestSessionRow> {
       deviceSdk: serializer.fromJson<String>(json['deviceSdk']),
       packageName: serializer.fromJson<String>(json['packageName']),
       note: serializer.fromJson<String>(json['note']),
+      screenRecordOwner:
+          serializer.fromJson<String?>(json['screenRecordOwner']),
     );
   }
   @override
@@ -1046,6 +1238,7 @@ class TestSessionRow extends DataClass implements Insertable<TestSessionRow> {
       'deviceSdk': serializer.toJson<String>(deviceSdk),
       'packageName': serializer.toJson<String>(packageName),
       'note': serializer.toJson<String>(note),
+      'screenRecordOwner': serializer.toJson<String?>(screenRecordOwner),
     };
   }
 
@@ -1061,7 +1254,8 @@ class TestSessionRow extends DataClass implements Insertable<TestSessionRow> {
           String? deviceBrand,
           String? deviceSdk,
           String? packageName,
-          String? note}) =>
+          String? note,
+          Value<String?> screenRecordOwner = const Value.absent()}) =>
       TestSessionRow(
         id: id ?? this.id,
         name: name ?? this.name,
@@ -1075,6 +1269,9 @@ class TestSessionRow extends DataClass implements Insertable<TestSessionRow> {
         deviceSdk: deviceSdk ?? this.deviceSdk,
         packageName: packageName ?? this.packageName,
         note: note ?? this.note,
+        screenRecordOwner: screenRecordOwner.present
+            ? screenRecordOwner.value
+            : this.screenRecordOwner,
       );
   TestSessionRow copyWithCompanion(TestSessionsCompanion data) {
     return TestSessionRow(
@@ -1095,6 +1292,9 @@ class TestSessionRow extends DataClass implements Insertable<TestSessionRow> {
       packageName:
           data.packageName.present ? data.packageName.value : this.packageName,
       note: data.note.present ? data.note.value : this.note,
+      screenRecordOwner: data.screenRecordOwner.present
+          ? data.screenRecordOwner.value
+          : this.screenRecordOwner,
     );
   }
 
@@ -1112,14 +1312,27 @@ class TestSessionRow extends DataClass implements Insertable<TestSessionRow> {
           ..write('deviceBrand: $deviceBrand, ')
           ..write('deviceSdk: $deviceSdk, ')
           ..write('packageName: $packageName, ')
-          ..write('note: $note')
+          ..write('note: $note, ')
+          ..write('screenRecordOwner: $screenRecordOwner')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, name, type, status, startedAt, endedAt,
-      deviceSerial, deviceModel, deviceBrand, deviceSdk, packageName, note);
+  int get hashCode => Object.hash(
+      id,
+      name,
+      type,
+      status,
+      startedAt,
+      endedAt,
+      deviceSerial,
+      deviceModel,
+      deviceBrand,
+      deviceSdk,
+      packageName,
+      note,
+      screenRecordOwner);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -1135,7 +1348,8 @@ class TestSessionRow extends DataClass implements Insertable<TestSessionRow> {
           other.deviceBrand == this.deviceBrand &&
           other.deviceSdk == this.deviceSdk &&
           other.packageName == this.packageName &&
-          other.note == this.note);
+          other.note == this.note &&
+          other.screenRecordOwner == this.screenRecordOwner);
 }
 
 class TestSessionsCompanion extends UpdateCompanion<TestSessionRow> {
@@ -1151,6 +1365,7 @@ class TestSessionsCompanion extends UpdateCompanion<TestSessionRow> {
   final Value<String> deviceSdk;
   final Value<String> packageName;
   final Value<String> note;
+  final Value<String?> screenRecordOwner;
   final Value<int> rowid;
   const TestSessionsCompanion({
     this.id = const Value.absent(),
@@ -1165,6 +1380,7 @@ class TestSessionsCompanion extends UpdateCompanion<TestSessionRow> {
     this.deviceSdk = const Value.absent(),
     this.packageName = const Value.absent(),
     this.note = const Value.absent(),
+    this.screenRecordOwner = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   TestSessionsCompanion.insert({
@@ -1180,6 +1396,7 @@ class TestSessionsCompanion extends UpdateCompanion<TestSessionRow> {
     this.deviceSdk = const Value.absent(),
     this.packageName = const Value.absent(),
     this.note = const Value.absent(),
+    this.screenRecordOwner = const Value.absent(),
     this.rowid = const Value.absent(),
   })  : id = Value(id),
         name = Value(name),
@@ -1200,6 +1417,7 @@ class TestSessionsCompanion extends UpdateCompanion<TestSessionRow> {
     Expression<String>? deviceSdk,
     Expression<String>? packageName,
     Expression<String>? note,
+    Expression<String>? screenRecordOwner,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -1215,6 +1433,7 @@ class TestSessionsCompanion extends UpdateCompanion<TestSessionRow> {
       if (deviceSdk != null) 'device_sdk': deviceSdk,
       if (packageName != null) 'package_name': packageName,
       if (note != null) 'note': note,
+      if (screenRecordOwner != null) 'screen_record_owner': screenRecordOwner,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -1232,6 +1451,7 @@ class TestSessionsCompanion extends UpdateCompanion<TestSessionRow> {
       Value<String>? deviceSdk,
       Value<String>? packageName,
       Value<String>? note,
+      Value<String?>? screenRecordOwner,
       Value<int>? rowid}) {
     return TestSessionsCompanion(
       id: id ?? this.id,
@@ -1246,6 +1466,7 @@ class TestSessionsCompanion extends UpdateCompanion<TestSessionRow> {
       deviceSdk: deviceSdk ?? this.deviceSdk,
       packageName: packageName ?? this.packageName,
       note: note ?? this.note,
+      screenRecordOwner: screenRecordOwner ?? this.screenRecordOwner,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -1290,6 +1511,9 @@ class TestSessionsCompanion extends UpdateCompanion<TestSessionRow> {
     if (note.present) {
       map['note'] = Variable<String>(note.value);
     }
+    if (screenRecordOwner.present) {
+      map['screen_record_owner'] = Variable<String>(screenRecordOwner.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -1311,6 +1535,7 @@ class TestSessionsCompanion extends UpdateCompanion<TestSessionRow> {
           ..write('deviceSdk: $deviceSdk, ')
           ..write('packageName: $packageName, ')
           ..write('note: $note, ')
+          ..write('screenRecordOwner: $screenRecordOwner, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -3677,6 +3902,9 @@ typedef $$SavedDevicesTableCreateCompanionBuilder = SavedDevicesCompanion
   required bool isConnected,
   required DateTime firstSeenAt,
   Value<DateTime?> lastSeenAt,
+  Value<String?> recordingOwner,
+  Value<int?> recordingStartedAt,
+  Value<bool> recordingIsSaving,
   Value<int> rowid,
 });
 typedef $$SavedDevicesTableUpdateCompanionBuilder = SavedDevicesCompanion
@@ -3688,6 +3916,9 @@ typedef $$SavedDevicesTableUpdateCompanionBuilder = SavedDevicesCompanion
   Value<bool> isConnected,
   Value<DateTime> firstSeenAt,
   Value<DateTime?> lastSeenAt,
+  Value<String?> recordingOwner,
+  Value<int?> recordingStartedAt,
+  Value<bool> recordingIsSaving,
   Value<int> rowid,
 });
 
@@ -3741,6 +3972,18 @@ class $$SavedDevicesTableFilterComposer
   ColumnFilters<DateTime> get lastSeenAt => $composableBuilder(
       column: $table.lastSeenAt, builder: (column) => ColumnFilters(column));
 
+  ColumnFilters<String> get recordingOwner => $composableBuilder(
+      column: $table.recordingOwner,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get recordingStartedAt => $composableBuilder(
+      column: $table.recordingStartedAt,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get recordingIsSaving => $composableBuilder(
+      column: $table.recordingIsSaving,
+      builder: (column) => ColumnFilters(column));
+
   Expression<bool> testSessionsRefs(
       Expression<bool> Function($$TestSessionsTableFilterComposer f) f) {
     final $$TestSessionsTableFilterComposer composer = $composerBuilder(
@@ -3792,6 +4035,18 @@ class $$SavedDevicesTableOrderingComposer
 
   ColumnOrderings<DateTime> get lastSeenAt => $composableBuilder(
       column: $table.lastSeenAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get recordingOwner => $composableBuilder(
+      column: $table.recordingOwner,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get recordingStartedAt => $composableBuilder(
+      column: $table.recordingStartedAt,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get recordingIsSaving => $composableBuilder(
+      column: $table.recordingIsSaving,
+      builder: (column) => ColumnOrderings(column));
 }
 
 class $$SavedDevicesTableAnnotationComposer
@@ -3823,6 +4078,15 @@ class $$SavedDevicesTableAnnotationComposer
 
   GeneratedColumn<DateTime> get lastSeenAt => $composableBuilder(
       column: $table.lastSeenAt, builder: (column) => column);
+
+  GeneratedColumn<String> get recordingOwner => $composableBuilder(
+      column: $table.recordingOwner, builder: (column) => column);
+
+  GeneratedColumn<int> get recordingStartedAt => $composableBuilder(
+      column: $table.recordingStartedAt, builder: (column) => column);
+
+  GeneratedColumn<bool> get recordingIsSaving => $composableBuilder(
+      column: $table.recordingIsSaving, builder: (column) => column);
 
   Expression<T> testSessionsRefs<T extends Object>(
       Expression<T> Function($$TestSessionsTableAnnotationComposer a) f) {
@@ -3876,6 +4140,9 @@ class $$SavedDevicesTableTableManager extends RootTableManager<
             Value<bool> isConnected = const Value.absent(),
             Value<DateTime> firstSeenAt = const Value.absent(),
             Value<DateTime?> lastSeenAt = const Value.absent(),
+            Value<String?> recordingOwner = const Value.absent(),
+            Value<int?> recordingStartedAt = const Value.absent(),
+            Value<bool> recordingIsSaving = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               SavedDevicesCompanion(
@@ -3886,6 +4153,9 @@ class $$SavedDevicesTableTableManager extends RootTableManager<
             isConnected: isConnected,
             firstSeenAt: firstSeenAt,
             lastSeenAt: lastSeenAt,
+            recordingOwner: recordingOwner,
+            recordingStartedAt: recordingStartedAt,
+            recordingIsSaving: recordingIsSaving,
             rowid: rowid,
           ),
           createCompanionCallback: ({
@@ -3896,6 +4166,9 @@ class $$SavedDevicesTableTableManager extends RootTableManager<
             required bool isConnected,
             required DateTime firstSeenAt,
             Value<DateTime?> lastSeenAt = const Value.absent(),
+            Value<String?> recordingOwner = const Value.absent(),
+            Value<int?> recordingStartedAt = const Value.absent(),
+            Value<bool> recordingIsSaving = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               SavedDevicesCompanion.insert(
@@ -3906,6 +4179,9 @@ class $$SavedDevicesTableTableManager extends RootTableManager<
             isConnected: isConnected,
             firstSeenAt: firstSeenAt,
             lastSeenAt: lastSeenAt,
+            recordingOwner: recordingOwner,
+            recordingStartedAt: recordingStartedAt,
+            recordingIsSaving: recordingIsSaving,
             rowid: rowid,
           ),
           withReferenceMapper: (p0) => p0
@@ -4131,6 +4407,7 @@ typedef $$TestSessionsTableCreateCompanionBuilder = TestSessionsCompanion
   Value<String> deviceSdk,
   Value<String> packageName,
   Value<String> note,
+  Value<String?> screenRecordOwner,
   Value<int> rowid,
 });
 typedef $$TestSessionsTableUpdateCompanionBuilder = TestSessionsCompanion
@@ -4147,6 +4424,7 @@ typedef $$TestSessionsTableUpdateCompanionBuilder = TestSessionsCompanion
   Value<String> deviceSdk,
   Value<String> packageName,
   Value<String> note,
+  Value<String?> screenRecordOwner,
   Value<int> rowid,
 });
 
@@ -4297,6 +4575,10 @@ class $$TestSessionsTableFilterComposer
 
   ColumnFilters<String> get note => $composableBuilder(
       column: $table.note, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get screenRecordOwner => $composableBuilder(
+      column: $table.screenRecordOwner,
+      builder: (column) => ColumnFilters(column));
 
   $$SavedDevicesTableFilterComposer get deviceSerial {
     final $$SavedDevicesTableFilterComposer composer = $composerBuilder(
@@ -4468,6 +4750,10 @@ class $$TestSessionsTableOrderingComposer
   ColumnOrderings<String> get note => $composableBuilder(
       column: $table.note, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<String> get screenRecordOwner => $composableBuilder(
+      column: $table.screenRecordOwner,
+      builder: (column) => ColumnOrderings(column));
+
   $$SavedDevicesTableOrderingComposer get deviceSerial {
     final $$SavedDevicesTableOrderingComposer composer = $composerBuilder(
         composer: this,
@@ -4530,6 +4816,9 @@ class $$TestSessionsTableAnnotationComposer
 
   GeneratedColumn<String> get note =>
       $composableBuilder(column: $table.note, builder: (column) => column);
+
+  GeneratedColumn<String> get screenRecordOwner => $composableBuilder(
+      column: $table.screenRecordOwner, builder: (column) => column);
 
   $$SavedDevicesTableAnnotationComposer get deviceSerial {
     final $$SavedDevicesTableAnnotationComposer composer = $composerBuilder(
@@ -4704,6 +4993,7 @@ class $$TestSessionsTableTableManager extends RootTableManager<
             Value<String> deviceSdk = const Value.absent(),
             Value<String> packageName = const Value.absent(),
             Value<String> note = const Value.absent(),
+            Value<String?> screenRecordOwner = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               TestSessionsCompanion(
@@ -4719,6 +5009,7 @@ class $$TestSessionsTableTableManager extends RootTableManager<
             deviceSdk: deviceSdk,
             packageName: packageName,
             note: note,
+            screenRecordOwner: screenRecordOwner,
             rowid: rowid,
           ),
           createCompanionCallback: ({
@@ -4734,6 +5025,7 @@ class $$TestSessionsTableTableManager extends RootTableManager<
             Value<String> deviceSdk = const Value.absent(),
             Value<String> packageName = const Value.absent(),
             Value<String> note = const Value.absent(),
+            Value<String?> screenRecordOwner = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               TestSessionsCompanion.insert(
@@ -4749,6 +5041,7 @@ class $$TestSessionsTableTableManager extends RootTableManager<
             deviceSdk: deviceSdk,
             packageName: packageName,
             note: note,
+            screenRecordOwner: screenRecordOwner,
             rowid: rowid,
           ),
           withReferenceMapper: (p0) => p0

@@ -84,4 +84,70 @@ class SavedDevicesDao extends DatabaseAccessor<AppDatabase>
   Future<void> deleteSavedDevice(String serial) {
     return (delete(savedDevices)..where((t) => t.serial.equals(serial))).go();
   }
+
+  // ===== Screen-recording state (per device) =============================
+  //
+  // The recording state lives on the device row so the file-browser and
+  // test-session screens can both subscribe to a single `watchBySerial`
+  // stream and stay in sync without an in-memory service. The
+  // file-browser in particular often runs without an active test
+  // session, so per-session state would not cover that case.
+
+  /// Watch a single device row — emits whenever any column on that
+  /// device changes (incl. the recording_* fields). Returns null
+  /// when the device has never been seen.
+  Stream<SavedDevice?> watchBySerial(String serial) {
+    return (select(savedDevices)..where((t) => t.serial.equals(serial)))
+        .watchSingleOrNull();
+  }
+
+  /// One-shot read for a single device. Useful from non-UI code paths
+  /// that need to peek the recording state without subscribing.
+  Future<SavedDevice?> getBySerial(String serial) {
+    return (select(savedDevices)..where((t) => t.serial.equals(serial)))
+        .getSingleOrNull();
+  }
+
+  /// Stamp the device as the owner of a new in-flight screen
+  /// recording. Records the owner (file_browser / test_session) and
+  /// the wall-clock start time so the UI can compute elapsed seconds
+  /// without a per-second DB write. `isSaving` defaults to false.
+  Future<void> setScreenRecord(
+    String serial, {
+    required String owner,
+    required int startedAtMs,
+  }) async {
+    await (update(savedDevices)..where((t) => t.serial.equals(serial))).write(
+      SavedDevicesCompanion(
+        recordingOwner: Value(owner),
+        recordingStartedAt: Value(startedAtMs),
+        recordingIsSaving: const Value(false),
+      ),
+    );
+  }
+
+  /// Flip the saving flag on an existing recording. Used by the stop
+  /// path to mark "we are pulling the video back from the device" so
+  /// the UI can show a "保存中..." spinner while the bytes make their
+  /// way off the phone.
+  Future<void> setScreenRecordSaving(String serial, bool saving) async {
+    await (update(savedDevices)..where((t) => t.serial.equals(serial))).write(
+      SavedDevicesCompanion(
+        recordingIsSaving: Value(saving),
+      ),
+    );
+  }
+
+  /// Drop the recording state for a device. Called on stop / failure /
+  /// abandon so the cross-screen "is anyone recording?" lookup
+  /// returns idle.
+  Future<void> clearScreenRecord(String serial) async {
+    await (update(savedDevices)..where((t) => t.serial.equals(serial))).write(
+      SavedDevicesCompanion(
+        recordingOwner: const Value(null),
+        recordingStartedAt: const Value(null),
+        recordingIsSaving: const Value(false),
+      ),
+    );
+  }
 }

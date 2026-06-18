@@ -40,6 +40,21 @@ const _locCommonZh = <String, String>{
   'restartServer': '重新启动服务',
   'restarting': 'Restarting ...',
   'appTitle': 'ADB Tool',
+
+  // ── Cross-screen screen-record UI vocabulary ─────────────────────
+  // Page names referenced by ScreenRecordOwnerX.pageNameKey. Used in
+  // the "录屏中(在{owner})" hint when one surface detects the other is
+  // mid-record on the same device.
+  'fileBrowserName': '文件浏览器',
+  'testSessionName': '测试会话',
+  // Button labels across file-browser and test-session.
+  'recordStarting': '启动中...',
+  'recordStopping': '停止中...',
+  'recordSaving': '保存中...',
+  'recordingAlreadyRunning': '当前正在录屏',
+  'recordInProgressOther': '录屏中(其他页面)',
+  'recordInProgressOtherFmt': '录屏中(在{owner})',
+  'recordingTooShort': '录屏过短，请至少录制 1 秒',
 };
 
 const _locCommonEn = <String, String>{
@@ -80,4 +95,14 @@ const _locCommonEn = <String, String>{
   'restartServer': 'Restart Server',
   'restarting': 'Restarting ...',
   'appTitle': 'ADB Tool',
+
+  'fileBrowserName': 'File Browser',
+  'testSessionName': 'Test Session',
+  'recordStarting': 'Starting...',
+  'recordStopping': 'Stopping...',
+  'recordSaving': 'Saving...',
+  'recordingAlreadyRunning': 'A recording is already in progress',
+  'recordInProgressOther': 'Recording in progress (other page)',
+  'recordInProgressOtherFmt': 'Recording in progress (in {owner})',
+  'recordingTooShort': 'Recording too short — keep recording for at least 1 second',
 };

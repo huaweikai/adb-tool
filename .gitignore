@@ -6,6 +6,9 @@ flutter_app/build/
 flutter_app/.dart_tool/
 flutter_app/.idea/
 flutter_app/pubspec.lock
+flutter_app/devtools_options.yaml
+flutter_app/analyze_out.txt
+analyze_out.txt
 
 # Flutter macOS
 flutter_app/macos/Pods/
