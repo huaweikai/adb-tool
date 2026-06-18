@@ -14,6 +14,14 @@ class DeviceScreenActiveScope {
   const DeviceScreenActiveScope(this.active);
 }
 
+/// Emitted whenever a device that was previously online disappears from
+/// the poll results (USB unplugged, WiFi disconnect, etc.).
+class DeviceOfflineEvent {
+  final String serial;
+  final String? displayName; // from the SavedDevice row if available
+  const DeviceOfflineEvent({required this.serial, this.displayName});
+}
+
 class DeviceProvider extends ChangeNotifier {
   List<Device> _onlineDevices = [];
   List<SavedDevice> _savedDevices = [];
@@ -26,6 +34,15 @@ class DeviceProvider extends ChangeNotifier {
   AppDatabase? _db;
 
   Future<void>? _refreshing;
+
+  // ── Offline event stream ────────────────────────────────────────────
+  final _offlineController = StreamController<DeviceOfflineEvent>.broadcast();
+  Set<String> _previousOnlineSerials = {};
+
+  /// Public stream of per-device offline events. Consumed by
+  /// TestSessionProvider (to auto-stop recording + show dialog) and
+  /// other listeners that care about device disappearance.
+  Stream<DeviceOfflineEvent> get onDeviceOffline => _offlineController.stream;
 
   List<Device> get devices => _onlineDevices;
   List<SavedDevice> get savedDevices => _savedDevices;
@@ -121,6 +138,21 @@ class DeviceProvider extends ChangeNotifier {
       // The previous ordering (set flags → db ops → notify) meant a single
       // DB exception rolled the UI back to "offline" even though the Go
       // backend was responding fine.
+      final newOnlineSerials = devices
+          .where((d) => d.isOnline)
+          .map((d) => d.serial)
+          .toSet();
+
+      // Emit per-device offline events for anything that dropped out.
+      for (final stale in _previousOnlineSerials.difference(newOnlineSerials)) {
+        final saved = _savedDevices.where((d) => d.serial == stale).firstOrNull;
+        _offlineController.add(DeviceOfflineEvent(
+          serial: stale,
+          displayName: saved?.displayName,
+        ));
+      }
+      _previousOnlineSerials = newOnlineSerials;
+
       _onlineDevices = devices;
       _online = true;
       _lastSuccessfulRefresh = DateTime.now();
@@ -178,6 +210,7 @@ class DeviceProvider extends ChangeNotifier {
   @override
   void dispose() {
     _savedDevicesSub?.cancel();
+    _offlineController.close();
     _db?.close();
     super.dispose();
   }

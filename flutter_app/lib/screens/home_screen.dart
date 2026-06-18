@@ -5,11 +5,13 @@ import 'package:provider/provider.dart';
 import '../db/database.dart';
 import '../services/api_client.dart';
 import '../providers/theme_provider.dart';
-import '../providers/device_provider.dart';
+import '../providers/device_provider.dart' show DeviceSerialScope, DeviceScreenActiveScope, DeviceProvider;
 import '../providers/locale_provider.dart';
 import '../providers/test_config_provider.dart';
+import '../providers/test_session_provider.dart';
 import '../i18n.dart';
 import '../widgets/disconnected_banner.dart';
+import '../widgets/recording_fab.dart';
 import 'device_status_screen.dart';
 import 'logcat_screen.dart';
 import 'file_browser_screen.dart';
@@ -18,7 +20,7 @@ import 'device_info_screen.dart';
 import 'clipboard_screen.dart';
 import 'backend_log_screen.dart';
 import 'adb_command_screen.dart';
-import 'test_session_screen.dart';
+import 'test_session/test_session_hub_screen.dart';
 import 'test_config_screen.dart';
 import '../widgets/wireless_adb_dialog.dart';
 
@@ -174,10 +176,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         case NavItem.command:
           screen = const AdbCommandScreen();
         case NavItem.session:
-          screen = const TestSessionScreen();
+          screen = const TestSessionHubScreen();
       }
       _screens[key] = _CachedScreen(serial: serial, child: screen);
       _evictCache();
+    }
+    // Also expand the device in the sidebar so the user can see where they are.
+    if (!_expandedSerials.contains(serial)) {
+      _expandedSerials.add(serial);
     }
     setState(() => _activeKey = key);
     _persistState();
@@ -332,8 +338,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               onRemove: () => _removeDevice(serial),
             ),
           ),
+        // Global recording FAB overlay
+        RecordingOverlay(
+          db: context.read<AppDatabase>(),
+          sessionProvider: context.read<TestSessionProvider>(),
+          onNavigateToSession: _navigateToSession,
+        ),
       ],
     );
+  }
+
+  void _navigateToSession(String serial) {
+    _navigateTo(serial, NavItem.session);
   }
 
   Widget _buildWelcome() {
@@ -355,6 +371,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   void _removeDevice(String serial) async {
+    // Stop any running session on this device before removing.
+    // The DB recording state was already cleared by updateDeviceConnection(false).
+    // Just finish the session so the row status flips to finished.
+    try {
+      final sessionProvider = context.read<TestSessionProvider>();
+      if (sessionProvider.hasRunningSession) {
+        await sessionProvider.finishSession();
+      }
+    } catch (_) {}
     await context.read<DeviceProvider>().removeDevice(serial);
     setState(() {
       _screens.removeWhere((_, screen) => screen.serial == serial);

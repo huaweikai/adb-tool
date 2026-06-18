@@ -74,6 +74,19 @@ mixin FileBrowserCaptureMixin<T extends StatefulWidget> on State<T> {
     _stopTicker();
   }
 
+  /// Force-refresh _deviceRow from DB and trigger setState.
+  /// Safety net: call after any DB write that modifies recording state
+  /// so the UI always updates even if the stream missed the notification.
+  Future<void> _syncDeviceRowFromDb() async {
+    final s = serial;
+    if (s == null) return;
+    try {
+      final row = await savedDevicesDao.getSavedDeviceBySerial(s);
+      if (!mounted) return;
+      _onDeviceRow(row);
+    } catch (_) {}
+  }
+
   void _onDeviceRow(SavedDevice? row) {
     _deviceRow = row;
     _restartTicker();
@@ -242,6 +255,7 @@ mixin FileBrowserCaptureMixin<T extends StatefulWidget> on State<T> {
       final bytes =
           Uint8List.fromList(await apiClient.pullRecordedVideo(s));
       await savedDevicesDao.clearScreenRecord(s);
+      await _syncDeviceRowFromDb();
       try {
         await apiClient.setShowTouches(s, false);
       } catch (e) {
@@ -255,6 +269,7 @@ mixin FileBrowserCaptureMixin<T extends StatefulWidget> on State<T> {
     } catch (e) {
       try {
         await savedDevicesDao.clearScreenRecord(s);
+        await _syncDeviceRowFromDb();
       } catch (_) {}
       try {
         await apiClient.setShowTouches(s, false);

@@ -117,6 +117,15 @@ const _locTestSessionZh = <String, String>{
   'reportNotes': '问题备注',
   'reportTimeline': '时间线',
   'reportAttachments': '附件',
+  // Hub screen
+  'continueSession': '继续会话',
+  'sessions': '个会话',
+  'endedAt': '结束时间',
+  // Exit confirm
+  'sessionExitConfirm': '确认退出',
+  'sessionExitConfirmBody': '会话仍在进行中，退出后将丢失未保存的内容。',
+  'confirmExit': '确认退出',
+  'finishSessionConfirm': '确认结束会话吗？',
 };
 
 const _locTestSessionEn = <String, String>{
@@ -236,4 +245,14 @@ const _locTestSessionEn = <String, String>{
   'reportNotes': 'Notes',
   'reportTimeline': 'Timeline',
   'reportAttachments': 'Attachments',
+  // Hub screen
+  'continueSession': 'Continue Session',
+  'sessions': 'sessions',
+  'endedAt': 'Ended At',
+  // Exit confirm
+  'sessionExitConfirm': 'Confirm Exit',
+  'sessionExitConfirmBody':
+      'A session is still running. Exiting will discard unsaved progress.',
+  'confirmExit': 'Exit Anyway',
+  'finishSessionConfirm': 'End this session?',
 };

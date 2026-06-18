@@ -34,6 +34,7 @@ import '../db/database.dart';
 import '../db/dao/test_sessions_dao.dart';
 import '../models/test_session.dart';
 import '../services/screen_record_owner.dart' show ScreenRecordOwner, ScreenRecordOwnerX;
+import 'device_provider.dart';
 import 'test_session/attachment_store.dart';
 import 'test_session/exporter.dart';
 import 'test_session/formatter.dart';
@@ -50,6 +51,9 @@ class TestSessionProvider extends ChangeNotifier {
   SessionTranslate _translate;
   String? _translationLanguage;
 
+  // ── Device-offline → recording cleanup bridge ─────────────────────
+  StreamSubscription<DeviceOfflineEvent>? _deviceOfflineSub;
+
   /// The session the provider currently considers "active" — the one that
   /// was started most recently and not yet finished. Mutations without
   /// an explicit sessionId operate against this. Cleared on finish.
@@ -59,6 +63,7 @@ class TestSessionProvider extends ChangeNotifier {
   TestSessionProvider({
     AppDatabase? db,
     SessionTranslate? translate,
+    DeviceProvider? deviceProvider,
   })  : _db = db ?? AppDatabase(),
         _attachments = SessionAttachmentStore(),
         _exporter = SessionExporter(translate ?? _fallbackTranslate),
@@ -67,6 +72,28 @@ class TestSessionProvider extends ChangeNotifier {
     // Best-effort: rehydrate the most recent running session so the UI
     // can show "resume" after a restart. Failure is non-fatal.
     unawaited(_tryResume());
+
+    // Bridge device-offline events → session dialog.
+    // The actual dialog is shown by the UI layer (HomeScreen) which
+    // listens to onDeviceOfflineDialog; this provider owns the logic.
+    if (deviceProvider != null) {
+      _deviceOfflineSub = deviceProvider.onDeviceOffline.listen(_onDeviceOffline);
+    }
+  }
+
+  void _onDeviceOffline(DeviceOfflineEvent event) {
+    debugPrint('[TestSessionProvider] device offline: ${event.serial}');
+    // Auto-stop any in-flight recording on this device. The adb process
+    // is dead; there's nothing we can do with it.
+    _stopRecordingIfNeeded(event.serial);
+  }
+
+  Future<void> _stopRecordingIfNeeded(String serial) async {
+    try {
+      await _db.savedDevicesDao.clearScreenRecord(serial);
+    } catch (e) {
+      debugPrint('[TestSessionProvider] failed to clear recording on offline: $e');
+    }
   }
 
   Future<void> _tryResume() async {
@@ -952,4 +979,10 @@ class TestSessionProvider extends ChangeNotifier {
     'sessionFinished': '已结束',
     'exportFailed': '导出失败',
   };
+
+  @override
+  void dispose() {
+    _deviceOfflineSub?.cancel();
+    super.dispose();
+  }
 }

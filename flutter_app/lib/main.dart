@@ -45,7 +45,10 @@ Future<void> main() async {
           create: (_) => LocaleProvider(),
         ),
         ChangeNotifierProvider<TestSessionProvider>(
-          create: (_) => TestSessionProvider(db: db),
+          create: (_) => TestSessionProvider(
+            db: db,
+            deviceProvider: _.read<DeviceProvider>(),
+          ),
         ),
         ChangeNotifierProvider<TestConfigProvider>(
           create: (_) => TestConfigProvider()..load(),

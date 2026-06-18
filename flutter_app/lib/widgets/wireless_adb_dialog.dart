@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../i18n.dart';
-import '../models/device.dart';
 import '../services/api_client.dart';
 import '../providers/device_provider.dart';
 

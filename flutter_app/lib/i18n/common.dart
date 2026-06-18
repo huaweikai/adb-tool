@@ -26,6 +26,10 @@ const _locCommonZh = <String, String>{
   'saveFailed': '保存失败',
   'exportFailed': '导出失败',
   'deviceDisconnected': '设备已断开',
+  'deviceDisconnectedBody': '设备 {device} 已断开连接。录屏已自动停止。',
+  'deviceDisconnectedHint': '你可以等待设备重连，或直接结束当前会话。',
+  'endSessionNow': '结束会话',
+  'waitForReconnect': '等待重连',
   'waitingReconnect': '等待设备重新连接...',
   'removeDevice': '移除设备',
   'giveUp': '放弃',
@@ -55,6 +59,7 @@ const _locCommonZh = <String, String>{
   'recordInProgressOther': '录屏中(其他页面)',
   'recordInProgressOtherFmt': '录屏中(在{owner})',
   'recordingTooShort': '录屏过短，请至少录制 1 秒',
+  'recordingActiveDevices': '{count} 个设备正在录屏',
 };
 
 const _locCommonEn = <String, String>{
@@ -82,6 +87,10 @@ const _locCommonEn = <String, String>{
   'saveFailed': 'Save failed',
   'exportFailed': 'Export failed',
   'deviceDisconnected': 'Device disconnected',
+  'deviceDisconnectedBody': 'Device {device} has been disconnected. Any in-flight recording has been stopped.',
+  'deviceDisconnectedHint': 'Choose to wait for reconnection or end the current session.',
+  'endSessionNow': 'End Session',
+  'waitForReconnect': 'Wait for Reconnect',
   'waitingReconnect': 'Waiting for device to reconnect...',
   'removeDevice': 'Remove device',
   'giveUp': 'Give up',
@@ -105,4 +114,5 @@ const _locCommonEn = <String, String>{
   'recordInProgressOther': 'Recording in progress (other page)',
   'recordInProgressOtherFmt': 'Recording in progress (in {owner})',
   'recordingTooShort': 'Recording too short — keep recording for at least 1 second',
+  'recordingActiveDevices': '{count} devices recording',
 };
