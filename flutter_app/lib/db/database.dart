@@ -105,6 +105,17 @@ class AppDatabase extends _$AppDatabase {
         },
         beforeOpen: (details) async {
           await customStatement('PRAGMA foreign_keys = ON');
+          // Any recording state left behind from an unclean exit (crash /
+          // force-quit / battery pull) is now invalid — the adb-side
+          // process is dead and the app has no way to recover it.
+          // Clear it so the UI boots into a clean idle state.
+          await customStatement(
+            'UPDATE saved_devices '
+            'SET recording_owner = NULL, '
+            '    recording_started_at = NULL, '
+            '    recording_is_saving = 0 '
+            'WHERE recording_owner IS NOT NULL',
+          );
         },
       );
 

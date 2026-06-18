@@ -36,17 +36,28 @@ func (s *Server) handleScreenRecord(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.recordMu.Lock()
-		defer s.recordMu.Unlock()
+		// If we think a recording is already in flight (e.g. the previous
+		// session was killed without calling /stop), stop it first so the
+		// device-side process is killed and we're in a clean state to start
+		// a fresh one. The previous recording is unrecoverable anyway.
 		if s.recordingSerial != "" {
-			writeAPIError(w, http.StatusConflict, "already recording on "+s.recordingSerial)
-			return
+			staleSerial := s.recordingSerial
+			s.recordingSerial = ""
+			s.recordStarted = time.Time{}
+			s.recordMu.Unlock()
+			// Best-effort cleanup — ignore errors (process may already be dead).
+			s.adb.StopScreenRecord(staleSerial)
+		} else {
+			s.recordMu.Unlock()
 		}
 		if err := s.adb.StartScreenRecord(serial); err != nil {
 			writeAPIError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
+		s.recordMu.Lock()
 		s.recordingSerial = serial
 		s.recordStarted = time.Now()
+		s.recordMu.Unlock()
 		writeJSON(w, map[string]interface{}{"status": "recording", "serial": serial})
 
 	case "stop":

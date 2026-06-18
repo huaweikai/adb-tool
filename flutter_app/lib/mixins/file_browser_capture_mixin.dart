@@ -186,11 +186,11 @@ mixin FileBrowserCaptureMixin<T extends StatefulWidget> on State<T> {
         debugPrint('[ScreenRecord] show_touches on failed: $e');
       }
       await apiClient.screenRecordAction(s, 'start');
-      // Tag the active session (if any) so the test-session screen
-      // sees us as the owner too.
-      if (sessionProvider.hasRunningSession) {
-        await sessionProvider.markScreenRecordStarted();
-      }
+      // NOTE: we do NOT call sessionProvider.markScreenRecordStarted() here.
+      // Only the test-session mixin (which actually owns the session's
+      // video artifacts) should insert a "开始录屏" event into the session
+      // timeline. A recording started from the file browser is a
+      // standalone action — it has nothing to do with the session.
       _showSnackBar(tr('recordingStarted'));
     } catch (e) {
       try {

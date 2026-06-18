@@ -57,7 +57,9 @@ class SavedDevicesDao extends DatabaseAccessor<AppDatabase>
     );
   }
 
-  /// Update connection status for a single device.
+  /// Update connection status for a single device. When a device
+  /// disconnects, any in-flight recording state is also cleared —
+  /// the adb-side process is dead and we can't recover it.
   Future<void> updateDeviceConnection(String serial, bool connected) async {
     await (update(savedDevices)..where((t) => t.serial.equals(serial))).write(
       SavedDevicesCompanion(
@@ -65,6 +67,9 @@ class SavedDevicesDao extends DatabaseAccessor<AppDatabase>
         lastSeenAt: Value(connected ? DateTime.now() : null),
       ),
     );
+    if (!connected) {
+      await clearScreenRecord(serial);
+    }
   }
 
   /// Reconcile all stored devices with a fresh list of currently-online
