@@ -252,7 +252,7 @@ mixin TestSessionCaptureMixin<T extends StatefulWidget> on State<T> {
       // Already recording on this device — refuse unless we are
       // somehow stale.
       final rowOwner = ScreenRecordOwnerX.fromDb(row!.recordingOwner!);
-      if (rowOwner != recordOwner) {
+      if (rowOwner != null && rowOwner != recordOwner) {
         _showSnackBar(tr('recordInProgressOtherFmt',
             {'owner': tr(rowOwner.pageNameKey)}));
       } else {

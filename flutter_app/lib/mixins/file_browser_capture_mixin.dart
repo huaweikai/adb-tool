@@ -163,7 +163,7 @@ mixin FileBrowserCaptureMixin<T extends StatefulWidget> on State<T> {
     final row = await savedDevicesDao.getBySerial(s);
     if (row?.recordingOwner != null) {
       final rowOwner = ScreenRecordOwnerX.fromDb(row!.recordingOwner!);
-      if (rowOwner != recordOwner) {
+      if (rowOwner != null && rowOwner != recordOwner) {
         _showSnackBar(tr('recordInProgressOtherFmt',
             {'owner': tr(rowOwner.pageNameKey)}));
       } else {
