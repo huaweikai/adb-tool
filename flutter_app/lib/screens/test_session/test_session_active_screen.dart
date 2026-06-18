@@ -140,7 +140,7 @@ class _TestSessionActiveContentState extends State<TestSessionActiveContent>
                 fmtElapsed(DateTime.now().difference(session.startedAt)),
                 style: theme.textTheme.bodySmall,
               ),
-              const Spacer(),
+              const SizedBox(width: 8),
               // Record
               if (isOtherOwnerRecording())
                 _btn(null, Icons.fiber_manual_record, tr('recordInProgressOther'), null, grey: true)
