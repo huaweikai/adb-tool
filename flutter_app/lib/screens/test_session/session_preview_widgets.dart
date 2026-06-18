@@ -1,7 +1,11 @@
 // Shared session-preview widgets used by both the hub's history preview
 // and the active session's right panel. Kept in their own file so both
 // screens can render the same look without duplication.
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
 import '../../i18n.dart';
 import '../../models/test_session.dart';
@@ -216,33 +220,63 @@ Widget previewNoteItem(ThemeData theme, TestSessionNote note) {
   );
 }
 
-Widget previewArtifactItem(ThemeData theme, TestSessionArtifact a) {
+Widget previewArtifactItem(
+  ThemeData theme,
+  TestSessionArtifact a, {
+  String? sessionId,
+  void Function(String absolutePath)? onTap,
+}) {
   return Card(
     elevation: 0,
     margin: const EdgeInsets.only(bottom: 6),
     color: theme.colorScheme.surfaceContainerLow,
-    child: Padding(
-      padding: const EdgeInsets.all(10),
-      child: Row(
-        children: [
-          Icon(
-            artifactIcon(a.kind),
-            size: 16,
-            color: theme.colorScheme.primary,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(a.name, style: const TextStyle(fontSize: 12)),
-          ),
-          if (a.size > 0)
-            Text(
-              fmtBytes(a.size),
-              style: TextStyle(
-                fontSize: 11,
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
+    child: InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () async {
+        final relativePath = a.path;
+        if (relativePath.isEmpty) return;
+
+        try {
+          String absolutePath;
+          if (sessionId != null && p.isRelative(relativePath)) {
+            final appSupport = await getApplicationSupportDirectory();
+            absolutePath = p.join(appSupport.path, '.session_artifacts', relativePath);
+          } else {
+            absolutePath = relativePath;
+          }
+
+          if (onTap != null) {
+            onTap(absolutePath);
+          } else {
+            await openFileWithSystemApp(absolutePath);
+          }
+        } catch (e) {
+          debugPrint('Failed to open file: $e');
+        }
+      },
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Row(
+          children: [
+            Icon(
+              artifactIcon(a.kind),
+              size: 16,
+              color: theme.colorScheme.primary,
             ),
-        ],
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(a.name, style: const TextStyle(fontSize: 12)),
+            ),
+            if (a.size > 0)
+              Text(
+                fmtBytes(a.size),
+                style: TextStyle(
+                  fontSize: 11,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+          ],
+        ),
       ),
     ),
   );
@@ -273,4 +307,24 @@ String formatElapsedDuration(Duration d) {
   final h = d.inHours, m = d.inMinutes % 60, s = d.inSeconds % 60;
   if (h > 0) return '${h}h ${m}m ${s}s';
   return '${m}m ${s}s';
+}
+
+Future<void> openFileWithSystemApp(String filePath) async {
+  String executable;
+  List<String> arguments;
+
+  if (Platform.isMacOS) {
+    executable = 'open';
+    arguments = [filePath];
+  } else if (Platform.isLinux) {
+    executable = 'xdg-open';
+    arguments = [filePath];
+  } else if (Platform.isWindows) {
+    executable = 'cmd';
+    arguments = ['/c', 'start', '', filePath];
+  } else {
+    throw UnsupportedError('Unsupported platform');
+  }
+
+  await Process.run(executable, arguments);
 }

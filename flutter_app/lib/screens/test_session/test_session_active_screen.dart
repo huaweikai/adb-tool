@@ -288,7 +288,7 @@ class _TestSessionActiveContentState extends State<TestSessionActiveContent>
           Text(tr('noArtifacts'),
               style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 12))
         else
-          ...session.artifacts.map((a) => previewArtifactItem(theme, a)),
+          ...session.artifacts.map((a) => previewArtifactItem(theme, a, sessionId: session.id)),
       ],
     );
   }

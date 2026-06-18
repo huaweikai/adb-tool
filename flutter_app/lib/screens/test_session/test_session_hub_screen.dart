@@ -23,6 +23,7 @@ import '../../utils/test_flow_text.dart';
 import '../../utils/time_formatters.dart';
 import '../../widgets/safe_dialog.dart';
 import 'test_session_active_screen.dart';
+import 'session_preview_widgets.dart';
 
 class TestSessionHubScreen extends StatefulWidget {
   const TestSessionHubScreen({super.key});
@@ -124,6 +125,7 @@ class _TestSessionHubScreenState extends State<TestSessionHubScreen> {
     // 1. Read-only preview of a history item
     if (_previewSessionId != null) {
       return _SessionPreviewPanel(
+        key: ValueKey('preview:$_previewSessionId'),
         sessionId: _previewSessionId!,
         onClose: _closePreview,
       );
@@ -536,7 +538,7 @@ class _SessionPreviewPanel extends StatefulWidget {
   final String sessionId;
   final VoidCallback onClose;
 
-  const _SessionPreviewPanel({required this.sessionId, required this.onClose});
+  const _SessionPreviewPanel({super.key, required this.sessionId, required this.onClose});
 
   @override
   State<_SessionPreviewPanel> createState() => _SessionPreviewPanelState();
@@ -551,6 +553,14 @@ class _SessionPreviewPanelState extends State<_SessionPreviewPanel> {
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void didUpdateWidget(_SessionPreviewPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.sessionId != widget.sessionId) {
+      _load();
+    }
   }
 
   Future<void> _load() async {
@@ -702,7 +712,7 @@ class _SessionPreviewPanelState extends State<_SessionPreviewPanel> {
                 if (s.artifacts.isEmpty)
                   Text(tr('noArtifacts'), style: TextStyle(color: theme.colorScheme.onSurfaceVariant))
                 else
-                  ...s.artifacts.map((a) => _artifactItem(theme, a)),
+                  ...s.artifacts.map((a) => previewArtifactItem(theme, a, sessionId: s.id)),
               ],
             ),
           ),
