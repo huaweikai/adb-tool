@@ -245,14 +245,16 @@ mixin TestSessionCaptureMixin<T extends StatefulWidget> on State<T> {
   Future<void> startRecording() async {
     final s = serial;
     if (s == null) return;
-    final row = _deviceRow;
+    // Always read the fresh row from DB — _deviceRow may still be null if
+    // the stream hasn't emitted yet after a State rebuild.
+    final row = await savedDevicesDao.getBySerial(s);
     if (row?.recordingOwner != null) {
       // Already recording on this device — refuse unless we are
       // somehow stale.
-      final other = otherOwnerForRecording();
-      if (other != null) {
+      final rowOwner = ScreenRecordOwnerX.fromDb(row!.recordingOwner!);
+      if (rowOwner != recordOwner) {
         _showSnackBar(tr('recordInProgressOtherFmt',
-            {'owner': tr(other.pageNameKey)}));
+            {'owner': tr(rowOwner.pageNameKey)}));
       } else {
         _showSnackBar(tr('recordingAlreadyRunning'));
       }
