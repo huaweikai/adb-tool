@@ -300,6 +300,7 @@ class _HistoryPanel extends StatelessWidget {
                         session: sessions[i],
                         onTap: () => onItemTap(sessions[i].id),
                         onDelete: () => _deleteSession(context, sessions[i]),
+                        onExport: () => _exportSession(context, sessions[i]),
                       ),
                     ),
             ),
@@ -333,17 +334,43 @@ class _HistoryPanel extends StatelessWidget {
       SnackBar(content: Text(tr('sessionDeleted')), behavior: SnackBarBehavior.floating),
     );
   }
+
+  Future<void> _exportSession(BuildContext context, TestSessionRow session) async {
+    final provider = context.read<TestSessionProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      messenger.showSnackBar(
+        SnackBar(content: Text(tr('exportingSession')), behavior: SnackBarBehavior.floating),
+      );
+      final path = await provider.exportSession(sessionId: session.id);
+      if (!context.mounted) return;
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(tr('sessionExported', {'path': path})),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      messenger.showSnackBar(
+        SnackBar(content: Text('${tr('exportFailed')}: $e'), behavior: SnackBarBehavior.floating),
+      );
+    }
+  }
 }
 
 class _HistoryItem extends StatelessWidget {
   final TestSessionRow session;
   final VoidCallback onTap;
   final VoidCallback onDelete;
+  final VoidCallback onExport;
 
   const _HistoryItem({
     required this.session,
     required this.onTap,
     required this.onDelete,
+    required this.onExport,
   });
 
   @override
@@ -357,6 +384,7 @@ class _HistoryItem extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
         onTap: onTap,
+        onLongPress: onDelete,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           child: Row(
@@ -396,6 +424,17 @@ class _HistoryItem extends StatelessWidget {
                       ],
                     ),
                   ],
+                ),
+              ),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 32),
+                child: IconButton(
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  icon: Icon(Icons.archive_outlined, size: 16,
+                      color: theme.colorScheme.primary),
+                  onPressed: onExport,
+                  tooltip: tr('exportSession'),
                 ),
               ),
               ConstrainedBox(

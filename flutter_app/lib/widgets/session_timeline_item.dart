@@ -27,6 +27,7 @@ class PlanStatusIcon extends StatelessWidget {
 class SessionTimelineItem extends StatelessWidget {
   final ThemeData theme;
   final TestSessionEvent event;
+  final bool canDelete;
 
   /// (type) => translated event title
   final String Function(TestSessionEventType) eventTitle;
@@ -34,13 +35,30 @@ class SessionTimelineItem extends StatelessWidget {
   /// (type, theme) => dot color
   final Color Function(TestSessionEventType, ThemeData) eventColor;
 
+  /// Called when user taps the delete button on a deletable event.
+  final VoidCallback? onDelete;
+
+  /// Called when user taps an attachment-related event (screenshot/video/log).
+  final VoidCallback? onTapAttachment;
+
   const SessionTimelineItem({
     super.key,
     required this.theme,
     required this.event,
+    this.canDelete = false,
     required this.eventTitle,
     required this.eventColor,
+    this.onDelete,
+    this.onTapAttachment,
   });
+
+  bool get _isAttachmentEvent {
+    return event.type == TestSessionEventType.screenshotTaken ||
+        event.type == TestSessionEventType.screenRecordStarted ||
+        event.type == TestSessionEventType.screenRecordStopped ||
+        event.type == TestSessionEventType.logcatStarted ||
+        event.type == TestSessionEventType.logcatSaved;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -68,45 +86,86 @@ class SessionTimelineItem extends StatelessWidget {
         ),
         const SizedBox(width: 12),
         Expanded(
-          child: Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.surfaceContainerLow,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: theme.dividerColor),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  eventTitle(event.type),
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                if (event.detail.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    event.detail,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: theme.colorScheme.onSurfaceVariant,
+          child: InkWell(
+            onTap: _isAttachmentEvent && onTapAttachment != null
+                ? onTapAttachment
+                : null,
+            borderRadius: BorderRadius.circular(10),
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: theme.dividerColor),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            if (_isAttachmentEvent) ...[
+                              Icon(
+                                _attachmentIcon(event.type),
+                                size: 14,
+                                color: theme.colorScheme.primary,
+                              ),
+                              const SizedBox(width: 6),
+                            ],
+                            Expanded(
+                              child: Text(
+                                eventTitle(event.type),
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (event.detail.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            event.detail,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                        if (event.filePath != null) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            event.filePath!,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: theme.colorScheme.primary,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ],
                     ),
                   ),
-                ],
-                if (event.filePath != null) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    event.filePath!,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: theme.colorScheme.primary,
+                  if (canDelete && onDelete != null)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 4),
+                      child: IconButton(
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        icon: Icon(
+                          Icons.delete_outline,
+                          size: 16,
+                          color: theme.colorScheme.error,
+                        ),
+                        onPressed: onDelete,
+                      ),
                     ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
                 ],
-              ],
+              ),
             ),
           ),
         ),
@@ -114,6 +173,16 @@ class SessionTimelineItem extends StatelessWidget {
     );
   }
 
+  IconData _attachmentIcon(TestSessionEventType type) {
+    return switch (type) {
+      TestSessionEventType.screenshotTaken => Icons.image,
+      TestSessionEventType.screenRecordStarted => Icons.videocam,
+      TestSessionEventType.screenRecordStopped => Icons.videocam,
+      TestSessionEventType.logcatStarted => Icons.list_alt,
+      TestSessionEventType.logcatSaved => Icons.list_alt,
+      _ => Icons.attach_file,
+    };
+  }
 }
 
 /// Translated event title for each [TestSessionEventType].

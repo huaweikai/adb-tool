@@ -279,8 +279,7 @@ class TestSessionProvider extends ChangeNotifier {
     }
 
     final now = DateTime.now();
-    final id =
-        '${SessionFormatters.compactDate(now)}_${SessionFormatters.safeName(name)}';
+    final id = SessionFormatters.sessionId(now, name);
 
     // 2. Ensure base + subdirs on disk.
     final base = await _attachments.artifactsDir(id);
@@ -324,7 +323,7 @@ class TestSessionProvider extends ChangeNotifier {
           for (var i = 0; i < normalized.length; i++)
             TestSessionPlanItemsCompanion.insert(
               id: normalized[i].id.isEmpty
-                  ? 'STEP-${SessionFormatters.issueNumber(i + 1)}'
+                  ? SessionFormatters.planItemId(id, i + 1)
                   : normalized[i].id,
               sessionId: id,
               flowName: normalized[i].flowName,
@@ -813,6 +812,32 @@ class TestSessionProvider extends ChangeNotifier {
     await _refreshCurrentHydrated();
   }
 
+  /// Delete an event (and its linked artifact if applicable, e.g. screenshot/
+  /// video/log events). First/last events (sessionCreated/sessionFinished)
+  /// cannot be deleted and throw.
+  Future<void> deleteEvent(String eventId) async {
+    final id = _requireActiveId();
+    final events = await _dao.watchEventsForSession(id).first;
+    final idx = events.indexWhere((e) => e.id == eventId);
+    if (idx < 0) throw StateError('event not found: $eventId');
+    // First and last events are protected
+    if (idx == 0 || idx == events.length - 1) {
+      throw StateError(_t('errorCannotDeleteSystemEvent'));
+    }
+    final event = events[idx];
+    // If this event has a file path, delete the linked artifact first
+    if (event.filePath != null && event.filePath!.isNotEmpty) {
+      final artifacts = await _dao.watchArtifactsForSession(id).first;
+      final linked = artifacts.where((a) => a.path == event.filePath).toList();
+      for (final a in linked) {
+        await _attachments.deleteFile(a.path);
+        await _dao.deleteArtifact(a.id);
+      }
+    }
+    await _dao.deleteEvent(eventId);
+    await _refreshCurrentHydrated();
+  }
+
   // ===== History & lifecycle ==============================================
 
   /// All sessions for the given device, newest first. One-shot read used
@@ -866,8 +891,8 @@ class TestSessionProvider extends ChangeNotifier {
   }
 
   /// Export a ZIP of the session directory + report.md.
-  Future<String> exportSession({String? targetPath}) async {
-    final id = _requireActiveId();
+  Future<String> exportSession({String? targetPath, String? sessionId}) async {
+    final id = sessionId ?? _requireActiveId();
     final session = await _dao.findSessionById(id);
     if (session == null) throw StateError(_t('errorNoSession'));
     await _exporter.writeReport(session, db: _db);
@@ -933,6 +958,7 @@ class TestSessionProvider extends ChangeNotifier {
     'errorNoSession': '没有测试会话',
     'errorNoRunningSession': '没有进行中的测试会话',
     'errorDeviceAlreadyHasRunningSession': '该设备已有进行中的测试会话',
+    'errorCannotDeleteSystemEvent': '系统事件无法删除',
     'errorLogFileNotFound': '日志文件不存在: {path}',
     'issueTypeCrash': '崩溃',
     'issueTypeAnr': 'ANR',

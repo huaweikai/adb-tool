@@ -19,6 +19,7 @@ import '../../utils/time_formatters.dart';
 import '../../widgets/safe_dialog.dart';
 import '../../widgets/session_timeline_item.dart';
 import '../../mixins/test_session_capture_mixin.dart';
+import 'session_preview_widgets.dart';
 
 /// Embedded session workflow widget for the hub's right panel.
 class TestSessionActiveContent extends StatefulWidget {
@@ -215,18 +216,26 @@ class _TestSessionActiveContentState extends State<TestSessionActiveContent>
   }
 
   Widget _buildTimeline(ThemeData theme, TestSession session) {
+    final total = session.events.length;
     return ListView.separated(
       padding: const EdgeInsets.all(12),
-      itemCount: session.events.length + 1,
+      itemCount: total + 1,
       separatorBuilder: (_, __) => const SizedBox(height: 8),
       itemBuilder: (ctx, i) {
         if (i == 0) return Text(tr('sessionTimeline'),
             style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600));
-        final event = session.events[i - 1];
+        final eventIdx = i - 1;
+        final event = session.events[eventIdx];
+        final isFirst = eventIdx == 0;
+        final canDelete = !isFirst;
         return SessionTimelineItem(
-          theme: theme, event: event,
+          theme: theme,
+          event: event,
+          canDelete: canDelete,
           eventTitle: (t) => sessionEventTitle(t, tr),
           eventColor: sessionEventColor,
+          onDelete: canDelete ? () => _confirmDeleteEvent(event) : null,
+          onTapAttachment: event.filePath != null ? () => _showAttachmentPreview(event) : null,
         );
       },
     );
@@ -236,36 +245,78 @@ class _TestSessionActiveContentState extends State<TestSessionActiveContent>
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
-        _section(theme, tr('sessionIssues'), session.issues.isEmpty
-            ? Text(tr('noIssues'), style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 12))
-            : Text('${session.issues.length}', style: const TextStyle(fontSize: 12))),
-        const SizedBox(height: 8),
-        _section(theme, tr('sessionArtifacts'), session.artifacts.isEmpty
-            ? Text(tr('noArtifacts'), style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 12))
-            : Text('${session.artifacts.length}', style: const TextStyle(fontSize: 12))),
-        const SizedBox(height: 8),
-        _section(theme, tr('sessionNotes'), session.notes.isEmpty
-            ? Text(tr('noNotes'), style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 12))
-            : Text('${session.notes.length}', style: const TextStyle(fontSize: 12))),
+        // Test plan
+        previewSectionTitle(theme, '${tr('sessionTestPlan')} (${session.testPlan.length})'),
+        if (session.testPlan.isEmpty)
+          Text(tr('noTestPlan'),
+              style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 12))
+        else
+          ...session.testPlan.map((item) => previewPlanItem(
+                theme,
+                item,
+                onStatusChange: !_busy ? () => _updatePlanItem(item.id) : null,
+              )),
+
+        const SizedBox(height: 16),
+
+        // Issues
+        previewSectionTitle(theme, '${tr('sessionIssues')} (${session.issues.length})'),
+        if (session.issues.isEmpty)
+          Text(tr('noIssues'),
+              style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 12))
+        else
+          ...session.issues.map((issue) => previewIssueItem(theme, issue)),
+
+        const SizedBox(height: 16),
+
+        // Notes
+        previewSectionTitle(theme, '${tr('sessionNotes')} (${session.notes.length})'),
+        if (session.notes.isEmpty)
+          Text(tr('noNotes'),
+              style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 12))
+        else
+          ...session.notes.map((note) => previewNoteItem(theme, note)),
+
+        const SizedBox(height: 16),
+
+        // Artifacts
+        previewSectionTitle(theme, '${tr('sessionArtifacts')} (${session.artifacts.length})'),
+        if (session.artifacts.isEmpty)
+          Text(tr('noArtifacts'),
+              style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 12))
+        else
+          ...session.artifacts.map((a) => previewArtifactItem(theme, a)),
       ],
     );
   }
 
-  Widget _section(ThemeData theme, String title, Widget trailing) {
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        children: [
-          Text(title, style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600)),
-          const Spacer(),
-          trailing,
-        ],
+  Future<void> _updatePlanItem(String itemId) async {
+    if (_busy) return;
+    final session = sessionProvider.currentSession;
+    if (session == null) return;
+    final current = session.testPlan.firstWhere(
+      (p) => p.id == itemId,
+      orElse: () => TestSessionPlanItem(
+        id: itemId, flowName: '', step: '',
       ),
     );
+
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (ctx) => _PlanStatusDialog(initial: current),
+    );
+    if (result == null || !mounted) return;
+    final status = result['status'] as TestSessionPlanStatus;
+    final message = (result['message'] as String).trim();
+
+    try {
+      await sessionProvider.updateTestPlanItem(itemId, status, message: message);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$e'), behavior: SnackBarBehavior.floating),
+      );
+    }
   }
 
   Future<void> _startLogcat() async {
@@ -364,25 +415,30 @@ class _TestSessionActiveContentState extends State<TestSessionActiveContent>
       ),
     );
     if (result == null || !mounted) return;
-    final log = await _loadRecentLogcatSnapshot();
+    final logResult = await _loadRecentLogcatSnapshot();
     final issue = await sessionProvider.markIssue(
       title: result['title'], type: TestSessionIssueType.crash,
       severity: result['severity'], steps: '', expected: '',
-      actual: result['actual'], note: '', recentLogContent: log,
+      actual: result['actual'], note: '', recentLogContent: logResult.content,
     );
     if (!mounted) return;
+    final msg = logResult.captured
+        ? tr('issueMarkedTipWithLog', {'title': issue.title})
+        : tr('issueMarkedTip', {'title': issue.title});
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(tr('issueMarkedTip', {'title': issue.title})),
-          behavior: SnackBarBehavior.floating),
+      SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating),
     );
   }
 
-  Future<String> _loadRecentLogcatSnapshot() async {
+  Future<({String content, bool captured})> _loadRecentLogcatSnapshot() async {
     final s = serial;
-    if (s == null) return '';
+    if (s == null) return (content: '', captured: false);
     try {
-      return await apiClient.getRecentLogcat(s, lines: 500);
-    } catch (_) { return ''; }
+      final content = await apiClient.getRecentLogcat(s, lines: 500);
+      return (content: content, captured: content.isNotEmpty);
+    } catch (_) {
+      return (content: '', captured: false);
+    }
   }
 
   String _severityLabel(TestSessionIssueSeverity s) => switch (s) {
@@ -432,5 +488,167 @@ class _TestSessionActiveContentState extends State<TestSessionActiveContent>
       SnackBar(content: Text(tr('sessionFinishedTip')), behavior: SnackBarBehavior.floating),
     );
     // Stream update will cause hub to rebuild and switch back to start card
+  }
+
+  Future<void> _confirmDeleteEvent(TestSessionEvent event) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(tr('deleteEvent')),
+        content: Text(tr('deleteEventConfirm', {'title': event.title})),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(tr('cancel'))),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(tr('delete')),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await sessionProvider.deleteEvent(event.id);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$e'), behavior: SnackBarBehavior.floating),
+      );
+    }
+  }
+
+  Future<void> _showAttachmentPreview(TestSessionEvent event) async {
+    if (event.filePath == null) return;
+    final theme = Theme.of(context);
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(sessionEventTitle(event.type, tr)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (event.detail.isNotEmpty) ...[
+              Text(event.detail, style: theme.textTheme.bodySmall),
+              const SizedBox(height: 8),
+            ],
+            SelectableText(
+              event.filePath!,
+              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.primary),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(tr('close'))),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Test-plan status dialog ──────────────────────────────────────────────────
+
+class _PlanStatusDialog extends StatefulWidget {
+  final TestSessionPlanItem initial;
+
+  const _PlanStatusDialog({required this.initial});
+
+  @override
+  State<_PlanStatusDialog> createState() => _PlanStatusDialogState();
+}
+
+class _PlanStatusDialogState extends State<_PlanStatusDialog> {
+  late TestSessionPlanStatus _status;
+  late final TextEditingController _msgCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _status = widget.initial.status;
+    _msgCtrl = TextEditingController(text: widget.initial.message);
+  }
+
+  @override
+  void dispose() {
+    _msgCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AlertDialog(
+      title: Text(tr('updateTestPlanItem')),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 360),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (widget.initial.flowName.isNotEmpty) ...[
+              Text(
+                widget.initial.flowName,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 4),
+            ],
+            Text(
+              widget.initial.step,
+              style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
+            ),
+            const SizedBox(height: 16),
+            SegmentedButton<TestSessionPlanStatus>(
+              segments: [
+                ButtonSegment(
+                  value: TestSessionPlanStatus.passed,
+                  label: Text(tr('testPlanPassed')),
+                  icon: const Icon(Icons.check_circle, size: 16),
+                ),
+                ButtonSegment(
+                  value: TestSessionPlanStatus.failed,
+                  label: Text(tr('testPlanFailed')),
+                  icon: const Icon(Icons.cancel, size: 16),
+                ),
+                ButtonSegment(
+                  value: TestSessionPlanStatus.pending,
+                  label: Text(tr('testPlanPending')),
+                  icon: const Icon(Icons.radio_button_unchecked, size: 16),
+                ),
+              ],
+              selected: {_status},
+              onSelectionChanged: (s) => setState(() {
+                _status = s.first;
+                if (_status != TestSessionPlanStatus.failed) {
+                  _msgCtrl.clear();
+                }
+              }),
+            ),
+            if (_status == TestSessionPlanStatus.failed) ...[
+              const SizedBox(height: 12),
+              TextField(
+                controller: _msgCtrl,
+                maxLines: 3,
+                decoration: InputDecoration(labelText: tr('testPlanMessage')),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(tr('cancel')),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, {
+            'status': _status,
+            'message': _msgCtrl.text,
+          }),
+          child: Text(tr('confirm')),
+        ),
+      ],
+    );
   }
 }

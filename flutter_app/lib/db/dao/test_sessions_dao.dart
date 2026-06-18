@@ -250,4 +250,10 @@ class TestSessionsDao extends DatabaseAccessor<AppDatabase>
   Future<int> deleteArtifact(String id) {
     return (delete(testSessionArtifacts)..where((t) => t.id.equals(id))).go();
   }
+
+  /// Delete a single event row. When the event has an associated artifact
+  /// (screenshot / video / log), callers should delete the artifact first.
+  Future<int> deleteEvent(String id) {
+    return (delete(testSessionEvents)..where((t) => t.id.equals(id))).go();
+  }
 }

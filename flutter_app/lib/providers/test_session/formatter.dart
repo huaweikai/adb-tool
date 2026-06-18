@@ -19,6 +19,12 @@ class SessionFormatters {
         '${two(time.hour)}${two(time.minute)}${two(time.second)}';
   }
 
+  /// Unique-enough session ID: microseconds + safe name. Microseconds are
+  /// guaranteed unique within a process even for same-second sessions.
+  static String sessionId(DateTime time, String name) {
+    return '${id(time)}_${safeName(name)}';
+  }
+
   static String fileDate(DateTime time) => compactDate(time);
 
   static String displayDate(DateTime time) {
@@ -33,6 +39,11 @@ class SessionFormatters {
   static String issueId(int index) => 'ISSUE-${issueNumber(index)}';
 
   static String issueNumber(int index) => index.toString().padLeft(3, '0');
+
+  /// Plan item ID scoped to a session. Appended to the session's microsecond ID
+  /// so the same step name in different sessions never collides.
+  static String planItemId(String sessionId, int index) =>
+      '${sessionId}_STEP-${issueNumber(index)}';
 
   static String safeName(String name) {
     final value = name.trim().isEmpty ? 'session' : name.trim();
@@ -86,8 +97,9 @@ class SessionFormatters {
 
   // ===== Test plan normalization =====
 
-  /// Strips empty steps, fills in missing step IDs, and resets each step's
-  /// status to `pending` (so re-imported plans start fresh).
+  /// Strips empty steps and resets each step's status to `pending`
+  /// (so re-imported plans start fresh). Does NOT assign IDs — the caller
+  /// (startSession) must call planItemId() with the session ID.
   static List<TestSessionPlanItem> normalizeTestPlan(
       List<TestSessionPlanItem> items) {
     final result = <TestSessionPlanItem>[];
@@ -97,9 +109,7 @@ class SessionFormatters {
       if (step.isEmpty) continue;
       result.add(
         item.copyWith(
-          id: item.id.trim().isEmpty
-              ? 'STEP-${issueNumber(result.length + 1)}'
-              : item.id,
+          id: item.id.trim(),
           status: TestSessionPlanStatus.pending,
           message: '',
         ),
