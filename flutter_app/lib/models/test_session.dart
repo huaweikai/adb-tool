@@ -4,6 +4,7 @@ enum TestSessionEventType {
   sessionCreated,
   noteAdded,
   logcatStarted,
+  logcatStopped,
   logcatSaved,
   screenshotTaken,
   screenRecordStarted,

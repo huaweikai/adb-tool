@@ -57,6 +57,7 @@ class SessionTimelineItem extends StatelessWidget {
         event.type == TestSessionEventType.screenRecordStarted ||
         event.type == TestSessionEventType.screenRecordStopped ||
         event.type == TestSessionEventType.logcatStarted ||
+        event.type == TestSessionEventType.logcatStopped ||
         event.type == TestSessionEventType.logcatSaved;
   }
 
@@ -179,6 +180,7 @@ class SessionTimelineItem extends StatelessWidget {
       TestSessionEventType.screenRecordStarted => Icons.videocam,
       TestSessionEventType.screenRecordStopped => Icons.videocam,
       TestSessionEventType.logcatStarted => Icons.list_alt,
+      TestSessionEventType.logcatStopped => Icons.list_alt,
       TestSessionEventType.logcatSaved => Icons.list_alt,
       _ => Icons.attach_file,
     };
@@ -192,6 +194,7 @@ String sessionEventTitle(
     TestSessionEventType.sessionCreated => tr('eventSessionCreated'),
     TestSessionEventType.noteAdded => tr('eventNoteAdded'),
     TestSessionEventType.logcatStarted => tr('eventLogcatStarted'),
+    TestSessionEventType.logcatStopped => tr('eventLogcatStopped'),
     TestSessionEventType.logcatSaved => tr('eventLogcatSaved'),
     TestSessionEventType.screenshotTaken => tr('eventScreenshotSaved'),
     TestSessionEventType.screenRecordStarted => tr('eventScreenRecordStarted'),
@@ -208,6 +211,7 @@ Color sessionEventColor(TestSessionEventType type, ThemeData theme) {
     TestSessionEventType.sessionCreated => theme.colorScheme.primary,
     TestSessionEventType.noteAdded => Colors.amber,
     TestSessionEventType.logcatStarted => Colors.green,
+    TestSessionEventType.logcatStopped => Colors.green,
     TestSessionEventType.logcatSaved => Colors.green,
     TestSessionEventType.screenshotTaken => Colors.blue,
     TestSessionEventType.screenRecordStarted => Colors.purple,

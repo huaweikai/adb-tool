@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 )
@@ -10,6 +11,7 @@ import (
 func (s *Server) handleLogStream(w http.ResponseWriter, r *http.Request) {
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
+		Log.Add("ws upgrade failed", fmt.Sprintf("remote=%s ua=%q", r.RemoteAddr, r.Header.Get("User-Agent")), err, 0)
 		writeAPIError(w, http.StatusBadRequest, "websocket upgrade failed")
 		return
 	}

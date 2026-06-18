@@ -1,7 +1,9 @@
 package server
 
 import (
+	"bufio"
 	"fmt"
+	"net"
 	"net/http"
 	"runtime/debug"
 	"time"
@@ -13,7 +15,9 @@ import (
 const slowRequestThreshold = 500 * time.Millisecond
 
 // statusRecorder wraps http.ResponseWriter so we can read the status code
-// after the handler finishes.
+// after the handler finishes. It also implements http.Hijacker / http.Flusher
+// so it doesn't break WebSocket upgrades or streaming responses that the
+// underlying ResponseWriter supports.
 type statusRecorder struct {
 	http.ResponseWriter
 	status int
@@ -35,6 +39,23 @@ func (r *statusRecorder) Write(b []byte) (int, error) {
 		r.wrote = true
 	}
 	return r.ResponseWriter.Write(b)
+}
+
+// Hijack delegates to the wrapped ResponseWriter so WebSocket upgrades still
+// work when the recorder sits in the middleware chain.
+func (r *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	hijacker, ok := r.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, http.ErrNotSupported
+	}
+	return hijacker.Hijack()
+}
+
+// Flush delegates to the wrapped ResponseWriter for streaming handlers.
+func (r *statusRecorder) Flush() {
+	if f, ok := r.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
 }
 
 func observeHTTP(next http.Handler) http.Handler {

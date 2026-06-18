@@ -159,6 +159,17 @@ class TestSessionProvider extends ChangeNotifier {
   bool get hasRunningSession =>
       _currentHydrated?.status == TestSessionStatus.running;
 
+  /// Absolute on-disk path of the active session's logcat directory. The
+  /// backend's session-logcat endpoint needs a real path; the legacy
+  /// `TestSession.directoryPath` field is left empty, so the UI must use
+  /// this getter instead. Returns null when no active session.
+  Future<String?> currentSessionLogcatDir() async {
+    final id = _activeSessionId;
+    if (id == null) return null;
+    final dir = await _attachments.artifactsDir(id);
+    return dir.path;
+  }
+
   Future<void> _refreshCurrentHydrated() async {
     final id = _activeSessionId;
     if (id == null) {
@@ -758,6 +769,38 @@ class TestSessionProvider extends ChangeNotifier {
     await _refreshCurrentHydrated();
   }
 
+  /// Insert a "logcat stopped" event. Idempotent: if the most recent logcat
+  /// event is already a stop (or there's no running logcat at all), this
+  /// is a no-op. Called from `_stopLogcat` so the timeline always has a
+  /// matching end for every start.
+  Future<void> markLogcatStopped() async {
+    final id = _requireActiveId();
+    final events = await _dao.watchEventsForSession(id).first;
+    // Find the most recent logcatStarted/logcatStopped event. If it's
+    // already a stop, don't add another one.
+    final lastLogcat = events.lastWhere(
+      (e) =>
+          e.type == TestSessionEventType.logcatStarted ||
+          e.type == TestSessionEventType.logcatStopped ||
+          e.type == TestSessionEventType.logcatSaved,
+      orElse: () => events.isEmpty
+          ? throw StateError('no events')
+          : events.first,
+    );
+    if (lastLogcat.type == TestSessionEventType.logcatStopped) return;
+    final now = DateTime.now();
+    await _db.transaction(() async {
+      await _dao.insertEvent(TestSessionEventsCompanion.insert(
+        id: SessionFormatters.id(now),
+        sessionId: id,
+        type: TestSessionEventType.logcatStopped,
+        time: now,
+        title: _t('eventLogcatStopped'),
+      ));
+    });
+    await _refreshCurrentHydrated();
+  }
+
   Future<void> markScreenRecordStarted() async {
     final id = _requireActiveId();
     final now = DateTime.now();
@@ -813,29 +856,87 @@ class TestSessionProvider extends ChangeNotifier {
   }
 
   /// Delete an event (and its linked artifact if applicable, e.g. screenshot/
-  /// video/log events). First/last events (sessionCreated/sessionFinished)
+  /// video/log events).
+  ///
+  /// The session-level boundary events (`sessionCreated`, `sessionFinished`)
   /// cannot be deleted and throw.
+  ///
+  /// For paired events (e.g. `logcatStarted` → `logcatStopped` →
+  /// `logcatSaved`), deleting the **start** also removes the matching stop
+  /// and any saved-event in the same pair. Deleting the stop or saved
+  /// events removes just that single event.
   Future<void> deleteEvent(String eventId) async {
     final id = _requireActiveId();
     final events = await _dao.watchEventsForSession(id).first;
     final idx = events.indexWhere((e) => e.id == eventId);
     if (idx < 0) throw StateError('event not found: $eventId');
-    // First and last events are protected
-    if (idx == 0 || idx == events.length - 1) {
+    final event = events[idx];
+    if (event.type == TestSessionEventType.sessionCreated ||
+        event.type == TestSessionEventType.sessionFinished) {
       throw StateError(_t('errorCannotDeleteSystemEvent'));
     }
-    final event = events[idx];
-    // If this event has a file path, delete the linked artifact first
-    if (event.filePath != null && event.filePath!.isNotEmpty) {
-      final artifacts = await _dao.watchArtifactsForSession(id).first;
-      final linked = artifacts.where((a) => a.path == event.filePath).toList();
-      for (final a in linked) {
-        await _attachments.deleteFile(a.path);
-        await _dao.deleteArtifact(a.id);
+
+    // Compute the set of event ids to remove.
+    final toDelete = <String>{eventId};
+    if (event.type == TestSessionEventType.logcatStarted ||
+        event.type == TestSessionEventType.screenRecordStarted) {
+      // Walk forward through events of the same capture pair and add
+      // every related event (stop, saved) until we hit a different pair
+      // or a non-related event.
+      final pairKinds = _pairKindsFor(event.type);
+      for (var j = idx + 1; j < events.length; j++) {
+        final next = events[j];
+        if (!pairKinds.contains(next.type)) break;
+        toDelete.add(next.id);
       }
     }
-    await _dao.deleteEvent(eventId);
+
+    // Collect the file paths of any artifacts that the deleted events
+    // referenced, so we can wipe the on-disk files too.
+    final pathsToDelete = <String>{};
+    for (final eid in toDelete) {
+      final e = events.firstWhere((e) => e.id == eid);
+      if (e.filePath != null && e.filePath!.isNotEmpty) {
+        pathsToDelete.add(e.filePath!);
+      }
+    }
+
+    await _db.transaction(() async {
+      // 1. Delete on-disk artifacts whose path is referenced.
+      if (pathsToDelete.isNotEmpty) {
+        final artifacts = await _dao.watchArtifactsForSession(id).first;
+        for (final a in artifacts) {
+          if (pathsToDelete.contains(a.path)) {
+            await _attachments.deleteFile(a.path);
+            await _dao.deleteArtifact(a.id);
+          }
+        }
+      }
+      // 2. Delete the events themselves.
+      for (final eid in toDelete) {
+        await _dao.deleteEvent(eid);
+      }
+    });
     await _refreshCurrentHydrated();
+  }
+
+  /// Returns the set of event types that belong to the same capture pair
+  /// as the given start type. Used by deleteEvent to find sibling events
+  /// to drop together.
+  static Set<TestSessionEventType> _pairKindsFor(
+      TestSessionEventType startType) {
+    return switch (startType) {
+      TestSessionEventType.logcatStarted => {
+          TestSessionEventType.logcatStarted,
+          TestSessionEventType.logcatStopped,
+          TestSessionEventType.logcatSaved,
+        },
+      TestSessionEventType.screenRecordStarted => {
+          TestSessionEventType.screenRecordStarted,
+          TestSessionEventType.screenRecordStopped,
+        },
+      _ => {startType},
+    };
   }
 
   // ===== History & lifecycle ==============================================

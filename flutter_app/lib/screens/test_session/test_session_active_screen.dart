@@ -226,8 +226,10 @@ class _TestSessionActiveContentState extends State<TestSessionActiveContent>
             style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600));
         final eventIdx = i - 1;
         final event = session.events[eventIdx];
-        final isFirst = eventIdx == 0;
-        final canDelete = !isFirst;
+        // Only the session-level first/last (sessionCreated/sessionFinished)
+        // are protected. Pair events (e.g. logcatStarted without a matching
+        // logcatStopped) are deletable — provider auto-fills the missing end.
+        final canDelete = false;
         return SessionTimelineItem(
           theme: theme,
           event: event,
@@ -324,8 +326,24 @@ class _TestSessionActiveContentState extends State<TestSessionActiveContent>
     if (s == null || _logcatRunning) return;
     final session = sessionProvider.currentSession;
     if (session == null) return;
+    final sessionDir = await sessionProvider.currentSessionLogcatDir();
+    if (sessionDir == null || sessionDir.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(tr('logcatCaptureFailed')),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
     try {
-      await apiClient.sessionLogcatAction('start', serial: s, sessionDir: session.directoryPath, packageName: session.packageName);
+      await apiClient.sessionLogcatAction(
+        'start',
+        serial: s,
+        sessionDir: sessionDir,
+        packageName: session.packageName,
+      );
       await sessionProvider.markLogcatStarted();
       if (!mounted) return;
       setState(() { _logcatRunning = true; _logcatSeconds = 0; });
@@ -347,10 +365,16 @@ class _TestSessionActiveContentState extends State<TestSessionActiveContent>
     if (!_logcatRunning) return;
     _logcatTimer?.cancel();
     try {
-      await apiClient.sessionLogcatAction('stop', serial: '', sessionDir: '');
-      final path = (await apiClient.sessionLogcatAction('stop', serial: '', sessionDir: ''))['path']?.toString();
+      final resp1 = await apiClient.sessionLogcatAction('stop', serial: '', sessionDir: '');
+      // Backend's stop action returns the file path of the captured log.
+      // Don't double-stop (which would create an empty second file).
+      final path = resp1['path']?.toString();
       if (!mounted) return;
       setState(() { _logcatRunning = false; _logcatSeconds = 0; });
+      // Always record a "logcat stopped" event so the timeline has a
+      // matching end for the start. saveLogcatFile below will additionally
+      // insert a "logcat saved" event when the file actually exists.
+      await sessionProvider.markLogcatStopped();
       if (path != null && path.isNotEmpty) {
         await sessionProvider.saveLogcatFile(path);
         if (!mounted) return;
@@ -514,6 +538,11 @@ class _TestSessionActiveContentState extends State<TestSessionActiveContent>
         SnackBar(content: Text('$e'), behavior: SnackBarBehavior.floating),
       );
     }
+  }
+
+  static bool _isSessionBoundaryEvent(TestSessionEvent event) {
+    return event.type == TestSessionEventType.sessionCreated ||
+        event.type == TestSessionEventType.sessionFinished;
   }
 
   Future<void> _showAttachmentPreview(TestSessionEvent event) async {
