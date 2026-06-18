@@ -316,7 +316,7 @@ class _HistoryPanel extends StatelessWidget {
                         session: sessions[i],
                         onTap: () => onItemTap(sessions[i].id),
                         onDelete: () => _deleteSession(context, sessions[i]),
-                        onExport: () => _exportSession(context, sessions[i]),
+                        onExport: (type) => _exportSession(context, sessions[i], type),
                       ),
                     ),
             ),
@@ -351,14 +351,25 @@ class _HistoryPanel extends StatelessWidget {
     );
   }
 
-  Future<void> _exportSession(BuildContext context, TestSessionRow session) async {
+  Future<void> _exportSession(BuildContext context, TestSessionRow session, String exportType) async {
     final provider = context.read<TestSessionProvider>();
     final messenger = ScaffoldMessenger.of(context);
     try {
       messenger.showSnackBar(
         SnackBar(content: Text(tr('exportingSession')), behavior: SnackBarBehavior.floating),
       );
-      final path = await provider.exportSession(sessionId: session.id);
+
+      String? path;
+      if (exportType == 'downloads') {
+        path = await provider.exportSessionToDownloads(sessionId: session.id);
+      } else {
+        path = await provider.exportSessionWithPicker(sessionId: session.id);
+        if (path == null) {
+          messenger.hideCurrentSnackBar();
+          return;
+        }
+      }
+
       if (!context.mounted) return;
       messenger.showSnackBar(
         SnackBar(
@@ -380,7 +391,7 @@ class _HistoryItem extends StatelessWidget {
   final TestSessionRow session;
   final VoidCallback onTap;
   final VoidCallback onDelete;
-  final VoidCallback onExport;
+  final void Function(String) onExport;
 
   const _HistoryItem({
     required this.session,
@@ -444,13 +455,35 @@ class _HistoryItem extends StatelessWidget {
               ),
               ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 32),
-                child: IconButton(
+                child: PopupMenuButton<String>(
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
                   icon: Icon(Icons.archive_outlined, size: 16,
                       color: theme.colorScheme.primary),
-                  onPressed: onExport,
-                  tooltip: tr('exportSession'),
+                  tooltip: tr('exportSessionTitle'),
+                  onSelected: onExport,
+                  itemBuilder: (context) => [
+                    PopupMenuItem(
+                      value: 'downloads',
+                      child: Row(
+                        children: [
+                          const Icon(Icons.download, size: 16),
+                          const SizedBox(width: 8),
+                          Text(tr('exportToDownloads')),
+                        ],
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'custom',
+                      child: Row(
+                        children: [
+                          const Icon(Icons.folder_open, size: 16),
+                          const SizedBox(width: 8),
+                          Text(tr('exportToCustom')),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
               ConstrainedBox(

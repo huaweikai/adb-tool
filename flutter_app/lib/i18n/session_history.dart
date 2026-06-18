@@ -20,6 +20,10 @@ const _locSessionHistoryZh = <String, String>{
   'historyIssues': '{count} 个问题',
   'noArtifacts': '暂无附件',
   'readOnlySession': '只读',
+  'exportSessionTitle': '导出会话',
+  'exportToDownloads': '导出到下载文件夹',
+  'exportToCustom': '选择保存位置...',
+  'errorNoDownloadsDir': '无法访问下载文件夹',
 };
 
 const _locSessionHistoryEn = <String, String>{
@@ -42,4 +46,8 @@ const _locSessionHistoryEn = <String, String>{
   'historyIssues': '{count} issues',
   'noArtifacts': 'No artifacts',
   'readOnlySession': 'Read-only',
+  'exportSessionTitle': 'Export Session',
+  'exportToDownloads': 'Export to Downloads',
+  'exportToCustom': 'Choose Location...',
+  'errorNoDownloadsDir': 'Cannot access Downloads folder',
 };

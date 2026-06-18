@@ -28,7 +28,9 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../db/database.dart';
 import '../db/dao/test_sessions_dao.dart';
@@ -1020,6 +1022,89 @@ class TestSessionProvider extends ChangeNotifier {
           : result.stderr.toString());
     }
     return destination;
+  }
+
+  /// Export session to the Downloads folder.
+  Future<String> exportSessionToDownloads({String? sessionId}) async {
+    final id = sessionId ?? _requireActiveId();
+    final session = await _dao.findSessionById(id);
+    if (session == null) throw StateError(_t('errorNoSession'));
+
+    final downloadsDir = await _getDownloadsDirectory();
+    if (downloadsDir == null) {
+      throw Exception(_t('errorNoDownloadsDir'));
+    }
+
+    final sessionName = _sanitizeFileName(session.name);
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final targetPath = '${downloadsDir.path}/${sessionName}_$timestamp.zip';
+
+    return exportSession(targetPath: targetPath, sessionId: id);
+  }
+
+  /// Export session with user picking the save location via file picker.
+  Future<String?> exportSessionWithPicker({String? sessionId}) async {
+    final id = sessionId ?? _requireActiveId();
+    final session = await _dao.findSessionById(id);
+    if (session == null) throw StateError(_t('errorNoSession'));
+
+    final sessionName = _sanitizeFileName(session.name);
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final suggestedName = '${sessionName}_$timestamp.zip';
+
+    final location = await getSaveLocation(
+      suggestedName: suggestedName,
+      acceptedTypeGroups: [
+        const XTypeGroup(
+          label: 'ZIP Archive',
+          extensions: ['zip'],
+        ),
+      ],
+    );
+
+    if (location == null) return null;
+
+    final targetPath = location.path;
+    await _exporter.writeReport(session, db: _db);
+    final base = await _attachments.artifactsDir(id);
+
+    final result = await Process.run(
+      'zip',
+      ['-r', targetPath, '.'],
+      workingDirectory: base.path,
+    );
+    if (result.exitCode != 0) {
+      throw Exception(result.stderr.toString().isEmpty
+          ? _t('exportFailed')
+          : result.stderr.toString());
+    }
+    return targetPath;
+  }
+
+  Future<Directory?> _getDownloadsDirectory() async {
+    try {
+      final dir = await getDownloadsDirectory();
+      if (dir != null && dir.existsSync()) return dir;
+
+      if (Platform.isMacOS) {
+        return Directory('${Platform.environment['HOME']}/Downloads');
+      } else if (Platform.isLinux) {
+        return Directory('${Platform.environment['HOME']}/Downloads');
+      } else if (Platform.isWindows) {
+        final userProfile = Platform.environment['USERPROFILE'] ?? '';
+        return Directory('$userProfile\\Downloads');
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _sanitizeFileName(String name) {
+    return name
+        .replaceAll(RegExp(r'[<>:"/\\|?*]'), '_')
+        .replaceAll(RegExp(r'\s+'), '_')
+        .trim();
   }
 
   // ===== Internals ========================================================
