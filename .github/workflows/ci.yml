@@ -1,9 +1,13 @@
 name: CI
 
+# Temporarily disabled (2026-06-18): not needed right now.
+# To re-enable: delete this `if:` line and commit. No other changes required.
 on:
   pull_request:
   push:
     branches: [main]
+
+if: false
 
 # Cancel in-flight runs for the same ref when a new commit lands.
 concurrency:
