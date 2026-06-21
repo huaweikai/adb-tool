@@ -23,8 +23,19 @@ import 'adb_command_screen.dart';
 import 'test_session/test_session_hub_screen.dart';
 import 'test_config_screen.dart';
 import '../widgets/wireless_adb_dialog.dart';
+import 'screen_mirror_screen.dart';
 
-enum NavItem { status, logcat, files, apps, info, clipboard, command, session }
+enum NavItem {
+  status,
+  logcat,
+  files,
+  apps,
+  info,
+  clipboard,
+  command,
+  session,
+  mirror,
+}
 
 const _navConfig = {
   NavItem.status: _NavConfig(Icons.phone_android, 'status'),
@@ -35,6 +46,7 @@ const _navConfig = {
   NavItem.clipboard: _NavConfig(Icons.content_paste, 'clipboard'),
   NavItem.command: _NavConfig(Icons.terminal, 'command'),
   NavItem.session: _NavConfig(Icons.assignment_outlined, 'testSession'),
+  NavItem.mirror: _NavConfig(Icons.cast, 'screenMirror'),
 };
 
 class _NavConfig {
@@ -177,6 +189,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           screen = const AdbCommandScreen();
         case NavItem.session:
           screen = const TestSessionHubScreen();
+        case NavItem.mirror:
+          screen = const ScreenMirrorScreen();
       }
       _screens[key] = _CachedScreen(
         key: ValueKey(key),

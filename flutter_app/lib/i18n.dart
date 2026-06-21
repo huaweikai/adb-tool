@@ -30,6 +30,7 @@ part 'i18n/file_browser.dart';
 part 'i18n/device_info.dart';
 part 'i18n/clipboard.dart';
 part 'i18n/backend_log.dart';
+part 'i18n/screen_mirror.dart';
 
 String _lang = 'zh';
 
@@ -47,6 +48,7 @@ const _loc = <String, Map<String, String>>{
     ..._locDeviceInfoZh,
     ..._locClipboardZh,
     ..._locBackendLogZh,
+    ..._locScreenMirrorZh,
   },
   'en': {
     ..._locCommonEn,
@@ -61,6 +63,7 @@ const _loc = <String, Map<String, String>>{
     ..._locDeviceInfoEn,
     ..._locClipboardEn,
     ..._locBackendLogEn,
+    ..._locScreenMirrorEn,
   },
 };
 
