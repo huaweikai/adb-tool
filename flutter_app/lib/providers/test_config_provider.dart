@@ -68,15 +68,22 @@ class TestConfigProvider extends ChangeNotifier {
 
   Future<TestConfigImportResult> importFromJsonString(String source) async {
     final config = TestConfigFile.fromJsonString(source);
-    _apps = config.apps;
-    _currentAppId = _apps.isEmpty ? '' : _apps.first.id;
+    final imported = config.apps;
+    final existingByPackage = {for (final app in _apps) app.packageName: app};
+    for (final app in imported) {
+      existingByPackage[app.packageName] = app;
+    }
+    _apps = existingByPackage.values.toList();
+    if (_currentAppId == null || _currentAppId!.isEmpty) {
+      _currentAppId = _apps.isEmpty ? '' : _apps.first.id;
+    }
     _loaded = true;
     await _persist();
     notifyListeners();
     return TestConfigImportResult(
       configName: config.configName,
-      importedCount: config.apps.length,
-      hasSensitiveValues: config.apps.any(
+      importedCount: imported.length,
+      hasSensitiveValues: imported.any(
         (app) => app.testTexts.any((item) => item.sensitive),
       ),
     );
