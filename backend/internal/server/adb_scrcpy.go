@@ -45,13 +45,13 @@ func (b *syncBuffer) tail(n int) string {
 type scrcpyAction string
 
 const (
-	scrcpyActionHome      scrcpyAction = "home"
-	scrcpyActionBack      scrcpyAction = "back"
-	scrcpyActionRecents   scrcpyAction = "recents"
-	scrcpyActionPower     scrcpyAction = "power"
-	scrcpyActionVolumeUp  scrcpyAction = "volume_up"
+	scrcpyActionHome       scrcpyAction = "home"
+	scrcpyActionBack       scrcpyAction = "back"
+	scrcpyActionRecents    scrcpyAction = "recents"
+	scrcpyActionPower      scrcpyAction = "power"
+	scrcpyActionVolumeUp   scrcpyAction = "volume_up"
 	scrcpyActionVolumeDown scrcpyAction = "volume_down"
-	scrcpyActionMenu      scrcpyAction = "menu"
+	scrcpyActionMenu       scrcpyAction = "menu"
 )
 
 // androidKeyCode maps scrcpyAction to the Android `input keyevent`
@@ -98,13 +98,26 @@ func (s *scrcpyState) reset() {
 }
 
 // StartScrcpy spawns the bundled scrcpy binary attached to the given
-// serial. If a previous scrcpy instance is still running it's killed
-// first — only one scrcpy window per host makes sense.
+// serial, applying the user-supplied options. If a previous scrcpy
+// instance is still running it's killed first — only one scrcpy window
+// per host makes sense.
 //
 // The cwd of the subprocess is set to the scrcpy distribution directory
 // so scrcpy can locate scrcpy-server (and, on Windows, its sibling
 // DLLs) without needing SCRCPY_SERVER_PATH or PATH tricks.
-func (m *AdbManager) StartScrcpy(serial string) error {
+//
+// Pass an empty ScrcpyOptions to use DefaultScrcpyOptions() — useful
+// for the "I just want to start it" case from the shortcut button.
+func (m *AdbManager) StartScrcpy(serial string, opts ScrcpyOptions) error {
+	if err := opts.Validate(); err != nil {
+		return fmt.Errorf("invalid scrcpy options: %w", err)
+	}
+	// Fill zero values with defaults so the user gets a sensible
+	// baseline even if they only set a few fields.
+	if isZeroOptions(opts) {
+		opts = DefaultScrcpyOptions()
+	}
+
 	paths, err := FindScrcpy(m.scrcpyFS)
 	if err != nil {
 		return err
@@ -129,16 +142,12 @@ func (m *AdbManager) StartScrcpy(serial string) error {
 		m.scrcpy.reset()
 	}
 
-	args := []string{
-		"-s", serial,
-		"--no-window-decoration",
-		"--stay-awake",
-		// --max-size keeps the SDL window manageable on phones that
-		// ship 1440p+ panels. 1024 is a sane cap for the user to
-		// glance at while doing other things in the Flutter shell.
-		"--max-size", "1024",
-		"--bit-rate", "8M",
-	}
+	// Build the argv: serial selector first (scrcpy wants it before
+	// any flag), then the user options translated to scrcpy flags.
+	// Flag names are verified against scrcpy 4.0 cli.c — see
+	// ScrcpyOptions.Args() for the per-field documentation.
+	args := []string{"-s", serial}
+	args = append(args, opts.Args()...)
 
 	cmd := exec.Command(paths.Binary, args...)
 	cmd.Dir = paths.Dir
@@ -165,7 +174,9 @@ func (m *AdbManager) StartScrcpy(serial string) error {
 	m.scrcpy.started = time.Now()
 	m.scrcpy.done = done
 
-	Log.Add("scrcpy started", fmt.Sprintf("serial=%s arch=%s pid=%d", serial, paths.Arch, cmd.Process.Pid), nil, 0)
+	Log.Add("scrcpy started",
+		fmt.Sprintf("serial=%s arch=%s pid=%d args=%d", serial, paths.Arch, cmd.Process.Pid, len(args)),
+		nil, 0)
 
 	// Background goroutine: when scrcpy exits, clear state. This is the
 	// only way we notice a user closes the SDL window directly.

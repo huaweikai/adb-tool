@@ -1,7 +1,9 @@
 package server
 
 import (
+	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -14,6 +16,17 @@ import (
 // appear in the OS-level window scrcpy opens. The Flutter UI tells the
 // user "scrcpy window should be visible now" rather than trying to
 // embed the stream (which would need scrcpy-web + webview).
+//
+// Accepts an optional JSON body with a `scrcpy_options` field:
+//
+//	POST /api/scrcpy/start?serial=xxx
+//	Content-Type: application/json
+//	{"scrcpy_options": {"max_size": 1024, "video_bit_rate": "8M", ...}}
+//
+// If the body is missing or empty, defaults are used. Invalid options
+// return 400 with the validation error so the UI can surface it
+// (instead of a confusing "scrcpy exited with code 1" five seconds
+// later).
 func (s *Server) handleScrcpyStart(w http.ResponseWriter, r *http.Request) {
 	serial := r.URL.Query().Get("serial")
 	if serial == "" {
@@ -21,7 +34,28 @@ func (s *Server) handleScrcpyStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.adb.StartScrcpy(serial); err != nil {
+	opts := ScrcpyOptions{}
+	// Body is optional — empty body means "just use defaults".
+	if r.ContentLength != 0 && r.Body != nil {
+		var body struct {
+			Opts ScrcpyOptions `json:"scrcpy_options"`
+		}
+		dec := json.NewDecoder(r.Body)
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&body); err != nil {
+			writeAPIError(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())
+			return
+		}
+		opts = body.Opts
+	}
+
+	if err := s.adb.StartScrcpy(serial, opts); err != nil {
+		// Validate() errors get surfaced as 400, real spawn failures
+		// as 500. Caller can branch on status code.
+		if isValidationError(err) {
+			writeAPIError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -30,6 +64,17 @@ func (s *Server) handleScrcpyStart(w http.ResponseWriter, r *http.Request) {
 		"status": "started",
 		"serial": serial,
 	})
+}
+
+// isValidationError identifies errors coming from ScrcpyOptions.Validate
+// so we can return 400 instead of 500. The Validate wrapper prefixes
+// the error with "invalid scrcpy options:" so a substring check is
+// reliable.
+func isValidationError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "invalid scrcpy options:")
 }
 
 // handleScrcpyStop kills the running scrcpy subprocess. Returns 200

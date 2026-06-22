@@ -3,15 +3,29 @@
 //
 // The actual video stream is owned by scrcpy's own SDL window outside
 // our Flutter app — these endpoints just manage the subprocess lifecycle.
+import 'package:adb_tool/models/scrcpy_options.dart';
 import 'package:adb_tool/services/api_client.dart';
 
 mixin ScrcpyApi on ApiBase {
   /// Spawn the bundled scrcpy binary against the given device.
   /// Returns the response map (`{status, serial}`) on success.
-  Future<Map<String, dynamic>> startScrcpy(String serial) async {
+  ///
+  /// [options] is the per-device scrcpy config (mirrors the Go
+  /// ScrcpyOptions struct). Pass `ScrcpyOptions()` (zero value) to
+  /// use backend defaults. Pass `ScrcpyOptions.defaults()` to use
+  /// the same baseline the Go side ships with.
+  Future<Map<String, dynamic>> startScrcpy(
+    String serial, {
+    ScrcpyOptions? options,
+  }) async {
+    // Always send the body envelope so the backend can distinguish
+    // "no body at all" (use defaults) from "explicitly empty" (still
+    // use defaults). We send the wrapper unconditionally.
+    final body = (options ?? ScrcpyOptions()).toApiJson();
     final resp = await dio.post(
       '/api/scrcpy/start',
       queryParameters: {'serial': serial},
+      data: body,
     );
     throwIfNotOk(resp);
     return responseMap(resp);

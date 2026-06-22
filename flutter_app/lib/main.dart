@@ -12,6 +12,7 @@ import 'providers/device_provider.dart';
 import 'providers/locale_provider.dart';
 import 'providers/test_session_provider.dart';
 import 'providers/test_config_provider.dart';
+import 'providers/scrcpy_settings_provider.dart';
 import 'utils/legacy_session_cleanup.dart';
 
 Future<void> main() async {
@@ -52,6 +53,9 @@ Future<void> main() async {
         ),
         ChangeNotifierProvider<TestConfigProvider>(
           create: (_) => TestConfigProvider()..load(),
+        ),
+        ChangeNotifierProvider<ScrcpySettingsProvider>(
+          create: (_) => ScrcpySettingsProvider(),
         ),
       ],
       child: const AdbToolApp(),
