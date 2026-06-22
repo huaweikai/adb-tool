@@ -12,8 +12,8 @@ void main() {
       final p2 = SessionFormatters.planItemId(s2, 1);
 
       expect(p1, isNot(equals(p2)));
-      expect(p1, equals('$s1_STEP-001'));
-      expect(p2, equals('$s2_STEP-001'));
+      expect(p1, equals('${s1}_STEP-001'));
+      expect(p2, equals('${s2}_STEP-001'));
     });
 
     test('planItemId includes session prefix and step number', () {
