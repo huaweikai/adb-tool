@@ -1,12 +1,11 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import '../db/database.dart';
 import '../services/api_client.dart';
 import '../i18n.dart';
 import '../providers/locale_provider.dart';
 import '../providers/device_provider.dart';
+import '../providers/clipboard_history_provider.dart';
 
 class ClipboardScreen extends StatefulWidget {
   const ClipboardScreen({super.key});
@@ -16,9 +15,6 @@ class ClipboardScreen extends StatefulWidget {
 }
 
 class _ClipboardScreenState extends State<ClipboardScreen> {
-  static const String _historyPrefsKey = 'clipboard_sent_history';
-  static const int _historyLimit = 20;
-
   String? get _selectedSerial => context.read<DeviceSerialScope>().serial;
 
   final TextEditingController _textCtrl = TextEditingController();
@@ -30,13 +26,11 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
   bool _uninstalling = false;
   String? _status;
   bool _success = false;
-  final List<_SentItem> _sentHistory = [];
 
   @override
   void initState() {
     super.initState();
     _textCtrl.addListener(_onTextChanged);
-    _loadSentHistory();
     _checkInstalled();
   }
 
@@ -50,41 +44,6 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
 
   void _onTextChanged() {
     setState(() {});
-  }
-
-  Future<void> _loadSentHistory() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final rawItems = prefs.getStringList(_historyPrefsKey) ?? const [];
-      final items =
-          rawItems.map(_SentItem.tryDecode).whereType<_SentItem>().toList();
-      _trimHistory(items);
-      if (!mounted) return;
-      setState(() {
-        _sentHistory
-          ..clear()
-          ..addAll(items);
-      });
-    } catch (_) {}
-  }
-
-  Future<void> _saveSentHistory() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setStringList(
-        _historyPrefsKey,
-        _sentHistory.map((item) => item.encode()).toList(),
-      );
-    } catch (_) {}
-  }
-
-  void _trimHistory(List<_SentItem> items) {
-    var normalCount = 0;
-    items.removeWhere((item) {
-      if (item.favorite) return false;
-      normalCount += 1;
-      return normalCount > _historyLimit;
-    });
   }
 
   Future<void> _checkInstalled() async {
@@ -158,13 +117,9 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
     try {
       await context.read<ApiClient>().sendClipboard(_selectedSerial!, text);
       if (!mounted) return;
-      final wasFavorite = _sentHistory.any(
-        (item) => item.text == text && item.favorite,
-      );
-      _sentHistory.removeWhere((item) => item.text == text);
-      _sentHistory.insert(0, _SentItem(text, DateTime.now(), wasFavorite));
-      _trimHistory(_sentHistory);
-      await _saveSentHistory();
+      // Persist to history (DB-backed). Dedup + favorite-preserve is
+      // handled inside the DAO; we just fire and forget.
+      await context.read<ClipboardHistoryProvider>().recordSent(text);
       if (!mounted) return;
       setState(() {
         _sending = false;
@@ -223,20 +178,15 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
     _focusNode.requestFocus();
   }
 
-  Future<void> _toggleFavorite(_SentItem item) async {
-    final index = _sentHistory.indexOf(item);
-    if (index < 0) return;
-    setState(() {
-      _sentHistory[index] = item.copyWith(favorite: !item.favorite);
-      _trimHistory(_sentHistory);
-    });
-    await _saveSentHistory();
+  Future<void> _toggleFavorite(SentClipboardEntryData item) async {
+    await context.read<ClipboardHistoryProvider>().toggleFavorite(item.id);
   }
 
   @override
   Widget build(BuildContext context) {
     context.watch<LocaleProvider>();
     final theme = Theme.of(context);
+    final entries = context.watch<ClipboardHistoryProvider>().entries;
 
     if (_selectedSerial == null) {
       return Center(
@@ -266,11 +216,11 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
             child: _buildButtonsAndStatus(theme),
           ),
         ),
-        if (_sentHistory.isNotEmpty)
+        if (entries.isNotEmpty)
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
             sliver: SliverToBoxAdapter(
-              child: _buildSentHistory(theme),
+              child: _buildSentHistory(theme, entries),
             ),
           ),
         const SliverPadding(padding: EdgeInsets.only(bottom: 20)),
@@ -435,7 +385,9 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
                   ? const SizedBox(
                       width: 14,
                       height: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                      ),
                     )
                   : const Icon(Icons.delete_outline, size: 16),
               label: Text(
@@ -480,7 +432,7 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
     );
   }
 
-  Widget _buildSentHistory(ThemeData theme) {
+  Widget _buildSentHistory(ThemeData theme, List<SentClipboardEntryData> entries) {
     return Card(
       margin: EdgeInsets.zero,
       child: Padding(
@@ -507,7 +459,7 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
               ],
             ),
             const SizedBox(height: 8),
-            ..._sentHistory
+            ...entries
                 .take(10)
                 .map((item) => _buildHistoryItem(theme, item)),
           ],
@@ -516,12 +468,13 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
     );
   }
 
-  Widget _buildHistoryItem(ThemeData theme, _SentItem item) {
+  Widget _buildHistoryItem(ThemeData theme, SentClipboardEntryData item) {
+    final time = item.sentAt;
     final timeStr =
-        '${item.time.hour.toString().padLeft(2, '0')}:${item.time.minute.toString().padLeft(2, '0')}:${item.time.second.toString().padLeft(2, '0')}';
+        '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}:${time.second.toString().padLeft(2, '0')}';
     return InkWell(
       borderRadius: BorderRadius.circular(6),
-      onTap: () => _useHistory(item.text),
+      onTap: () => _useHistory(item.content),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
         child: Row(
@@ -538,7 +491,7 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                item.text,
+                item.content,
                 style: const TextStyle(fontSize: 12),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
@@ -568,43 +521,5 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
         ),
       ),
     );
-  }
-}
-
-class _SentItem {
-  final String text;
-  final DateTime time;
-  final bool favorite;
-
-  const _SentItem(this.text, this.time, [this.favorite = false]);
-
-  _SentItem copyWith({bool? favorite}) {
-    return _SentItem(text, time, favorite ?? this.favorite);
-  }
-
-  String encode() {
-    return jsonEncode({
-      'text': text,
-      'time': time.toIso8601String(),
-      'favorite': favorite,
-    });
-  }
-
-  static _SentItem? tryDecode(String raw) {
-    try {
-      final decoded = jsonDecode(raw);
-      if (decoded is! Map<String, dynamic>) return null;
-      final text = decoded['text'];
-      final time = decoded['time'];
-      final favorite = decoded['favorite'];
-      if (text is! String || time is! String) return null;
-      return _SentItem(
-        text,
-        DateTime.parse(time),
-        favorite is bool && favorite,
-      );
-    } catch (_) {
-      return null;
-    }
   }
 }
