@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -130,7 +131,7 @@ func (m *AdbManager) StartScrcpy(serial string, opts ScrcpyOptions) error {
 	// that failure to the caller — the user asked for a fresh start and
 	// the stale process is in the way.
 	if m.scrcpy.cmd != nil && m.scrcpy.cmd.Process != nil {
-		if killErr := m.scrcpy.cmd.Process.Kill(); killErr != nil {
+		if killErr := m.scrcpy.cmd.Process.Signal(syscall.SIGTERM); killErr != nil {
 			Log.Add("scrcpy stale kill", "", killErr, 0)
 		}
 		// Best-effort drain so cmd.Process isn't reused.
@@ -219,8 +220,9 @@ func describeExit(err error) string {
 	return err.Error()
 }
 
-// StopScrcpy kills the running scrcpy subprocess (if any). Safe to call
-// when nothing is running — returns nil in that case.
+// StopScrcpy gracefully stops the running scrcpy subprocess (if any).
+// Sends SIGTERM so scrcpy can finalize its recording file before exiting.
+// Safe to call when nothing is running — returns nil in that case.
 func (m *AdbManager) StopScrcpy() error {
 	m.scrcpy.mu.Lock()
 	cmd := m.scrcpy.cmd
@@ -231,17 +233,16 @@ func (m *AdbManager) StopScrcpy() error {
 		return nil
 	}
 
-	if err := cmd.Process.Kill(); err != nil {
-		// Process already gone — that's fine, treat as success.
-		Log.Add("scrcpy stop kill", "", err, 0)
+	if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
+		Log.Add("scrcpy stop signal", "", err, 0)
 		return nil
 	}
 
 	select {
 	case <-done:
-	case <-time.After(3 * time.Second):
-		// Force-kill if graceful stop is too slow.
-		Log.Add("scrcpy stop timeout", "forcing kill after 3s", nil, 3*time.Second)
+		Log.Add("scrcpy stopped", "graceful", nil, 0)
+	case <-time.After(10 * time.Second):
+		Log.Add("scrcpy stop timeout", "forcing kill after 10s", nil, 10*time.Second)
 		_ = cmd.Process.Kill()
 	}
 
