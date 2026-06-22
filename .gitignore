@@ -5,6 +5,12 @@
 flutter_app/build/
 flutter_app/.dart_tool/
 flutter_app/.idea/
+
+# Compose build
+compose_app/build/
+compose_app/**/build/
+compose_app/.gradle/
+compose_app/.kotlin/
 flutter_app/pubspec.lock
 flutter_app/devtools_options.yaml
 flutter_app/analyze_out.txt
