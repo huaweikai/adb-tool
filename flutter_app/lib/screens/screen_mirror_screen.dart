@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../i18n.dart';
@@ -102,12 +103,31 @@ class _ScreenMirrorScreenState extends State<ScreenMirrorScreen> {
   Future<void> _onStart() async {
     final s = _serial;
     if (s == null || _busy) return;
+    final opts = context.read<ScrcpySettingsProvider>().current;
+    if (opts == null) {
+      return;
+    }
+    final recordPath = opts.record;
+    if (opts.recordEnabled && (recordPath ?? '').isNotEmpty) {
+      final exists = await Directory(recordPath!).exists();
+      if (!exists) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(tr('scrcpyRecordFolderNotFound')),
+              duration: const Duration(seconds: 5),
+            ),
+          );
+        }
+        return;
+      }
+    }
     setState(() => _busy = true);
     try {
       // Pull the current per-device settings and ship them to the
       // backend along with the start request. The backend applies
       // defaults if the user hasn't touched anything yet.
-      final opts = context.read<ScrcpySettingsProvider>().current;
+      if (!mounted) return;
       await context.read<ApiClient>().startScrcpy(s, options: opts);
       await _refreshStatus();
       if (mounted) {

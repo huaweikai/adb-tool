@@ -89,8 +89,10 @@ const _locScreenMirrorZh = <String, String>{
 
   // Recording
   'scrcpyRecordEnable': '同时录制到文件',
-  'scrcpyRecordPath': '保存路径',
+  'scrcpyRecordFolder': '保存目录',
+  'scrcpyChangeFolder': '更换目录',
   'scrcpyRecordFormat': '格式',
+  'scrcpyRecordFolderNotFound': '录屏保存目录不存在，请重新选择',
   'scrcpyTimeLimit': '录制时长',
 
   // Shortcut reference (scrcpy built-in shortcuts)
@@ -188,8 +190,10 @@ const _locScreenMirrorEn = <String, String>{
   'scrcpyCameraTorch': 'Torch',
 
   'scrcpyRecordEnable': 'Record to file',
-  'scrcpyRecordPath': 'Save path',
+  'scrcpyRecordFolder': 'Save folder',
+  'scrcpyChangeFolder': 'Change folder',
   'scrcpyRecordFormat': 'Format',
+  'scrcpyRecordFolderNotFound': 'Recording folder does not exist, please reselect',
   'scrcpyTimeLimit': 'Time limit',
 
   'scrcpyRefTitle': 'Scrcpy shortcuts',

@@ -2,8 +2,10 @@ package server
 
 import (
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // ScrcpyOptions is the typed, user-configurable surface of the scrcpy
@@ -101,7 +103,8 @@ type ScrcpyOptions struct {
 	ShortcutMod       string `json:"shortcut_mod,omitempty"`
 
 	// ── Recording (doc/recording.md) ─────────────────────────────
-	Record       string `json:"record,omitempty"`        // absolute path, e.g. /tmp/foo.mp4
+	RecordEnabled bool   `json:"record_enabled"`          // master switch for recording
+	Record       string `json:"record,omitempty"`        // directory path; file name auto-generated as record_yyyyMMdd_HHmmss.{ext}
 	RecordFormat string `json:"record_format,omitempty"` // mp4|mkv|opus|flac|wav|...
 	TimeLimit    int    `json:"time_limit"`              // seconds, 0 = no limit
 	NoPlayback   bool   `json:"no_playback"`
@@ -351,8 +354,13 @@ func (o ScrcpyOptions) Args() []string {
 	}
 
 	// ── Recording ────────────────────────────────────────────────
-	if o.Record != "" {
-		args = append(args, "--record="+o.Record)
+	if o.RecordEnabled && o.Record != "" {
+		ext := o.RecordFormat
+		if ext == "" {
+			ext = "mp4"
+		}
+		filename := "record_" + time.Now().Format("20060102_150405") + "." + ext
+		args = append(args, "--record="+filepath.Join(o.Record, filename))
 	}
 	if o.RecordFormat != "" {
 		args = append(args, "--record-format="+o.RecordFormat)

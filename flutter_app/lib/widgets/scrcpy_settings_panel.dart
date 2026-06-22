@@ -13,6 +13,7 @@
 //     doesn't get scroll-fatigue on a small window.
 //   * No "Apply" button — every change is persisted + sent on next
 //     Start. scrcpy 4.0 doesn't support live mutation of most flags.
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../i18n.dart';
@@ -30,17 +31,23 @@ class ScrcpySettingsPanel extends StatelessWidget {
   }
 }
 
-class _PanelBody extends StatelessWidget {
+class _PanelBody extends StatefulWidget {
   final ScrcpyOptions opts;
   const _PanelBody({required this.opts});
 
-  void _mutate(BuildContext context, ScrcpyOptions Function(ScrcpyOptions) f) {
+  @override
+  State<_PanelBody> createState() => _PanelBodyState();
+}
+
+class _PanelBodyState extends State<_PanelBody> {
+  void _mutate(ScrcpyOptions Function(ScrcpyOptions) f) {
     context.read<ScrcpySettingsProvider>().update(f);
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final opts = widget.opts;
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       children: [
@@ -72,7 +79,7 @@ class _PanelBody extends StatelessWidget {
           ],
           labelBuilder: (v) =>
               v == 'display' ? tr('scrcpySourceDisplay') : tr('scrcpySourceCamera'),
-          onChanged: (v) => _mutate(context, (o) => o.copyWith(videoSource: v)),
+          onChanged: (v) => _mutate((o) => o.copyWith(videoSource: v)),
         ),
         if (opts.videoSource == 'camera') ..._cameraSection(context, opts),
 
@@ -87,14 +94,13 @@ class _PanelBody extends StatelessWidget {
           suffix: 'px',
           allowUnset: true,
           isUnset: opts.maxSize == 0,
-          onChanged: (v) => _mutate(context, (o) =>
-              o.copyWith(maxSize: v.round())),
+          onChanged: (v) => _mutate((o) => o.copyWith(maxSize: v.round())),
         ),
         _DropdownRow<String>(
           label: tr('scrcpyBitRate'),
           value: opts.videoBitRate ?? '8M',
           options: const ['1M', '2M', '4M', '8M', '12M', '16M', '24M'],
-          onChanged: (v) => _mutate(context, (o) => o.copyWith(videoBitRate: v)),
+          onChanged: (v) => _mutate((o) => o.copyWith(videoBitRate: v)),
         ),
         _SliderRow(
           label: tr('scrcpyMaxFps'),
@@ -105,14 +111,13 @@ class _PanelBody extends StatelessWidget {
           suffix: 'fps',
           allowUnset: false,
           isUnset: false,
-          onChanged: (v) => _mutate(context, (o) =>
-              o.copyWith(maxFps: v.round())),
+          onChanged: (v) => _mutate((o) => o.copyWith(maxFps: v.round())),
         ),
         _DropdownRow<String>(
           label: tr('scrcpyCodec'),
           value: opts.videoCodec ?? 'h264',
           options: const ['h264', 'h265', 'av1'],
-          onChanged: (v) => _mutate(context, (o) => o.copyWith(videoCodec: v)),
+          onChanged: (v) => _mutate((o) => o.copyWith(videoCodec: v)),
         ),
 
         // ── Audio ────────────────────────────────────────────────
@@ -122,7 +127,7 @@ class _PanelBody extends StatelessWidget {
           dense: true,
           title: Text(tr('scrcpyNoAudio')),
           value: opts.noAudio,
-          onChanged: (v) => _mutate(context, (o) => o.copyWith(noAudio: v)),
+          onChanged: (v) => _mutate((o) => o.copyWith(noAudio: v)),
         ),
         if (!opts.noAudio)
           _DropdownRow<String>(
@@ -132,7 +137,7 @@ class _PanelBody extends StatelessWidget {
               'output', 'playback', 'mic', 'mic-unprocessed',
               'mic-camcorder', 'mic-voice-recognition', 'mic-voice-communication',
             ],
-            onChanged: (v) => _mutate(context, (o) => o.copyWith(audioSource: v)),
+            onChanged: (v) => _mutate((o) => o.copyWith(audioSource: v)),
           ),
 
         // ── Window ───────────────────────────────────────────────
@@ -142,29 +147,28 @@ class _PanelBody extends StatelessWidget {
           dense: true,
           title: Text(tr('scrcpyBorderless')),
           value: opts.borderless,
-          onChanged: (v) => _mutate(context, (o) => o.copyWith(borderless: v)),
+          onChanged: (v) => _mutate((o) => o.copyWith(borderless: v)),
         ),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           dense: true,
           title: Text(tr('scrcpyAlwaysOnTop')),
           value: opts.alwaysOnTop,
-          onChanged: (v) => _mutate(context, (o) => o.copyWith(alwaysOnTop: v)),
+          onChanged: (v) => _mutate((o) => o.copyWith(alwaysOnTop: v)),
         ),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           dense: true,
           title: Text(tr('scrcpyFullscreen')),
           value: opts.fullscreen,
-          onChanged: (v) => _mutate(context, (o) => o.copyWith(fullscreen: v)),
+          onChanged: (v) => _mutate((o) => o.copyWith(fullscreen: v)),
         ),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           dense: true,
           title: Text(tr('scrcpyDisableScreensaver')),
           value: opts.disableScreensaver,
-          onChanged: (v) => _mutate(
-              context, (o) => o.copyWith(disableScreensaver: v)),
+          onChanged: (v) => _mutate((o) => o.copyWith(disableScreensaver: v)),
         ),
 
         // ── Control ──────────────────────────────────────────────
@@ -173,13 +177,13 @@ class _PanelBody extends StatelessWidget {
           label: tr('scrcpyKeyboard'),
           value: opts.keyboard ?? 'sdk',
           options: const ['sdk', 'uhid', 'aoa', 'disabled'],
-          onChanged: (v) => _mutate(context, (o) => o.copyWith(keyboard: v)),
+          onChanged: (v) => _mutate((o) => o.copyWith(keyboard: v)),
         ),
         _DropdownRow<String>(
           label: tr('scrcpyMouse'),
           value: opts.mouse ?? 'sdk',
           options: const ['sdk', 'uhid', 'aoa', 'disabled'],
-          onChanged: (v) => _mutate(context, (o) => o.copyWith(mouse: v)),
+          onChanged: (v) => _mutate((o) => o.copyWith(mouse: v)),
         ),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
@@ -188,7 +192,7 @@ class _PanelBody extends StatelessWidget {
           subtitle: Text(tr('scrcpyNoControlHint'),
               style: theme.textTheme.bodySmall),
           value: opts.noControl,
-          onChanged: (v) => _mutate(context, (o) => o.copyWith(noControl: v)),
+          onChanged: (v) => _mutate((o) => o.copyWith(noControl: v)),
         ),
 
         // ── Device ───────────────────────────────────────────────
@@ -198,7 +202,7 @@ class _PanelBody extends StatelessWidget {
           dense: true,
           title: Text(tr('scrcpyStayAwake')),
           value: opts.stayAwake,
-          onChanged: (v) => _mutate(context, (o) => o.copyWith(stayAwake: v)),
+          onChanged: (v) => _mutate((o) => o.copyWith(stayAwake: v)),
         ),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
@@ -207,8 +211,7 @@ class _PanelBody extends StatelessWidget {
           subtitle: Text(tr('scrcpyTurnScreenOffHint'),
               style: theme.textTheme.bodySmall),
           value: opts.turnScreenOff,
-          onChanged: (v) => _mutate(
-              context, (o) => o.copyWith(turnScreenOff: v)),
+          onChanged: (v) => _mutate((o) => o.copyWith(turnScreenOff: v)),
         ),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
@@ -217,15 +220,14 @@ class _PanelBody extends StatelessWidget {
           subtitle: Text(tr('scrcpyKeepActiveHint'),
               style: theme.textTheme.bodySmall),
           value: opts.keepActive,
-          onChanged: (v) => _mutate(context, (o) => o.copyWith(keepActive: v)),
+          onChanged: (v) => _mutate((o) => o.copyWith(keepActive: v)),
         ),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           dense: true,
           title: Text(tr('scrcpyShowTouches')),
           value: opts.showTouches,
-          onChanged: (v) => _mutate(
-              context, (o) => o.copyWith(showTouches: v)),
+          onChanged: (v) => _mutate((o) => o.copyWith(showTouches: v)),
         ),
 
         // ── Recording (M2) ───────────────────────────────────────
@@ -234,46 +236,58 @@ class _PanelBody extends StatelessWidget {
           contentPadding: EdgeInsets.zero,
           dense: true,
           title: Text(tr('scrcpyRecordEnable')),
-          value: (opts.record ?? '').isNotEmpty,
-          onChanged: (v) {
-            _mutate(context, (current) {
-              if (v) {
-                // Opening the switch: if record is null/empty (closed
-                // state), use the default path. Plain `current.record
-                // ?? _defaultRecordPath()` is NOT enough because the
-                // closed state uses '' (empty string), not null, and
-                // '' is non-null so ?? won't fall back.
-                final saved = current.record;
-                return current.copyWith(
-                  record: (saved == null || saved.isEmpty)
-                      ? _defaultRecordPath()
-                      : saved,
-                  recordFormat: current.recordFormat ?? 'mp4',
-                );
+          value: opts.recordEnabled,
+          onChanged: (v) async {
+            if (v) {
+              if ((opts.record ?? '').isEmpty) {
+                final dir = await getDirectoryPath();
+                if (dir != null && mounted) {
+                  _mutate((current) => current.copyWith(
+                        recordEnabled: true,
+                        record: dir,
+                        recordFormat: current.recordFormat ?? 'mp4',
+                      ));
+                }
+              } else {
+                _mutate((current) => current.copyWith(
+                      recordEnabled: true,
+                      recordFormat: current.recordFormat ?? 'mp4',
+                    ));
               }
-              // Closing: blank the record. recordFormat keeps its
-              // previous value (copyWith's `??` semantics preserve
-              // null arguments), which is fine — Switch state only
-              // looks at `record`.
-              return current.copyWith(
-                record: '',
-                recordFormat: null,
-              );
-            });
+            } else {
+              _mutate((current) => current.copyWith(recordEnabled: false));
+            }
           },
         ),
-        if ((opts.record ?? '').isNotEmpty) ...[
-          _TextFieldRow(
-            label: tr('scrcpyRecordPath'),
-            value: opts.record ?? '',
-            onChanged: (v) => _mutate(context, (o) => o.copyWith(record: v)),
+        if (opts.recordEnabled) ...[
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            title: Text(tr('scrcpyRecordFolder')),
+            subtitle: Text(
+              opts.record ?? '',
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+            trailing: IconButton(
+              icon: const Icon(Icons.folder_open),
+              tooltip: tr('scrcpyChangeFolder'),
+              onPressed: () async {
+                final dir = await getDirectoryPath();
+                if (dir != null && mounted) {
+                  _mutate((o) => o.copyWith(record: dir));
+                }
+              },
+            ),
           ),
           _DropdownRow<String>(
             label: tr('scrcpyRecordFormat'),
             value: opts.recordFormat ?? 'mp4',
             options: const ['mp4', 'mkv', 'm4a', 'opus', 'flac', 'wav'],
-            onChanged: (v) =>
-                _mutate(context, (o) => o.copyWith(recordFormat: v)),
+            onChanged: (v) => _mutate((o) => o.copyWith(recordFormat: v)),
           ),
           _SliderRow(
             label: tr('scrcpyTimeLimit'),
@@ -284,8 +298,7 @@ class _PanelBody extends StatelessWidget {
             suffix: opts.timeLimit == 0 ? tr('scrcpyUnlimited') : 's',
             allowUnset: true,
             isUnset: opts.timeLimit == 0,
-            onChanged: (v) => _mutate(context, (o) =>
-                o.copyWith(timeLimit: v.round())),
+            onChanged: (v) => _mutate((o) => o.copyWith(timeLimit: v.round())),
           ),
         ],
 
@@ -300,7 +313,7 @@ class _PanelBody extends StatelessWidget {
         label: tr('scrcpyCameraFacing'),
         value: opts.cameraFacing ?? 'back',
         options: const ['front', 'back', 'external', 'any'],
-        onChanged: (v) => _mutate(context, (o) => o.copyWith(cameraFacing: v)),
+        onChanged: (v) => _mutate((o) => o.copyWith(cameraFacing: v)),
       ),
       _SliderRow(
         label: tr('scrcpyCameraFps'),
@@ -311,25 +324,16 @@ class _PanelBody extends StatelessWidget {
         suffix: 'fps',
         allowUnset: false,
         isUnset: false,
-        onChanged: (v) => _mutate(context, (o) =>
-            o.copyWith(cameraFps: v.round())),
+        onChanged: (v) => _mutate((o) => o.copyWith(cameraFps: v.round())),
       ),
       SwitchListTile(
         contentPadding: EdgeInsets.zero,
         dense: true,
         title: Text(tr('scrcpyCameraTorch')),
         value: opts.cameraTorch,
-        onChanged: (v) =>
-            _mutate(context, (o) => o.copyWith(cameraTorch: v)),
+        onChanged: (v) => _mutate((o) => o.copyWith(cameraTorch: v)),
       ),
     ];
-  }
-
-  String _defaultRecordPath() {
-    // Cross-platform best-effort default. On macOS/iOS/Android, path_provider
-    // would give us the real Documents dir, but we don't need the recording
-    // feature to be production-grade in M2 — the user can edit the path.
-    return 'screen-record.mp4';
   }
 }
 

@@ -29,6 +29,13 @@
 //        longer read by the UI. (We're formatting the DB during the
 //        refactor anyway, so v3→v4 migration isn't strictly needed
 //        — the onCreate path will rebuild cleanly.)
+//   v5 — moves two previously-SharedPreferences-backed features into
+//        the DB:
+//          * scrcpy_options (per device)
+//          * clipboard_history (global, shared across all devices)
+//        on first open we wipe the corresponding SharedPreferences keys
+//        (scrcpy_opts_*, clipboard_sent_history) so the two stores
+//        don't drift. No data migration — fresh start by user request.
 import 'dart:io';
 
 import 'package:drift/drift.dart';
@@ -39,10 +46,14 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/test_session.dart';
 import 'dao/app_states_dao.dart';
+import 'dao/sent_clipboard_entry_dao.dart';
 import 'dao/saved_devices_dao.dart';
+import 'dao/scrcpy_options_dao.dart';
 import 'dao/test_sessions_dao.dart';
 import 'tables/app_states.dart';
+import 'tables/sent_clipboard_entry.dart';
 import 'tables/saved_devices.dart';
+import 'tables/scrcpy_options.dart';
 import 'tables/test_session_artifacts.dart';
 import 'tables/test_session_events.dart';
 import 'tables/test_session_issue_artifacts.dart';
@@ -57,6 +68,8 @@ part 'database.g.dart';
   tables: [
     SavedDevices,
     AppStates,
+    ScrcpyOptions_,
+    SentClipboardEntry,
     TestSessions,
     TestSessionEvents,
     TestSessionArtifacts,
@@ -65,7 +78,13 @@ part 'database.g.dart';
     TestSessionPlanItems,
     TestSessionIssueArtifacts,
   ],
-  daos: [SavedDevicesDao, AppStatesDao, TestSessionsDao],
+  daos: [
+    SavedDevicesDao,
+    AppStatesDao,
+    ScrcpyOptionsDao,
+    SentClipboardEntryDao,
+    TestSessionsDao,
+  ],
 )
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
@@ -73,7 +92,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(QueryExecutor executor) : super(executor);
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -102,6 +121,14 @@ class AppDatabase extends _$AppDatabase {
             await customStatement(
               'CREATE INDEX IF NOT EXISTS idx_sessions_recording_owner '
               'ON test_sessions (device_serial) WHERE screen_record_owner IS NOT NULL',
+            );
+          }
+          if (from < 5) {
+            await m.createTable(scrcpyOptions);
+            await m.createTable(sentClipboardEntry);
+            await customStatement(
+              'CREATE INDEX IF NOT EXISTS idx_clipboard_history_favorites '
+              'ON sent_clipboard_entry (sent_at DESC) WHERE favorite = 1',
             );
           }
         },

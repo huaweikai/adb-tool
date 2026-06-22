@@ -886,6 +886,3628 @@ class AppStatesCompanion extends UpdateCompanion<AppState> {
   }
 }
 
+class $ScrcpyOptions_Table extends ScrcpyOptions_
+    with TableInfo<$ScrcpyOptions_Table, ScrcpyOptions_Data> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $ScrcpyOptions_Table(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _serialMeta = const VerificationMeta('serial');
+  @override
+  late final GeneratedColumn<String> serial = GeneratedColumn<String>(
+      'serial', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _maxSizeMeta =
+      const VerificationMeta('maxSize');
+  @override
+  late final GeneratedColumn<int> maxSize = GeneratedColumn<int>(
+      'max_size', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _videoBitRateMeta =
+      const VerificationMeta('videoBitRate');
+  @override
+  late final GeneratedColumn<String> videoBitRate = GeneratedColumn<String>(
+      'video_bit_rate', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _maxFpsMeta = const VerificationMeta('maxFps');
+  @override
+  late final GeneratedColumn<int> maxFps = GeneratedColumn<int>(
+      'max_fps', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _videoCodecMeta =
+      const VerificationMeta('videoCodec');
+  @override
+  late final GeneratedColumn<String> videoCodec = GeneratedColumn<String>(
+      'video_codec', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _videoEncoderMeta =
+      const VerificationMeta('videoEncoder');
+  @override
+  late final GeneratedColumn<String> videoEncoder = GeneratedColumn<String>(
+      'video_encoder', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _videoBufferMeta =
+      const VerificationMeta('videoBuffer');
+  @override
+  late final GeneratedColumn<int> videoBuffer = GeneratedColumn<int>(
+      'video_buffer', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _noMipmapsMeta =
+      const VerificationMeta('noMipmaps');
+  @override
+  late final GeneratedColumn<bool> noMipmaps = GeneratedColumn<bool>(
+      'no_mipmaps', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: true,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('CHECK ("no_mipmaps" IN (0, 1))'));
+  static const VerificationMeta _captureOrientationMeta =
+      const VerificationMeta('captureOrientation');
+  @override
+  late final GeneratedColumn<String> captureOrientation =
+      GeneratedColumn<String>('capture_orientation', aliasedName, true,
+          type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _displayOrientationMeta =
+      const VerificationMeta('displayOrientation');
+  @override
+  late final GeneratedColumn<String> displayOrientation =
+      GeneratedColumn<String>('display_orientation', aliasedName, true,
+          type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _cropMeta = const VerificationMeta('crop');
+  @override
+  late final GeneratedColumn<String> crop = GeneratedColumn<String>(
+      'crop', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _angleMeta = const VerificationMeta('angle');
+  @override
+  late final GeneratedColumn<int> angle = GeneratedColumn<int>(
+      'angle', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _displayIdMeta =
+      const VerificationMeta('displayId');
+  @override
+  late final GeneratedColumn<int> displayId = GeneratedColumn<int>(
+      'display_id', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _renderFitMeta =
+      const VerificationMeta('renderFit');
+  @override
+  late final GeneratedColumn<String> renderFit = GeneratedColumn<String>(
+      'render_fit', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _backgroundColorMeta =
+      const VerificationMeta('backgroundColor');
+  @override
+  late final GeneratedColumn<String> backgroundColor = GeneratedColumn<String>(
+      'background_color', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _minSizeAlignmentMeta =
+      const VerificationMeta('minSizeAlignment');
+  @override
+  late final GeneratedColumn<int> minSizeAlignment = GeneratedColumn<int>(
+      'min_size_alignment', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _noDownsizeOnErrorMeta =
+      const VerificationMeta('noDownsizeOnError');
+  @override
+  late final GeneratedColumn<bool> noDownsizeOnError = GeneratedColumn<bool>(
+      'no_downsize_on_error', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'CHECK ("no_downsize_on_error" IN (0, 1))'));
+  static const VerificationMeta _printFpsMeta =
+      const VerificationMeta('printFps');
+  @override
+  late final GeneratedColumn<bool> printFps = GeneratedColumn<bool>(
+      'print_fps', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: true,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('CHECK ("print_fps" IN (0, 1))'));
+  static const VerificationMeta _noAudioMeta =
+      const VerificationMeta('noAudio');
+  @override
+  late final GeneratedColumn<bool> noAudio = GeneratedColumn<bool>(
+      'no_audio', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: true,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('CHECK ("no_audio" IN (0, 1))'));
+  static const VerificationMeta _noAudioPlaybackMeta =
+      const VerificationMeta('noAudioPlayback');
+  @override
+  late final GeneratedColumn<bool> noAudioPlayback = GeneratedColumn<bool>(
+      'no_audio_playback', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'CHECK ("no_audio_playback" IN (0, 1))'));
+  static const VerificationMeta _audioSourceMeta =
+      const VerificationMeta('audioSource');
+  @override
+  late final GeneratedColumn<String> audioSource = GeneratedColumn<String>(
+      'audio_source', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _audioCodecMeta =
+      const VerificationMeta('audioCodec');
+  @override
+  late final GeneratedColumn<String> audioCodec = GeneratedColumn<String>(
+      'audio_codec', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _audioEncoderMeta =
+      const VerificationMeta('audioEncoder');
+  @override
+  late final GeneratedColumn<String> audioEncoder = GeneratedColumn<String>(
+      'audio_encoder', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _audioBitRateMeta =
+      const VerificationMeta('audioBitRate');
+  @override
+  late final GeneratedColumn<String> audioBitRate = GeneratedColumn<String>(
+      'audio_bit_rate', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _audioBufferMeta =
+      const VerificationMeta('audioBuffer');
+  @override
+  late final GeneratedColumn<int> audioBuffer = GeneratedColumn<int>(
+      'audio_buffer', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _audioOutputBufferMeta =
+      const VerificationMeta('audioOutputBuffer');
+  @override
+  late final GeneratedColumn<int> audioOutputBuffer = GeneratedColumn<int>(
+      'audio_output_buffer', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _audioDupMeta =
+      const VerificationMeta('audioDup');
+  @override
+  late final GeneratedColumn<bool> audioDup = GeneratedColumn<bool>(
+      'audio_dup', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: true,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('CHECK ("audio_dup" IN (0, 1))'));
+  static const VerificationMeta _requireAudioMeta =
+      const VerificationMeta('requireAudio');
+  @override
+  late final GeneratedColumn<bool> requireAudio = GeneratedColumn<bool>(
+      'require_audio', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'CHECK ("require_audio" IN (0, 1))'));
+  static const VerificationMeta _videoSourceMeta =
+      const VerificationMeta('videoSource');
+  @override
+  late final GeneratedColumn<String> videoSource = GeneratedColumn<String>(
+      'video_source', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _cameraIdMeta =
+      const VerificationMeta('cameraId');
+  @override
+  late final GeneratedColumn<int> cameraId = GeneratedColumn<int>(
+      'camera_id', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _cameraFacingMeta =
+      const VerificationMeta('cameraFacing');
+  @override
+  late final GeneratedColumn<String> cameraFacing = GeneratedColumn<String>(
+      'camera_facing', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _cameraSizeMeta =
+      const VerificationMeta('cameraSize');
+  @override
+  late final GeneratedColumn<String> cameraSize = GeneratedColumn<String>(
+      'camera_size', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _cameraArMeta =
+      const VerificationMeta('cameraAr');
+  @override
+  late final GeneratedColumn<String> cameraAr = GeneratedColumn<String>(
+      'camera_ar', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _cameraFpsMeta =
+      const VerificationMeta('cameraFps');
+  @override
+  late final GeneratedColumn<int> cameraFps = GeneratedColumn<int>(
+      'camera_fps', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _cameraHighSpeedMeta =
+      const VerificationMeta('cameraHighSpeed');
+  @override
+  late final GeneratedColumn<bool> cameraHighSpeed = GeneratedColumn<bool>(
+      'camera_high_speed', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'CHECK ("camera_high_speed" IN (0, 1))'));
+  static const VerificationMeta _cameraTorchMeta =
+      const VerificationMeta('cameraTorch');
+  @override
+  late final GeneratedColumn<bool> cameraTorch = GeneratedColumn<bool>(
+      'camera_torch', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'CHECK ("camera_torch" IN (0, 1))'));
+  static const VerificationMeta _cameraZoomMeta =
+      const VerificationMeta('cameraZoom');
+  @override
+  late final GeneratedColumn<double> cameraZoom = GeneratedColumn<double>(
+      'camera_zoom', aliasedName, false,
+      type: DriftSqlType.double, requiredDuringInsert: true);
+  static const VerificationMeta _borderlessMeta =
+      const VerificationMeta('borderless');
+  @override
+  late final GeneratedColumn<bool> borderless = GeneratedColumn<bool>(
+      'borderless', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: true,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('CHECK ("borderless" IN (0, 1))'));
+  static const VerificationMeta _windowTitleMeta =
+      const VerificationMeta('windowTitle');
+  @override
+  late final GeneratedColumn<String> windowTitle = GeneratedColumn<String>(
+      'window_title', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _windowXMeta =
+      const VerificationMeta('windowX');
+  @override
+  late final GeneratedColumn<int> windowX = GeneratedColumn<int>(
+      'window_x', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _windowYMeta =
+      const VerificationMeta('windowY');
+  @override
+  late final GeneratedColumn<int> windowY = GeneratedColumn<int>(
+      'window_y', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _windowWidthMeta =
+      const VerificationMeta('windowWidth');
+  @override
+  late final GeneratedColumn<int> windowWidth = GeneratedColumn<int>(
+      'window_width', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _windowHeightMeta =
+      const VerificationMeta('windowHeight');
+  @override
+  late final GeneratedColumn<int> windowHeight = GeneratedColumn<int>(
+      'window_height', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _alwaysOnTopMeta =
+      const VerificationMeta('alwaysOnTop');
+  @override
+  late final GeneratedColumn<bool> alwaysOnTop = GeneratedColumn<bool>(
+      'always_on_top', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'CHECK ("always_on_top" IN (0, 1))'));
+  static const VerificationMeta _fullscreenMeta =
+      const VerificationMeta('fullscreen');
+  @override
+  late final GeneratedColumn<bool> fullscreen = GeneratedColumn<bool>(
+      'fullscreen', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: true,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('CHECK ("fullscreen" IN (0, 1))'));
+  static const VerificationMeta _disableScreensaverMeta =
+      const VerificationMeta('disableScreensaver');
+  @override
+  late final GeneratedColumn<bool> disableScreensaver = GeneratedColumn<bool>(
+      'disable_screensaver', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'CHECK ("disable_screensaver" IN (0, 1))'));
+  static const VerificationMeta _noWindowMeta =
+      const VerificationMeta('noWindow');
+  @override
+  late final GeneratedColumn<bool> noWindow = GeneratedColumn<bool>(
+      'no_window', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: true,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('CHECK ("no_window" IN (0, 1))'));
+  static const VerificationMeta _noWindowAspectRatioLockMeta =
+      const VerificationMeta('noWindowAspectRatioLock');
+  @override
+  late final GeneratedColumn<bool> noWindowAspectRatioLock =
+      GeneratedColumn<bool>('no_window_aspect_ratio_lock', aliasedName, false,
+          type: DriftSqlType.bool,
+          requiredDuringInsert: true,
+          defaultConstraints: GeneratedColumn.constraintIsAlways(
+              'CHECK ("no_window_aspect_ratio_lock" IN (0, 1))'));
+  static const VerificationMeta _keyboardMeta =
+      const VerificationMeta('keyboard');
+  @override
+  late final GeneratedColumn<String> keyboard = GeneratedColumn<String>(
+      'keyboard', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _mouseMeta = const VerificationMeta('mouse');
+  @override
+  late final GeneratedColumn<String> mouse = GeneratedColumn<String>(
+      'mouse', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _noControlMeta =
+      const VerificationMeta('noControl');
+  @override
+  late final GeneratedColumn<bool> noControl = GeneratedColumn<bool>(
+      'no_control', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: true,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('CHECK ("no_control" IN (0, 1))'));
+  static const VerificationMeta _mouseBindMeta =
+      const VerificationMeta('mouseBind');
+  @override
+  late final GeneratedColumn<String> mouseBind = GeneratedColumn<String>(
+      'mouse_bind', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _preferTextMeta =
+      const VerificationMeta('preferText');
+  @override
+  late final GeneratedColumn<bool> preferText = GeneratedColumn<bool>(
+      'prefer_text', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'CHECK ("prefer_text" IN (0, 1))'));
+  static const VerificationMeta _rawKeyEventsMeta =
+      const VerificationMeta('rawKeyEvents');
+  @override
+  late final GeneratedColumn<bool> rawKeyEvents = GeneratedColumn<bool>(
+      'raw_key_events', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'CHECK ("raw_key_events" IN (0, 1))'));
+  static const VerificationMeta _noKeyRepeatMeta =
+      const VerificationMeta('noKeyRepeat');
+  @override
+  late final GeneratedColumn<bool> noKeyRepeat = GeneratedColumn<bool>(
+      'no_key_repeat', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'CHECK ("no_key_repeat" IN (0, 1))'));
+  static const VerificationMeta _noMouseHoverMeta =
+      const VerificationMeta('noMouseHover');
+  @override
+  late final GeneratedColumn<bool> noMouseHover = GeneratedColumn<bool>(
+      'no_mouse_hover', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'CHECK ("no_mouse_hover" IN (0, 1))'));
+  static const VerificationMeta _legacyPasteMeta =
+      const VerificationMeta('legacyPaste');
+  @override
+  late final GeneratedColumn<bool> legacyPaste = GeneratedColumn<bool>(
+      'legacy_paste', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'CHECK ("legacy_paste" IN (0, 1))'));
+  static const VerificationMeta _noClipboardAutosyncMeta =
+      const VerificationMeta('noClipboardAutosync');
+  @override
+  late final GeneratedColumn<bool> noClipboardAutosync = GeneratedColumn<bool>(
+      'no_clipboard_autosync', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'CHECK ("no_clipboard_autosync" IN (0, 1))'));
+  static const VerificationMeta _stayAwakeMeta =
+      const VerificationMeta('stayAwake');
+  @override
+  late final GeneratedColumn<bool> stayAwake = GeneratedColumn<bool>(
+      'stay_awake', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: true,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('CHECK ("stay_awake" IN (0, 1))'));
+  static const VerificationMeta _turnScreenOffMeta =
+      const VerificationMeta('turnScreenOff');
+  @override
+  late final GeneratedColumn<bool> turnScreenOff = GeneratedColumn<bool>(
+      'turn_screen_off', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'CHECK ("turn_screen_off" IN (0, 1))'));
+  static const VerificationMeta _keepActiveMeta =
+      const VerificationMeta('keepActive');
+  @override
+  late final GeneratedColumn<bool> keepActive = GeneratedColumn<bool>(
+      'keep_active', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'CHECK ("keep_active" IN (0, 1))'));
+  static const VerificationMeta _showTouchesMeta =
+      const VerificationMeta('showTouches');
+  @override
+  late final GeneratedColumn<bool> showTouches = GeneratedColumn<bool>(
+      'show_touches', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'CHECK ("show_touches" IN (0, 1))'));
+  static const VerificationMeta _powerOffOnCloseMeta =
+      const VerificationMeta('powerOffOnClose');
+  @override
+  late final GeneratedColumn<bool> powerOffOnClose = GeneratedColumn<bool>(
+      'power_off_on_close', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'CHECK ("power_off_on_close" IN (0, 1))'));
+  static const VerificationMeta _noPowerOnMeta =
+      const VerificationMeta('noPowerOn');
+  @override
+  late final GeneratedColumn<bool> noPowerOn = GeneratedColumn<bool>(
+      'no_power_on', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'CHECK ("no_power_on" IN (0, 1))'));
+  static const VerificationMeta _screenOffTimeoutMeta =
+      const VerificationMeta('screenOffTimeout');
+  @override
+  late final GeneratedColumn<int> screenOffTimeout = GeneratedColumn<int>(
+      'screen_off_timeout', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _shortcutModMeta =
+      const VerificationMeta('shortcutMod');
+  @override
+  late final GeneratedColumn<String> shortcutMod = GeneratedColumn<String>(
+      'shortcut_mod', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _recordEnabledMeta =
+      const VerificationMeta('recordEnabled');
+  @override
+  late final GeneratedColumn<bool> recordEnabled = GeneratedColumn<bool>(
+      'record_enabled', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'CHECK ("record_enabled" IN (0, 1))'));
+  static const VerificationMeta _recordMeta = const VerificationMeta('record');
+  @override
+  late final GeneratedColumn<String> record = GeneratedColumn<String>(
+      'record', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _recordFormatMeta =
+      const VerificationMeta('recordFormat');
+  @override
+  late final GeneratedColumn<String> recordFormat = GeneratedColumn<String>(
+      'record_format', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _timeLimitMeta =
+      const VerificationMeta('timeLimit');
+  @override
+  late final GeneratedColumn<int> timeLimit = GeneratedColumn<int>(
+      'time_limit', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _noPlaybackMeta =
+      const VerificationMeta('noPlayback');
+  @override
+  late final GeneratedColumn<bool> noPlayback = GeneratedColumn<bool>(
+      'no_playback', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'CHECK ("no_playback" IN (0, 1))'));
+  static const VerificationMeta _noVideoPlaybackMeta =
+      const VerificationMeta('noVideoPlayback');
+  @override
+  late final GeneratedColumn<bool> noVideoPlayback = GeneratedColumn<bool>(
+      'no_video_playback', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'CHECK ("no_video_playback" IN (0, 1))'));
+  static const VerificationMeta _pauseOnExitMeta =
+      const VerificationMeta('pauseOnExit');
+  @override
+  late final GeneratedColumn<String> pauseOnExit = GeneratedColumn<String>(
+      'pause_on_exit', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _updatedAtMeta =
+      const VerificationMeta('updatedAt');
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+      'updated_at', aliasedName, false,
+      type: DriftSqlType.dateTime, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns => [
+        serial,
+        maxSize,
+        videoBitRate,
+        maxFps,
+        videoCodec,
+        videoEncoder,
+        videoBuffer,
+        noMipmaps,
+        captureOrientation,
+        displayOrientation,
+        crop,
+        angle,
+        displayId,
+        renderFit,
+        backgroundColor,
+        minSizeAlignment,
+        noDownsizeOnError,
+        printFps,
+        noAudio,
+        noAudioPlayback,
+        audioSource,
+        audioCodec,
+        audioEncoder,
+        audioBitRate,
+        audioBuffer,
+        audioOutputBuffer,
+        audioDup,
+        requireAudio,
+        videoSource,
+        cameraId,
+        cameraFacing,
+        cameraSize,
+        cameraAr,
+        cameraFps,
+        cameraHighSpeed,
+        cameraTorch,
+        cameraZoom,
+        borderless,
+        windowTitle,
+        windowX,
+        windowY,
+        windowWidth,
+        windowHeight,
+        alwaysOnTop,
+        fullscreen,
+        disableScreensaver,
+        noWindow,
+        noWindowAspectRatioLock,
+        keyboard,
+        mouse,
+        noControl,
+        mouseBind,
+        preferText,
+        rawKeyEvents,
+        noKeyRepeat,
+        noMouseHover,
+        legacyPaste,
+        noClipboardAutosync,
+        stayAwake,
+        turnScreenOff,
+        keepActive,
+        showTouches,
+        powerOffOnClose,
+        noPowerOn,
+        screenOffTimeout,
+        shortcutMod,
+        recordEnabled,
+        record,
+        recordFormat,
+        timeLimit,
+        noPlayback,
+        noVideoPlayback,
+        pauseOnExit,
+        updatedAt
+      ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'scrcpy_options';
+  @override
+  VerificationContext validateIntegrity(Insertable<ScrcpyOptions_Data> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('serial')) {
+      context.handle(_serialMeta,
+          serial.isAcceptableOrUnknown(data['serial']!, _serialMeta));
+    } else if (isInserting) {
+      context.missing(_serialMeta);
+    }
+    if (data.containsKey('max_size')) {
+      context.handle(_maxSizeMeta,
+          maxSize.isAcceptableOrUnknown(data['max_size']!, _maxSizeMeta));
+    } else if (isInserting) {
+      context.missing(_maxSizeMeta);
+    }
+    if (data.containsKey('video_bit_rate')) {
+      context.handle(
+          _videoBitRateMeta,
+          videoBitRate.isAcceptableOrUnknown(
+              data['video_bit_rate']!, _videoBitRateMeta));
+    }
+    if (data.containsKey('max_fps')) {
+      context.handle(_maxFpsMeta,
+          maxFps.isAcceptableOrUnknown(data['max_fps']!, _maxFpsMeta));
+    } else if (isInserting) {
+      context.missing(_maxFpsMeta);
+    }
+    if (data.containsKey('video_codec')) {
+      context.handle(
+          _videoCodecMeta,
+          videoCodec.isAcceptableOrUnknown(
+              data['video_codec']!, _videoCodecMeta));
+    }
+    if (data.containsKey('video_encoder')) {
+      context.handle(
+          _videoEncoderMeta,
+          videoEncoder.isAcceptableOrUnknown(
+              data['video_encoder']!, _videoEncoderMeta));
+    }
+    if (data.containsKey('video_buffer')) {
+      context.handle(
+          _videoBufferMeta,
+          videoBuffer.isAcceptableOrUnknown(
+              data['video_buffer']!, _videoBufferMeta));
+    } else if (isInserting) {
+      context.missing(_videoBufferMeta);
+    }
+    if (data.containsKey('no_mipmaps')) {
+      context.handle(_noMipmapsMeta,
+          noMipmaps.isAcceptableOrUnknown(data['no_mipmaps']!, _noMipmapsMeta));
+    } else if (isInserting) {
+      context.missing(_noMipmapsMeta);
+    }
+    if (data.containsKey('capture_orientation')) {
+      context.handle(
+          _captureOrientationMeta,
+          captureOrientation.isAcceptableOrUnknown(
+              data['capture_orientation']!, _captureOrientationMeta));
+    }
+    if (data.containsKey('display_orientation')) {
+      context.handle(
+          _displayOrientationMeta,
+          displayOrientation.isAcceptableOrUnknown(
+              data['display_orientation']!, _displayOrientationMeta));
+    }
+    if (data.containsKey('crop')) {
+      context.handle(
+          _cropMeta, crop.isAcceptableOrUnknown(data['crop']!, _cropMeta));
+    }
+    if (data.containsKey('angle')) {
+      context.handle(
+          _angleMeta, angle.isAcceptableOrUnknown(data['angle']!, _angleMeta));
+    } else if (isInserting) {
+      context.missing(_angleMeta);
+    }
+    if (data.containsKey('display_id')) {
+      context.handle(_displayIdMeta,
+          displayId.isAcceptableOrUnknown(data['display_id']!, _displayIdMeta));
+    } else if (isInserting) {
+      context.missing(_displayIdMeta);
+    }
+    if (data.containsKey('render_fit')) {
+      context.handle(_renderFitMeta,
+          renderFit.isAcceptableOrUnknown(data['render_fit']!, _renderFitMeta));
+    }
+    if (data.containsKey('background_color')) {
+      context.handle(
+          _backgroundColorMeta,
+          backgroundColor.isAcceptableOrUnknown(
+              data['background_color']!, _backgroundColorMeta));
+    }
+    if (data.containsKey('min_size_alignment')) {
+      context.handle(
+          _minSizeAlignmentMeta,
+          minSizeAlignment.isAcceptableOrUnknown(
+              data['min_size_alignment']!, _minSizeAlignmentMeta));
+    } else if (isInserting) {
+      context.missing(_minSizeAlignmentMeta);
+    }
+    if (data.containsKey('no_downsize_on_error')) {
+      context.handle(
+          _noDownsizeOnErrorMeta,
+          noDownsizeOnError.isAcceptableOrUnknown(
+              data['no_downsize_on_error']!, _noDownsizeOnErrorMeta));
+    } else if (isInserting) {
+      context.missing(_noDownsizeOnErrorMeta);
+    }
+    if (data.containsKey('print_fps')) {
+      context.handle(_printFpsMeta,
+          printFps.isAcceptableOrUnknown(data['print_fps']!, _printFpsMeta));
+    } else if (isInserting) {
+      context.missing(_printFpsMeta);
+    }
+    if (data.containsKey('no_audio')) {
+      context.handle(_noAudioMeta,
+          noAudio.isAcceptableOrUnknown(data['no_audio']!, _noAudioMeta));
+    } else if (isInserting) {
+      context.missing(_noAudioMeta);
+    }
+    if (data.containsKey('no_audio_playback')) {
+      context.handle(
+          _noAudioPlaybackMeta,
+          noAudioPlayback.isAcceptableOrUnknown(
+              data['no_audio_playback']!, _noAudioPlaybackMeta));
+    } else if (isInserting) {
+      context.missing(_noAudioPlaybackMeta);
+    }
+    if (data.containsKey('audio_source')) {
+      context.handle(
+          _audioSourceMeta,
+          audioSource.isAcceptableOrUnknown(
+              data['audio_source']!, _audioSourceMeta));
+    }
+    if (data.containsKey('audio_codec')) {
+      context.handle(
+          _audioCodecMeta,
+          audioCodec.isAcceptableOrUnknown(
+              data['audio_codec']!, _audioCodecMeta));
+    }
+    if (data.containsKey('audio_encoder')) {
+      context.handle(
+          _audioEncoderMeta,
+          audioEncoder.isAcceptableOrUnknown(
+              data['audio_encoder']!, _audioEncoderMeta));
+    }
+    if (data.containsKey('audio_bit_rate')) {
+      context.handle(
+          _audioBitRateMeta,
+          audioBitRate.isAcceptableOrUnknown(
+              data['audio_bit_rate']!, _audioBitRateMeta));
+    }
+    if (data.containsKey('audio_buffer')) {
+      context.handle(
+          _audioBufferMeta,
+          audioBuffer.isAcceptableOrUnknown(
+              data['audio_buffer']!, _audioBufferMeta));
+    } else if (isInserting) {
+      context.missing(_audioBufferMeta);
+    }
+    if (data.containsKey('audio_output_buffer')) {
+      context.handle(
+          _audioOutputBufferMeta,
+          audioOutputBuffer.isAcceptableOrUnknown(
+              data['audio_output_buffer']!, _audioOutputBufferMeta));
+    } else if (isInserting) {
+      context.missing(_audioOutputBufferMeta);
+    }
+    if (data.containsKey('audio_dup')) {
+      context.handle(_audioDupMeta,
+          audioDup.isAcceptableOrUnknown(data['audio_dup']!, _audioDupMeta));
+    } else if (isInserting) {
+      context.missing(_audioDupMeta);
+    }
+    if (data.containsKey('require_audio')) {
+      context.handle(
+          _requireAudioMeta,
+          requireAudio.isAcceptableOrUnknown(
+              data['require_audio']!, _requireAudioMeta));
+    } else if (isInserting) {
+      context.missing(_requireAudioMeta);
+    }
+    if (data.containsKey('video_source')) {
+      context.handle(
+          _videoSourceMeta,
+          videoSource.isAcceptableOrUnknown(
+              data['video_source']!, _videoSourceMeta));
+    }
+    if (data.containsKey('camera_id')) {
+      context.handle(_cameraIdMeta,
+          cameraId.isAcceptableOrUnknown(data['camera_id']!, _cameraIdMeta));
+    } else if (isInserting) {
+      context.missing(_cameraIdMeta);
+    }
+    if (data.containsKey('camera_facing')) {
+      context.handle(
+          _cameraFacingMeta,
+          cameraFacing.isAcceptableOrUnknown(
+              data['camera_facing']!, _cameraFacingMeta));
+    }
+    if (data.containsKey('camera_size')) {
+      context.handle(
+          _cameraSizeMeta,
+          cameraSize.isAcceptableOrUnknown(
+              data['camera_size']!, _cameraSizeMeta));
+    }
+    if (data.containsKey('camera_ar')) {
+      context.handle(_cameraArMeta,
+          cameraAr.isAcceptableOrUnknown(data['camera_ar']!, _cameraArMeta));
+    }
+    if (data.containsKey('camera_fps')) {
+      context.handle(_cameraFpsMeta,
+          cameraFps.isAcceptableOrUnknown(data['camera_fps']!, _cameraFpsMeta));
+    } else if (isInserting) {
+      context.missing(_cameraFpsMeta);
+    }
+    if (data.containsKey('camera_high_speed')) {
+      context.handle(
+          _cameraHighSpeedMeta,
+          cameraHighSpeed.isAcceptableOrUnknown(
+              data['camera_high_speed']!, _cameraHighSpeedMeta));
+    } else if (isInserting) {
+      context.missing(_cameraHighSpeedMeta);
+    }
+    if (data.containsKey('camera_torch')) {
+      context.handle(
+          _cameraTorchMeta,
+          cameraTorch.isAcceptableOrUnknown(
+              data['camera_torch']!, _cameraTorchMeta));
+    } else if (isInserting) {
+      context.missing(_cameraTorchMeta);
+    }
+    if (data.containsKey('camera_zoom')) {
+      context.handle(
+          _cameraZoomMeta,
+          cameraZoom.isAcceptableOrUnknown(
+              data['camera_zoom']!, _cameraZoomMeta));
+    } else if (isInserting) {
+      context.missing(_cameraZoomMeta);
+    }
+    if (data.containsKey('borderless')) {
+      context.handle(
+          _borderlessMeta,
+          borderless.isAcceptableOrUnknown(
+              data['borderless']!, _borderlessMeta));
+    } else if (isInserting) {
+      context.missing(_borderlessMeta);
+    }
+    if (data.containsKey('window_title')) {
+      context.handle(
+          _windowTitleMeta,
+          windowTitle.isAcceptableOrUnknown(
+              data['window_title']!, _windowTitleMeta));
+    }
+    if (data.containsKey('window_x')) {
+      context.handle(_windowXMeta,
+          windowX.isAcceptableOrUnknown(data['window_x']!, _windowXMeta));
+    } else if (isInserting) {
+      context.missing(_windowXMeta);
+    }
+    if (data.containsKey('window_y')) {
+      context.handle(_windowYMeta,
+          windowY.isAcceptableOrUnknown(data['window_y']!, _windowYMeta));
+    } else if (isInserting) {
+      context.missing(_windowYMeta);
+    }
+    if (data.containsKey('window_width')) {
+      context.handle(
+          _windowWidthMeta,
+          windowWidth.isAcceptableOrUnknown(
+              data['window_width']!, _windowWidthMeta));
+    } else if (isInserting) {
+      context.missing(_windowWidthMeta);
+    }
+    if (data.containsKey('window_height')) {
+      context.handle(
+          _windowHeightMeta,
+          windowHeight.isAcceptableOrUnknown(
+              data['window_height']!, _windowHeightMeta));
+    } else if (isInserting) {
+      context.missing(_windowHeightMeta);
+    }
+    if (data.containsKey('always_on_top')) {
+      context.handle(
+          _alwaysOnTopMeta,
+          alwaysOnTop.isAcceptableOrUnknown(
+              data['always_on_top']!, _alwaysOnTopMeta));
+    } else if (isInserting) {
+      context.missing(_alwaysOnTopMeta);
+    }
+    if (data.containsKey('fullscreen')) {
+      context.handle(
+          _fullscreenMeta,
+          fullscreen.isAcceptableOrUnknown(
+              data['fullscreen']!, _fullscreenMeta));
+    } else if (isInserting) {
+      context.missing(_fullscreenMeta);
+    }
+    if (data.containsKey('disable_screensaver')) {
+      context.handle(
+          _disableScreensaverMeta,
+          disableScreensaver.isAcceptableOrUnknown(
+              data['disable_screensaver']!, _disableScreensaverMeta));
+    } else if (isInserting) {
+      context.missing(_disableScreensaverMeta);
+    }
+    if (data.containsKey('no_window')) {
+      context.handle(_noWindowMeta,
+          noWindow.isAcceptableOrUnknown(data['no_window']!, _noWindowMeta));
+    } else if (isInserting) {
+      context.missing(_noWindowMeta);
+    }
+    if (data.containsKey('no_window_aspect_ratio_lock')) {
+      context.handle(
+          _noWindowAspectRatioLockMeta,
+          noWindowAspectRatioLock.isAcceptableOrUnknown(
+              data['no_window_aspect_ratio_lock']!,
+              _noWindowAspectRatioLockMeta));
+    } else if (isInserting) {
+      context.missing(_noWindowAspectRatioLockMeta);
+    }
+    if (data.containsKey('keyboard')) {
+      context.handle(_keyboardMeta,
+          keyboard.isAcceptableOrUnknown(data['keyboard']!, _keyboardMeta));
+    }
+    if (data.containsKey('mouse')) {
+      context.handle(
+          _mouseMeta, mouse.isAcceptableOrUnknown(data['mouse']!, _mouseMeta));
+    }
+    if (data.containsKey('no_control')) {
+      context.handle(_noControlMeta,
+          noControl.isAcceptableOrUnknown(data['no_control']!, _noControlMeta));
+    } else if (isInserting) {
+      context.missing(_noControlMeta);
+    }
+    if (data.containsKey('mouse_bind')) {
+      context.handle(_mouseBindMeta,
+          mouseBind.isAcceptableOrUnknown(data['mouse_bind']!, _mouseBindMeta));
+    }
+    if (data.containsKey('prefer_text')) {
+      context.handle(
+          _preferTextMeta,
+          preferText.isAcceptableOrUnknown(
+              data['prefer_text']!, _preferTextMeta));
+    } else if (isInserting) {
+      context.missing(_preferTextMeta);
+    }
+    if (data.containsKey('raw_key_events')) {
+      context.handle(
+          _rawKeyEventsMeta,
+          rawKeyEvents.isAcceptableOrUnknown(
+              data['raw_key_events']!, _rawKeyEventsMeta));
+    } else if (isInserting) {
+      context.missing(_rawKeyEventsMeta);
+    }
+    if (data.containsKey('no_key_repeat')) {
+      context.handle(
+          _noKeyRepeatMeta,
+          noKeyRepeat.isAcceptableOrUnknown(
+              data['no_key_repeat']!, _noKeyRepeatMeta));
+    } else if (isInserting) {
+      context.missing(_noKeyRepeatMeta);
+    }
+    if (data.containsKey('no_mouse_hover')) {
+      context.handle(
+          _noMouseHoverMeta,
+          noMouseHover.isAcceptableOrUnknown(
+              data['no_mouse_hover']!, _noMouseHoverMeta));
+    } else if (isInserting) {
+      context.missing(_noMouseHoverMeta);
+    }
+    if (data.containsKey('legacy_paste')) {
+      context.handle(
+          _legacyPasteMeta,
+          legacyPaste.isAcceptableOrUnknown(
+              data['legacy_paste']!, _legacyPasteMeta));
+    } else if (isInserting) {
+      context.missing(_legacyPasteMeta);
+    }
+    if (data.containsKey('no_clipboard_autosync')) {
+      context.handle(
+          _noClipboardAutosyncMeta,
+          noClipboardAutosync.isAcceptableOrUnknown(
+              data['no_clipboard_autosync']!, _noClipboardAutosyncMeta));
+    } else if (isInserting) {
+      context.missing(_noClipboardAutosyncMeta);
+    }
+    if (data.containsKey('stay_awake')) {
+      context.handle(_stayAwakeMeta,
+          stayAwake.isAcceptableOrUnknown(data['stay_awake']!, _stayAwakeMeta));
+    } else if (isInserting) {
+      context.missing(_stayAwakeMeta);
+    }
+    if (data.containsKey('turn_screen_off')) {
+      context.handle(
+          _turnScreenOffMeta,
+          turnScreenOff.isAcceptableOrUnknown(
+              data['turn_screen_off']!, _turnScreenOffMeta));
+    } else if (isInserting) {
+      context.missing(_turnScreenOffMeta);
+    }
+    if (data.containsKey('keep_active')) {
+      context.handle(
+          _keepActiveMeta,
+          keepActive.isAcceptableOrUnknown(
+              data['keep_active']!, _keepActiveMeta));
+    } else if (isInserting) {
+      context.missing(_keepActiveMeta);
+    }
+    if (data.containsKey('show_touches')) {
+      context.handle(
+          _showTouchesMeta,
+          showTouches.isAcceptableOrUnknown(
+              data['show_touches']!, _showTouchesMeta));
+    } else if (isInserting) {
+      context.missing(_showTouchesMeta);
+    }
+    if (data.containsKey('power_off_on_close')) {
+      context.handle(
+          _powerOffOnCloseMeta,
+          powerOffOnClose.isAcceptableOrUnknown(
+              data['power_off_on_close']!, _powerOffOnCloseMeta));
+    } else if (isInserting) {
+      context.missing(_powerOffOnCloseMeta);
+    }
+    if (data.containsKey('no_power_on')) {
+      context.handle(
+          _noPowerOnMeta,
+          noPowerOn.isAcceptableOrUnknown(
+              data['no_power_on']!, _noPowerOnMeta));
+    } else if (isInserting) {
+      context.missing(_noPowerOnMeta);
+    }
+    if (data.containsKey('screen_off_timeout')) {
+      context.handle(
+          _screenOffTimeoutMeta,
+          screenOffTimeout.isAcceptableOrUnknown(
+              data['screen_off_timeout']!, _screenOffTimeoutMeta));
+    } else if (isInserting) {
+      context.missing(_screenOffTimeoutMeta);
+    }
+    if (data.containsKey('shortcut_mod')) {
+      context.handle(
+          _shortcutModMeta,
+          shortcutMod.isAcceptableOrUnknown(
+              data['shortcut_mod']!, _shortcutModMeta));
+    }
+    if (data.containsKey('record_enabled')) {
+      context.handle(
+          _recordEnabledMeta,
+          recordEnabled.isAcceptableOrUnknown(
+              data['record_enabled']!, _recordEnabledMeta));
+    } else if (isInserting) {
+      context.missing(_recordEnabledMeta);
+    }
+    if (data.containsKey('record')) {
+      context.handle(_recordMeta,
+          record.isAcceptableOrUnknown(data['record']!, _recordMeta));
+    }
+    if (data.containsKey('record_format')) {
+      context.handle(
+          _recordFormatMeta,
+          recordFormat.isAcceptableOrUnknown(
+              data['record_format']!, _recordFormatMeta));
+    }
+    if (data.containsKey('time_limit')) {
+      context.handle(_timeLimitMeta,
+          timeLimit.isAcceptableOrUnknown(data['time_limit']!, _timeLimitMeta));
+    } else if (isInserting) {
+      context.missing(_timeLimitMeta);
+    }
+    if (data.containsKey('no_playback')) {
+      context.handle(
+          _noPlaybackMeta,
+          noPlayback.isAcceptableOrUnknown(
+              data['no_playback']!, _noPlaybackMeta));
+    } else if (isInserting) {
+      context.missing(_noPlaybackMeta);
+    }
+    if (data.containsKey('no_video_playback')) {
+      context.handle(
+          _noVideoPlaybackMeta,
+          noVideoPlayback.isAcceptableOrUnknown(
+              data['no_video_playback']!, _noVideoPlaybackMeta));
+    } else if (isInserting) {
+      context.missing(_noVideoPlaybackMeta);
+    }
+    if (data.containsKey('pause_on_exit')) {
+      context.handle(
+          _pauseOnExitMeta,
+          pauseOnExit.isAcceptableOrUnknown(
+              data['pause_on_exit']!, _pauseOnExitMeta));
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(_updatedAtMeta,
+          updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta));
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {serial};
+  @override
+  ScrcpyOptions_Data map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return ScrcpyOptions_Data(
+      serial: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}serial'])!,
+      maxSize: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}max_size'])!,
+      videoBitRate: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}video_bit_rate']),
+      maxFps: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}max_fps'])!,
+      videoCodec: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}video_codec']),
+      videoEncoder: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}video_encoder']),
+      videoBuffer: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}video_buffer'])!,
+      noMipmaps: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}no_mipmaps'])!,
+      captureOrientation: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}capture_orientation']),
+      displayOrientation: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}display_orientation']),
+      crop: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}crop']),
+      angle: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}angle'])!,
+      displayId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}display_id'])!,
+      renderFit: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}render_fit']),
+      backgroundColor: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}background_color']),
+      minSizeAlignment: attachedDatabase.typeMapping.read(
+          DriftSqlType.int, data['${effectivePrefix}min_size_alignment'])!,
+      noDownsizeOnError: attachedDatabase.typeMapping.read(
+          DriftSqlType.bool, data['${effectivePrefix}no_downsize_on_error'])!,
+      printFps: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}print_fps'])!,
+      noAudio: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}no_audio'])!,
+      noAudioPlayback: attachedDatabase.typeMapping.read(
+          DriftSqlType.bool, data['${effectivePrefix}no_audio_playback'])!,
+      audioSource: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}audio_source']),
+      audioCodec: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}audio_codec']),
+      audioEncoder: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}audio_encoder']),
+      audioBitRate: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}audio_bit_rate']),
+      audioBuffer: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}audio_buffer'])!,
+      audioOutputBuffer: attachedDatabase.typeMapping.read(
+          DriftSqlType.int, data['${effectivePrefix}audio_output_buffer'])!,
+      audioDup: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}audio_dup'])!,
+      requireAudio: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}require_audio'])!,
+      videoSource: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}video_source']),
+      cameraId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}camera_id'])!,
+      cameraFacing: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}camera_facing']),
+      cameraSize: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}camera_size']),
+      cameraAr: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}camera_ar']),
+      cameraFps: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}camera_fps'])!,
+      cameraHighSpeed: attachedDatabase.typeMapping.read(
+          DriftSqlType.bool, data['${effectivePrefix}camera_high_speed'])!,
+      cameraTorch: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}camera_torch'])!,
+      cameraZoom: attachedDatabase.typeMapping
+          .read(DriftSqlType.double, data['${effectivePrefix}camera_zoom'])!,
+      borderless: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}borderless'])!,
+      windowTitle: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}window_title']),
+      windowX: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}window_x'])!,
+      windowY: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}window_y'])!,
+      windowWidth: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}window_width'])!,
+      windowHeight: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}window_height'])!,
+      alwaysOnTop: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}always_on_top'])!,
+      fullscreen: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}fullscreen'])!,
+      disableScreensaver: attachedDatabase.typeMapping.read(
+          DriftSqlType.bool, data['${effectivePrefix}disable_screensaver'])!,
+      noWindow: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}no_window'])!,
+      noWindowAspectRatioLock: attachedDatabase.typeMapping.read(
+          DriftSqlType.bool,
+          data['${effectivePrefix}no_window_aspect_ratio_lock'])!,
+      keyboard: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}keyboard']),
+      mouse: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}mouse']),
+      noControl: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}no_control'])!,
+      mouseBind: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}mouse_bind']),
+      preferText: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}prefer_text'])!,
+      rawKeyEvents: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}raw_key_events'])!,
+      noKeyRepeat: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}no_key_repeat'])!,
+      noMouseHover: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}no_mouse_hover'])!,
+      legacyPaste: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}legacy_paste'])!,
+      noClipboardAutosync: attachedDatabase.typeMapping.read(
+          DriftSqlType.bool, data['${effectivePrefix}no_clipboard_autosync'])!,
+      stayAwake: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}stay_awake'])!,
+      turnScreenOff: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}turn_screen_off'])!,
+      keepActive: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}keep_active'])!,
+      showTouches: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}show_touches'])!,
+      powerOffOnClose: attachedDatabase.typeMapping.read(
+          DriftSqlType.bool, data['${effectivePrefix}power_off_on_close'])!,
+      noPowerOn: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}no_power_on'])!,
+      screenOffTimeout: attachedDatabase.typeMapping.read(
+          DriftSqlType.int, data['${effectivePrefix}screen_off_timeout'])!,
+      shortcutMod: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}shortcut_mod']),
+      recordEnabled: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}record_enabled'])!,
+      record: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}record']),
+      recordFormat: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}record_format']),
+      timeLimit: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}time_limit'])!,
+      noPlayback: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}no_playback'])!,
+      noVideoPlayback: attachedDatabase.typeMapping.read(
+          DriftSqlType.bool, data['${effectivePrefix}no_video_playback'])!,
+      pauseOnExit: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}pause_on_exit']),
+      updatedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}updated_at'])!,
+    );
+  }
+
+  @override
+  $ScrcpyOptions_Table createAlias(String alias) {
+    return $ScrcpyOptions_Table(attachedDatabase, alias);
+  }
+}
+
+class ScrcpyOptions_Data extends DataClass
+    implements Insertable<ScrcpyOptions_Data> {
+  final String serial;
+  final int maxSize;
+  final String? videoBitRate;
+  final int maxFps;
+  final String? videoCodec;
+  final String? videoEncoder;
+  final int videoBuffer;
+  final bool noMipmaps;
+  final String? captureOrientation;
+  final String? displayOrientation;
+  final String? crop;
+  final int angle;
+  final int displayId;
+  final String? renderFit;
+  final String? backgroundColor;
+  final int minSizeAlignment;
+  final bool noDownsizeOnError;
+  final bool printFps;
+  final bool noAudio;
+  final bool noAudioPlayback;
+  final String? audioSource;
+  final String? audioCodec;
+  final String? audioEncoder;
+  final String? audioBitRate;
+  final int audioBuffer;
+  final int audioOutputBuffer;
+  final bool audioDup;
+  final bool requireAudio;
+  final String? videoSource;
+  final int cameraId;
+  final String? cameraFacing;
+  final String? cameraSize;
+  final String? cameraAr;
+  final int cameraFps;
+  final bool cameraHighSpeed;
+  final bool cameraTorch;
+  final double cameraZoom;
+  final bool borderless;
+  final String? windowTitle;
+  final int windowX;
+  final int windowY;
+  final int windowWidth;
+  final int windowHeight;
+  final bool alwaysOnTop;
+  final bool fullscreen;
+  final bool disableScreensaver;
+  final bool noWindow;
+  final bool noWindowAspectRatioLock;
+  final String? keyboard;
+  final String? mouse;
+  final bool noControl;
+  final String? mouseBind;
+  final bool preferText;
+  final bool rawKeyEvents;
+  final bool noKeyRepeat;
+  final bool noMouseHover;
+  final bool legacyPaste;
+  final bool noClipboardAutosync;
+  final bool stayAwake;
+  final bool turnScreenOff;
+  final bool keepActive;
+  final bool showTouches;
+  final bool powerOffOnClose;
+  final bool noPowerOn;
+  final int screenOffTimeout;
+  final String? shortcutMod;
+  final bool recordEnabled;
+  final String? record;
+  final String? recordFormat;
+  final int timeLimit;
+  final bool noPlayback;
+  final bool noVideoPlayback;
+  final String? pauseOnExit;
+  final DateTime updatedAt;
+  const ScrcpyOptions_Data(
+      {required this.serial,
+      required this.maxSize,
+      this.videoBitRate,
+      required this.maxFps,
+      this.videoCodec,
+      this.videoEncoder,
+      required this.videoBuffer,
+      required this.noMipmaps,
+      this.captureOrientation,
+      this.displayOrientation,
+      this.crop,
+      required this.angle,
+      required this.displayId,
+      this.renderFit,
+      this.backgroundColor,
+      required this.minSizeAlignment,
+      required this.noDownsizeOnError,
+      required this.printFps,
+      required this.noAudio,
+      required this.noAudioPlayback,
+      this.audioSource,
+      this.audioCodec,
+      this.audioEncoder,
+      this.audioBitRate,
+      required this.audioBuffer,
+      required this.audioOutputBuffer,
+      required this.audioDup,
+      required this.requireAudio,
+      this.videoSource,
+      required this.cameraId,
+      this.cameraFacing,
+      this.cameraSize,
+      this.cameraAr,
+      required this.cameraFps,
+      required this.cameraHighSpeed,
+      required this.cameraTorch,
+      required this.cameraZoom,
+      required this.borderless,
+      this.windowTitle,
+      required this.windowX,
+      required this.windowY,
+      required this.windowWidth,
+      required this.windowHeight,
+      required this.alwaysOnTop,
+      required this.fullscreen,
+      required this.disableScreensaver,
+      required this.noWindow,
+      required this.noWindowAspectRatioLock,
+      this.keyboard,
+      this.mouse,
+      required this.noControl,
+      this.mouseBind,
+      required this.preferText,
+      required this.rawKeyEvents,
+      required this.noKeyRepeat,
+      required this.noMouseHover,
+      required this.legacyPaste,
+      required this.noClipboardAutosync,
+      required this.stayAwake,
+      required this.turnScreenOff,
+      required this.keepActive,
+      required this.showTouches,
+      required this.powerOffOnClose,
+      required this.noPowerOn,
+      required this.screenOffTimeout,
+      this.shortcutMod,
+      required this.recordEnabled,
+      this.record,
+      this.recordFormat,
+      required this.timeLimit,
+      required this.noPlayback,
+      required this.noVideoPlayback,
+      this.pauseOnExit,
+      required this.updatedAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['serial'] = Variable<String>(serial);
+    map['max_size'] = Variable<int>(maxSize);
+    if (!nullToAbsent || videoBitRate != null) {
+      map['video_bit_rate'] = Variable<String>(videoBitRate);
+    }
+    map['max_fps'] = Variable<int>(maxFps);
+    if (!nullToAbsent || videoCodec != null) {
+      map['video_codec'] = Variable<String>(videoCodec);
+    }
+    if (!nullToAbsent || videoEncoder != null) {
+      map['video_encoder'] = Variable<String>(videoEncoder);
+    }
+    map['video_buffer'] = Variable<int>(videoBuffer);
+    map['no_mipmaps'] = Variable<bool>(noMipmaps);
+    if (!nullToAbsent || captureOrientation != null) {
+      map['capture_orientation'] = Variable<String>(captureOrientation);
+    }
+    if (!nullToAbsent || displayOrientation != null) {
+      map['display_orientation'] = Variable<String>(displayOrientation);
+    }
+    if (!nullToAbsent || crop != null) {
+      map['crop'] = Variable<String>(crop);
+    }
+    map['angle'] = Variable<int>(angle);
+    map['display_id'] = Variable<int>(displayId);
+    if (!nullToAbsent || renderFit != null) {
+      map['render_fit'] = Variable<String>(renderFit);
+    }
+    if (!nullToAbsent || backgroundColor != null) {
+      map['background_color'] = Variable<String>(backgroundColor);
+    }
+    map['min_size_alignment'] = Variable<int>(minSizeAlignment);
+    map['no_downsize_on_error'] = Variable<bool>(noDownsizeOnError);
+    map['print_fps'] = Variable<bool>(printFps);
+    map['no_audio'] = Variable<bool>(noAudio);
+    map['no_audio_playback'] = Variable<bool>(noAudioPlayback);
+    if (!nullToAbsent || audioSource != null) {
+      map['audio_source'] = Variable<String>(audioSource);
+    }
+    if (!nullToAbsent || audioCodec != null) {
+      map['audio_codec'] = Variable<String>(audioCodec);
+    }
+    if (!nullToAbsent || audioEncoder != null) {
+      map['audio_encoder'] = Variable<String>(audioEncoder);
+    }
+    if (!nullToAbsent || audioBitRate != null) {
+      map['audio_bit_rate'] = Variable<String>(audioBitRate);
+    }
+    map['audio_buffer'] = Variable<int>(audioBuffer);
+    map['audio_output_buffer'] = Variable<int>(audioOutputBuffer);
+    map['audio_dup'] = Variable<bool>(audioDup);
+    map['require_audio'] = Variable<bool>(requireAudio);
+    if (!nullToAbsent || videoSource != null) {
+      map['video_source'] = Variable<String>(videoSource);
+    }
+    map['camera_id'] = Variable<int>(cameraId);
+    if (!nullToAbsent || cameraFacing != null) {
+      map['camera_facing'] = Variable<String>(cameraFacing);
+    }
+    if (!nullToAbsent || cameraSize != null) {
+      map['camera_size'] = Variable<String>(cameraSize);
+    }
+    if (!nullToAbsent || cameraAr != null) {
+      map['camera_ar'] = Variable<String>(cameraAr);
+    }
+    map['camera_fps'] = Variable<int>(cameraFps);
+    map['camera_high_speed'] = Variable<bool>(cameraHighSpeed);
+    map['camera_torch'] = Variable<bool>(cameraTorch);
+    map['camera_zoom'] = Variable<double>(cameraZoom);
+    map['borderless'] = Variable<bool>(borderless);
+    if (!nullToAbsent || windowTitle != null) {
+      map['window_title'] = Variable<String>(windowTitle);
+    }
+    map['window_x'] = Variable<int>(windowX);
+    map['window_y'] = Variable<int>(windowY);
+    map['window_width'] = Variable<int>(windowWidth);
+    map['window_height'] = Variable<int>(windowHeight);
+    map['always_on_top'] = Variable<bool>(alwaysOnTop);
+    map['fullscreen'] = Variable<bool>(fullscreen);
+    map['disable_screensaver'] = Variable<bool>(disableScreensaver);
+    map['no_window'] = Variable<bool>(noWindow);
+    map['no_window_aspect_ratio_lock'] =
+        Variable<bool>(noWindowAspectRatioLock);
+    if (!nullToAbsent || keyboard != null) {
+      map['keyboard'] = Variable<String>(keyboard);
+    }
+    if (!nullToAbsent || mouse != null) {
+      map['mouse'] = Variable<String>(mouse);
+    }
+    map['no_control'] = Variable<bool>(noControl);
+    if (!nullToAbsent || mouseBind != null) {
+      map['mouse_bind'] = Variable<String>(mouseBind);
+    }
+    map['prefer_text'] = Variable<bool>(preferText);
+    map['raw_key_events'] = Variable<bool>(rawKeyEvents);
+    map['no_key_repeat'] = Variable<bool>(noKeyRepeat);
+    map['no_mouse_hover'] = Variable<bool>(noMouseHover);
+    map['legacy_paste'] = Variable<bool>(legacyPaste);
+    map['no_clipboard_autosync'] = Variable<bool>(noClipboardAutosync);
+    map['stay_awake'] = Variable<bool>(stayAwake);
+    map['turn_screen_off'] = Variable<bool>(turnScreenOff);
+    map['keep_active'] = Variable<bool>(keepActive);
+    map['show_touches'] = Variable<bool>(showTouches);
+    map['power_off_on_close'] = Variable<bool>(powerOffOnClose);
+    map['no_power_on'] = Variable<bool>(noPowerOn);
+    map['screen_off_timeout'] = Variable<int>(screenOffTimeout);
+    if (!nullToAbsent || shortcutMod != null) {
+      map['shortcut_mod'] = Variable<String>(shortcutMod);
+    }
+    map['record_enabled'] = Variable<bool>(recordEnabled);
+    if (!nullToAbsent || record != null) {
+      map['record'] = Variable<String>(record);
+    }
+    if (!nullToAbsent || recordFormat != null) {
+      map['record_format'] = Variable<String>(recordFormat);
+    }
+    map['time_limit'] = Variable<int>(timeLimit);
+    map['no_playback'] = Variable<bool>(noPlayback);
+    map['no_video_playback'] = Variable<bool>(noVideoPlayback);
+    if (!nullToAbsent || pauseOnExit != null) {
+      map['pause_on_exit'] = Variable<String>(pauseOnExit);
+    }
+    map['updated_at'] = Variable<DateTime>(updatedAt);
+    return map;
+  }
+
+  ScrcpyOptions_Companion toCompanion(bool nullToAbsent) {
+    return ScrcpyOptions_Companion(
+      serial: Value(serial),
+      maxSize: Value(maxSize),
+      videoBitRate: videoBitRate == null && nullToAbsent
+          ? const Value.absent()
+          : Value(videoBitRate),
+      maxFps: Value(maxFps),
+      videoCodec: videoCodec == null && nullToAbsent
+          ? const Value.absent()
+          : Value(videoCodec),
+      videoEncoder: videoEncoder == null && nullToAbsent
+          ? const Value.absent()
+          : Value(videoEncoder),
+      videoBuffer: Value(videoBuffer),
+      noMipmaps: Value(noMipmaps),
+      captureOrientation: captureOrientation == null && nullToAbsent
+          ? const Value.absent()
+          : Value(captureOrientation),
+      displayOrientation: displayOrientation == null && nullToAbsent
+          ? const Value.absent()
+          : Value(displayOrientation),
+      crop: crop == null && nullToAbsent ? const Value.absent() : Value(crop),
+      angle: Value(angle),
+      displayId: Value(displayId),
+      renderFit: renderFit == null && nullToAbsent
+          ? const Value.absent()
+          : Value(renderFit),
+      backgroundColor: backgroundColor == null && nullToAbsent
+          ? const Value.absent()
+          : Value(backgroundColor),
+      minSizeAlignment: Value(minSizeAlignment),
+      noDownsizeOnError: Value(noDownsizeOnError),
+      printFps: Value(printFps),
+      noAudio: Value(noAudio),
+      noAudioPlayback: Value(noAudioPlayback),
+      audioSource: audioSource == null && nullToAbsent
+          ? const Value.absent()
+          : Value(audioSource),
+      audioCodec: audioCodec == null && nullToAbsent
+          ? const Value.absent()
+          : Value(audioCodec),
+      audioEncoder: audioEncoder == null && nullToAbsent
+          ? const Value.absent()
+          : Value(audioEncoder),
+      audioBitRate: audioBitRate == null && nullToAbsent
+          ? const Value.absent()
+          : Value(audioBitRate),
+      audioBuffer: Value(audioBuffer),
+      audioOutputBuffer: Value(audioOutputBuffer),
+      audioDup: Value(audioDup),
+      requireAudio: Value(requireAudio),
+      videoSource: videoSource == null && nullToAbsent
+          ? const Value.absent()
+          : Value(videoSource),
+      cameraId: Value(cameraId),
+      cameraFacing: cameraFacing == null && nullToAbsent
+          ? const Value.absent()
+          : Value(cameraFacing),
+      cameraSize: cameraSize == null && nullToAbsent
+          ? const Value.absent()
+          : Value(cameraSize),
+      cameraAr: cameraAr == null && nullToAbsent
+          ? const Value.absent()
+          : Value(cameraAr),
+      cameraFps: Value(cameraFps),
+      cameraHighSpeed: Value(cameraHighSpeed),
+      cameraTorch: Value(cameraTorch),
+      cameraZoom: Value(cameraZoom),
+      borderless: Value(borderless),
+      windowTitle: windowTitle == null && nullToAbsent
+          ? const Value.absent()
+          : Value(windowTitle),
+      windowX: Value(windowX),
+      windowY: Value(windowY),
+      windowWidth: Value(windowWidth),
+      windowHeight: Value(windowHeight),
+      alwaysOnTop: Value(alwaysOnTop),
+      fullscreen: Value(fullscreen),
+      disableScreensaver: Value(disableScreensaver),
+      noWindow: Value(noWindow),
+      noWindowAspectRatioLock: Value(noWindowAspectRatioLock),
+      keyboard: keyboard == null && nullToAbsent
+          ? const Value.absent()
+          : Value(keyboard),
+      mouse:
+          mouse == null && nullToAbsent ? const Value.absent() : Value(mouse),
+      noControl: Value(noControl),
+      mouseBind: mouseBind == null && nullToAbsent
+          ? const Value.absent()
+          : Value(mouseBind),
+      preferText: Value(preferText),
+      rawKeyEvents: Value(rawKeyEvents),
+      noKeyRepeat: Value(noKeyRepeat),
+      noMouseHover: Value(noMouseHover),
+      legacyPaste: Value(legacyPaste),
+      noClipboardAutosync: Value(noClipboardAutosync),
+      stayAwake: Value(stayAwake),
+      turnScreenOff: Value(turnScreenOff),
+      keepActive: Value(keepActive),
+      showTouches: Value(showTouches),
+      powerOffOnClose: Value(powerOffOnClose),
+      noPowerOn: Value(noPowerOn),
+      screenOffTimeout: Value(screenOffTimeout),
+      shortcutMod: shortcutMod == null && nullToAbsent
+          ? const Value.absent()
+          : Value(shortcutMod),
+      recordEnabled: Value(recordEnabled),
+      record:
+          record == null && nullToAbsent ? const Value.absent() : Value(record),
+      recordFormat: recordFormat == null && nullToAbsent
+          ? const Value.absent()
+          : Value(recordFormat),
+      timeLimit: Value(timeLimit),
+      noPlayback: Value(noPlayback),
+      noVideoPlayback: Value(noVideoPlayback),
+      pauseOnExit: pauseOnExit == null && nullToAbsent
+          ? const Value.absent()
+          : Value(pauseOnExit),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory ScrcpyOptions_Data.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return ScrcpyOptions_Data(
+      serial: serializer.fromJson<String>(json['serial']),
+      maxSize: serializer.fromJson<int>(json['maxSize']),
+      videoBitRate: serializer.fromJson<String?>(json['videoBitRate']),
+      maxFps: serializer.fromJson<int>(json['maxFps']),
+      videoCodec: serializer.fromJson<String?>(json['videoCodec']),
+      videoEncoder: serializer.fromJson<String?>(json['videoEncoder']),
+      videoBuffer: serializer.fromJson<int>(json['videoBuffer']),
+      noMipmaps: serializer.fromJson<bool>(json['noMipmaps']),
+      captureOrientation:
+          serializer.fromJson<String?>(json['captureOrientation']),
+      displayOrientation:
+          serializer.fromJson<String?>(json['displayOrientation']),
+      crop: serializer.fromJson<String?>(json['crop']),
+      angle: serializer.fromJson<int>(json['angle']),
+      displayId: serializer.fromJson<int>(json['displayId']),
+      renderFit: serializer.fromJson<String?>(json['renderFit']),
+      backgroundColor: serializer.fromJson<String?>(json['backgroundColor']),
+      minSizeAlignment: serializer.fromJson<int>(json['minSizeAlignment']),
+      noDownsizeOnError: serializer.fromJson<bool>(json['noDownsizeOnError']),
+      printFps: serializer.fromJson<bool>(json['printFps']),
+      noAudio: serializer.fromJson<bool>(json['noAudio']),
+      noAudioPlayback: serializer.fromJson<bool>(json['noAudioPlayback']),
+      audioSource: serializer.fromJson<String?>(json['audioSource']),
+      audioCodec: serializer.fromJson<String?>(json['audioCodec']),
+      audioEncoder: serializer.fromJson<String?>(json['audioEncoder']),
+      audioBitRate: serializer.fromJson<String?>(json['audioBitRate']),
+      audioBuffer: serializer.fromJson<int>(json['audioBuffer']),
+      audioOutputBuffer: serializer.fromJson<int>(json['audioOutputBuffer']),
+      audioDup: serializer.fromJson<bool>(json['audioDup']),
+      requireAudio: serializer.fromJson<bool>(json['requireAudio']),
+      videoSource: serializer.fromJson<String?>(json['videoSource']),
+      cameraId: serializer.fromJson<int>(json['cameraId']),
+      cameraFacing: serializer.fromJson<String?>(json['cameraFacing']),
+      cameraSize: serializer.fromJson<String?>(json['cameraSize']),
+      cameraAr: serializer.fromJson<String?>(json['cameraAr']),
+      cameraFps: serializer.fromJson<int>(json['cameraFps']),
+      cameraHighSpeed: serializer.fromJson<bool>(json['cameraHighSpeed']),
+      cameraTorch: serializer.fromJson<bool>(json['cameraTorch']),
+      cameraZoom: serializer.fromJson<double>(json['cameraZoom']),
+      borderless: serializer.fromJson<bool>(json['borderless']),
+      windowTitle: serializer.fromJson<String?>(json['windowTitle']),
+      windowX: serializer.fromJson<int>(json['windowX']),
+      windowY: serializer.fromJson<int>(json['windowY']),
+      windowWidth: serializer.fromJson<int>(json['windowWidth']),
+      windowHeight: serializer.fromJson<int>(json['windowHeight']),
+      alwaysOnTop: serializer.fromJson<bool>(json['alwaysOnTop']),
+      fullscreen: serializer.fromJson<bool>(json['fullscreen']),
+      disableScreensaver: serializer.fromJson<bool>(json['disableScreensaver']),
+      noWindow: serializer.fromJson<bool>(json['noWindow']),
+      noWindowAspectRatioLock:
+          serializer.fromJson<bool>(json['noWindowAspectRatioLock']),
+      keyboard: serializer.fromJson<String?>(json['keyboard']),
+      mouse: serializer.fromJson<String?>(json['mouse']),
+      noControl: serializer.fromJson<bool>(json['noControl']),
+      mouseBind: serializer.fromJson<String?>(json['mouseBind']),
+      preferText: serializer.fromJson<bool>(json['preferText']),
+      rawKeyEvents: serializer.fromJson<bool>(json['rawKeyEvents']),
+      noKeyRepeat: serializer.fromJson<bool>(json['noKeyRepeat']),
+      noMouseHover: serializer.fromJson<bool>(json['noMouseHover']),
+      legacyPaste: serializer.fromJson<bool>(json['legacyPaste']),
+      noClipboardAutosync:
+          serializer.fromJson<bool>(json['noClipboardAutosync']),
+      stayAwake: serializer.fromJson<bool>(json['stayAwake']),
+      turnScreenOff: serializer.fromJson<bool>(json['turnScreenOff']),
+      keepActive: serializer.fromJson<bool>(json['keepActive']),
+      showTouches: serializer.fromJson<bool>(json['showTouches']),
+      powerOffOnClose: serializer.fromJson<bool>(json['powerOffOnClose']),
+      noPowerOn: serializer.fromJson<bool>(json['noPowerOn']),
+      screenOffTimeout: serializer.fromJson<int>(json['screenOffTimeout']),
+      shortcutMod: serializer.fromJson<String?>(json['shortcutMod']),
+      recordEnabled: serializer.fromJson<bool>(json['recordEnabled']),
+      record: serializer.fromJson<String?>(json['record']),
+      recordFormat: serializer.fromJson<String?>(json['recordFormat']),
+      timeLimit: serializer.fromJson<int>(json['timeLimit']),
+      noPlayback: serializer.fromJson<bool>(json['noPlayback']),
+      noVideoPlayback: serializer.fromJson<bool>(json['noVideoPlayback']),
+      pauseOnExit: serializer.fromJson<String?>(json['pauseOnExit']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'serial': serializer.toJson<String>(serial),
+      'maxSize': serializer.toJson<int>(maxSize),
+      'videoBitRate': serializer.toJson<String?>(videoBitRate),
+      'maxFps': serializer.toJson<int>(maxFps),
+      'videoCodec': serializer.toJson<String?>(videoCodec),
+      'videoEncoder': serializer.toJson<String?>(videoEncoder),
+      'videoBuffer': serializer.toJson<int>(videoBuffer),
+      'noMipmaps': serializer.toJson<bool>(noMipmaps),
+      'captureOrientation': serializer.toJson<String?>(captureOrientation),
+      'displayOrientation': serializer.toJson<String?>(displayOrientation),
+      'crop': serializer.toJson<String?>(crop),
+      'angle': serializer.toJson<int>(angle),
+      'displayId': serializer.toJson<int>(displayId),
+      'renderFit': serializer.toJson<String?>(renderFit),
+      'backgroundColor': serializer.toJson<String?>(backgroundColor),
+      'minSizeAlignment': serializer.toJson<int>(minSizeAlignment),
+      'noDownsizeOnError': serializer.toJson<bool>(noDownsizeOnError),
+      'printFps': serializer.toJson<bool>(printFps),
+      'noAudio': serializer.toJson<bool>(noAudio),
+      'noAudioPlayback': serializer.toJson<bool>(noAudioPlayback),
+      'audioSource': serializer.toJson<String?>(audioSource),
+      'audioCodec': serializer.toJson<String?>(audioCodec),
+      'audioEncoder': serializer.toJson<String?>(audioEncoder),
+      'audioBitRate': serializer.toJson<String?>(audioBitRate),
+      'audioBuffer': serializer.toJson<int>(audioBuffer),
+      'audioOutputBuffer': serializer.toJson<int>(audioOutputBuffer),
+      'audioDup': serializer.toJson<bool>(audioDup),
+      'requireAudio': serializer.toJson<bool>(requireAudio),
+      'videoSource': serializer.toJson<String?>(videoSource),
+      'cameraId': serializer.toJson<int>(cameraId),
+      'cameraFacing': serializer.toJson<String?>(cameraFacing),
+      'cameraSize': serializer.toJson<String?>(cameraSize),
+      'cameraAr': serializer.toJson<String?>(cameraAr),
+      'cameraFps': serializer.toJson<int>(cameraFps),
+      'cameraHighSpeed': serializer.toJson<bool>(cameraHighSpeed),
+      'cameraTorch': serializer.toJson<bool>(cameraTorch),
+      'cameraZoom': serializer.toJson<double>(cameraZoom),
+      'borderless': serializer.toJson<bool>(borderless),
+      'windowTitle': serializer.toJson<String?>(windowTitle),
+      'windowX': serializer.toJson<int>(windowX),
+      'windowY': serializer.toJson<int>(windowY),
+      'windowWidth': serializer.toJson<int>(windowWidth),
+      'windowHeight': serializer.toJson<int>(windowHeight),
+      'alwaysOnTop': serializer.toJson<bool>(alwaysOnTop),
+      'fullscreen': serializer.toJson<bool>(fullscreen),
+      'disableScreensaver': serializer.toJson<bool>(disableScreensaver),
+      'noWindow': serializer.toJson<bool>(noWindow),
+      'noWindowAspectRatioLock':
+          serializer.toJson<bool>(noWindowAspectRatioLock),
+      'keyboard': serializer.toJson<String?>(keyboard),
+      'mouse': serializer.toJson<String?>(mouse),
+      'noControl': serializer.toJson<bool>(noControl),
+      'mouseBind': serializer.toJson<String?>(mouseBind),
+      'preferText': serializer.toJson<bool>(preferText),
+      'rawKeyEvents': serializer.toJson<bool>(rawKeyEvents),
+      'noKeyRepeat': serializer.toJson<bool>(noKeyRepeat),
+      'noMouseHover': serializer.toJson<bool>(noMouseHover),
+      'legacyPaste': serializer.toJson<bool>(legacyPaste),
+      'noClipboardAutosync': serializer.toJson<bool>(noClipboardAutosync),
+      'stayAwake': serializer.toJson<bool>(stayAwake),
+      'turnScreenOff': serializer.toJson<bool>(turnScreenOff),
+      'keepActive': serializer.toJson<bool>(keepActive),
+      'showTouches': serializer.toJson<bool>(showTouches),
+      'powerOffOnClose': serializer.toJson<bool>(powerOffOnClose),
+      'noPowerOn': serializer.toJson<bool>(noPowerOn),
+      'screenOffTimeout': serializer.toJson<int>(screenOffTimeout),
+      'shortcutMod': serializer.toJson<String?>(shortcutMod),
+      'recordEnabled': serializer.toJson<bool>(recordEnabled),
+      'record': serializer.toJson<String?>(record),
+      'recordFormat': serializer.toJson<String?>(recordFormat),
+      'timeLimit': serializer.toJson<int>(timeLimit),
+      'noPlayback': serializer.toJson<bool>(noPlayback),
+      'noVideoPlayback': serializer.toJson<bool>(noVideoPlayback),
+      'pauseOnExit': serializer.toJson<String?>(pauseOnExit),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+    };
+  }
+
+  ScrcpyOptions_Data copyWith(
+          {String? serial,
+          int? maxSize,
+          Value<String?> videoBitRate = const Value.absent(),
+          int? maxFps,
+          Value<String?> videoCodec = const Value.absent(),
+          Value<String?> videoEncoder = const Value.absent(),
+          int? videoBuffer,
+          bool? noMipmaps,
+          Value<String?> captureOrientation = const Value.absent(),
+          Value<String?> displayOrientation = const Value.absent(),
+          Value<String?> crop = const Value.absent(),
+          int? angle,
+          int? displayId,
+          Value<String?> renderFit = const Value.absent(),
+          Value<String?> backgroundColor = const Value.absent(),
+          int? minSizeAlignment,
+          bool? noDownsizeOnError,
+          bool? printFps,
+          bool? noAudio,
+          bool? noAudioPlayback,
+          Value<String?> audioSource = const Value.absent(),
+          Value<String?> audioCodec = const Value.absent(),
+          Value<String?> audioEncoder = const Value.absent(),
+          Value<String?> audioBitRate = const Value.absent(),
+          int? audioBuffer,
+          int? audioOutputBuffer,
+          bool? audioDup,
+          bool? requireAudio,
+          Value<String?> videoSource = const Value.absent(),
+          int? cameraId,
+          Value<String?> cameraFacing = const Value.absent(),
+          Value<String?> cameraSize = const Value.absent(),
+          Value<String?> cameraAr = const Value.absent(),
+          int? cameraFps,
+          bool? cameraHighSpeed,
+          bool? cameraTorch,
+          double? cameraZoom,
+          bool? borderless,
+          Value<String?> windowTitle = const Value.absent(),
+          int? windowX,
+          int? windowY,
+          int? windowWidth,
+          int? windowHeight,
+          bool? alwaysOnTop,
+          bool? fullscreen,
+          bool? disableScreensaver,
+          bool? noWindow,
+          bool? noWindowAspectRatioLock,
+          Value<String?> keyboard = const Value.absent(),
+          Value<String?> mouse = const Value.absent(),
+          bool? noControl,
+          Value<String?> mouseBind = const Value.absent(),
+          bool? preferText,
+          bool? rawKeyEvents,
+          bool? noKeyRepeat,
+          bool? noMouseHover,
+          bool? legacyPaste,
+          bool? noClipboardAutosync,
+          bool? stayAwake,
+          bool? turnScreenOff,
+          bool? keepActive,
+          bool? showTouches,
+          bool? powerOffOnClose,
+          bool? noPowerOn,
+          int? screenOffTimeout,
+          Value<String?> shortcutMod = const Value.absent(),
+          bool? recordEnabled,
+          Value<String?> record = const Value.absent(),
+          Value<String?> recordFormat = const Value.absent(),
+          int? timeLimit,
+          bool? noPlayback,
+          bool? noVideoPlayback,
+          Value<String?> pauseOnExit = const Value.absent(),
+          DateTime? updatedAt}) =>
+      ScrcpyOptions_Data(
+        serial: serial ?? this.serial,
+        maxSize: maxSize ?? this.maxSize,
+        videoBitRate:
+            videoBitRate.present ? videoBitRate.value : this.videoBitRate,
+        maxFps: maxFps ?? this.maxFps,
+        videoCodec: videoCodec.present ? videoCodec.value : this.videoCodec,
+        videoEncoder:
+            videoEncoder.present ? videoEncoder.value : this.videoEncoder,
+        videoBuffer: videoBuffer ?? this.videoBuffer,
+        noMipmaps: noMipmaps ?? this.noMipmaps,
+        captureOrientation: captureOrientation.present
+            ? captureOrientation.value
+            : this.captureOrientation,
+        displayOrientation: displayOrientation.present
+            ? displayOrientation.value
+            : this.displayOrientation,
+        crop: crop.present ? crop.value : this.crop,
+        angle: angle ?? this.angle,
+        displayId: displayId ?? this.displayId,
+        renderFit: renderFit.present ? renderFit.value : this.renderFit,
+        backgroundColor: backgroundColor.present
+            ? backgroundColor.value
+            : this.backgroundColor,
+        minSizeAlignment: minSizeAlignment ?? this.minSizeAlignment,
+        noDownsizeOnError: noDownsizeOnError ?? this.noDownsizeOnError,
+        printFps: printFps ?? this.printFps,
+        noAudio: noAudio ?? this.noAudio,
+        noAudioPlayback: noAudioPlayback ?? this.noAudioPlayback,
+        audioSource: audioSource.present ? audioSource.value : this.audioSource,
+        audioCodec: audioCodec.present ? audioCodec.value : this.audioCodec,
+        audioEncoder:
+            audioEncoder.present ? audioEncoder.value : this.audioEncoder,
+        audioBitRate:
+            audioBitRate.present ? audioBitRate.value : this.audioBitRate,
+        audioBuffer: audioBuffer ?? this.audioBuffer,
+        audioOutputBuffer: audioOutputBuffer ?? this.audioOutputBuffer,
+        audioDup: audioDup ?? this.audioDup,
+        requireAudio: requireAudio ?? this.requireAudio,
+        videoSource: videoSource.present ? videoSource.value : this.videoSource,
+        cameraId: cameraId ?? this.cameraId,
+        cameraFacing:
+            cameraFacing.present ? cameraFacing.value : this.cameraFacing,
+        cameraSize: cameraSize.present ? cameraSize.value : this.cameraSize,
+        cameraAr: cameraAr.present ? cameraAr.value : this.cameraAr,
+        cameraFps: cameraFps ?? this.cameraFps,
+        cameraHighSpeed: cameraHighSpeed ?? this.cameraHighSpeed,
+        cameraTorch: cameraTorch ?? this.cameraTorch,
+        cameraZoom: cameraZoom ?? this.cameraZoom,
+        borderless: borderless ?? this.borderless,
+        windowTitle: windowTitle.present ? windowTitle.value : this.windowTitle,
+        windowX: windowX ?? this.windowX,
+        windowY: windowY ?? this.windowY,
+        windowWidth: windowWidth ?? this.windowWidth,
+        windowHeight: windowHeight ?? this.windowHeight,
+        alwaysOnTop: alwaysOnTop ?? this.alwaysOnTop,
+        fullscreen: fullscreen ?? this.fullscreen,
+        disableScreensaver: disableScreensaver ?? this.disableScreensaver,
+        noWindow: noWindow ?? this.noWindow,
+        noWindowAspectRatioLock:
+            noWindowAspectRatioLock ?? this.noWindowAspectRatioLock,
+        keyboard: keyboard.present ? keyboard.value : this.keyboard,
+        mouse: mouse.present ? mouse.value : this.mouse,
+        noControl: noControl ?? this.noControl,
+        mouseBind: mouseBind.present ? mouseBind.value : this.mouseBind,
+        preferText: preferText ?? this.preferText,
+        rawKeyEvents: rawKeyEvents ?? this.rawKeyEvents,
+        noKeyRepeat: noKeyRepeat ?? this.noKeyRepeat,
+        noMouseHover: noMouseHover ?? this.noMouseHover,
+        legacyPaste: legacyPaste ?? this.legacyPaste,
+        noClipboardAutosync: noClipboardAutosync ?? this.noClipboardAutosync,
+        stayAwake: stayAwake ?? this.stayAwake,
+        turnScreenOff: turnScreenOff ?? this.turnScreenOff,
+        keepActive: keepActive ?? this.keepActive,
+        showTouches: showTouches ?? this.showTouches,
+        powerOffOnClose: powerOffOnClose ?? this.powerOffOnClose,
+        noPowerOn: noPowerOn ?? this.noPowerOn,
+        screenOffTimeout: screenOffTimeout ?? this.screenOffTimeout,
+        shortcutMod: shortcutMod.present ? shortcutMod.value : this.shortcutMod,
+        recordEnabled: recordEnabled ?? this.recordEnabled,
+        record: record.present ? record.value : this.record,
+        recordFormat:
+            recordFormat.present ? recordFormat.value : this.recordFormat,
+        timeLimit: timeLimit ?? this.timeLimit,
+        noPlayback: noPlayback ?? this.noPlayback,
+        noVideoPlayback: noVideoPlayback ?? this.noVideoPlayback,
+        pauseOnExit: pauseOnExit.present ? pauseOnExit.value : this.pauseOnExit,
+        updatedAt: updatedAt ?? this.updatedAt,
+      );
+  ScrcpyOptions_Data copyWithCompanion(ScrcpyOptions_Companion data) {
+    return ScrcpyOptions_Data(
+      serial: data.serial.present ? data.serial.value : this.serial,
+      maxSize: data.maxSize.present ? data.maxSize.value : this.maxSize,
+      videoBitRate: data.videoBitRate.present
+          ? data.videoBitRate.value
+          : this.videoBitRate,
+      maxFps: data.maxFps.present ? data.maxFps.value : this.maxFps,
+      videoCodec:
+          data.videoCodec.present ? data.videoCodec.value : this.videoCodec,
+      videoEncoder: data.videoEncoder.present
+          ? data.videoEncoder.value
+          : this.videoEncoder,
+      videoBuffer:
+          data.videoBuffer.present ? data.videoBuffer.value : this.videoBuffer,
+      noMipmaps: data.noMipmaps.present ? data.noMipmaps.value : this.noMipmaps,
+      captureOrientation: data.captureOrientation.present
+          ? data.captureOrientation.value
+          : this.captureOrientation,
+      displayOrientation: data.displayOrientation.present
+          ? data.displayOrientation.value
+          : this.displayOrientation,
+      crop: data.crop.present ? data.crop.value : this.crop,
+      angle: data.angle.present ? data.angle.value : this.angle,
+      displayId: data.displayId.present ? data.displayId.value : this.displayId,
+      renderFit: data.renderFit.present ? data.renderFit.value : this.renderFit,
+      backgroundColor: data.backgroundColor.present
+          ? data.backgroundColor.value
+          : this.backgroundColor,
+      minSizeAlignment: data.minSizeAlignment.present
+          ? data.minSizeAlignment.value
+          : this.minSizeAlignment,
+      noDownsizeOnError: data.noDownsizeOnError.present
+          ? data.noDownsizeOnError.value
+          : this.noDownsizeOnError,
+      printFps: data.printFps.present ? data.printFps.value : this.printFps,
+      noAudio: data.noAudio.present ? data.noAudio.value : this.noAudio,
+      noAudioPlayback: data.noAudioPlayback.present
+          ? data.noAudioPlayback.value
+          : this.noAudioPlayback,
+      audioSource:
+          data.audioSource.present ? data.audioSource.value : this.audioSource,
+      audioCodec:
+          data.audioCodec.present ? data.audioCodec.value : this.audioCodec,
+      audioEncoder: data.audioEncoder.present
+          ? data.audioEncoder.value
+          : this.audioEncoder,
+      audioBitRate: data.audioBitRate.present
+          ? data.audioBitRate.value
+          : this.audioBitRate,
+      audioBuffer:
+          data.audioBuffer.present ? data.audioBuffer.value : this.audioBuffer,
+      audioOutputBuffer: data.audioOutputBuffer.present
+          ? data.audioOutputBuffer.value
+          : this.audioOutputBuffer,
+      audioDup: data.audioDup.present ? data.audioDup.value : this.audioDup,
+      requireAudio: data.requireAudio.present
+          ? data.requireAudio.value
+          : this.requireAudio,
+      videoSource:
+          data.videoSource.present ? data.videoSource.value : this.videoSource,
+      cameraId: data.cameraId.present ? data.cameraId.value : this.cameraId,
+      cameraFacing: data.cameraFacing.present
+          ? data.cameraFacing.value
+          : this.cameraFacing,
+      cameraSize:
+          data.cameraSize.present ? data.cameraSize.value : this.cameraSize,
+      cameraAr: data.cameraAr.present ? data.cameraAr.value : this.cameraAr,
+      cameraFps: data.cameraFps.present ? data.cameraFps.value : this.cameraFps,
+      cameraHighSpeed: data.cameraHighSpeed.present
+          ? data.cameraHighSpeed.value
+          : this.cameraHighSpeed,
+      cameraTorch:
+          data.cameraTorch.present ? data.cameraTorch.value : this.cameraTorch,
+      cameraZoom:
+          data.cameraZoom.present ? data.cameraZoom.value : this.cameraZoom,
+      borderless:
+          data.borderless.present ? data.borderless.value : this.borderless,
+      windowTitle:
+          data.windowTitle.present ? data.windowTitle.value : this.windowTitle,
+      windowX: data.windowX.present ? data.windowX.value : this.windowX,
+      windowY: data.windowY.present ? data.windowY.value : this.windowY,
+      windowWidth:
+          data.windowWidth.present ? data.windowWidth.value : this.windowWidth,
+      windowHeight: data.windowHeight.present
+          ? data.windowHeight.value
+          : this.windowHeight,
+      alwaysOnTop:
+          data.alwaysOnTop.present ? data.alwaysOnTop.value : this.alwaysOnTop,
+      fullscreen:
+          data.fullscreen.present ? data.fullscreen.value : this.fullscreen,
+      disableScreensaver: data.disableScreensaver.present
+          ? data.disableScreensaver.value
+          : this.disableScreensaver,
+      noWindow: data.noWindow.present ? data.noWindow.value : this.noWindow,
+      noWindowAspectRatioLock: data.noWindowAspectRatioLock.present
+          ? data.noWindowAspectRatioLock.value
+          : this.noWindowAspectRatioLock,
+      keyboard: data.keyboard.present ? data.keyboard.value : this.keyboard,
+      mouse: data.mouse.present ? data.mouse.value : this.mouse,
+      noControl: data.noControl.present ? data.noControl.value : this.noControl,
+      mouseBind: data.mouseBind.present ? data.mouseBind.value : this.mouseBind,
+      preferText:
+          data.preferText.present ? data.preferText.value : this.preferText,
+      rawKeyEvents: data.rawKeyEvents.present
+          ? data.rawKeyEvents.value
+          : this.rawKeyEvents,
+      noKeyRepeat:
+          data.noKeyRepeat.present ? data.noKeyRepeat.value : this.noKeyRepeat,
+      noMouseHover: data.noMouseHover.present
+          ? data.noMouseHover.value
+          : this.noMouseHover,
+      legacyPaste:
+          data.legacyPaste.present ? data.legacyPaste.value : this.legacyPaste,
+      noClipboardAutosync: data.noClipboardAutosync.present
+          ? data.noClipboardAutosync.value
+          : this.noClipboardAutosync,
+      stayAwake: data.stayAwake.present ? data.stayAwake.value : this.stayAwake,
+      turnScreenOff: data.turnScreenOff.present
+          ? data.turnScreenOff.value
+          : this.turnScreenOff,
+      keepActive:
+          data.keepActive.present ? data.keepActive.value : this.keepActive,
+      showTouches:
+          data.showTouches.present ? data.showTouches.value : this.showTouches,
+      powerOffOnClose: data.powerOffOnClose.present
+          ? data.powerOffOnClose.value
+          : this.powerOffOnClose,
+      noPowerOn: data.noPowerOn.present ? data.noPowerOn.value : this.noPowerOn,
+      screenOffTimeout: data.screenOffTimeout.present
+          ? data.screenOffTimeout.value
+          : this.screenOffTimeout,
+      shortcutMod:
+          data.shortcutMod.present ? data.shortcutMod.value : this.shortcutMod,
+      recordEnabled: data.recordEnabled.present
+          ? data.recordEnabled.value
+          : this.recordEnabled,
+      record: data.record.present ? data.record.value : this.record,
+      recordFormat: data.recordFormat.present
+          ? data.recordFormat.value
+          : this.recordFormat,
+      timeLimit: data.timeLimit.present ? data.timeLimit.value : this.timeLimit,
+      noPlayback:
+          data.noPlayback.present ? data.noPlayback.value : this.noPlayback,
+      noVideoPlayback: data.noVideoPlayback.present
+          ? data.noVideoPlayback.value
+          : this.noVideoPlayback,
+      pauseOnExit:
+          data.pauseOnExit.present ? data.pauseOnExit.value : this.pauseOnExit,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ScrcpyOptions_Data(')
+          ..write('serial: $serial, ')
+          ..write('maxSize: $maxSize, ')
+          ..write('videoBitRate: $videoBitRate, ')
+          ..write('maxFps: $maxFps, ')
+          ..write('videoCodec: $videoCodec, ')
+          ..write('videoEncoder: $videoEncoder, ')
+          ..write('videoBuffer: $videoBuffer, ')
+          ..write('noMipmaps: $noMipmaps, ')
+          ..write('captureOrientation: $captureOrientation, ')
+          ..write('displayOrientation: $displayOrientation, ')
+          ..write('crop: $crop, ')
+          ..write('angle: $angle, ')
+          ..write('displayId: $displayId, ')
+          ..write('renderFit: $renderFit, ')
+          ..write('backgroundColor: $backgroundColor, ')
+          ..write('minSizeAlignment: $minSizeAlignment, ')
+          ..write('noDownsizeOnError: $noDownsizeOnError, ')
+          ..write('printFps: $printFps, ')
+          ..write('noAudio: $noAudio, ')
+          ..write('noAudioPlayback: $noAudioPlayback, ')
+          ..write('audioSource: $audioSource, ')
+          ..write('audioCodec: $audioCodec, ')
+          ..write('audioEncoder: $audioEncoder, ')
+          ..write('audioBitRate: $audioBitRate, ')
+          ..write('audioBuffer: $audioBuffer, ')
+          ..write('audioOutputBuffer: $audioOutputBuffer, ')
+          ..write('audioDup: $audioDup, ')
+          ..write('requireAudio: $requireAudio, ')
+          ..write('videoSource: $videoSource, ')
+          ..write('cameraId: $cameraId, ')
+          ..write('cameraFacing: $cameraFacing, ')
+          ..write('cameraSize: $cameraSize, ')
+          ..write('cameraAr: $cameraAr, ')
+          ..write('cameraFps: $cameraFps, ')
+          ..write('cameraHighSpeed: $cameraHighSpeed, ')
+          ..write('cameraTorch: $cameraTorch, ')
+          ..write('cameraZoom: $cameraZoom, ')
+          ..write('borderless: $borderless, ')
+          ..write('windowTitle: $windowTitle, ')
+          ..write('windowX: $windowX, ')
+          ..write('windowY: $windowY, ')
+          ..write('windowWidth: $windowWidth, ')
+          ..write('windowHeight: $windowHeight, ')
+          ..write('alwaysOnTop: $alwaysOnTop, ')
+          ..write('fullscreen: $fullscreen, ')
+          ..write('disableScreensaver: $disableScreensaver, ')
+          ..write('noWindow: $noWindow, ')
+          ..write('noWindowAspectRatioLock: $noWindowAspectRatioLock, ')
+          ..write('keyboard: $keyboard, ')
+          ..write('mouse: $mouse, ')
+          ..write('noControl: $noControl, ')
+          ..write('mouseBind: $mouseBind, ')
+          ..write('preferText: $preferText, ')
+          ..write('rawKeyEvents: $rawKeyEvents, ')
+          ..write('noKeyRepeat: $noKeyRepeat, ')
+          ..write('noMouseHover: $noMouseHover, ')
+          ..write('legacyPaste: $legacyPaste, ')
+          ..write('noClipboardAutosync: $noClipboardAutosync, ')
+          ..write('stayAwake: $stayAwake, ')
+          ..write('turnScreenOff: $turnScreenOff, ')
+          ..write('keepActive: $keepActive, ')
+          ..write('showTouches: $showTouches, ')
+          ..write('powerOffOnClose: $powerOffOnClose, ')
+          ..write('noPowerOn: $noPowerOn, ')
+          ..write('screenOffTimeout: $screenOffTimeout, ')
+          ..write('shortcutMod: $shortcutMod, ')
+          ..write('recordEnabled: $recordEnabled, ')
+          ..write('record: $record, ')
+          ..write('recordFormat: $recordFormat, ')
+          ..write('timeLimit: $timeLimit, ')
+          ..write('noPlayback: $noPlayback, ')
+          ..write('noVideoPlayback: $noVideoPlayback, ')
+          ..write('pauseOnExit: $pauseOnExit, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hashAll([
+        serial,
+        maxSize,
+        videoBitRate,
+        maxFps,
+        videoCodec,
+        videoEncoder,
+        videoBuffer,
+        noMipmaps,
+        captureOrientation,
+        displayOrientation,
+        crop,
+        angle,
+        displayId,
+        renderFit,
+        backgroundColor,
+        minSizeAlignment,
+        noDownsizeOnError,
+        printFps,
+        noAudio,
+        noAudioPlayback,
+        audioSource,
+        audioCodec,
+        audioEncoder,
+        audioBitRate,
+        audioBuffer,
+        audioOutputBuffer,
+        audioDup,
+        requireAudio,
+        videoSource,
+        cameraId,
+        cameraFacing,
+        cameraSize,
+        cameraAr,
+        cameraFps,
+        cameraHighSpeed,
+        cameraTorch,
+        cameraZoom,
+        borderless,
+        windowTitle,
+        windowX,
+        windowY,
+        windowWidth,
+        windowHeight,
+        alwaysOnTop,
+        fullscreen,
+        disableScreensaver,
+        noWindow,
+        noWindowAspectRatioLock,
+        keyboard,
+        mouse,
+        noControl,
+        mouseBind,
+        preferText,
+        rawKeyEvents,
+        noKeyRepeat,
+        noMouseHover,
+        legacyPaste,
+        noClipboardAutosync,
+        stayAwake,
+        turnScreenOff,
+        keepActive,
+        showTouches,
+        powerOffOnClose,
+        noPowerOn,
+        screenOffTimeout,
+        shortcutMod,
+        recordEnabled,
+        record,
+        recordFormat,
+        timeLimit,
+        noPlayback,
+        noVideoPlayback,
+        pauseOnExit,
+        updatedAt
+      ]);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ScrcpyOptions_Data &&
+          other.serial == this.serial &&
+          other.maxSize == this.maxSize &&
+          other.videoBitRate == this.videoBitRate &&
+          other.maxFps == this.maxFps &&
+          other.videoCodec == this.videoCodec &&
+          other.videoEncoder == this.videoEncoder &&
+          other.videoBuffer == this.videoBuffer &&
+          other.noMipmaps == this.noMipmaps &&
+          other.captureOrientation == this.captureOrientation &&
+          other.displayOrientation == this.displayOrientation &&
+          other.crop == this.crop &&
+          other.angle == this.angle &&
+          other.displayId == this.displayId &&
+          other.renderFit == this.renderFit &&
+          other.backgroundColor == this.backgroundColor &&
+          other.minSizeAlignment == this.minSizeAlignment &&
+          other.noDownsizeOnError == this.noDownsizeOnError &&
+          other.printFps == this.printFps &&
+          other.noAudio == this.noAudio &&
+          other.noAudioPlayback == this.noAudioPlayback &&
+          other.audioSource == this.audioSource &&
+          other.audioCodec == this.audioCodec &&
+          other.audioEncoder == this.audioEncoder &&
+          other.audioBitRate == this.audioBitRate &&
+          other.audioBuffer == this.audioBuffer &&
+          other.audioOutputBuffer == this.audioOutputBuffer &&
+          other.audioDup == this.audioDup &&
+          other.requireAudio == this.requireAudio &&
+          other.videoSource == this.videoSource &&
+          other.cameraId == this.cameraId &&
+          other.cameraFacing == this.cameraFacing &&
+          other.cameraSize == this.cameraSize &&
+          other.cameraAr == this.cameraAr &&
+          other.cameraFps == this.cameraFps &&
+          other.cameraHighSpeed == this.cameraHighSpeed &&
+          other.cameraTorch == this.cameraTorch &&
+          other.cameraZoom == this.cameraZoom &&
+          other.borderless == this.borderless &&
+          other.windowTitle == this.windowTitle &&
+          other.windowX == this.windowX &&
+          other.windowY == this.windowY &&
+          other.windowWidth == this.windowWidth &&
+          other.windowHeight == this.windowHeight &&
+          other.alwaysOnTop == this.alwaysOnTop &&
+          other.fullscreen == this.fullscreen &&
+          other.disableScreensaver == this.disableScreensaver &&
+          other.noWindow == this.noWindow &&
+          other.noWindowAspectRatioLock == this.noWindowAspectRatioLock &&
+          other.keyboard == this.keyboard &&
+          other.mouse == this.mouse &&
+          other.noControl == this.noControl &&
+          other.mouseBind == this.mouseBind &&
+          other.preferText == this.preferText &&
+          other.rawKeyEvents == this.rawKeyEvents &&
+          other.noKeyRepeat == this.noKeyRepeat &&
+          other.noMouseHover == this.noMouseHover &&
+          other.legacyPaste == this.legacyPaste &&
+          other.noClipboardAutosync == this.noClipboardAutosync &&
+          other.stayAwake == this.stayAwake &&
+          other.turnScreenOff == this.turnScreenOff &&
+          other.keepActive == this.keepActive &&
+          other.showTouches == this.showTouches &&
+          other.powerOffOnClose == this.powerOffOnClose &&
+          other.noPowerOn == this.noPowerOn &&
+          other.screenOffTimeout == this.screenOffTimeout &&
+          other.shortcutMod == this.shortcutMod &&
+          other.recordEnabled == this.recordEnabled &&
+          other.record == this.record &&
+          other.recordFormat == this.recordFormat &&
+          other.timeLimit == this.timeLimit &&
+          other.noPlayback == this.noPlayback &&
+          other.noVideoPlayback == this.noVideoPlayback &&
+          other.pauseOnExit == this.pauseOnExit &&
+          other.updatedAt == this.updatedAt);
+}
+
+class ScrcpyOptions_Companion extends UpdateCompanion<ScrcpyOptions_Data> {
+  final Value<String> serial;
+  final Value<int> maxSize;
+  final Value<String?> videoBitRate;
+  final Value<int> maxFps;
+  final Value<String?> videoCodec;
+  final Value<String?> videoEncoder;
+  final Value<int> videoBuffer;
+  final Value<bool> noMipmaps;
+  final Value<String?> captureOrientation;
+  final Value<String?> displayOrientation;
+  final Value<String?> crop;
+  final Value<int> angle;
+  final Value<int> displayId;
+  final Value<String?> renderFit;
+  final Value<String?> backgroundColor;
+  final Value<int> minSizeAlignment;
+  final Value<bool> noDownsizeOnError;
+  final Value<bool> printFps;
+  final Value<bool> noAudio;
+  final Value<bool> noAudioPlayback;
+  final Value<String?> audioSource;
+  final Value<String?> audioCodec;
+  final Value<String?> audioEncoder;
+  final Value<String?> audioBitRate;
+  final Value<int> audioBuffer;
+  final Value<int> audioOutputBuffer;
+  final Value<bool> audioDup;
+  final Value<bool> requireAudio;
+  final Value<String?> videoSource;
+  final Value<int> cameraId;
+  final Value<String?> cameraFacing;
+  final Value<String?> cameraSize;
+  final Value<String?> cameraAr;
+  final Value<int> cameraFps;
+  final Value<bool> cameraHighSpeed;
+  final Value<bool> cameraTorch;
+  final Value<double> cameraZoom;
+  final Value<bool> borderless;
+  final Value<String?> windowTitle;
+  final Value<int> windowX;
+  final Value<int> windowY;
+  final Value<int> windowWidth;
+  final Value<int> windowHeight;
+  final Value<bool> alwaysOnTop;
+  final Value<bool> fullscreen;
+  final Value<bool> disableScreensaver;
+  final Value<bool> noWindow;
+  final Value<bool> noWindowAspectRatioLock;
+  final Value<String?> keyboard;
+  final Value<String?> mouse;
+  final Value<bool> noControl;
+  final Value<String?> mouseBind;
+  final Value<bool> preferText;
+  final Value<bool> rawKeyEvents;
+  final Value<bool> noKeyRepeat;
+  final Value<bool> noMouseHover;
+  final Value<bool> legacyPaste;
+  final Value<bool> noClipboardAutosync;
+  final Value<bool> stayAwake;
+  final Value<bool> turnScreenOff;
+  final Value<bool> keepActive;
+  final Value<bool> showTouches;
+  final Value<bool> powerOffOnClose;
+  final Value<bool> noPowerOn;
+  final Value<int> screenOffTimeout;
+  final Value<String?> shortcutMod;
+  final Value<bool> recordEnabled;
+  final Value<String?> record;
+  final Value<String?> recordFormat;
+  final Value<int> timeLimit;
+  final Value<bool> noPlayback;
+  final Value<bool> noVideoPlayback;
+  final Value<String?> pauseOnExit;
+  final Value<DateTime> updatedAt;
+  final Value<int> rowid;
+  const ScrcpyOptions_Companion({
+    this.serial = const Value.absent(),
+    this.maxSize = const Value.absent(),
+    this.videoBitRate = const Value.absent(),
+    this.maxFps = const Value.absent(),
+    this.videoCodec = const Value.absent(),
+    this.videoEncoder = const Value.absent(),
+    this.videoBuffer = const Value.absent(),
+    this.noMipmaps = const Value.absent(),
+    this.captureOrientation = const Value.absent(),
+    this.displayOrientation = const Value.absent(),
+    this.crop = const Value.absent(),
+    this.angle = const Value.absent(),
+    this.displayId = const Value.absent(),
+    this.renderFit = const Value.absent(),
+    this.backgroundColor = const Value.absent(),
+    this.minSizeAlignment = const Value.absent(),
+    this.noDownsizeOnError = const Value.absent(),
+    this.printFps = const Value.absent(),
+    this.noAudio = const Value.absent(),
+    this.noAudioPlayback = const Value.absent(),
+    this.audioSource = const Value.absent(),
+    this.audioCodec = const Value.absent(),
+    this.audioEncoder = const Value.absent(),
+    this.audioBitRate = const Value.absent(),
+    this.audioBuffer = const Value.absent(),
+    this.audioOutputBuffer = const Value.absent(),
+    this.audioDup = const Value.absent(),
+    this.requireAudio = const Value.absent(),
+    this.videoSource = const Value.absent(),
+    this.cameraId = const Value.absent(),
+    this.cameraFacing = const Value.absent(),
+    this.cameraSize = const Value.absent(),
+    this.cameraAr = const Value.absent(),
+    this.cameraFps = const Value.absent(),
+    this.cameraHighSpeed = const Value.absent(),
+    this.cameraTorch = const Value.absent(),
+    this.cameraZoom = const Value.absent(),
+    this.borderless = const Value.absent(),
+    this.windowTitle = const Value.absent(),
+    this.windowX = const Value.absent(),
+    this.windowY = const Value.absent(),
+    this.windowWidth = const Value.absent(),
+    this.windowHeight = const Value.absent(),
+    this.alwaysOnTop = const Value.absent(),
+    this.fullscreen = const Value.absent(),
+    this.disableScreensaver = const Value.absent(),
+    this.noWindow = const Value.absent(),
+    this.noWindowAspectRatioLock = const Value.absent(),
+    this.keyboard = const Value.absent(),
+    this.mouse = const Value.absent(),
+    this.noControl = const Value.absent(),
+    this.mouseBind = const Value.absent(),
+    this.preferText = const Value.absent(),
+    this.rawKeyEvents = const Value.absent(),
+    this.noKeyRepeat = const Value.absent(),
+    this.noMouseHover = const Value.absent(),
+    this.legacyPaste = const Value.absent(),
+    this.noClipboardAutosync = const Value.absent(),
+    this.stayAwake = const Value.absent(),
+    this.turnScreenOff = const Value.absent(),
+    this.keepActive = const Value.absent(),
+    this.showTouches = const Value.absent(),
+    this.powerOffOnClose = const Value.absent(),
+    this.noPowerOn = const Value.absent(),
+    this.screenOffTimeout = const Value.absent(),
+    this.shortcutMod = const Value.absent(),
+    this.recordEnabled = const Value.absent(),
+    this.record = const Value.absent(),
+    this.recordFormat = const Value.absent(),
+    this.timeLimit = const Value.absent(),
+    this.noPlayback = const Value.absent(),
+    this.noVideoPlayback = const Value.absent(),
+    this.pauseOnExit = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  ScrcpyOptions_Companion.insert({
+    required String serial,
+    required int maxSize,
+    this.videoBitRate = const Value.absent(),
+    required int maxFps,
+    this.videoCodec = const Value.absent(),
+    this.videoEncoder = const Value.absent(),
+    required int videoBuffer,
+    required bool noMipmaps,
+    this.captureOrientation = const Value.absent(),
+    this.displayOrientation = const Value.absent(),
+    this.crop = const Value.absent(),
+    required int angle,
+    required int displayId,
+    this.renderFit = const Value.absent(),
+    this.backgroundColor = const Value.absent(),
+    required int minSizeAlignment,
+    required bool noDownsizeOnError,
+    required bool printFps,
+    required bool noAudio,
+    required bool noAudioPlayback,
+    this.audioSource = const Value.absent(),
+    this.audioCodec = const Value.absent(),
+    this.audioEncoder = const Value.absent(),
+    this.audioBitRate = const Value.absent(),
+    required int audioBuffer,
+    required int audioOutputBuffer,
+    required bool audioDup,
+    required bool requireAudio,
+    this.videoSource = const Value.absent(),
+    required int cameraId,
+    this.cameraFacing = const Value.absent(),
+    this.cameraSize = const Value.absent(),
+    this.cameraAr = const Value.absent(),
+    required int cameraFps,
+    required bool cameraHighSpeed,
+    required bool cameraTorch,
+    required double cameraZoom,
+    required bool borderless,
+    this.windowTitle = const Value.absent(),
+    required int windowX,
+    required int windowY,
+    required int windowWidth,
+    required int windowHeight,
+    required bool alwaysOnTop,
+    required bool fullscreen,
+    required bool disableScreensaver,
+    required bool noWindow,
+    required bool noWindowAspectRatioLock,
+    this.keyboard = const Value.absent(),
+    this.mouse = const Value.absent(),
+    required bool noControl,
+    this.mouseBind = const Value.absent(),
+    required bool preferText,
+    required bool rawKeyEvents,
+    required bool noKeyRepeat,
+    required bool noMouseHover,
+    required bool legacyPaste,
+    required bool noClipboardAutosync,
+    required bool stayAwake,
+    required bool turnScreenOff,
+    required bool keepActive,
+    required bool showTouches,
+    required bool powerOffOnClose,
+    required bool noPowerOn,
+    required int screenOffTimeout,
+    this.shortcutMod = const Value.absent(),
+    required bool recordEnabled,
+    this.record = const Value.absent(),
+    this.recordFormat = const Value.absent(),
+    required int timeLimit,
+    required bool noPlayback,
+    required bool noVideoPlayback,
+    this.pauseOnExit = const Value.absent(),
+    required DateTime updatedAt,
+    this.rowid = const Value.absent(),
+  })  : serial = Value(serial),
+        maxSize = Value(maxSize),
+        maxFps = Value(maxFps),
+        videoBuffer = Value(videoBuffer),
+        noMipmaps = Value(noMipmaps),
+        angle = Value(angle),
+        displayId = Value(displayId),
+        minSizeAlignment = Value(minSizeAlignment),
+        noDownsizeOnError = Value(noDownsizeOnError),
+        printFps = Value(printFps),
+        noAudio = Value(noAudio),
+        noAudioPlayback = Value(noAudioPlayback),
+        audioBuffer = Value(audioBuffer),
+        audioOutputBuffer = Value(audioOutputBuffer),
+        audioDup = Value(audioDup),
+        requireAudio = Value(requireAudio),
+        cameraId = Value(cameraId),
+        cameraFps = Value(cameraFps),
+        cameraHighSpeed = Value(cameraHighSpeed),
+        cameraTorch = Value(cameraTorch),
+        cameraZoom = Value(cameraZoom),
+        borderless = Value(borderless),
+        windowX = Value(windowX),
+        windowY = Value(windowY),
+        windowWidth = Value(windowWidth),
+        windowHeight = Value(windowHeight),
+        alwaysOnTop = Value(alwaysOnTop),
+        fullscreen = Value(fullscreen),
+        disableScreensaver = Value(disableScreensaver),
+        noWindow = Value(noWindow),
+        noWindowAspectRatioLock = Value(noWindowAspectRatioLock),
+        noControl = Value(noControl),
+        preferText = Value(preferText),
+        rawKeyEvents = Value(rawKeyEvents),
+        noKeyRepeat = Value(noKeyRepeat),
+        noMouseHover = Value(noMouseHover),
+        legacyPaste = Value(legacyPaste),
+        noClipboardAutosync = Value(noClipboardAutosync),
+        stayAwake = Value(stayAwake),
+        turnScreenOff = Value(turnScreenOff),
+        keepActive = Value(keepActive),
+        showTouches = Value(showTouches),
+        powerOffOnClose = Value(powerOffOnClose),
+        noPowerOn = Value(noPowerOn),
+        screenOffTimeout = Value(screenOffTimeout),
+        recordEnabled = Value(recordEnabled),
+        timeLimit = Value(timeLimit),
+        noPlayback = Value(noPlayback),
+        noVideoPlayback = Value(noVideoPlayback),
+        updatedAt = Value(updatedAt);
+  static Insertable<ScrcpyOptions_Data> custom({
+    Expression<String>? serial,
+    Expression<int>? maxSize,
+    Expression<String>? videoBitRate,
+    Expression<int>? maxFps,
+    Expression<String>? videoCodec,
+    Expression<String>? videoEncoder,
+    Expression<int>? videoBuffer,
+    Expression<bool>? noMipmaps,
+    Expression<String>? captureOrientation,
+    Expression<String>? displayOrientation,
+    Expression<String>? crop,
+    Expression<int>? angle,
+    Expression<int>? displayId,
+    Expression<String>? renderFit,
+    Expression<String>? backgroundColor,
+    Expression<int>? minSizeAlignment,
+    Expression<bool>? noDownsizeOnError,
+    Expression<bool>? printFps,
+    Expression<bool>? noAudio,
+    Expression<bool>? noAudioPlayback,
+    Expression<String>? audioSource,
+    Expression<String>? audioCodec,
+    Expression<String>? audioEncoder,
+    Expression<String>? audioBitRate,
+    Expression<int>? audioBuffer,
+    Expression<int>? audioOutputBuffer,
+    Expression<bool>? audioDup,
+    Expression<bool>? requireAudio,
+    Expression<String>? videoSource,
+    Expression<int>? cameraId,
+    Expression<String>? cameraFacing,
+    Expression<String>? cameraSize,
+    Expression<String>? cameraAr,
+    Expression<int>? cameraFps,
+    Expression<bool>? cameraHighSpeed,
+    Expression<bool>? cameraTorch,
+    Expression<double>? cameraZoom,
+    Expression<bool>? borderless,
+    Expression<String>? windowTitle,
+    Expression<int>? windowX,
+    Expression<int>? windowY,
+    Expression<int>? windowWidth,
+    Expression<int>? windowHeight,
+    Expression<bool>? alwaysOnTop,
+    Expression<bool>? fullscreen,
+    Expression<bool>? disableScreensaver,
+    Expression<bool>? noWindow,
+    Expression<bool>? noWindowAspectRatioLock,
+    Expression<String>? keyboard,
+    Expression<String>? mouse,
+    Expression<bool>? noControl,
+    Expression<String>? mouseBind,
+    Expression<bool>? preferText,
+    Expression<bool>? rawKeyEvents,
+    Expression<bool>? noKeyRepeat,
+    Expression<bool>? noMouseHover,
+    Expression<bool>? legacyPaste,
+    Expression<bool>? noClipboardAutosync,
+    Expression<bool>? stayAwake,
+    Expression<bool>? turnScreenOff,
+    Expression<bool>? keepActive,
+    Expression<bool>? showTouches,
+    Expression<bool>? powerOffOnClose,
+    Expression<bool>? noPowerOn,
+    Expression<int>? screenOffTimeout,
+    Expression<String>? shortcutMod,
+    Expression<bool>? recordEnabled,
+    Expression<String>? record,
+    Expression<String>? recordFormat,
+    Expression<int>? timeLimit,
+    Expression<bool>? noPlayback,
+    Expression<bool>? noVideoPlayback,
+    Expression<String>? pauseOnExit,
+    Expression<DateTime>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (serial != null) 'serial': serial,
+      if (maxSize != null) 'max_size': maxSize,
+      if (videoBitRate != null) 'video_bit_rate': videoBitRate,
+      if (maxFps != null) 'max_fps': maxFps,
+      if (videoCodec != null) 'video_codec': videoCodec,
+      if (videoEncoder != null) 'video_encoder': videoEncoder,
+      if (videoBuffer != null) 'video_buffer': videoBuffer,
+      if (noMipmaps != null) 'no_mipmaps': noMipmaps,
+      if (captureOrientation != null) 'capture_orientation': captureOrientation,
+      if (displayOrientation != null) 'display_orientation': displayOrientation,
+      if (crop != null) 'crop': crop,
+      if (angle != null) 'angle': angle,
+      if (displayId != null) 'display_id': displayId,
+      if (renderFit != null) 'render_fit': renderFit,
+      if (backgroundColor != null) 'background_color': backgroundColor,
+      if (minSizeAlignment != null) 'min_size_alignment': minSizeAlignment,
+      if (noDownsizeOnError != null) 'no_downsize_on_error': noDownsizeOnError,
+      if (printFps != null) 'print_fps': printFps,
+      if (noAudio != null) 'no_audio': noAudio,
+      if (noAudioPlayback != null) 'no_audio_playback': noAudioPlayback,
+      if (audioSource != null) 'audio_source': audioSource,
+      if (audioCodec != null) 'audio_codec': audioCodec,
+      if (audioEncoder != null) 'audio_encoder': audioEncoder,
+      if (audioBitRate != null) 'audio_bit_rate': audioBitRate,
+      if (audioBuffer != null) 'audio_buffer': audioBuffer,
+      if (audioOutputBuffer != null) 'audio_output_buffer': audioOutputBuffer,
+      if (audioDup != null) 'audio_dup': audioDup,
+      if (requireAudio != null) 'require_audio': requireAudio,
+      if (videoSource != null) 'video_source': videoSource,
+      if (cameraId != null) 'camera_id': cameraId,
+      if (cameraFacing != null) 'camera_facing': cameraFacing,
+      if (cameraSize != null) 'camera_size': cameraSize,
+      if (cameraAr != null) 'camera_ar': cameraAr,
+      if (cameraFps != null) 'camera_fps': cameraFps,
+      if (cameraHighSpeed != null) 'camera_high_speed': cameraHighSpeed,
+      if (cameraTorch != null) 'camera_torch': cameraTorch,
+      if (cameraZoom != null) 'camera_zoom': cameraZoom,
+      if (borderless != null) 'borderless': borderless,
+      if (windowTitle != null) 'window_title': windowTitle,
+      if (windowX != null) 'window_x': windowX,
+      if (windowY != null) 'window_y': windowY,
+      if (windowWidth != null) 'window_width': windowWidth,
+      if (windowHeight != null) 'window_height': windowHeight,
+      if (alwaysOnTop != null) 'always_on_top': alwaysOnTop,
+      if (fullscreen != null) 'fullscreen': fullscreen,
+      if (disableScreensaver != null) 'disable_screensaver': disableScreensaver,
+      if (noWindow != null) 'no_window': noWindow,
+      if (noWindowAspectRatioLock != null)
+        'no_window_aspect_ratio_lock': noWindowAspectRatioLock,
+      if (keyboard != null) 'keyboard': keyboard,
+      if (mouse != null) 'mouse': mouse,
+      if (noControl != null) 'no_control': noControl,
+      if (mouseBind != null) 'mouse_bind': mouseBind,
+      if (preferText != null) 'prefer_text': preferText,
+      if (rawKeyEvents != null) 'raw_key_events': rawKeyEvents,
+      if (noKeyRepeat != null) 'no_key_repeat': noKeyRepeat,
+      if (noMouseHover != null) 'no_mouse_hover': noMouseHover,
+      if (legacyPaste != null) 'legacy_paste': legacyPaste,
+      if (noClipboardAutosync != null)
+        'no_clipboard_autosync': noClipboardAutosync,
+      if (stayAwake != null) 'stay_awake': stayAwake,
+      if (turnScreenOff != null) 'turn_screen_off': turnScreenOff,
+      if (keepActive != null) 'keep_active': keepActive,
+      if (showTouches != null) 'show_touches': showTouches,
+      if (powerOffOnClose != null) 'power_off_on_close': powerOffOnClose,
+      if (noPowerOn != null) 'no_power_on': noPowerOn,
+      if (screenOffTimeout != null) 'screen_off_timeout': screenOffTimeout,
+      if (shortcutMod != null) 'shortcut_mod': shortcutMod,
+      if (recordEnabled != null) 'record_enabled': recordEnabled,
+      if (record != null) 'record': record,
+      if (recordFormat != null) 'record_format': recordFormat,
+      if (timeLimit != null) 'time_limit': timeLimit,
+      if (noPlayback != null) 'no_playback': noPlayback,
+      if (noVideoPlayback != null) 'no_video_playback': noVideoPlayback,
+      if (pauseOnExit != null) 'pause_on_exit': pauseOnExit,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  ScrcpyOptions_Companion copyWith(
+      {Value<String>? serial,
+      Value<int>? maxSize,
+      Value<String?>? videoBitRate,
+      Value<int>? maxFps,
+      Value<String?>? videoCodec,
+      Value<String?>? videoEncoder,
+      Value<int>? videoBuffer,
+      Value<bool>? noMipmaps,
+      Value<String?>? captureOrientation,
+      Value<String?>? displayOrientation,
+      Value<String?>? crop,
+      Value<int>? angle,
+      Value<int>? displayId,
+      Value<String?>? renderFit,
+      Value<String?>? backgroundColor,
+      Value<int>? minSizeAlignment,
+      Value<bool>? noDownsizeOnError,
+      Value<bool>? printFps,
+      Value<bool>? noAudio,
+      Value<bool>? noAudioPlayback,
+      Value<String?>? audioSource,
+      Value<String?>? audioCodec,
+      Value<String?>? audioEncoder,
+      Value<String?>? audioBitRate,
+      Value<int>? audioBuffer,
+      Value<int>? audioOutputBuffer,
+      Value<bool>? audioDup,
+      Value<bool>? requireAudio,
+      Value<String?>? videoSource,
+      Value<int>? cameraId,
+      Value<String?>? cameraFacing,
+      Value<String?>? cameraSize,
+      Value<String?>? cameraAr,
+      Value<int>? cameraFps,
+      Value<bool>? cameraHighSpeed,
+      Value<bool>? cameraTorch,
+      Value<double>? cameraZoom,
+      Value<bool>? borderless,
+      Value<String?>? windowTitle,
+      Value<int>? windowX,
+      Value<int>? windowY,
+      Value<int>? windowWidth,
+      Value<int>? windowHeight,
+      Value<bool>? alwaysOnTop,
+      Value<bool>? fullscreen,
+      Value<bool>? disableScreensaver,
+      Value<bool>? noWindow,
+      Value<bool>? noWindowAspectRatioLock,
+      Value<String?>? keyboard,
+      Value<String?>? mouse,
+      Value<bool>? noControl,
+      Value<String?>? mouseBind,
+      Value<bool>? preferText,
+      Value<bool>? rawKeyEvents,
+      Value<bool>? noKeyRepeat,
+      Value<bool>? noMouseHover,
+      Value<bool>? legacyPaste,
+      Value<bool>? noClipboardAutosync,
+      Value<bool>? stayAwake,
+      Value<bool>? turnScreenOff,
+      Value<bool>? keepActive,
+      Value<bool>? showTouches,
+      Value<bool>? powerOffOnClose,
+      Value<bool>? noPowerOn,
+      Value<int>? screenOffTimeout,
+      Value<String?>? shortcutMod,
+      Value<bool>? recordEnabled,
+      Value<String?>? record,
+      Value<String?>? recordFormat,
+      Value<int>? timeLimit,
+      Value<bool>? noPlayback,
+      Value<bool>? noVideoPlayback,
+      Value<String?>? pauseOnExit,
+      Value<DateTime>? updatedAt,
+      Value<int>? rowid}) {
+    return ScrcpyOptions_Companion(
+      serial: serial ?? this.serial,
+      maxSize: maxSize ?? this.maxSize,
+      videoBitRate: videoBitRate ?? this.videoBitRate,
+      maxFps: maxFps ?? this.maxFps,
+      videoCodec: videoCodec ?? this.videoCodec,
+      videoEncoder: videoEncoder ?? this.videoEncoder,
+      videoBuffer: videoBuffer ?? this.videoBuffer,
+      noMipmaps: noMipmaps ?? this.noMipmaps,
+      captureOrientation: captureOrientation ?? this.captureOrientation,
+      displayOrientation: displayOrientation ?? this.displayOrientation,
+      crop: crop ?? this.crop,
+      angle: angle ?? this.angle,
+      displayId: displayId ?? this.displayId,
+      renderFit: renderFit ?? this.renderFit,
+      backgroundColor: backgroundColor ?? this.backgroundColor,
+      minSizeAlignment: minSizeAlignment ?? this.minSizeAlignment,
+      noDownsizeOnError: noDownsizeOnError ?? this.noDownsizeOnError,
+      printFps: printFps ?? this.printFps,
+      noAudio: noAudio ?? this.noAudio,
+      noAudioPlayback: noAudioPlayback ?? this.noAudioPlayback,
+      audioSource: audioSource ?? this.audioSource,
+      audioCodec: audioCodec ?? this.audioCodec,
+      audioEncoder: audioEncoder ?? this.audioEncoder,
+      audioBitRate: audioBitRate ?? this.audioBitRate,
+      audioBuffer: audioBuffer ?? this.audioBuffer,
+      audioOutputBuffer: audioOutputBuffer ?? this.audioOutputBuffer,
+      audioDup: audioDup ?? this.audioDup,
+      requireAudio: requireAudio ?? this.requireAudio,
+      videoSource: videoSource ?? this.videoSource,
+      cameraId: cameraId ?? this.cameraId,
+      cameraFacing: cameraFacing ?? this.cameraFacing,
+      cameraSize: cameraSize ?? this.cameraSize,
+      cameraAr: cameraAr ?? this.cameraAr,
+      cameraFps: cameraFps ?? this.cameraFps,
+      cameraHighSpeed: cameraHighSpeed ?? this.cameraHighSpeed,
+      cameraTorch: cameraTorch ?? this.cameraTorch,
+      cameraZoom: cameraZoom ?? this.cameraZoom,
+      borderless: borderless ?? this.borderless,
+      windowTitle: windowTitle ?? this.windowTitle,
+      windowX: windowX ?? this.windowX,
+      windowY: windowY ?? this.windowY,
+      windowWidth: windowWidth ?? this.windowWidth,
+      windowHeight: windowHeight ?? this.windowHeight,
+      alwaysOnTop: alwaysOnTop ?? this.alwaysOnTop,
+      fullscreen: fullscreen ?? this.fullscreen,
+      disableScreensaver: disableScreensaver ?? this.disableScreensaver,
+      noWindow: noWindow ?? this.noWindow,
+      noWindowAspectRatioLock:
+          noWindowAspectRatioLock ?? this.noWindowAspectRatioLock,
+      keyboard: keyboard ?? this.keyboard,
+      mouse: mouse ?? this.mouse,
+      noControl: noControl ?? this.noControl,
+      mouseBind: mouseBind ?? this.mouseBind,
+      preferText: preferText ?? this.preferText,
+      rawKeyEvents: rawKeyEvents ?? this.rawKeyEvents,
+      noKeyRepeat: noKeyRepeat ?? this.noKeyRepeat,
+      noMouseHover: noMouseHover ?? this.noMouseHover,
+      legacyPaste: legacyPaste ?? this.legacyPaste,
+      noClipboardAutosync: noClipboardAutosync ?? this.noClipboardAutosync,
+      stayAwake: stayAwake ?? this.stayAwake,
+      turnScreenOff: turnScreenOff ?? this.turnScreenOff,
+      keepActive: keepActive ?? this.keepActive,
+      showTouches: showTouches ?? this.showTouches,
+      powerOffOnClose: powerOffOnClose ?? this.powerOffOnClose,
+      noPowerOn: noPowerOn ?? this.noPowerOn,
+      screenOffTimeout: screenOffTimeout ?? this.screenOffTimeout,
+      shortcutMod: shortcutMod ?? this.shortcutMod,
+      recordEnabled: recordEnabled ?? this.recordEnabled,
+      record: record ?? this.record,
+      recordFormat: recordFormat ?? this.recordFormat,
+      timeLimit: timeLimit ?? this.timeLimit,
+      noPlayback: noPlayback ?? this.noPlayback,
+      noVideoPlayback: noVideoPlayback ?? this.noVideoPlayback,
+      pauseOnExit: pauseOnExit ?? this.pauseOnExit,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (serial.present) {
+      map['serial'] = Variable<String>(serial.value);
+    }
+    if (maxSize.present) {
+      map['max_size'] = Variable<int>(maxSize.value);
+    }
+    if (videoBitRate.present) {
+      map['video_bit_rate'] = Variable<String>(videoBitRate.value);
+    }
+    if (maxFps.present) {
+      map['max_fps'] = Variable<int>(maxFps.value);
+    }
+    if (videoCodec.present) {
+      map['video_codec'] = Variable<String>(videoCodec.value);
+    }
+    if (videoEncoder.present) {
+      map['video_encoder'] = Variable<String>(videoEncoder.value);
+    }
+    if (videoBuffer.present) {
+      map['video_buffer'] = Variable<int>(videoBuffer.value);
+    }
+    if (noMipmaps.present) {
+      map['no_mipmaps'] = Variable<bool>(noMipmaps.value);
+    }
+    if (captureOrientation.present) {
+      map['capture_orientation'] = Variable<String>(captureOrientation.value);
+    }
+    if (displayOrientation.present) {
+      map['display_orientation'] = Variable<String>(displayOrientation.value);
+    }
+    if (crop.present) {
+      map['crop'] = Variable<String>(crop.value);
+    }
+    if (angle.present) {
+      map['angle'] = Variable<int>(angle.value);
+    }
+    if (displayId.present) {
+      map['display_id'] = Variable<int>(displayId.value);
+    }
+    if (renderFit.present) {
+      map['render_fit'] = Variable<String>(renderFit.value);
+    }
+    if (backgroundColor.present) {
+      map['background_color'] = Variable<String>(backgroundColor.value);
+    }
+    if (minSizeAlignment.present) {
+      map['min_size_alignment'] = Variable<int>(minSizeAlignment.value);
+    }
+    if (noDownsizeOnError.present) {
+      map['no_downsize_on_error'] = Variable<bool>(noDownsizeOnError.value);
+    }
+    if (printFps.present) {
+      map['print_fps'] = Variable<bool>(printFps.value);
+    }
+    if (noAudio.present) {
+      map['no_audio'] = Variable<bool>(noAudio.value);
+    }
+    if (noAudioPlayback.present) {
+      map['no_audio_playback'] = Variable<bool>(noAudioPlayback.value);
+    }
+    if (audioSource.present) {
+      map['audio_source'] = Variable<String>(audioSource.value);
+    }
+    if (audioCodec.present) {
+      map['audio_codec'] = Variable<String>(audioCodec.value);
+    }
+    if (audioEncoder.present) {
+      map['audio_encoder'] = Variable<String>(audioEncoder.value);
+    }
+    if (audioBitRate.present) {
+      map['audio_bit_rate'] = Variable<String>(audioBitRate.value);
+    }
+    if (audioBuffer.present) {
+      map['audio_buffer'] = Variable<int>(audioBuffer.value);
+    }
+    if (audioOutputBuffer.present) {
+      map['audio_output_buffer'] = Variable<int>(audioOutputBuffer.value);
+    }
+    if (audioDup.present) {
+      map['audio_dup'] = Variable<bool>(audioDup.value);
+    }
+    if (requireAudio.present) {
+      map['require_audio'] = Variable<bool>(requireAudio.value);
+    }
+    if (videoSource.present) {
+      map['video_source'] = Variable<String>(videoSource.value);
+    }
+    if (cameraId.present) {
+      map['camera_id'] = Variable<int>(cameraId.value);
+    }
+    if (cameraFacing.present) {
+      map['camera_facing'] = Variable<String>(cameraFacing.value);
+    }
+    if (cameraSize.present) {
+      map['camera_size'] = Variable<String>(cameraSize.value);
+    }
+    if (cameraAr.present) {
+      map['camera_ar'] = Variable<String>(cameraAr.value);
+    }
+    if (cameraFps.present) {
+      map['camera_fps'] = Variable<int>(cameraFps.value);
+    }
+    if (cameraHighSpeed.present) {
+      map['camera_high_speed'] = Variable<bool>(cameraHighSpeed.value);
+    }
+    if (cameraTorch.present) {
+      map['camera_torch'] = Variable<bool>(cameraTorch.value);
+    }
+    if (cameraZoom.present) {
+      map['camera_zoom'] = Variable<double>(cameraZoom.value);
+    }
+    if (borderless.present) {
+      map['borderless'] = Variable<bool>(borderless.value);
+    }
+    if (windowTitle.present) {
+      map['window_title'] = Variable<String>(windowTitle.value);
+    }
+    if (windowX.present) {
+      map['window_x'] = Variable<int>(windowX.value);
+    }
+    if (windowY.present) {
+      map['window_y'] = Variable<int>(windowY.value);
+    }
+    if (windowWidth.present) {
+      map['window_width'] = Variable<int>(windowWidth.value);
+    }
+    if (windowHeight.present) {
+      map['window_height'] = Variable<int>(windowHeight.value);
+    }
+    if (alwaysOnTop.present) {
+      map['always_on_top'] = Variable<bool>(alwaysOnTop.value);
+    }
+    if (fullscreen.present) {
+      map['fullscreen'] = Variable<bool>(fullscreen.value);
+    }
+    if (disableScreensaver.present) {
+      map['disable_screensaver'] = Variable<bool>(disableScreensaver.value);
+    }
+    if (noWindow.present) {
+      map['no_window'] = Variable<bool>(noWindow.value);
+    }
+    if (noWindowAspectRatioLock.present) {
+      map['no_window_aspect_ratio_lock'] =
+          Variable<bool>(noWindowAspectRatioLock.value);
+    }
+    if (keyboard.present) {
+      map['keyboard'] = Variable<String>(keyboard.value);
+    }
+    if (mouse.present) {
+      map['mouse'] = Variable<String>(mouse.value);
+    }
+    if (noControl.present) {
+      map['no_control'] = Variable<bool>(noControl.value);
+    }
+    if (mouseBind.present) {
+      map['mouse_bind'] = Variable<String>(mouseBind.value);
+    }
+    if (preferText.present) {
+      map['prefer_text'] = Variable<bool>(preferText.value);
+    }
+    if (rawKeyEvents.present) {
+      map['raw_key_events'] = Variable<bool>(rawKeyEvents.value);
+    }
+    if (noKeyRepeat.present) {
+      map['no_key_repeat'] = Variable<bool>(noKeyRepeat.value);
+    }
+    if (noMouseHover.present) {
+      map['no_mouse_hover'] = Variable<bool>(noMouseHover.value);
+    }
+    if (legacyPaste.present) {
+      map['legacy_paste'] = Variable<bool>(legacyPaste.value);
+    }
+    if (noClipboardAutosync.present) {
+      map['no_clipboard_autosync'] = Variable<bool>(noClipboardAutosync.value);
+    }
+    if (stayAwake.present) {
+      map['stay_awake'] = Variable<bool>(stayAwake.value);
+    }
+    if (turnScreenOff.present) {
+      map['turn_screen_off'] = Variable<bool>(turnScreenOff.value);
+    }
+    if (keepActive.present) {
+      map['keep_active'] = Variable<bool>(keepActive.value);
+    }
+    if (showTouches.present) {
+      map['show_touches'] = Variable<bool>(showTouches.value);
+    }
+    if (powerOffOnClose.present) {
+      map['power_off_on_close'] = Variable<bool>(powerOffOnClose.value);
+    }
+    if (noPowerOn.present) {
+      map['no_power_on'] = Variable<bool>(noPowerOn.value);
+    }
+    if (screenOffTimeout.present) {
+      map['screen_off_timeout'] = Variable<int>(screenOffTimeout.value);
+    }
+    if (shortcutMod.present) {
+      map['shortcut_mod'] = Variable<String>(shortcutMod.value);
+    }
+    if (recordEnabled.present) {
+      map['record_enabled'] = Variable<bool>(recordEnabled.value);
+    }
+    if (record.present) {
+      map['record'] = Variable<String>(record.value);
+    }
+    if (recordFormat.present) {
+      map['record_format'] = Variable<String>(recordFormat.value);
+    }
+    if (timeLimit.present) {
+      map['time_limit'] = Variable<int>(timeLimit.value);
+    }
+    if (noPlayback.present) {
+      map['no_playback'] = Variable<bool>(noPlayback.value);
+    }
+    if (noVideoPlayback.present) {
+      map['no_video_playback'] = Variable<bool>(noVideoPlayback.value);
+    }
+    if (pauseOnExit.present) {
+      map['pause_on_exit'] = Variable<String>(pauseOnExit.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ScrcpyOptions_Companion(')
+          ..write('serial: $serial, ')
+          ..write('maxSize: $maxSize, ')
+          ..write('videoBitRate: $videoBitRate, ')
+          ..write('maxFps: $maxFps, ')
+          ..write('videoCodec: $videoCodec, ')
+          ..write('videoEncoder: $videoEncoder, ')
+          ..write('videoBuffer: $videoBuffer, ')
+          ..write('noMipmaps: $noMipmaps, ')
+          ..write('captureOrientation: $captureOrientation, ')
+          ..write('displayOrientation: $displayOrientation, ')
+          ..write('crop: $crop, ')
+          ..write('angle: $angle, ')
+          ..write('displayId: $displayId, ')
+          ..write('renderFit: $renderFit, ')
+          ..write('backgroundColor: $backgroundColor, ')
+          ..write('minSizeAlignment: $minSizeAlignment, ')
+          ..write('noDownsizeOnError: $noDownsizeOnError, ')
+          ..write('printFps: $printFps, ')
+          ..write('noAudio: $noAudio, ')
+          ..write('noAudioPlayback: $noAudioPlayback, ')
+          ..write('audioSource: $audioSource, ')
+          ..write('audioCodec: $audioCodec, ')
+          ..write('audioEncoder: $audioEncoder, ')
+          ..write('audioBitRate: $audioBitRate, ')
+          ..write('audioBuffer: $audioBuffer, ')
+          ..write('audioOutputBuffer: $audioOutputBuffer, ')
+          ..write('audioDup: $audioDup, ')
+          ..write('requireAudio: $requireAudio, ')
+          ..write('videoSource: $videoSource, ')
+          ..write('cameraId: $cameraId, ')
+          ..write('cameraFacing: $cameraFacing, ')
+          ..write('cameraSize: $cameraSize, ')
+          ..write('cameraAr: $cameraAr, ')
+          ..write('cameraFps: $cameraFps, ')
+          ..write('cameraHighSpeed: $cameraHighSpeed, ')
+          ..write('cameraTorch: $cameraTorch, ')
+          ..write('cameraZoom: $cameraZoom, ')
+          ..write('borderless: $borderless, ')
+          ..write('windowTitle: $windowTitle, ')
+          ..write('windowX: $windowX, ')
+          ..write('windowY: $windowY, ')
+          ..write('windowWidth: $windowWidth, ')
+          ..write('windowHeight: $windowHeight, ')
+          ..write('alwaysOnTop: $alwaysOnTop, ')
+          ..write('fullscreen: $fullscreen, ')
+          ..write('disableScreensaver: $disableScreensaver, ')
+          ..write('noWindow: $noWindow, ')
+          ..write('noWindowAspectRatioLock: $noWindowAspectRatioLock, ')
+          ..write('keyboard: $keyboard, ')
+          ..write('mouse: $mouse, ')
+          ..write('noControl: $noControl, ')
+          ..write('mouseBind: $mouseBind, ')
+          ..write('preferText: $preferText, ')
+          ..write('rawKeyEvents: $rawKeyEvents, ')
+          ..write('noKeyRepeat: $noKeyRepeat, ')
+          ..write('noMouseHover: $noMouseHover, ')
+          ..write('legacyPaste: $legacyPaste, ')
+          ..write('noClipboardAutosync: $noClipboardAutosync, ')
+          ..write('stayAwake: $stayAwake, ')
+          ..write('turnScreenOff: $turnScreenOff, ')
+          ..write('keepActive: $keepActive, ')
+          ..write('showTouches: $showTouches, ')
+          ..write('powerOffOnClose: $powerOffOnClose, ')
+          ..write('noPowerOn: $noPowerOn, ')
+          ..write('screenOffTimeout: $screenOffTimeout, ')
+          ..write('shortcutMod: $shortcutMod, ')
+          ..write('recordEnabled: $recordEnabled, ')
+          ..write('record: $record, ')
+          ..write('recordFormat: $recordFormat, ')
+          ..write('timeLimit: $timeLimit, ')
+          ..write('noPlayback: $noPlayback, ')
+          ..write('noVideoPlayback: $noVideoPlayback, ')
+          ..write('pauseOnExit: $pauseOnExit, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $SentClipboardEntryTable extends SentClipboardEntry
+    with TableInfo<$SentClipboardEntryTable, SentClipboardEntryData> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SentClipboardEntryTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      'id', aliasedName, false,
+      hasAutoIncrement: true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
+  static const VerificationMeta _contentMeta =
+      const VerificationMeta('content');
+  @override
+  late final GeneratedColumn<String> content = GeneratedColumn<String>(
+      'content', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _sentAtMeta = const VerificationMeta('sentAt');
+  @override
+  late final GeneratedColumn<DateTime> sentAt = GeneratedColumn<DateTime>(
+      'sent_at', aliasedName, false,
+      type: DriftSqlType.dateTime, requiredDuringInsert: true);
+  static const VerificationMeta _favoriteMeta =
+      const VerificationMeta('favorite');
+  @override
+  late final GeneratedColumn<bool> favorite = GeneratedColumn<bool>(
+      'favorite', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: true,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('CHECK ("favorite" IN (0, 1))'));
+  static const VerificationMeta _sendCountMeta =
+      const VerificationMeta('sendCount');
+  @override
+  late final GeneratedColumn<int> sendCount = GeneratedColumn<int>(
+      'send_count', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns =>
+      [id, content, sentAt, favorite, sendCount];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'sent_clipboard_entry';
+  @override
+  VerificationContext validateIntegrity(
+      Insertable<SentClipboardEntryData> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('content')) {
+      context.handle(_contentMeta,
+          content.isAcceptableOrUnknown(data['content']!, _contentMeta));
+    } else if (isInserting) {
+      context.missing(_contentMeta);
+    }
+    if (data.containsKey('sent_at')) {
+      context.handle(_sentAtMeta,
+          sentAt.isAcceptableOrUnknown(data['sent_at']!, _sentAtMeta));
+    } else if (isInserting) {
+      context.missing(_sentAtMeta);
+    }
+    if (data.containsKey('favorite')) {
+      context.handle(_favoriteMeta,
+          favorite.isAcceptableOrUnknown(data['favorite']!, _favoriteMeta));
+    } else if (isInserting) {
+      context.missing(_favoriteMeta);
+    }
+    if (data.containsKey('send_count')) {
+      context.handle(_sendCountMeta,
+          sendCount.isAcceptableOrUnknown(data['send_count']!, _sendCountMeta));
+    } else if (isInserting) {
+      context.missing(_sendCountMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  SentClipboardEntryData map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SentClipboardEntryData(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      content: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}content'])!,
+      sentAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}sent_at'])!,
+      favorite: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}favorite'])!,
+      sendCount: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}send_count'])!,
+    );
+  }
+
+  @override
+  $SentClipboardEntryTable createAlias(String alias) {
+    return $SentClipboardEntryTable(attachedDatabase, alias);
+  }
+}
+
+class SentClipboardEntryData extends DataClass
+    implements Insertable<SentClipboardEntryData> {
+  final int id;
+  final String content;
+  final DateTime sentAt;
+  final bool favorite;
+  final int sendCount;
+  const SentClipboardEntryData(
+      {required this.id,
+      required this.content,
+      required this.sentAt,
+      required this.favorite,
+      required this.sendCount});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['content'] = Variable<String>(content);
+    map['sent_at'] = Variable<DateTime>(sentAt);
+    map['favorite'] = Variable<bool>(favorite);
+    map['send_count'] = Variable<int>(sendCount);
+    return map;
+  }
+
+  SentClipboardEntryCompanion toCompanion(bool nullToAbsent) {
+    return SentClipboardEntryCompanion(
+      id: Value(id),
+      content: Value(content),
+      sentAt: Value(sentAt),
+      favorite: Value(favorite),
+      sendCount: Value(sendCount),
+    );
+  }
+
+  factory SentClipboardEntryData.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SentClipboardEntryData(
+      id: serializer.fromJson<int>(json['id']),
+      content: serializer.fromJson<String>(json['content']),
+      sentAt: serializer.fromJson<DateTime>(json['sentAt']),
+      favorite: serializer.fromJson<bool>(json['favorite']),
+      sendCount: serializer.fromJson<int>(json['sendCount']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'content': serializer.toJson<String>(content),
+      'sentAt': serializer.toJson<DateTime>(sentAt),
+      'favorite': serializer.toJson<bool>(favorite),
+      'sendCount': serializer.toJson<int>(sendCount),
+    };
+  }
+
+  SentClipboardEntryData copyWith(
+          {int? id,
+          String? content,
+          DateTime? sentAt,
+          bool? favorite,
+          int? sendCount}) =>
+      SentClipboardEntryData(
+        id: id ?? this.id,
+        content: content ?? this.content,
+        sentAt: sentAt ?? this.sentAt,
+        favorite: favorite ?? this.favorite,
+        sendCount: sendCount ?? this.sendCount,
+      );
+  SentClipboardEntryData copyWithCompanion(SentClipboardEntryCompanion data) {
+    return SentClipboardEntryData(
+      id: data.id.present ? data.id.value : this.id,
+      content: data.content.present ? data.content.value : this.content,
+      sentAt: data.sentAt.present ? data.sentAt.value : this.sentAt,
+      favorite: data.favorite.present ? data.favorite.value : this.favorite,
+      sendCount: data.sendCount.present ? data.sendCount.value : this.sendCount,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SentClipboardEntryData(')
+          ..write('id: $id, ')
+          ..write('content: $content, ')
+          ..write('sentAt: $sentAt, ')
+          ..write('favorite: $favorite, ')
+          ..write('sendCount: $sendCount')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, content, sentAt, favorite, sendCount);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SentClipboardEntryData &&
+          other.id == this.id &&
+          other.content == this.content &&
+          other.sentAt == this.sentAt &&
+          other.favorite == this.favorite &&
+          other.sendCount == this.sendCount);
+}
+
+class SentClipboardEntryCompanion
+    extends UpdateCompanion<SentClipboardEntryData> {
+  final Value<int> id;
+  final Value<String> content;
+  final Value<DateTime> sentAt;
+  final Value<bool> favorite;
+  final Value<int> sendCount;
+  const SentClipboardEntryCompanion({
+    this.id = const Value.absent(),
+    this.content = const Value.absent(),
+    this.sentAt = const Value.absent(),
+    this.favorite = const Value.absent(),
+    this.sendCount = const Value.absent(),
+  });
+  SentClipboardEntryCompanion.insert({
+    this.id = const Value.absent(),
+    required String content,
+    required DateTime sentAt,
+    required bool favorite,
+    required int sendCount,
+  })  : content = Value(content),
+        sentAt = Value(sentAt),
+        favorite = Value(favorite),
+        sendCount = Value(sendCount);
+  static Insertable<SentClipboardEntryData> custom({
+    Expression<int>? id,
+    Expression<String>? content,
+    Expression<DateTime>? sentAt,
+    Expression<bool>? favorite,
+    Expression<int>? sendCount,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (content != null) 'content': content,
+      if (sentAt != null) 'sent_at': sentAt,
+      if (favorite != null) 'favorite': favorite,
+      if (sendCount != null) 'send_count': sendCount,
+    });
+  }
+
+  SentClipboardEntryCompanion copyWith(
+      {Value<int>? id,
+      Value<String>? content,
+      Value<DateTime>? sentAt,
+      Value<bool>? favorite,
+      Value<int>? sendCount}) {
+    return SentClipboardEntryCompanion(
+      id: id ?? this.id,
+      content: content ?? this.content,
+      sentAt: sentAt ?? this.sentAt,
+      favorite: favorite ?? this.favorite,
+      sendCount: sendCount ?? this.sendCount,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (content.present) {
+      map['content'] = Variable<String>(content.value);
+    }
+    if (sentAt.present) {
+      map['sent_at'] = Variable<DateTime>(sentAt.value);
+    }
+    if (favorite.present) {
+      map['favorite'] = Variable<bool>(favorite.value);
+    }
+    if (sendCount.present) {
+      map['send_count'] = Variable<int>(sendCount.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SentClipboardEntryCompanion(')
+          ..write('id: $id, ')
+          ..write('content: $content, ')
+          ..write('sentAt: $sentAt, ')
+          ..write('favorite: $favorite, ')
+          ..write('sendCount: $sendCount')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $TestSessionsTable extends TestSessions
     with TableInfo<$TestSessionsTable, TestSessionRow> {
   @override
@@ -3802,6 +7424,9 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
   late final $SavedDevicesTable savedDevices = $SavedDevicesTable(this);
   late final $AppStatesTable appStates = $AppStatesTable(this);
+  late final $ScrcpyOptions_Table scrcpyOptions = $ScrcpyOptions_Table(this);
+  late final $SentClipboardEntryTable sentClipboardEntry =
+      $SentClipboardEntryTable(this);
   late final $TestSessionsTable testSessions = $TestSessionsTable(this);
   late final $TestSessionEventsTable testSessionEvents =
       $TestSessionEventsTable(this);
@@ -3818,6 +7443,10 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final SavedDevicesDao savedDevicesDao =
       SavedDevicesDao(this as AppDatabase);
   late final AppStatesDao appStatesDao = AppStatesDao(this as AppDatabase);
+  late final ScrcpyOptionsDao scrcpyOptionsDao =
+      ScrcpyOptionsDao(this as AppDatabase);
+  late final SentClipboardEntryDao sentClipboardEntryDao =
+      SentClipboardEntryDao(this as AppDatabase);
   late final TestSessionsDao testSessionsDao =
       TestSessionsDao(this as AppDatabase);
   @override
@@ -3827,6 +7456,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   List<DatabaseSchemaEntity> get allSchemaEntities => [
         savedDevices,
         appStates,
+        scrcpyOptions,
+        sentClipboardEntry,
         testSessions,
         testSessionEvents,
         testSessionArtifacts,
@@ -4392,6 +8023,1426 @@ typedef $$AppStatesTableProcessedTableManager = ProcessedTableManager<
     $$AppStatesTableUpdateCompanionBuilder,
     (AppState, BaseReferences<_$AppDatabase, $AppStatesTable, AppState>),
     AppState,
+    PrefetchHooks Function()>;
+typedef $$ScrcpyOptions_TableCreateCompanionBuilder = ScrcpyOptions_Companion
+    Function({
+  required String serial,
+  required int maxSize,
+  Value<String?> videoBitRate,
+  required int maxFps,
+  Value<String?> videoCodec,
+  Value<String?> videoEncoder,
+  required int videoBuffer,
+  required bool noMipmaps,
+  Value<String?> captureOrientation,
+  Value<String?> displayOrientation,
+  Value<String?> crop,
+  required int angle,
+  required int displayId,
+  Value<String?> renderFit,
+  Value<String?> backgroundColor,
+  required int minSizeAlignment,
+  required bool noDownsizeOnError,
+  required bool printFps,
+  required bool noAudio,
+  required bool noAudioPlayback,
+  Value<String?> audioSource,
+  Value<String?> audioCodec,
+  Value<String?> audioEncoder,
+  Value<String?> audioBitRate,
+  required int audioBuffer,
+  required int audioOutputBuffer,
+  required bool audioDup,
+  required bool requireAudio,
+  Value<String?> videoSource,
+  required int cameraId,
+  Value<String?> cameraFacing,
+  Value<String?> cameraSize,
+  Value<String?> cameraAr,
+  required int cameraFps,
+  required bool cameraHighSpeed,
+  required bool cameraTorch,
+  required double cameraZoom,
+  required bool borderless,
+  Value<String?> windowTitle,
+  required int windowX,
+  required int windowY,
+  required int windowWidth,
+  required int windowHeight,
+  required bool alwaysOnTop,
+  required bool fullscreen,
+  required bool disableScreensaver,
+  required bool noWindow,
+  required bool noWindowAspectRatioLock,
+  Value<String?> keyboard,
+  Value<String?> mouse,
+  required bool noControl,
+  Value<String?> mouseBind,
+  required bool preferText,
+  required bool rawKeyEvents,
+  required bool noKeyRepeat,
+  required bool noMouseHover,
+  required bool legacyPaste,
+  required bool noClipboardAutosync,
+  required bool stayAwake,
+  required bool turnScreenOff,
+  required bool keepActive,
+  required bool showTouches,
+  required bool powerOffOnClose,
+  required bool noPowerOn,
+  required int screenOffTimeout,
+  Value<String?> shortcutMod,
+  required bool recordEnabled,
+  Value<String?> record,
+  Value<String?> recordFormat,
+  required int timeLimit,
+  required bool noPlayback,
+  required bool noVideoPlayback,
+  Value<String?> pauseOnExit,
+  required DateTime updatedAt,
+  Value<int> rowid,
+});
+typedef $$ScrcpyOptions_TableUpdateCompanionBuilder = ScrcpyOptions_Companion
+    Function({
+  Value<String> serial,
+  Value<int> maxSize,
+  Value<String?> videoBitRate,
+  Value<int> maxFps,
+  Value<String?> videoCodec,
+  Value<String?> videoEncoder,
+  Value<int> videoBuffer,
+  Value<bool> noMipmaps,
+  Value<String?> captureOrientation,
+  Value<String?> displayOrientation,
+  Value<String?> crop,
+  Value<int> angle,
+  Value<int> displayId,
+  Value<String?> renderFit,
+  Value<String?> backgroundColor,
+  Value<int> minSizeAlignment,
+  Value<bool> noDownsizeOnError,
+  Value<bool> printFps,
+  Value<bool> noAudio,
+  Value<bool> noAudioPlayback,
+  Value<String?> audioSource,
+  Value<String?> audioCodec,
+  Value<String?> audioEncoder,
+  Value<String?> audioBitRate,
+  Value<int> audioBuffer,
+  Value<int> audioOutputBuffer,
+  Value<bool> audioDup,
+  Value<bool> requireAudio,
+  Value<String?> videoSource,
+  Value<int> cameraId,
+  Value<String?> cameraFacing,
+  Value<String?> cameraSize,
+  Value<String?> cameraAr,
+  Value<int> cameraFps,
+  Value<bool> cameraHighSpeed,
+  Value<bool> cameraTorch,
+  Value<double> cameraZoom,
+  Value<bool> borderless,
+  Value<String?> windowTitle,
+  Value<int> windowX,
+  Value<int> windowY,
+  Value<int> windowWidth,
+  Value<int> windowHeight,
+  Value<bool> alwaysOnTop,
+  Value<bool> fullscreen,
+  Value<bool> disableScreensaver,
+  Value<bool> noWindow,
+  Value<bool> noWindowAspectRatioLock,
+  Value<String?> keyboard,
+  Value<String?> mouse,
+  Value<bool> noControl,
+  Value<String?> mouseBind,
+  Value<bool> preferText,
+  Value<bool> rawKeyEvents,
+  Value<bool> noKeyRepeat,
+  Value<bool> noMouseHover,
+  Value<bool> legacyPaste,
+  Value<bool> noClipboardAutosync,
+  Value<bool> stayAwake,
+  Value<bool> turnScreenOff,
+  Value<bool> keepActive,
+  Value<bool> showTouches,
+  Value<bool> powerOffOnClose,
+  Value<bool> noPowerOn,
+  Value<int> screenOffTimeout,
+  Value<String?> shortcutMod,
+  Value<bool> recordEnabled,
+  Value<String?> record,
+  Value<String?> recordFormat,
+  Value<int> timeLimit,
+  Value<bool> noPlayback,
+  Value<bool> noVideoPlayback,
+  Value<String?> pauseOnExit,
+  Value<DateTime> updatedAt,
+  Value<int> rowid,
+});
+
+class $$ScrcpyOptions_TableFilterComposer
+    extends Composer<_$AppDatabase, $ScrcpyOptions_Table> {
+  $$ScrcpyOptions_TableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get serial => $composableBuilder(
+      column: $table.serial, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get maxSize => $composableBuilder(
+      column: $table.maxSize, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get videoBitRate => $composableBuilder(
+      column: $table.videoBitRate, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get maxFps => $composableBuilder(
+      column: $table.maxFps, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get videoCodec => $composableBuilder(
+      column: $table.videoCodec, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get videoEncoder => $composableBuilder(
+      column: $table.videoEncoder, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get videoBuffer => $composableBuilder(
+      column: $table.videoBuffer, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get noMipmaps => $composableBuilder(
+      column: $table.noMipmaps, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get captureOrientation => $composableBuilder(
+      column: $table.captureOrientation,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get displayOrientation => $composableBuilder(
+      column: $table.displayOrientation,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get crop => $composableBuilder(
+      column: $table.crop, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get angle => $composableBuilder(
+      column: $table.angle, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get displayId => $composableBuilder(
+      column: $table.displayId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get renderFit => $composableBuilder(
+      column: $table.renderFit, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get backgroundColor => $composableBuilder(
+      column: $table.backgroundColor,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get minSizeAlignment => $composableBuilder(
+      column: $table.minSizeAlignment,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get noDownsizeOnError => $composableBuilder(
+      column: $table.noDownsizeOnError,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get printFps => $composableBuilder(
+      column: $table.printFps, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get noAudio => $composableBuilder(
+      column: $table.noAudio, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get noAudioPlayback => $composableBuilder(
+      column: $table.noAudioPlayback,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get audioSource => $composableBuilder(
+      column: $table.audioSource, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get audioCodec => $composableBuilder(
+      column: $table.audioCodec, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get audioEncoder => $composableBuilder(
+      column: $table.audioEncoder, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get audioBitRate => $composableBuilder(
+      column: $table.audioBitRate, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get audioBuffer => $composableBuilder(
+      column: $table.audioBuffer, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get audioOutputBuffer => $composableBuilder(
+      column: $table.audioOutputBuffer,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get audioDup => $composableBuilder(
+      column: $table.audioDup, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get requireAudio => $composableBuilder(
+      column: $table.requireAudio, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get videoSource => $composableBuilder(
+      column: $table.videoSource, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get cameraId => $composableBuilder(
+      column: $table.cameraId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get cameraFacing => $composableBuilder(
+      column: $table.cameraFacing, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get cameraSize => $composableBuilder(
+      column: $table.cameraSize, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get cameraAr => $composableBuilder(
+      column: $table.cameraAr, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get cameraFps => $composableBuilder(
+      column: $table.cameraFps, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get cameraHighSpeed => $composableBuilder(
+      column: $table.cameraHighSpeed,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get cameraTorch => $composableBuilder(
+      column: $table.cameraTorch, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<double> get cameraZoom => $composableBuilder(
+      column: $table.cameraZoom, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get borderless => $composableBuilder(
+      column: $table.borderless, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get windowTitle => $composableBuilder(
+      column: $table.windowTitle, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get windowX => $composableBuilder(
+      column: $table.windowX, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get windowY => $composableBuilder(
+      column: $table.windowY, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get windowWidth => $composableBuilder(
+      column: $table.windowWidth, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get windowHeight => $composableBuilder(
+      column: $table.windowHeight, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get alwaysOnTop => $composableBuilder(
+      column: $table.alwaysOnTop, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get fullscreen => $composableBuilder(
+      column: $table.fullscreen, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get disableScreensaver => $composableBuilder(
+      column: $table.disableScreensaver,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get noWindow => $composableBuilder(
+      column: $table.noWindow, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get noWindowAspectRatioLock => $composableBuilder(
+      column: $table.noWindowAspectRatioLock,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get keyboard => $composableBuilder(
+      column: $table.keyboard, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get mouse => $composableBuilder(
+      column: $table.mouse, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get noControl => $composableBuilder(
+      column: $table.noControl, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get mouseBind => $composableBuilder(
+      column: $table.mouseBind, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get preferText => $composableBuilder(
+      column: $table.preferText, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get rawKeyEvents => $composableBuilder(
+      column: $table.rawKeyEvents, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get noKeyRepeat => $composableBuilder(
+      column: $table.noKeyRepeat, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get noMouseHover => $composableBuilder(
+      column: $table.noMouseHover, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get legacyPaste => $composableBuilder(
+      column: $table.legacyPaste, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get noClipboardAutosync => $composableBuilder(
+      column: $table.noClipboardAutosync,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get stayAwake => $composableBuilder(
+      column: $table.stayAwake, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get turnScreenOff => $composableBuilder(
+      column: $table.turnScreenOff, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get keepActive => $composableBuilder(
+      column: $table.keepActive, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get showTouches => $composableBuilder(
+      column: $table.showTouches, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get powerOffOnClose => $composableBuilder(
+      column: $table.powerOffOnClose,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get noPowerOn => $composableBuilder(
+      column: $table.noPowerOn, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get screenOffTimeout => $composableBuilder(
+      column: $table.screenOffTimeout,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get shortcutMod => $composableBuilder(
+      column: $table.shortcutMod, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get recordEnabled => $composableBuilder(
+      column: $table.recordEnabled, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get record => $composableBuilder(
+      column: $table.record, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get recordFormat => $composableBuilder(
+      column: $table.recordFormat, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get timeLimit => $composableBuilder(
+      column: $table.timeLimit, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get noPlayback => $composableBuilder(
+      column: $table.noPlayback, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get noVideoPlayback => $composableBuilder(
+      column: $table.noVideoPlayback,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get pauseOnExit => $composableBuilder(
+      column: $table.pauseOnExit, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnFilters(column));
+}
+
+class $$ScrcpyOptions_TableOrderingComposer
+    extends Composer<_$AppDatabase, $ScrcpyOptions_Table> {
+  $$ScrcpyOptions_TableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get serial => $composableBuilder(
+      column: $table.serial, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get maxSize => $composableBuilder(
+      column: $table.maxSize, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get videoBitRate => $composableBuilder(
+      column: $table.videoBitRate,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get maxFps => $composableBuilder(
+      column: $table.maxFps, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get videoCodec => $composableBuilder(
+      column: $table.videoCodec, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get videoEncoder => $composableBuilder(
+      column: $table.videoEncoder,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get videoBuffer => $composableBuilder(
+      column: $table.videoBuffer, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get noMipmaps => $composableBuilder(
+      column: $table.noMipmaps, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get captureOrientation => $composableBuilder(
+      column: $table.captureOrientation,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get displayOrientation => $composableBuilder(
+      column: $table.displayOrientation,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get crop => $composableBuilder(
+      column: $table.crop, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get angle => $composableBuilder(
+      column: $table.angle, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get displayId => $composableBuilder(
+      column: $table.displayId, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get renderFit => $composableBuilder(
+      column: $table.renderFit, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get backgroundColor => $composableBuilder(
+      column: $table.backgroundColor,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get minSizeAlignment => $composableBuilder(
+      column: $table.minSizeAlignment,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get noDownsizeOnError => $composableBuilder(
+      column: $table.noDownsizeOnError,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get printFps => $composableBuilder(
+      column: $table.printFps, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get noAudio => $composableBuilder(
+      column: $table.noAudio, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get noAudioPlayback => $composableBuilder(
+      column: $table.noAudioPlayback,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get audioSource => $composableBuilder(
+      column: $table.audioSource, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get audioCodec => $composableBuilder(
+      column: $table.audioCodec, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get audioEncoder => $composableBuilder(
+      column: $table.audioEncoder,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get audioBitRate => $composableBuilder(
+      column: $table.audioBitRate,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get audioBuffer => $composableBuilder(
+      column: $table.audioBuffer, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get audioOutputBuffer => $composableBuilder(
+      column: $table.audioOutputBuffer,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get audioDup => $composableBuilder(
+      column: $table.audioDup, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get requireAudio => $composableBuilder(
+      column: $table.requireAudio,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get videoSource => $composableBuilder(
+      column: $table.videoSource, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get cameraId => $composableBuilder(
+      column: $table.cameraId, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get cameraFacing => $composableBuilder(
+      column: $table.cameraFacing,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get cameraSize => $composableBuilder(
+      column: $table.cameraSize, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get cameraAr => $composableBuilder(
+      column: $table.cameraAr, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get cameraFps => $composableBuilder(
+      column: $table.cameraFps, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get cameraHighSpeed => $composableBuilder(
+      column: $table.cameraHighSpeed,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get cameraTorch => $composableBuilder(
+      column: $table.cameraTorch, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<double> get cameraZoom => $composableBuilder(
+      column: $table.cameraZoom, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get borderless => $composableBuilder(
+      column: $table.borderless, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get windowTitle => $composableBuilder(
+      column: $table.windowTitle, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get windowX => $composableBuilder(
+      column: $table.windowX, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get windowY => $composableBuilder(
+      column: $table.windowY, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get windowWidth => $composableBuilder(
+      column: $table.windowWidth, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get windowHeight => $composableBuilder(
+      column: $table.windowHeight,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get alwaysOnTop => $composableBuilder(
+      column: $table.alwaysOnTop, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get fullscreen => $composableBuilder(
+      column: $table.fullscreen, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get disableScreensaver => $composableBuilder(
+      column: $table.disableScreensaver,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get noWindow => $composableBuilder(
+      column: $table.noWindow, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get noWindowAspectRatioLock => $composableBuilder(
+      column: $table.noWindowAspectRatioLock,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get keyboard => $composableBuilder(
+      column: $table.keyboard, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get mouse => $composableBuilder(
+      column: $table.mouse, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get noControl => $composableBuilder(
+      column: $table.noControl, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get mouseBind => $composableBuilder(
+      column: $table.mouseBind, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get preferText => $composableBuilder(
+      column: $table.preferText, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get rawKeyEvents => $composableBuilder(
+      column: $table.rawKeyEvents,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get noKeyRepeat => $composableBuilder(
+      column: $table.noKeyRepeat, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get noMouseHover => $composableBuilder(
+      column: $table.noMouseHover,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get legacyPaste => $composableBuilder(
+      column: $table.legacyPaste, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get noClipboardAutosync => $composableBuilder(
+      column: $table.noClipboardAutosync,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get stayAwake => $composableBuilder(
+      column: $table.stayAwake, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get turnScreenOff => $composableBuilder(
+      column: $table.turnScreenOff,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get keepActive => $composableBuilder(
+      column: $table.keepActive, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get showTouches => $composableBuilder(
+      column: $table.showTouches, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get powerOffOnClose => $composableBuilder(
+      column: $table.powerOffOnClose,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get noPowerOn => $composableBuilder(
+      column: $table.noPowerOn, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get screenOffTimeout => $composableBuilder(
+      column: $table.screenOffTimeout,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get shortcutMod => $composableBuilder(
+      column: $table.shortcutMod, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get recordEnabled => $composableBuilder(
+      column: $table.recordEnabled,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get record => $composableBuilder(
+      column: $table.record, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get recordFormat => $composableBuilder(
+      column: $table.recordFormat,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get timeLimit => $composableBuilder(
+      column: $table.timeLimit, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get noPlayback => $composableBuilder(
+      column: $table.noPlayback, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get noVideoPlayback => $composableBuilder(
+      column: $table.noVideoPlayback,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get pauseOnExit => $composableBuilder(
+      column: $table.pauseOnExit, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnOrderings(column));
+}
+
+class $$ScrcpyOptions_TableAnnotationComposer
+    extends Composer<_$AppDatabase, $ScrcpyOptions_Table> {
+  $$ScrcpyOptions_TableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get serial =>
+      $composableBuilder(column: $table.serial, builder: (column) => column);
+
+  GeneratedColumn<int> get maxSize =>
+      $composableBuilder(column: $table.maxSize, builder: (column) => column);
+
+  GeneratedColumn<String> get videoBitRate => $composableBuilder(
+      column: $table.videoBitRate, builder: (column) => column);
+
+  GeneratedColumn<int> get maxFps =>
+      $composableBuilder(column: $table.maxFps, builder: (column) => column);
+
+  GeneratedColumn<String> get videoCodec => $composableBuilder(
+      column: $table.videoCodec, builder: (column) => column);
+
+  GeneratedColumn<String> get videoEncoder => $composableBuilder(
+      column: $table.videoEncoder, builder: (column) => column);
+
+  GeneratedColumn<int> get videoBuffer => $composableBuilder(
+      column: $table.videoBuffer, builder: (column) => column);
+
+  GeneratedColumn<bool> get noMipmaps =>
+      $composableBuilder(column: $table.noMipmaps, builder: (column) => column);
+
+  GeneratedColumn<String> get captureOrientation => $composableBuilder(
+      column: $table.captureOrientation, builder: (column) => column);
+
+  GeneratedColumn<String> get displayOrientation => $composableBuilder(
+      column: $table.displayOrientation, builder: (column) => column);
+
+  GeneratedColumn<String> get crop =>
+      $composableBuilder(column: $table.crop, builder: (column) => column);
+
+  GeneratedColumn<int> get angle =>
+      $composableBuilder(column: $table.angle, builder: (column) => column);
+
+  GeneratedColumn<int> get displayId =>
+      $composableBuilder(column: $table.displayId, builder: (column) => column);
+
+  GeneratedColumn<String> get renderFit =>
+      $composableBuilder(column: $table.renderFit, builder: (column) => column);
+
+  GeneratedColumn<String> get backgroundColor => $composableBuilder(
+      column: $table.backgroundColor, builder: (column) => column);
+
+  GeneratedColumn<int> get minSizeAlignment => $composableBuilder(
+      column: $table.minSizeAlignment, builder: (column) => column);
+
+  GeneratedColumn<bool> get noDownsizeOnError => $composableBuilder(
+      column: $table.noDownsizeOnError, builder: (column) => column);
+
+  GeneratedColumn<bool> get printFps =>
+      $composableBuilder(column: $table.printFps, builder: (column) => column);
+
+  GeneratedColumn<bool> get noAudio =>
+      $composableBuilder(column: $table.noAudio, builder: (column) => column);
+
+  GeneratedColumn<bool> get noAudioPlayback => $composableBuilder(
+      column: $table.noAudioPlayback, builder: (column) => column);
+
+  GeneratedColumn<String> get audioSource => $composableBuilder(
+      column: $table.audioSource, builder: (column) => column);
+
+  GeneratedColumn<String> get audioCodec => $composableBuilder(
+      column: $table.audioCodec, builder: (column) => column);
+
+  GeneratedColumn<String> get audioEncoder => $composableBuilder(
+      column: $table.audioEncoder, builder: (column) => column);
+
+  GeneratedColumn<String> get audioBitRate => $composableBuilder(
+      column: $table.audioBitRate, builder: (column) => column);
+
+  GeneratedColumn<int> get audioBuffer => $composableBuilder(
+      column: $table.audioBuffer, builder: (column) => column);
+
+  GeneratedColumn<int> get audioOutputBuffer => $composableBuilder(
+      column: $table.audioOutputBuffer, builder: (column) => column);
+
+  GeneratedColumn<bool> get audioDup =>
+      $composableBuilder(column: $table.audioDup, builder: (column) => column);
+
+  GeneratedColumn<bool> get requireAudio => $composableBuilder(
+      column: $table.requireAudio, builder: (column) => column);
+
+  GeneratedColumn<String> get videoSource => $composableBuilder(
+      column: $table.videoSource, builder: (column) => column);
+
+  GeneratedColumn<int> get cameraId =>
+      $composableBuilder(column: $table.cameraId, builder: (column) => column);
+
+  GeneratedColumn<String> get cameraFacing => $composableBuilder(
+      column: $table.cameraFacing, builder: (column) => column);
+
+  GeneratedColumn<String> get cameraSize => $composableBuilder(
+      column: $table.cameraSize, builder: (column) => column);
+
+  GeneratedColumn<String> get cameraAr =>
+      $composableBuilder(column: $table.cameraAr, builder: (column) => column);
+
+  GeneratedColumn<int> get cameraFps =>
+      $composableBuilder(column: $table.cameraFps, builder: (column) => column);
+
+  GeneratedColumn<bool> get cameraHighSpeed => $composableBuilder(
+      column: $table.cameraHighSpeed, builder: (column) => column);
+
+  GeneratedColumn<bool> get cameraTorch => $composableBuilder(
+      column: $table.cameraTorch, builder: (column) => column);
+
+  GeneratedColumn<double> get cameraZoom => $composableBuilder(
+      column: $table.cameraZoom, builder: (column) => column);
+
+  GeneratedColumn<bool> get borderless => $composableBuilder(
+      column: $table.borderless, builder: (column) => column);
+
+  GeneratedColumn<String> get windowTitle => $composableBuilder(
+      column: $table.windowTitle, builder: (column) => column);
+
+  GeneratedColumn<int> get windowX =>
+      $composableBuilder(column: $table.windowX, builder: (column) => column);
+
+  GeneratedColumn<int> get windowY =>
+      $composableBuilder(column: $table.windowY, builder: (column) => column);
+
+  GeneratedColumn<int> get windowWidth => $composableBuilder(
+      column: $table.windowWidth, builder: (column) => column);
+
+  GeneratedColumn<int> get windowHeight => $composableBuilder(
+      column: $table.windowHeight, builder: (column) => column);
+
+  GeneratedColumn<bool> get alwaysOnTop => $composableBuilder(
+      column: $table.alwaysOnTop, builder: (column) => column);
+
+  GeneratedColumn<bool> get fullscreen => $composableBuilder(
+      column: $table.fullscreen, builder: (column) => column);
+
+  GeneratedColumn<bool> get disableScreensaver => $composableBuilder(
+      column: $table.disableScreensaver, builder: (column) => column);
+
+  GeneratedColumn<bool> get noWindow =>
+      $composableBuilder(column: $table.noWindow, builder: (column) => column);
+
+  GeneratedColumn<bool> get noWindowAspectRatioLock => $composableBuilder(
+      column: $table.noWindowAspectRatioLock, builder: (column) => column);
+
+  GeneratedColumn<String> get keyboard =>
+      $composableBuilder(column: $table.keyboard, builder: (column) => column);
+
+  GeneratedColumn<String> get mouse =>
+      $composableBuilder(column: $table.mouse, builder: (column) => column);
+
+  GeneratedColumn<bool> get noControl =>
+      $composableBuilder(column: $table.noControl, builder: (column) => column);
+
+  GeneratedColumn<String> get mouseBind =>
+      $composableBuilder(column: $table.mouseBind, builder: (column) => column);
+
+  GeneratedColumn<bool> get preferText => $composableBuilder(
+      column: $table.preferText, builder: (column) => column);
+
+  GeneratedColumn<bool> get rawKeyEvents => $composableBuilder(
+      column: $table.rawKeyEvents, builder: (column) => column);
+
+  GeneratedColumn<bool> get noKeyRepeat => $composableBuilder(
+      column: $table.noKeyRepeat, builder: (column) => column);
+
+  GeneratedColumn<bool> get noMouseHover => $composableBuilder(
+      column: $table.noMouseHover, builder: (column) => column);
+
+  GeneratedColumn<bool> get legacyPaste => $composableBuilder(
+      column: $table.legacyPaste, builder: (column) => column);
+
+  GeneratedColumn<bool> get noClipboardAutosync => $composableBuilder(
+      column: $table.noClipboardAutosync, builder: (column) => column);
+
+  GeneratedColumn<bool> get stayAwake =>
+      $composableBuilder(column: $table.stayAwake, builder: (column) => column);
+
+  GeneratedColumn<bool> get turnScreenOff => $composableBuilder(
+      column: $table.turnScreenOff, builder: (column) => column);
+
+  GeneratedColumn<bool> get keepActive => $composableBuilder(
+      column: $table.keepActive, builder: (column) => column);
+
+  GeneratedColumn<bool> get showTouches => $composableBuilder(
+      column: $table.showTouches, builder: (column) => column);
+
+  GeneratedColumn<bool> get powerOffOnClose => $composableBuilder(
+      column: $table.powerOffOnClose, builder: (column) => column);
+
+  GeneratedColumn<bool> get noPowerOn =>
+      $composableBuilder(column: $table.noPowerOn, builder: (column) => column);
+
+  GeneratedColumn<int> get screenOffTimeout => $composableBuilder(
+      column: $table.screenOffTimeout, builder: (column) => column);
+
+  GeneratedColumn<String> get shortcutMod => $composableBuilder(
+      column: $table.shortcutMod, builder: (column) => column);
+
+  GeneratedColumn<bool> get recordEnabled => $composableBuilder(
+      column: $table.recordEnabled, builder: (column) => column);
+
+  GeneratedColumn<String> get record =>
+      $composableBuilder(column: $table.record, builder: (column) => column);
+
+  GeneratedColumn<String> get recordFormat => $composableBuilder(
+      column: $table.recordFormat, builder: (column) => column);
+
+  GeneratedColumn<int> get timeLimit =>
+      $composableBuilder(column: $table.timeLimit, builder: (column) => column);
+
+  GeneratedColumn<bool> get noPlayback => $composableBuilder(
+      column: $table.noPlayback, builder: (column) => column);
+
+  GeneratedColumn<bool> get noVideoPlayback => $composableBuilder(
+      column: $table.noVideoPlayback, builder: (column) => column);
+
+  GeneratedColumn<String> get pauseOnExit => $composableBuilder(
+      column: $table.pauseOnExit, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$ScrcpyOptions_TableTableManager extends RootTableManager<
+    _$AppDatabase,
+    $ScrcpyOptions_Table,
+    ScrcpyOptions_Data,
+    $$ScrcpyOptions_TableFilterComposer,
+    $$ScrcpyOptions_TableOrderingComposer,
+    $$ScrcpyOptions_TableAnnotationComposer,
+    $$ScrcpyOptions_TableCreateCompanionBuilder,
+    $$ScrcpyOptions_TableUpdateCompanionBuilder,
+    (
+      ScrcpyOptions_Data,
+      BaseReferences<_$AppDatabase, $ScrcpyOptions_Table, ScrcpyOptions_Data>
+    ),
+    ScrcpyOptions_Data,
+    PrefetchHooks Function()> {
+  $$ScrcpyOptions_TableTableManager(
+      _$AppDatabase db, $ScrcpyOptions_Table table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ScrcpyOptions_TableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ScrcpyOptions_TableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$ScrcpyOptions_TableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> serial = const Value.absent(),
+            Value<int> maxSize = const Value.absent(),
+            Value<String?> videoBitRate = const Value.absent(),
+            Value<int> maxFps = const Value.absent(),
+            Value<String?> videoCodec = const Value.absent(),
+            Value<String?> videoEncoder = const Value.absent(),
+            Value<int> videoBuffer = const Value.absent(),
+            Value<bool> noMipmaps = const Value.absent(),
+            Value<String?> captureOrientation = const Value.absent(),
+            Value<String?> displayOrientation = const Value.absent(),
+            Value<String?> crop = const Value.absent(),
+            Value<int> angle = const Value.absent(),
+            Value<int> displayId = const Value.absent(),
+            Value<String?> renderFit = const Value.absent(),
+            Value<String?> backgroundColor = const Value.absent(),
+            Value<int> minSizeAlignment = const Value.absent(),
+            Value<bool> noDownsizeOnError = const Value.absent(),
+            Value<bool> printFps = const Value.absent(),
+            Value<bool> noAudio = const Value.absent(),
+            Value<bool> noAudioPlayback = const Value.absent(),
+            Value<String?> audioSource = const Value.absent(),
+            Value<String?> audioCodec = const Value.absent(),
+            Value<String?> audioEncoder = const Value.absent(),
+            Value<String?> audioBitRate = const Value.absent(),
+            Value<int> audioBuffer = const Value.absent(),
+            Value<int> audioOutputBuffer = const Value.absent(),
+            Value<bool> audioDup = const Value.absent(),
+            Value<bool> requireAudio = const Value.absent(),
+            Value<String?> videoSource = const Value.absent(),
+            Value<int> cameraId = const Value.absent(),
+            Value<String?> cameraFacing = const Value.absent(),
+            Value<String?> cameraSize = const Value.absent(),
+            Value<String?> cameraAr = const Value.absent(),
+            Value<int> cameraFps = const Value.absent(),
+            Value<bool> cameraHighSpeed = const Value.absent(),
+            Value<bool> cameraTorch = const Value.absent(),
+            Value<double> cameraZoom = const Value.absent(),
+            Value<bool> borderless = const Value.absent(),
+            Value<String?> windowTitle = const Value.absent(),
+            Value<int> windowX = const Value.absent(),
+            Value<int> windowY = const Value.absent(),
+            Value<int> windowWidth = const Value.absent(),
+            Value<int> windowHeight = const Value.absent(),
+            Value<bool> alwaysOnTop = const Value.absent(),
+            Value<bool> fullscreen = const Value.absent(),
+            Value<bool> disableScreensaver = const Value.absent(),
+            Value<bool> noWindow = const Value.absent(),
+            Value<bool> noWindowAspectRatioLock = const Value.absent(),
+            Value<String?> keyboard = const Value.absent(),
+            Value<String?> mouse = const Value.absent(),
+            Value<bool> noControl = const Value.absent(),
+            Value<String?> mouseBind = const Value.absent(),
+            Value<bool> preferText = const Value.absent(),
+            Value<bool> rawKeyEvents = const Value.absent(),
+            Value<bool> noKeyRepeat = const Value.absent(),
+            Value<bool> noMouseHover = const Value.absent(),
+            Value<bool> legacyPaste = const Value.absent(),
+            Value<bool> noClipboardAutosync = const Value.absent(),
+            Value<bool> stayAwake = const Value.absent(),
+            Value<bool> turnScreenOff = const Value.absent(),
+            Value<bool> keepActive = const Value.absent(),
+            Value<bool> showTouches = const Value.absent(),
+            Value<bool> powerOffOnClose = const Value.absent(),
+            Value<bool> noPowerOn = const Value.absent(),
+            Value<int> screenOffTimeout = const Value.absent(),
+            Value<String?> shortcutMod = const Value.absent(),
+            Value<bool> recordEnabled = const Value.absent(),
+            Value<String?> record = const Value.absent(),
+            Value<String?> recordFormat = const Value.absent(),
+            Value<int> timeLimit = const Value.absent(),
+            Value<bool> noPlayback = const Value.absent(),
+            Value<bool> noVideoPlayback = const Value.absent(),
+            Value<String?> pauseOnExit = const Value.absent(),
+            Value<DateTime> updatedAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              ScrcpyOptions_Companion(
+            serial: serial,
+            maxSize: maxSize,
+            videoBitRate: videoBitRate,
+            maxFps: maxFps,
+            videoCodec: videoCodec,
+            videoEncoder: videoEncoder,
+            videoBuffer: videoBuffer,
+            noMipmaps: noMipmaps,
+            captureOrientation: captureOrientation,
+            displayOrientation: displayOrientation,
+            crop: crop,
+            angle: angle,
+            displayId: displayId,
+            renderFit: renderFit,
+            backgroundColor: backgroundColor,
+            minSizeAlignment: minSizeAlignment,
+            noDownsizeOnError: noDownsizeOnError,
+            printFps: printFps,
+            noAudio: noAudio,
+            noAudioPlayback: noAudioPlayback,
+            audioSource: audioSource,
+            audioCodec: audioCodec,
+            audioEncoder: audioEncoder,
+            audioBitRate: audioBitRate,
+            audioBuffer: audioBuffer,
+            audioOutputBuffer: audioOutputBuffer,
+            audioDup: audioDup,
+            requireAudio: requireAudio,
+            videoSource: videoSource,
+            cameraId: cameraId,
+            cameraFacing: cameraFacing,
+            cameraSize: cameraSize,
+            cameraAr: cameraAr,
+            cameraFps: cameraFps,
+            cameraHighSpeed: cameraHighSpeed,
+            cameraTorch: cameraTorch,
+            cameraZoom: cameraZoom,
+            borderless: borderless,
+            windowTitle: windowTitle,
+            windowX: windowX,
+            windowY: windowY,
+            windowWidth: windowWidth,
+            windowHeight: windowHeight,
+            alwaysOnTop: alwaysOnTop,
+            fullscreen: fullscreen,
+            disableScreensaver: disableScreensaver,
+            noWindow: noWindow,
+            noWindowAspectRatioLock: noWindowAspectRatioLock,
+            keyboard: keyboard,
+            mouse: mouse,
+            noControl: noControl,
+            mouseBind: mouseBind,
+            preferText: preferText,
+            rawKeyEvents: rawKeyEvents,
+            noKeyRepeat: noKeyRepeat,
+            noMouseHover: noMouseHover,
+            legacyPaste: legacyPaste,
+            noClipboardAutosync: noClipboardAutosync,
+            stayAwake: stayAwake,
+            turnScreenOff: turnScreenOff,
+            keepActive: keepActive,
+            showTouches: showTouches,
+            powerOffOnClose: powerOffOnClose,
+            noPowerOn: noPowerOn,
+            screenOffTimeout: screenOffTimeout,
+            shortcutMod: shortcutMod,
+            recordEnabled: recordEnabled,
+            record: record,
+            recordFormat: recordFormat,
+            timeLimit: timeLimit,
+            noPlayback: noPlayback,
+            noVideoPlayback: noVideoPlayback,
+            pauseOnExit: pauseOnExit,
+            updatedAt: updatedAt,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String serial,
+            required int maxSize,
+            Value<String?> videoBitRate = const Value.absent(),
+            required int maxFps,
+            Value<String?> videoCodec = const Value.absent(),
+            Value<String?> videoEncoder = const Value.absent(),
+            required int videoBuffer,
+            required bool noMipmaps,
+            Value<String?> captureOrientation = const Value.absent(),
+            Value<String?> displayOrientation = const Value.absent(),
+            Value<String?> crop = const Value.absent(),
+            required int angle,
+            required int displayId,
+            Value<String?> renderFit = const Value.absent(),
+            Value<String?> backgroundColor = const Value.absent(),
+            required int minSizeAlignment,
+            required bool noDownsizeOnError,
+            required bool printFps,
+            required bool noAudio,
+            required bool noAudioPlayback,
+            Value<String?> audioSource = const Value.absent(),
+            Value<String?> audioCodec = const Value.absent(),
+            Value<String?> audioEncoder = const Value.absent(),
+            Value<String?> audioBitRate = const Value.absent(),
+            required int audioBuffer,
+            required int audioOutputBuffer,
+            required bool audioDup,
+            required bool requireAudio,
+            Value<String?> videoSource = const Value.absent(),
+            required int cameraId,
+            Value<String?> cameraFacing = const Value.absent(),
+            Value<String?> cameraSize = const Value.absent(),
+            Value<String?> cameraAr = const Value.absent(),
+            required int cameraFps,
+            required bool cameraHighSpeed,
+            required bool cameraTorch,
+            required double cameraZoom,
+            required bool borderless,
+            Value<String?> windowTitle = const Value.absent(),
+            required int windowX,
+            required int windowY,
+            required int windowWidth,
+            required int windowHeight,
+            required bool alwaysOnTop,
+            required bool fullscreen,
+            required bool disableScreensaver,
+            required bool noWindow,
+            required bool noWindowAspectRatioLock,
+            Value<String?> keyboard = const Value.absent(),
+            Value<String?> mouse = const Value.absent(),
+            required bool noControl,
+            Value<String?> mouseBind = const Value.absent(),
+            required bool preferText,
+            required bool rawKeyEvents,
+            required bool noKeyRepeat,
+            required bool noMouseHover,
+            required bool legacyPaste,
+            required bool noClipboardAutosync,
+            required bool stayAwake,
+            required bool turnScreenOff,
+            required bool keepActive,
+            required bool showTouches,
+            required bool powerOffOnClose,
+            required bool noPowerOn,
+            required int screenOffTimeout,
+            Value<String?> shortcutMod = const Value.absent(),
+            required bool recordEnabled,
+            Value<String?> record = const Value.absent(),
+            Value<String?> recordFormat = const Value.absent(),
+            required int timeLimit,
+            required bool noPlayback,
+            required bool noVideoPlayback,
+            Value<String?> pauseOnExit = const Value.absent(),
+            required DateTime updatedAt,
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              ScrcpyOptions_Companion.insert(
+            serial: serial,
+            maxSize: maxSize,
+            videoBitRate: videoBitRate,
+            maxFps: maxFps,
+            videoCodec: videoCodec,
+            videoEncoder: videoEncoder,
+            videoBuffer: videoBuffer,
+            noMipmaps: noMipmaps,
+            captureOrientation: captureOrientation,
+            displayOrientation: displayOrientation,
+            crop: crop,
+            angle: angle,
+            displayId: displayId,
+            renderFit: renderFit,
+            backgroundColor: backgroundColor,
+            minSizeAlignment: minSizeAlignment,
+            noDownsizeOnError: noDownsizeOnError,
+            printFps: printFps,
+            noAudio: noAudio,
+            noAudioPlayback: noAudioPlayback,
+            audioSource: audioSource,
+            audioCodec: audioCodec,
+            audioEncoder: audioEncoder,
+            audioBitRate: audioBitRate,
+            audioBuffer: audioBuffer,
+            audioOutputBuffer: audioOutputBuffer,
+            audioDup: audioDup,
+            requireAudio: requireAudio,
+            videoSource: videoSource,
+            cameraId: cameraId,
+            cameraFacing: cameraFacing,
+            cameraSize: cameraSize,
+            cameraAr: cameraAr,
+            cameraFps: cameraFps,
+            cameraHighSpeed: cameraHighSpeed,
+            cameraTorch: cameraTorch,
+            cameraZoom: cameraZoom,
+            borderless: borderless,
+            windowTitle: windowTitle,
+            windowX: windowX,
+            windowY: windowY,
+            windowWidth: windowWidth,
+            windowHeight: windowHeight,
+            alwaysOnTop: alwaysOnTop,
+            fullscreen: fullscreen,
+            disableScreensaver: disableScreensaver,
+            noWindow: noWindow,
+            noWindowAspectRatioLock: noWindowAspectRatioLock,
+            keyboard: keyboard,
+            mouse: mouse,
+            noControl: noControl,
+            mouseBind: mouseBind,
+            preferText: preferText,
+            rawKeyEvents: rawKeyEvents,
+            noKeyRepeat: noKeyRepeat,
+            noMouseHover: noMouseHover,
+            legacyPaste: legacyPaste,
+            noClipboardAutosync: noClipboardAutosync,
+            stayAwake: stayAwake,
+            turnScreenOff: turnScreenOff,
+            keepActive: keepActive,
+            showTouches: showTouches,
+            powerOffOnClose: powerOffOnClose,
+            noPowerOn: noPowerOn,
+            screenOffTimeout: screenOffTimeout,
+            shortcutMod: shortcutMod,
+            recordEnabled: recordEnabled,
+            record: record,
+            recordFormat: recordFormat,
+            timeLimit: timeLimit,
+            noPlayback: noPlayback,
+            noVideoPlayback: noVideoPlayback,
+            pauseOnExit: pauseOnExit,
+            updatedAt: updatedAt,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$ScrcpyOptions_TableProcessedTableManager = ProcessedTableManager<
+    _$AppDatabase,
+    $ScrcpyOptions_Table,
+    ScrcpyOptions_Data,
+    $$ScrcpyOptions_TableFilterComposer,
+    $$ScrcpyOptions_TableOrderingComposer,
+    $$ScrcpyOptions_TableAnnotationComposer,
+    $$ScrcpyOptions_TableCreateCompanionBuilder,
+    $$ScrcpyOptions_TableUpdateCompanionBuilder,
+    (
+      ScrcpyOptions_Data,
+      BaseReferences<_$AppDatabase, $ScrcpyOptions_Table, ScrcpyOptions_Data>
+    ),
+    ScrcpyOptions_Data,
+    PrefetchHooks Function()>;
+typedef $$SentClipboardEntryTableCreateCompanionBuilder
+    = SentClipboardEntryCompanion Function({
+  Value<int> id,
+  required String content,
+  required DateTime sentAt,
+  required bool favorite,
+  required int sendCount,
+});
+typedef $$SentClipboardEntryTableUpdateCompanionBuilder
+    = SentClipboardEntryCompanion Function({
+  Value<int> id,
+  Value<String> content,
+  Value<DateTime> sentAt,
+  Value<bool> favorite,
+  Value<int> sendCount,
+});
+
+class $$SentClipboardEntryTableFilterComposer
+    extends Composer<_$AppDatabase, $SentClipboardEntryTable> {
+  $$SentClipboardEntryTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get content => $composableBuilder(
+      column: $table.content, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get sentAt => $composableBuilder(
+      column: $table.sentAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get favorite => $composableBuilder(
+      column: $table.favorite, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get sendCount => $composableBuilder(
+      column: $table.sendCount, builder: (column) => ColumnFilters(column));
+}
+
+class $$SentClipboardEntryTableOrderingComposer
+    extends Composer<_$AppDatabase, $SentClipboardEntryTable> {
+  $$SentClipboardEntryTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get content => $composableBuilder(
+      column: $table.content, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get sentAt => $composableBuilder(
+      column: $table.sentAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get favorite => $composableBuilder(
+      column: $table.favorite, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get sendCount => $composableBuilder(
+      column: $table.sendCount, builder: (column) => ColumnOrderings(column));
+}
+
+class $$SentClipboardEntryTableAnnotationComposer
+    extends Composer<_$AppDatabase, $SentClipboardEntryTable> {
+  $$SentClipboardEntryTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get content =>
+      $composableBuilder(column: $table.content, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get sentAt =>
+      $composableBuilder(column: $table.sentAt, builder: (column) => column);
+
+  GeneratedColumn<bool> get favorite =>
+      $composableBuilder(column: $table.favorite, builder: (column) => column);
+
+  GeneratedColumn<int> get sendCount =>
+      $composableBuilder(column: $table.sendCount, builder: (column) => column);
+}
+
+class $$SentClipboardEntryTableTableManager extends RootTableManager<
+    _$AppDatabase,
+    $SentClipboardEntryTable,
+    SentClipboardEntryData,
+    $$SentClipboardEntryTableFilterComposer,
+    $$SentClipboardEntryTableOrderingComposer,
+    $$SentClipboardEntryTableAnnotationComposer,
+    $$SentClipboardEntryTableCreateCompanionBuilder,
+    $$SentClipboardEntryTableUpdateCompanionBuilder,
+    (
+      SentClipboardEntryData,
+      BaseReferences<_$AppDatabase, $SentClipboardEntryTable,
+          SentClipboardEntryData>
+    ),
+    SentClipboardEntryData,
+    PrefetchHooks Function()> {
+  $$SentClipboardEntryTableTableManager(
+      _$AppDatabase db, $SentClipboardEntryTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SentClipboardEntryTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SentClipboardEntryTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$SentClipboardEntryTableAnnotationComposer(
+                  $db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<String> content = const Value.absent(),
+            Value<DateTime> sentAt = const Value.absent(),
+            Value<bool> favorite = const Value.absent(),
+            Value<int> sendCount = const Value.absent(),
+          }) =>
+              SentClipboardEntryCompanion(
+            id: id,
+            content: content,
+            sentAt: sentAt,
+            favorite: favorite,
+            sendCount: sendCount,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            required String content,
+            required DateTime sentAt,
+            required bool favorite,
+            required int sendCount,
+          }) =>
+              SentClipboardEntryCompanion.insert(
+            id: id,
+            content: content,
+            sentAt: sentAt,
+            favorite: favorite,
+            sendCount: sendCount,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$SentClipboardEntryTableProcessedTableManager = ProcessedTableManager<
+    _$AppDatabase,
+    $SentClipboardEntryTable,
+    SentClipboardEntryData,
+    $$SentClipboardEntryTableFilterComposer,
+    $$SentClipboardEntryTableOrderingComposer,
+    $$SentClipboardEntryTableAnnotationComposer,
+    $$SentClipboardEntryTableCreateCompanionBuilder,
+    $$SentClipboardEntryTableUpdateCompanionBuilder,
+    (
+      SentClipboardEntryData,
+      BaseReferences<_$AppDatabase, $SentClipboardEntryTable,
+          SentClipboardEntryData>
+    ),
+    SentClipboardEntryData,
     PrefetchHooks Function()>;
 typedef $$TestSessionsTableCreateCompanionBuilder = TestSessionsCompanion
     Function({
@@ -7282,6 +12333,10 @@ class $AppDatabaseManager {
       $$SavedDevicesTableTableManager(_db, _db.savedDevices);
   $$AppStatesTableTableManager get appStates =>
       $$AppStatesTableTableManager(_db, _db.appStates);
+  $$ScrcpyOptions_TableTableManager get scrcpyOptions =>
+      $$ScrcpyOptions_TableTableManager(_db, _db.scrcpyOptions);
+  $$SentClipboardEntryTableTableManager get sentClipboardEntry =>
+      $$SentClipboardEntryTableTableManager(_db, _db.sentClipboardEntry);
   $$TestSessionsTableTableManager get testSessions =>
       $$TestSessionsTableTableManager(_db, _db.testSessions);
   $$TestSessionEventsTableTableManager get testSessionEvents =>
