@@ -63,6 +63,13 @@ class LogEntry {
   final String tid;
   final String priority;
   final String tag;
+  // App/process name that emitted the log, e.g. "com.example.app" or
+  // "system_process". Empty for now because `adb logcat -v threadtime`
+  // doesn't include this field — Android Studio looks it up separately
+  // by PID. The display layer still reserves a fixed-width column for
+  // it so the layout matches Android Studio's logcat row format.
+  // TODO: populate by caching `adb shell ps` lookups keyed by PID.
+  final String process;
   final String message;
   final bool isContinuation;
 
@@ -73,6 +80,7 @@ class LogEntry {
     this.tid = '',
     this.priority = '',
     this.tag = '',
+    this.process = '',
     this.message = '',
     this.isContinuation = false,
   });

@@ -806,67 +806,139 @@ class _LogcatScreenState extends State<LogcatScreen> {
     Color? highlightColor,
   ) {
     if (entry.isContinuation) {
-      return Row(children: [
-        Text('│ ',
-            style: mono.copyWith(fontSize: 12, color: theme.dividerColor)),
-        Expanded(
-          child: Text(
-            entry.message.replaceAll('\n', '\u21B5 '),
-            style: mono.copyWith(
-              fontSize: 12,
-              color: highlightColor ?? theme.colorScheme.onSurfaceVariant,
+      // Continuation rows share the main row's "no truncation" policy:
+      // long continuation lines (multi-line stack traces etc.) wrap
+      // naturally instead of being ellipsized. crossAxisAlignment: start
+      // keeps the │ leader at the top of multi-line continuations.
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('│ ',
+              style: mono.copyWith(fontSize: 12, color: theme.dividerColor)),
+          Expanded(
+            child: Text(
+              entry.message.replaceAll('\n', '\u21B5 '),
+              style: mono.copyWith(
+                fontSize: 12,
+                color: highlightColor ?? theme.colorScheme.onSurfaceVariant,
+              ),
             ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
           ),
-        ),
-      ]);
+        ],
+      );
     }
     if (entry.time.isEmpty) {
       return Text(
         entry.raw,
         style: mono.copyWith(fontSize: 12, color: messageColor),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
       );
     }
 
     final prioColor = _prioColor(entry.priority, theme);
-    return Row(children: [
-      SizedBox(
-          width: 130,
-          child: Text(entry.time,
-              style: mono.copyWith(
-                  fontSize: 11, color: theme.colorScheme.onSurfaceVariant))),
-      Flexible(
-          child: Text('${entry.pid}-${entry.tid}',
-              style:
-                  mono.copyWith(fontSize: 11, color: Colors.green.shade300),
-              overflow: TextOverflow.ellipsis,
-              softWrap: false)),
-      Container(
-        width: 24,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-            color: prioColor.withAlpha(30),
-            borderRadius: BorderRadius.circular(3)),
-        child: Text(entry.priority,
+    // Android Studio logcat-style layout:
+    //   time | tag | pid-tid | process | level | message
+    //
+    // Every metadata column is a FIXED-width cell so the message
+    // column starts at the same x position on every row, regardless
+    // of how short the tag / pid / process happens to be. That gives
+    // the eye a clean vertical line down the left edge of message
+    // text — what makes a multi-line logcat readable at a glance.
+    //
+    // - time: padded to 175px to fit "YYYY-MM-DD HH:MM:SS.mmm"
+    //   (adb logcat -v threadtime omits the year, so we add it here).
+    // - tag: 160px; long tags ellipsize. 160 is enough for typical
+    //   "MyClass$1" style tags.
+    // - pid-tid: 11 chars ("12345 67890" via padLeft(5) each), monospace.
+    // - process: 110px reserved, currently empty (we don't have
+    //   process-name data from adb logcat — see LogEntry.process).
+    // - level: 24px badge with priority letter.
+    // - message: no maxLines / ellipsis; wraps naturally like AS does.
+    final displayTime = _formatLogTimeWithYear(entry.time);
+    final pidTid = '${entry.pid}-${entry.tid}';
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 175,
+          child: Text(
+            displayTime,
             style: mono.copyWith(
-                fontSize: 11, fontWeight: FontWeight.w700, color: prioColor)),
-      ),
-      const SizedBox(width: 4),
-      Text(entry.tag.replaceAll('\n', '\u21B5 '),
-          style: mono.copyWith(fontSize: 11, color: theme.colorScheme.primary)),
-      const SizedBox(width: 4),
-      Expanded(
-        child: Text(
-          entry.message.replaceAll('\n', '\u21B5 '),
-          style: mono.copyWith(fontSize: 11, color: messageColor),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
+                fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
+            softWrap: false,
+          ),
         ),
-      ),
-    ]);
+        const SizedBox(width: 8),
+        SizedBox(
+          width: 160,
+          child: Text(
+            entry.tag.replaceAll('\n', '\u21B5 '),
+            style:
+                mono.copyWith(fontSize: 11, color: theme.colorScheme.primary),
+            overflow: TextOverflow.ellipsis,
+            softWrap: false,
+          ),
+        ),
+        const SizedBox(width: 8),
+        // pid-tid is left-aligned within a fixed 100px cell. We don't
+        // padLeft/padRight the digits — short PIDs ("1-1") and long
+        // PIDs ("19999-99999") both start at x=0 of the cell, with
+        // the level column anchored to x=108 (= 100 + 8 gap) on every
+        // row. The 100px width covers 5-digit PIDs comfortably and
+        // leaves a small buffer for sub-pixel rounding.
+        SizedBox(
+          width: 100,
+          child: Text(
+            pidTid,
+            style:
+                mono.copyWith(fontSize: 11, color: Colors.green.shade300),
+            softWrap: false,
+            overflow: TextOverflow.visible,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Container(
+          width: 24,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+              color: prioColor.withAlpha(30),
+              borderRadius: BorderRadius.circular(3)),
+          child: Text(entry.priority,
+              style: mono.copyWith(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: prioColor)),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            entry.message.replaceAll('\n', '\u21B5 '),
+            style: mono.copyWith(fontSize: 11, color: messageColor),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // adb logcat -v threadtime emits "MM-DD HH:MM:SS.mmm" with no year.
+  // We prepend the year (and handle the new-year rollover) so the
+  // display matches Android Studio's "YYYY-MM-DD HH:MM:SS.mmm" format.
+  //
+  // Rollover: if the parsed month-day is more than 30 days ahead of
+  // today, the log is from last year (e.g. "12-31" rendered in early
+  // January). Anything closer is treated as this year.
+  String _formatLogTimeWithYear(String raw) {
+    final m = RegExp(r'^(\d{2})-(\d{2})\s+\d{2}:\d{2}:\d{2}\.\d+$')
+        .firstMatch(raw.trim());
+    if (m == null) return raw;
+    final month = int.parse(m.group(1)!);
+    final day = int.parse(m.group(2)!);
+    final now = DateTime.now();
+    var year = now.year;
+    final parsedThisYear = DateTime(year, month, day);
+    if (parsedThisYear.difference(now).inDays > 30) {
+      year -= 1;
+    }
+    return '$year-$raw';
   }
 
   Color _prioColor(String prio, ThemeData theme) {
