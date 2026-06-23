@@ -5,99 +5,7 @@ import '../i18n.dart';
 import '../providers/locale_provider.dart';
 import '../providers/device_provider.dart';
 import '../providers/test_config_provider.dart';
-
-const _quickGroups = [
-  _ActionGroup(
-    titleKey: 'quickGroupDeviceInfo',
-    icon: Icons.phone_android,
-    actions: [
-      _QuickAction('quickActionBasicInfo', 'shell getprop ro.product.model',
-          Icons.info_outline),
-      _QuickAction('quickActionAndroidVersion',
-          'shell getprop ro.build.version.release', Icons.android),
-      _QuickAction('quickActionDeviceSerial', 'get-serialno',
-          Icons.confirmation_number_outlined),
-      _QuickAction('quickActionBatteryStatus', 'shell dumpsys battery',
-          Icons.battery_full),
-    ],
-  ),
-  _ActionGroup(
-    titleKey: 'quickGroupScreenControl',
-    icon: Icons.screenshot_monitor,
-    actions: [
-      _QuickAction(
-          'quickActionResolution', 'shell wm size', Icons.aspect_ratio),
-      _QuickAction(
-          'quickActionScreenDensity', 'shell wm density', Icons.density_medium),
-      _QuickAction('quickActionWakeScreen', 'shell input keyevent 224',
-          Icons.light_mode),
-      _QuickAction('quickActionPowerKey', 'shell input keyevent 26',
-          Icons.power_settings_new),
-    ],
-  ),
-  _ActionGroup(
-    titleKey: 'quickGroupKeySimulation',
-    icon: Icons.touch_app,
-    actions: [
-      _QuickAction('quickActionHome', 'shell input keyevent 3', Icons.home),
-      _QuickAction(
-          'quickActionBack', 'shell input keyevent 4', Icons.arrow_back),
-      _QuickAction(
-          'quickActionRecents', 'shell input keyevent 187', Icons.dynamic_feed),
-      _QuickAction('quickActionMenuKey', 'shell input keyevent 82', Icons.menu),
-    ],
-  ),
-  _ActionGroup(
-    titleKey: 'quickGroupDebugDiagnostics',
-    icon: Icons.bug_report,
-    actions: [
-      _QuickAction('quickActionCurrentActivity', 'shell dumpsys activity top',
-          Icons.layers),
-      _QuickAction(
-          'quickActionCurrentFocus',
-          'shell sh -c "dumpsys window | grep -E \'mCurrentFocus|mFocusedApp\'"',
-          Icons.center_focus_strong),
-      _QuickAction('quickActionCpuTop', 'shell top -n 1 -m 10', Icons.memory),
-      _QuickAction('quickActionProcessList', 'shell ps -A', Icons.account_tree),
-    ],
-  ),
-  _ActionGroup(
-    titleKey: 'quickGroupStorageNetwork',
-    icon: Icons.storage,
-    actions: [
-      _QuickAction('quickActionStorageSpace', 'shell df -h', Icons.sd_storage),
-      _QuickAction(
-          'quickActionNetworkAddress', 'shell ip addr show', Icons.wifi),
-      _QuickAction('quickActionRouteInfo', 'shell ip route', Icons.route),
-      _QuickAction('quickActionConnectionStatus', 'shell dumpsys connectivity',
-          Icons.hub),
-    ],
-  ),
-  _ActionGroup(
-    titleKey: 'quickGroupMaintenance',
-    icon: Icons.build_circle,
-    actions: [
-      _QuickAction(
-          'quickActionClearLogcat', 'logcat -c', Icons.cleaning_services,
-          confirm: true),
-      _QuickAction('quickActionAdbOverWifi', 'tcpip 5555', Icons.wifi_tethering,
-          confirm: true),
-      _QuickAction('quickActionRestoreUsbAdb', 'usb', Icons.usb, confirm: true),
-      _QuickAction('quickActionRebootDevice', 'reboot', Icons.restart_alt,
-          confirm: true, destructive: true),
-    ],
-  ),
-  _ActionGroup(
-    titleKey: 'quickGroupIntent',
-    icon: Icons.open_in_browser,
-    actions: [
-      _QuickAction('quickActionViewUrl', '', Icons.language, dialog: true),
-      _QuickAction('quickActionDeepLink', '', Icons.link, dialog: true),
-      _QuickAction('quickActionCustomIntent', '', Icons.tune,
-          customIntent: true),
-    ],
-  ),
-];
+import 'adb_command_quick_actions.dart';
 
 class AdbCommandScreen extends StatefulWidget {
   const AdbCommandScreen({
@@ -226,7 +134,7 @@ class _AdbCommandScreenState extends State<AdbCommandScreen> {
     }
   }
 
-  Future<void> _runQuickAction(_QuickAction action) async {
+  Future<void> _runQuickAction(AdbCommandQuickAction action) async {
     if (action.customIntent) {
       _showCustomIntentDialog();
       return;
@@ -537,15 +445,15 @@ class _AdbCommandScreenState extends State<AdbCommandScreen> {
 
   Widget _buildQuickPanel(ThemeData theme) {
     final config = context.read<TestConfigProvider>().currentApp;
-    final groups = List<_ActionGroup>.from(_quickGroups);
+    final groups = List<AdbCommandActionGroup>.from(adbCommandQuickGroups);
     if (config != null && config.deepLinks.isNotEmpty) {
       groups.insert(
         0,
-        _ActionGroup(
+        AdbCommandActionGroup(
           titleKey: 'quickGroupConfigDeepLinks',
           icon: Icons.link,
           actions: config.deepLinks
-              .map((dl) => _QuickAction(
+              .map((dl) => AdbCommandQuickAction(
                     dl.name,
                     'shell am start -a android.intent.action.VIEW -d "${dl.value}"',
                     Icons.open_in_browser,
@@ -591,7 +499,7 @@ class _AdbCommandScreenState extends State<AdbCommandScreen> {
     );
   }
 
-  Widget _buildActionGroup(ThemeData theme, _ActionGroup group) {
+  Widget _buildActionGroup(ThemeData theme, AdbCommandActionGroup group) {
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
@@ -624,7 +532,7 @@ class _AdbCommandScreenState extends State<AdbCommandScreen> {
     );
   }
 
-  Widget _buildActionButton(ThemeData theme, _QuickAction action) {
+  Widget _buildActionButton(ThemeData theme, AdbCommandQuickAction action) {
     final color = action.destructive
         ? theme.colorScheme.error
         : theme.colorScheme.primary;
@@ -751,38 +659,6 @@ class _SafeDialogState extends State<_SafeDialog> {
 
   @override
   Widget build(BuildContext context) => widget.builder(widget.controllers);
-}
-
-class _ActionGroup {
-  final String titleKey;
-  final IconData icon;
-  final List<_QuickAction> actions;
-
-  const _ActionGroup({
-    required this.titleKey,
-    required this.icon,
-    required this.actions,
-  });
-}
-
-class _QuickAction {
-  final String labelKey;
-  final String command;
-  final IconData icon;
-  final bool confirm;
-  final bool destructive;
-  final bool dialog;
-  final bool customIntent;
-
-  const _QuickAction(
-    this.labelKey,
-    this.command,
-    this.icon, {
-    this.confirm = false,
-    this.destructive = false,
-    this.dialog = false,
-    this.customIntent = false,
-  });
 }
 
 class _CommandRecord {

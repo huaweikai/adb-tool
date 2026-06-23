@@ -1,6 +1,7 @@
 package server
 
 import (
+	"embed"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -91,7 +92,7 @@ exit 0
 	logPath := filepath.Join(t.TempDir(), "adb.log")
 	t.Setenv("ADB_FAKE_LOG", logPath)
 
-	New(adbPath, os.DirFS(t.TempDir()), nil)
+	New(adbPath, os.DirFS(t.TempDir()), nil, embed.FS{})
 
 	entries := Log.Snapshot()
 	if !hasLogCommand(entries, "adb diagnostic path") {
@@ -127,7 +128,7 @@ exit 1
 	logPath := filepath.Join(t.TempDir(), "adb.log")
 	t.Setenv("ADB_FAKE_LOG", logPath)
 
-	devices, err := NewAdbManager(adbPath).Devices()
+	devices, err := NewAdbManager(adbPath, embed.FS{}).Devices()
 	if err != nil {
 		t.Fatalf("Devices returned error: %v", err)
 	}

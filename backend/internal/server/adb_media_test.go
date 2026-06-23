@@ -1,6 +1,7 @@
 package server
 
 import (
+	"embed"
 	"fmt"
 	"os"
 	"os/exec"
@@ -17,7 +18,7 @@ func TestScreenRecordStartsWithPlainAdbScreenrecord(t *testing.T) {
 	logPath := filepath.Join(t.TempDir(), "adb.log")
 	t.Setenv("ADB_FAKE_LOG", logPath)
 
-	manager := NewAdbManager(adbPath)
+	manager := NewAdbManager(adbPath, embed.FS{})
 	if err := manager.StartScreenRecord("serial-1"); err != nil {
 		t.Fatalf("StartScreenRecord returned error: %v", err)
 	}

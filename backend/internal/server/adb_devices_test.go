@@ -1,6 +1,9 @@
 package server
 
-import "testing"
+import (
+	"embed"
+	"testing"
+)
 
 func TestParseDevicePropsOutput(t *testing.T) {
 	props := parseDevicePropsOutput("Pixel 8\nGoogle\n35\n")
@@ -19,7 +22,7 @@ func TestParseDevicePropsOutput(t *testing.T) {
 }
 
 func TestDevicePropsCache(t *testing.T) {
-	m := NewAdbManager("adb")
+	m := NewAdbManager("adb", embed.FS{})
 	props := map[string]string{
 		"ro.product.model":     "Pixel",
 		"ro.product.brand":     "Google",
