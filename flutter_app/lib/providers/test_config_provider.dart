@@ -59,9 +59,6 @@ class TestConfigProvider extends ChangeNotifier {
             .toList()
         : const [];
     _currentAppId = json['currentAppId']?.toString() ?? '';
-    if (_currentAppId == null || !_apps.any((app) => app.id == _currentAppId)) {
-      _currentAppId = _apps.isEmpty ? '' : _apps.first.id;
-    }
     _loaded = true;
     notifyListeners();
   }
