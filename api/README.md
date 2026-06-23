@@ -241,6 +241,58 @@ HTTP 状态码含义：
 
 - `status`：固定为 `ok`。
 
+### scrcpy 投屏
+
+`POST /api/scrcpy/start?serial=<serial>`
+
+请求体可省略；省略时使用后端默认投屏参数。需要自定义时传入：
+
+```json
+{
+  "scrcpy_options": {
+    "max_size": 1024,
+    "video_bit_rate": "8M",
+    "video_codec": "h264",
+    "audio_source": "output",
+    "keyboard": "sdk",
+    "mouse": "sdk",
+    "stay_awake": true,
+    "borderless": true
+  }
+}
+```
+
+成功时：
+
+- `status`：固定为 `started`。
+- `serial`：启动投屏的设备序列号。
+
+请求参数或 `scrcpy_options` 校验失败时返回 `400`，`error` 会包含可展示的校验原因。
+
+`POST /api/scrcpy/stop`
+
+- `status`：固定为 `stopped`。即使当前没有投屏进程，也按无操作成功处理。
+
+`GET /api/scrcpy/status`
+
+可选参数：`serial`。传入后，只有当前投屏进程属于该设备时 `running` 才为 `true`。
+
+返回字段：
+
+- `running`：是否正在投屏。
+- `serial`：当前投屏绑定的设备序列号。
+- `pid`：scrcpy 进程 ID。
+- `elapsed`：投屏已运行时长，单位秒。
+
+`POST /api/scrcpy/action?serial=<serial>&action=<action>`
+
+向设备发送快捷动作，底层使用 `adb shell input keyevent`，不要求 scrcpy 窗口处于焦点状态。
+
+成功时：
+
+- `status`：固定为 `ok`。
+- `action`：已执行的动作名称。
+
 ### 录屏
 
 `GET /api/screen-record?action=start`

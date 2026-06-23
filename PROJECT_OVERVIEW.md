@@ -10,7 +10,7 @@
 |---|---|---|---|
 | Android APP | Kotlin + Gradle (AGP 9.1.1) | `adb_tool_app/` | 剪贴板辅助 APK，安装在目标 Android 设备上 |
 | 后端 | Go 1.26.3 | `backend/` | HTTP 服务器 + WebSocket，封装所有 ADB 命令 |
-| 前端 | Flutter 3.4+ (Dart) | `flutter_app/` | 桌面 GUI（主要目标平台 macOS，待扩展 Windows） |
+| 前端 | Flutter 3.4+ (Dart) | `flutter_app/` | 桌面 GUI（支持 macOS、Windows） |
 
 ---
 
@@ -40,8 +40,11 @@
 ├── backend/                            # Go 后端
 │   ├── go.mod                          # module: adb-tool/backend, gorilla/websocket
 │   ├── main.go                         # 入口
-│   ├── embed_darwin.go                 # //go:build darwin
-│   ├── embed_windows.go                # //go:build windows
+│   ├── embed_darwin.go                 # //go:build darwin，嵌入 platform-tools
+│   ├── embed_windows.go                # //go:build windows，嵌入 platform-tools
+│   ├── embed_scrcpy_darwin.go          # //go:build darwin，嵌入 macOS scrcpy
+│   ├── embed_scrcpy_windows.go         # //go:build windows，嵌入 Windows scrcpy
+│   ├── embed_scrcpy_fallback.go        # //go:build !darwin && !windows
 │   ├── embed_fallback.go               # //go:build !darwin && !windows
 │   ├── embed_clipboard_apk.go          # 嵌入 clipboard-helper.apk
 │   ├── clipboard-helper.apk
@@ -67,6 +70,11 @@
 │       ├── adb_files.go                # 文件操作 (ls/cat/pull/push)
 │       ├── adb_packages.go             # 应用列表 / 安装 / 卸载
 │       ├── adb_media.go                # 截图 / 录屏
+│       ├── adb_scrcpy.go               # scrcpy 进程生命周期、投屏快捷动作
+│       ├── adb_scrcpy_darwin.go        # macOS scrcpy 二进制定位与权限处理
+│       ├── adb_scrcpy_windows.go       # Windows scrcpy 二进制定位
+│       ├── scrcpy_binary.go            # 内置 scrcpy 资源提取
+│       ├── scrcpy_options.go           # scrcpy 参数模型、默认值和校验
 │       ├── adb_logcat.go               # logcat 控制
 │       ├── adb_clipboard.go            # 剪贴板助手 APK 操作
 │       ├── adb_exec.go                 # 通用 adb shell / adb 命令透传
@@ -74,6 +82,7 @@
 │       ├── handlers_files.go           # 文件路由 + 增删改
 │       ├── handlers_packages.go        # 应用管理路由
 │       ├── handlers_screen.go          # 截图 / 录屏路由
+│       ├── handlers_scrcpy.go          # 投屏启停 / 状态 / 快捷动作路由
 │       ├── handlers_logcat.go          # logcat / session-logcat 路由
 │       ├── handlers_clipboard.go       # 剪贴板路由
 │       ├── handlers_wireless.go        # 无线 ADB 路由
@@ -92,6 +101,7 @@
     │   ├── models/                     # 纯数据模型
     │   │   ├── device.dart             # Device, LogFilter, LogEntry
     │   │   ├── device_status.dart      # 实时设备状态指标
+    │   │   ├── scrcpy_options.dart     # 投屏参数模型，与 Go ScrcpyOptions JSON 字段对齐
     │   │   ├── file_item.dart
     │   │   ├── app_package.dart
     │   │   ├── test_session.dart       # TestSession + events/artifacts/issues/notes/plan
@@ -99,9 +109,11 @@
     │   ├── db/                         # 本地 SQLite (drift) 持久化
     │   │   ├── database.dart           # AppDatabase 主类 + schema
     │   │   ├── database.g.dart         # drift 生成的代码 (commit 进仓库)
-    │   │   ├── tables/                 # 7 张表: test_sessions / *_events / *_artifacts / ...
+    │   │   ├── tables/                 # Drift 表: test_sessions / *_events / scrcpy_options / sent_clipboard_entry / ...
     │   │   │   ├── app_states.dart
     │   │   │   ├── saved_devices.dart
+    │   │   │   ├── scrcpy_options.dart
+    │   │   │   ├── sent_clipboard_entry.dart
     │   │   │   ├── test_sessions.dart
     │   │   │   ├── test_session_events.dart
     │   │   │   ├── test_session_artifacts.dart
@@ -112,11 +124,15 @@
     │   │   └── dao/                    # 表对应的 DAO (含 .g.dart)
     │   │       ├── app_states_dao.dart
     │   │       ├── saved_devices_dao.dart
+    │   │       ├── scrcpy_options_dao.dart
+    │   │       ├── sent_clipboard_entry_dao.dart
     │   │       └── test_sessions_dao.dart
     │   ├── providers/                  # ChangeNotifier 全局状态
     │   │   ├── device_provider.dart    # 设备列表 / activeSerial / 离线软状态
     │   │   ├── locale_provider.dart
     │   │   ├── theme_provider.dart
+    │   │   ├── scrcpy_settings_provider.dart # 按设备加载/保存投屏参数
+    │   │   ├── clipboard_history_provider.dart # 数据库驱动的剪贴板历史
     │   │   ├── test_config_provider.dart
     │   │   ├── test_session_provider.dart  # Session CRUD + 附件归档 + 导出
     │   │   └── test_session/           # test_session_provider 的辅助模块
@@ -126,10 +142,11 @@
     │   │       └── session_translate.dart  # 中英文翻译注入
     │   ├── services/
     │   │   ├── api_client.dart         # 拼装所有 REST 调用 (facade)
-    │   │   ├── api/                    # 按域拆分的 API 客户端 (9 个文件)
+    │   │   ├── api/                    # 按域拆分的 API 客户端
     │   │   │   ├── device_api.dart / file_api.dart / logcat_api.dart
     │   │   │   ├── packages_api.dart / screen_api.dart / wireless_api.dart
-    │   │   │   ├── clipboard_api.dart / backend_log_api.dart / adb_command_api.dart
+    │   │   │   ├── scrcpy_api.dart / clipboard_api.dart / backend_log_api.dart
+    │   │   │   ├── adb_command_api.dart
     │   │   ├── log_stream.dart         # WebSocket logcat, Stream<LogEntry>
     │   │   ├── server_launcher.dart    # 后端进程管理 (mac/win 端口清理)
     │   │   ├── mac_drop.dart / win_drop.dart / drop_target.dart  # 平台拖放统一封装
@@ -140,7 +157,7 @@
     │   │   ├── file_browser_capture_mixin.dart
     │   │   └── test_session_capture_mixin.dart
     │   ├── widgets/                    # 跨页面复用组件 (17 个)
-    │   │   ├── widgets/                # 顶层: 截图水印 / 录制 FAB / 文件传输 ...
+    │   │   ├── widgets/                # 顶层: 截图水印 / 录制 FAB / 文件传输 / 投屏设置 ...
     │   │   └── logcat/                 # 子目录: 高亮规则等 logcat 专用组件
     │   ├── utils/
     │   │   ├── test_flow_text.dart     # 测试流程/步骤文本解析与格式化
@@ -153,6 +170,7 @@
     │       ├── app_manager_screen.dart
     │       ├── device_info_screen.dart
     │       ├── device_status_screen.dart   # 实时指标 (CPU/内存/电池/...)
+    │       ├── screen_mirror_screen.dart    # scrcpy 投屏控制页
     │       ├── clipboard_screen.dart
     │       ├── adb_command_screen.dart     # ADB 指令面板
     │       ├── test_config_screen.dart     # 测试配置编辑
@@ -239,7 +257,10 @@ export ANDROID_HOME="$HOME/Library/Android/sdk"
 |---|---|---|
 | embed_darwin.go | `//go:build darwin` | 嵌入 macOS ADB 包 |
 | embed_windows.go | `//go:build windows` | 嵌入 Windows ADB 包 |
-| embed_fallback.go | `//go:build !darwin && !windows` | 回退 macOS 包 |
+| embed_fallback.go | `//go:build !darwin && !windows` | 回退 macOS ADB 包 |
+| embed_scrcpy_darwin.go | `//go:build darwin` | 嵌入 macOS arm64 / x86_64 scrcpy 包 |
+| embed_scrcpy_windows.go | `//go:build windows` | 嵌入 Windows 386 / amd64 scrcpy 包 |
+| embed_scrcpy_fallback.go | `//go:build !darwin && !windows` | 非 macOS / Windows 平台空实现 |
 | embed_clipboard_apk.go | 通用 | 嵌入 clipboard-helper.apk |
 
 ### 4.3 HTTP API 完整列表
@@ -288,6 +309,17 @@ export ANDROID_HOME="$HOME/Library/Android/sdk"
 |---|---|---|---|---|
 | `/api/screen-record` | GET/POST | 录屏控制 | `?serial=&action=` (start/stop/status) | 状态 JSON |
 | `/api/screen-record-video` | GET | 获取录屏视频 | `?serial=` | MP4 视频流 |
+
+#### scrcpy 投屏
+
+| 路由 | 方法 | 功能 | 参数 | 返回值 |
+|---|---|---|---|---|
+| `/api/scrcpy/start` | POST | 启动内置 scrcpy 投屏 | `?serial=` + 可选 JSON `scrcpy_options` | 启动状态 JSON |
+| `/api/scrcpy/stop` | POST | 停止当前 scrcpy 进程 | 无 | 停止状态 JSON |
+| `/api/scrcpy/status` | GET | 查询投屏运行状态 | 可选 `?serial=` | running / serial / pid / elapsed |
+| `/api/scrcpy/action` | POST | 发送设备侧快捷动作 | `?serial=&action=` | 动作结果 JSON |
+
+投屏画面由 scrcpy 自己打开独立 SDL 窗口，Flutter 页面只负责启停、状态展示、参数配置和快捷键说明。
 
 #### Logcat
 
@@ -345,6 +377,7 @@ export ANDROID_HOME="$HOME/Library/Android/sdk"
 - `adb_files.go` — `ListFiles()` / `ReadFile()` / `PullFile()` / `PushFile()` / 增删改
 - `adb_packages.go` — `InstalledPackages()` (解析 `pm list packages -f`) / `InstallPackage()` (自动处理签名冲突) / `UninstallPackage()`
 - `adb_media.go` — `Screenshot()` (`exec-out screencap`) / `StartScreenRecord()` / `StopScreenRecord()`
+- `adb_scrcpy.go` / `scrcpy_binary.go` / `scrcpy_options.go` — `StartScrcpy()` / `StopScrcpy()` / `ScrcpyStatus()` / `ScrcpyShortcut()`，提取内置 scrcpy 并转换用户配置为命令行参数
 - `adb_clipboard.go` — `InstallClipboardHelper()` / `SendClipboard()` / `IsClipboardHelperInstalled()` / `UninstallClipboardHelper()`
 - `adb_exec.go` — `Shell()` 通用 shell 命令 / `ExecAdb()` 透传任意 ADB 命令
 - `adb_types.go` — Device / FileItem / 公共结构体定义
@@ -378,7 +411,7 @@ JSON 命令格式：
 
 ### 5.1 整体架构
 
-- 6 个功能页面，侧边栏导航
+- 多个设备调试与测试功能页面，侧边栏导航
 - 中英双语（`_loc` 字典）
 - 暗/亮主题切换（持久化 `~/.adb_tool_prefs.json`）
 - HTTP REST + WebSocket 与后端通信
@@ -393,7 +426,8 @@ JSON 命令格式：
 | App Manager | `app_manager_screen.dart` | APK 拖放安装，搜索，卸载确认，错误详情弹窗 |
 | Device Info | `device_info_screen.dart` | 系统属性分组，搜索，截图 |
 | Device Status | `device_status_screen.dart` | 实时指标 (CPU/内存/电池/存储/前台应用) |
-| Clipboard | `clipboard_screen.dart` | 文本发送，自动安装/卸载助手 |
+| Screen Mirror | `screen_mirror_screen.dart` | 内置 scrcpy 投屏控制，按设备保存参数，独立窗口显示，支持录制和快捷键参考 |
+| Clipboard | `clipboard_screen.dart` | 文本发送，自动安装/卸载助手，历史记录与收藏 |
 | ADB Command | `adb_command_screen.dart` | ADB 指令面板：参数/命令输入 + 快捷指令分类 |
 | Test Config | `test_config_screen.dart` | 测试 App 配置、流程/步骤编辑，复制配置 |
 | Backend Logs | `backend_log_screen.dart` | 2 秒轮询日志，错误高亮，命令过滤 |
@@ -408,8 +442,8 @@ JSON 命令格式：
 `api_client.dart` 作为 facade，内部把每个域的调用委托给 `services/api/` 下的独立客户端：
 
 - `device_api.dart` / `file_api.dart` / `logcat_api.dart` / `packages_api.dart`
-- `screen_api.dart` / `wireless_api.dart` / `clipboard_api.dart`
-- `backend_log_api.dart` / `adb_command_api.dart`
+- `screen_api.dart` / `wireless_api.dart` / `scrcpy_api.dart`
+- `clipboard_api.dart` / `backend_log_api.dart` / `adb_command_api.dart`
 
 这样新加 endpoint 时影响面小，单测也好写。
 
@@ -439,6 +473,12 @@ JSON 命令格式：
 - `screen_capture_service.dart` — 调 `/api/screenshot`，支持加水印 (`widgets/screenshot_watermark.dart`)
 - `screen_record_owner.dart` — 录屏状态机（idle / recording），FAB (`widgets/recording_fab.dart`) 触发
 - `mixins/screen_capture_mixin.dart` + `mixins/file_browser_capture_mixin.dart` + `mixins/test_session_capture_mixin.dart` — 三个 capture mixin，给不同页面复用截图/录屏能力
+
+#### 投屏设置
+
+- `scrcpy_settings_provider.dart` — 通过 `scrcpy_options_dao` 按设备序列号加载、保存和重置投屏参数。
+- `scrcpy_settings_panel.dart` — 将 scrcpy 4.0 常用参数按视频源、视频、音频、窗口、控制、设备和录制分组展示。
+- `scrcpy_shortcut_reference.dart` — 展示 scrcpy 窗口获得焦点后可用的跨平台快捷键。
 
 #### 其他服务
 
