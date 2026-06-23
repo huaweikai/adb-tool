@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -131,7 +130,9 @@ func (m *AdbManager) StartScrcpy(serial string, opts ScrcpyOptions) error {
 	// that failure to the caller — the user asked for a fresh start and
 	// the stale process is in the way.
 	if m.scrcpy.cmd != nil && m.scrcpy.cmd.Process != nil {
-		if killErr := m.scrcpy.cmd.Process.Signal(syscall.SIGTERM); killErr != nil {
+		// Graceful shutdown so any in-progress recording can finalize.
+		// On Unix: SIGTERM. On Windows: WM_CLOSE via taskkill (no /F).
+		if killErr := terminateScrcpyProcess(m.scrcpy.cmd.Process); killErr != nil {
 			Log.Add("scrcpy stale kill", "", killErr, 0)
 		}
 		// Best-effort drain so cmd.Process isn't reused.
@@ -221,7 +222,9 @@ func describeExit(err error) string {
 }
 
 // StopScrcpy gracefully stops the running scrcpy subprocess (if any).
-// Sends SIGTERM so scrcpy can finalize its recording file before exiting.
+// Sends a graceful shutdown signal so scrcpy can finalize its recording
+// file before exiting — SIGTERM on Unix, WM_CLOSE via `taskkill /pid`
+// (no /F) on Windows. See terminateScrcpyProcess for the rationale.
 // Safe to call when nothing is running — returns nil in that case.
 func (m *AdbManager) StopScrcpy() error {
 	m.scrcpy.mu.Lock()
@@ -233,7 +236,7 @@ func (m *AdbManager) StopScrcpy() error {
 		return nil
 	}
 
-	if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
+	if err := terminateScrcpyProcess(cmd.Process); err != nil {
 		Log.Add("scrcpy stop signal", "", err, 0)
 		return nil
 	}
