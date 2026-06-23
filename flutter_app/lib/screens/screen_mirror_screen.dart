@@ -1,0 +1,463 @@
+import 'dart:async';
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../i18n.dart';
+import '../providers/device_provider.dart';
+import '../providers/scrcpy_settings_provider.dart';
+import '../services/api_client.dart';
+import '../widgets/scrcpy_settings_panel.dart';
+import '../widgets/scrcpy_shortcut_reference.dart';
+
+/// Screen-mirror (scrcpy) control panel.
+///
+/// The actual video stream runs in scrcpy's own SDL window outside this
+/// Flutter app — we don't embed it. This screen is just a launcher
+/// plus a row of shortcut buttons that fire `adb shell input keyevent`
+/// so the user can do common things (home / back / recents / power /
+/// vol) without having to reach for the device while scrcpy is focused.
+///
+/// Layout (split horizontal, collapses to single column on narrow
+/// windows — scrcpy's own window is detached so the right side has
+/// plenty of space on a typical desktop):
+///
+///   ┌──────────────────┬──────────────────┐
+///   │  Settings panel  │  Status + Start  │
+///   │  (per-device     │  + Shortcut grid │
+///   │   persisted)     │                  │
+///   └──────────────────┴──────────────────┘
+class ScreenMirrorScreen extends StatefulWidget {
+  const ScreenMirrorScreen({super.key});
+
+  @override
+  State<ScreenMirrorScreen> createState() => _ScreenMirrorScreenState();
+}
+
+class _ScreenMirrorScreenState extends State<ScreenMirrorScreen> {
+  String? get _serial => context.read<DeviceSerialScope>().serial;
+
+  // polled status — what the backend reports about the running subprocess.
+  ScrcpyStatus _status = ScrcpyStatus.stopped;
+  Timer? _pollTimer;
+  bool _busy = false; // start/stop in flight, prevents double-clicks
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _refreshStatus();
+      _startPoll();
+      // Tell the settings provider which device's options to surface
+      // now that we have a build context.
+      context
+          .read<ScrcpySettingsProvider>()
+          .setActiveSerial(_serial);
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Re-key the settings cache when the user picks a different device.
+    final s = _serial;
+    final settings = context.read<ScrcpySettingsProvider>();
+    if (settings.current == null || s != _lastSeenSerial) {
+      settings.setActiveSerial(s);
+      _lastSeenSerial = s;
+    }
+  }
+
+  String? _lastSeenSerial;
+
+  @override
+  void dispose() {
+    _pollTimer?.cancel();
+    super.dispose();
+  }
+
+  // 2s is enough to catch "user closed the scrcpy SDL window directly"
+  // without hammering the backend. The user's main interaction is
+  // pressing buttons here, not staring at the elapsed counter.
+  void _startPoll() {
+    _pollTimer?.cancel();
+    _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+      if (mounted) _refreshStatus();
+    });
+  }
+
+  Future<void> _refreshStatus() async {
+    final s = _serial;
+    if (s == null) {
+      setState(() => _status = ScrcpyStatus.stopped);
+      return;
+    }
+    try {
+      final next = await context.read<ApiClient>().scrcpyStatus(serial: s);
+      if (mounted) setState(() => _status = next);
+    } catch (_) {
+      // network blip — keep last known status, don't flicker the UI
+    }
+  }
+
+  Future<void> _onStart() async {
+    final s = _serial;
+    if (s == null || _busy) return;
+    final opts = context.read<ScrcpySettingsProvider>().current;
+    if (opts == null) {
+      return;
+    }
+    final recordPath = opts.record;
+    if (opts.recordEnabled && (recordPath ?? '').isNotEmpty) {
+      final exists = await Directory(recordPath!).exists();
+      if (!exists) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(tr('scrcpyRecordFolderNotFound')),
+              duration: const Duration(seconds: 5),
+            ),
+          );
+        }
+        return;
+      }
+    }
+    setState(() => _busy = true);
+    try {
+      // Pull the current per-device settings and ship them to the
+      // backend along with the start request. The backend applies
+      // defaults if the user hasn't touched anything yet.
+      if (!mounted) return;
+      await context.read<ApiClient>().startScrcpy(s, options: opts);
+      await _refreshStatus();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(tr('scrcpyWindowHint')),
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(tr('scrcpyStartFailed', {'error': e.toString()})),
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _onStop() async {
+    if (_busy) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(tr('scrcpyConfirmStop')),
+        content: Text(tr('scrcpyConfirmStopBody')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(tr('cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(tr('scrcpyStop')),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    setState(() => _busy = true);
+    try {
+      await context.read<ApiClient>().stopScrcpy();
+      await _refreshStatus();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(tr('scrcpyStopFailed', {'error': e.toString()})),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final serial = _serial;
+    if (serial == null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            tr('scrcpyNoDevice'),
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant),
+          ),
+        ),
+      );
+    }
+
+    final isRunning = _status.running && _status.serial == serial;
+
+    // Responsive: side-by-side on wide windows, stacked on narrow ones.
+    // scrcpy itself renders in its own SDL window, so the tab content
+    // can afford to be more verbose than a typical mobile layout.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const breakpoint = 720.0;
+        final rightPane = _RightPane(
+          serial: serial,
+          isRunning: isRunning,
+          elapsed: _status.elapsedSeconds,
+          busy: _busy,
+          onStart: _onStart,
+          onStop: _onStop,
+        );
+        if (constraints.maxWidth >= breakpoint) {
+          // Wide layout:
+          //   Column(
+          //     Expanded(Row(
+          //       Expanded(4): Card(ScrcpySettingsPanel)         // left, scrolls
+          //       Expanded(3): SingleChildScrollView(_RightPane)  // right, scrolls
+          //     ))
+          //   )
+          //
+          // Column + Expanded(Row) gives the Row a definite height. Each
+          // side scrolls independently. The right pane is wrapped in
+          // SingleChildScrollView so the status + button + hint +
+          // shortcut reference table can all be reached by scrolling
+          // the right column when the window is short.
+          //
+          // We deliberately avoid IntrinsicHeight + Row combos: passing
+          // a loose unbounded cross-axis constraint into a Row that
+          // contains a scroll child makes Stack-based children (e.g.
+          // SegmentedButton inside ScrcpySettingsPanel) hit-test with
+          // size=MISSING.
+          return Column(
+            children: [
+              Expanded(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Expanded(
+                      flex: 4,
+                      child: Padding(
+                        padding: EdgeInsets.fromLTRB(12, 12, 6, 12),
+                        child: Card(
+                          margin: EdgeInsets.zero,
+                          child: ScrcpySettingsPanel(),
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      flex: 3,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(6, 12, 12, 12),
+                        // _RightPane uses an internal LayoutBuilder:
+                        // when it sees a bounded height (this case), it
+                        // pins status/button/hint and lets
+                        // ScrcpyShortcutReference fill the rest with its
+                        // own internal scroll. No outer SingleChildScrollView
+                        // here — that would conflict with the
+                        // ListView in ScrcpyShortcutReference.
+                        child: rightPane,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          );
+        }
+        // Narrow: outer ListView scrolls; rightPane is rendered as-is
+        // (no inner SingleChildScrollView — that would nest a scroll
+        // view inside another and blow up with "vertical viewport was
+        // given unbounded height"). The ScrcpyShortcutReference is
+        // already part of the rightPane, so no extra entry here.
+        return ListView(
+          padding: const EdgeInsets.all(12),
+          children: [
+            const Card(
+              margin: EdgeInsets.only(bottom: 12),
+              child: SizedBox(
+                height: 360,
+                child: ScrcpySettingsPanel(),
+              ),
+            ),
+            rightPane,
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _RightPane extends StatelessWidget {
+  final String serial;
+  final bool isRunning;
+  final int elapsed;
+  final bool busy;
+  final VoidCallback onStart;
+  final VoidCallback onStop;
+  const _RightPane({
+    required this.serial,
+    required this.isRunning,
+    required this.elapsed,
+    required this.busy,
+    required this.onStart,
+    required this.onStop,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    // Two layout modes:
+    //   * Bounded height (wide layout: parent is Column > Expanded > Row
+    //     > Expanded). Status / button / hint stay pinned at the top;
+    //     the shortcut reference takes the remaining vertical space
+    //     and scrolls its own list internally.
+    //   * Unbounded height (narrow layout: this widget sits inside an
+    //     outer ListView). We can't use Expanded inside an unbounded
+    //     parent, so we just lay out everything in a single Column and
+    //     let the outer ListView scroll the whole pane.
+    return Card(
+      margin: const EdgeInsets.fromLTRB(6, 12, 12, 12),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: LayoutBuilder(builder: (context, constraints) {
+          final statusCard = _buildStatusCard(theme, serial, isRunning, elapsed);
+          final startButton = Row(
+            children: [
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed:
+                      busy ? null : (isRunning ? onStop : onStart),
+                  icon: Icon(isRunning ? Icons.stop : Icons.play_arrow),
+                  label: Text(
+                    isRunning ? tr('scrcpyStop') : tr('scrcpyStart'),
+                  ),
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    backgroundColor:
+                        isRunning ? theme.colorScheme.error : null,
+                  ),
+                ),
+              ),
+              if (isRunning) ...[
+                const SizedBox(width: 8),
+                IconButton.filledTonal(
+                  onPressed: busy ? null : onStart,
+                  tooltip: tr('scrcpyRestart'),
+                  icon: const Icon(Icons.refresh),
+                ),
+              ],
+            ],
+          );
+          final windowHint = Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerHighest
+                  .withAlpha(120),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.info_outline,
+                    size: 16,
+                    color: theme.colorScheme.onSurfaceVariant),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    tr('scrcpyWindowHint'),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant),
+                  ),
+                ),
+              ],
+            ),
+          );
+          if (constraints.hasBoundedHeight) {
+            // Wide layout: pin status/button/hint, let the shortcut
+            // reference fill the rest and scroll internally.
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                statusCard,
+                const SizedBox(height: 16),
+                startButton,
+                const SizedBox(height: 12),
+                windowHint,
+                const SizedBox(height: 12),
+                const Expanded(child: ScrcpyShortcutReference()),
+              ],
+            );
+          }
+          // Narrow layout: stack everything; outer ListView scrolls.
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              statusCard,
+              const SizedBox(height: 16),
+              startButton,
+              const SizedBox(height: 12),
+              windowHint,
+              const SizedBox(height: 12),
+              const ScrcpyShortcutReference(),
+            ],
+          );
+        }),
+      ),
+    );
+  }
+
+  Widget _buildStatusCard(
+      ThemeData theme, String serial, bool isRunning, int elapsed) {
+    final color =
+        isRunning ? theme.colorScheme.primary : theme.colorScheme.outline;
+    return Container(
+      padding: const EdgeInsets.all(4),
+      child: Row(
+        children: [
+          Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: isRunning ? Colors.green : theme.colorScheme.outline,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  tr('scrcpyTitle', {'serial': serial}),
+                  style: theme.textTheme.titleSmall,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  isRunning
+                      ? tr('scrcpyElapsed', {'seconds': elapsed.toString()})
+                      : tr('scrcpyStopped'),
+                  style: theme.textTheme.bodySmall?.copyWith(color: color),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

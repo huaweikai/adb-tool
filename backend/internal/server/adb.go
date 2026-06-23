@@ -1,6 +1,7 @@
 package server
 
 import (
+	"embed"
 	"fmt"
 	"os/exec"
 	"sync"
@@ -21,15 +22,23 @@ type AdbManager struct {
 	recordSerial string
 	recordDone   chan error
 
+	// scrcpy bundles the screen-mirror subprocess. Single-instance per
+	// host (one scrcpy SDL window at a time), so we keep one cmd rather
+	// than a per-device map. Access only via scrcpy.mu — never touch
+	// these fields directly from outside adb_scrcpy.go.
+	scrcpy    scrcpyState
+	scrcpyFS  embed.FS // injected by NewAdbManager, sourced from main's embed_scrcpy_*.go
+
 	propsMu        sync.Mutex
 	propsCache     map[string]cachedDeviceProps
 	restartMu      sync.Mutex
 	lastAdbRestart time.Time
 }
 
-func NewAdbManager(adbPath string) *AdbManager {
+func NewAdbManager(adbPath string, scrcpyFS embed.FS) *AdbManager {
 	return &AdbManager{
 		adbPath:    adbPath,
+		scrcpyFS:   scrcpyFS,
 		propsCache: make(map[string]cachedDeviceProps),
 	}
 }

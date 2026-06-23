@@ -1,6 +1,7 @@
 package server
 
 import (
+	"embed"
 	"io/fs"
 	"net/http"
 	"sync"
@@ -27,8 +28,8 @@ type Server struct {
 	closeOnce  sync.Once
 }
 
-func New(adbPath string, webFS fs.FS, clipboardApk []byte) *Server {
-	adb := NewAdbManager(adbPath)
+func New(adbPath string, webFS fs.FS, clipboardApk []byte, scrcpyFS embed.FS) *Server {
+	adb := NewAdbManager(adbPath, scrcpyFS)
 	adb.DiagnoseStartup()
 	return &Server{
 		adb:           adb,
@@ -67,6 +68,7 @@ func (s *Server) Close() {
 //   - handlers_packages.go  /api/packages, /api/install-package, /api/uninstall-package
 //   - handlers_logcat.go    /ws/logs, /api/logcat-recent, /api/session-logcat
 //   - handlers_screen.go    /api/screenshot, /api/screen-record, /api/screen-record-video
+//   - handlers_scrcpy.go    /api/scrcpy/{start,stop,action,status}
 //   - handlers_wireless.go  /api/adb-wireless-{pair,connect,disconnect,scan}
 //   - handlers_clipboard.go /api/clipboard-{check,install,send,uninstall}
 //   - handlers_meta.go      /api/backend-logs, /api/identify, /api/shutdown, /api/adb-exec
@@ -109,6 +111,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/screen-record", s.handleScreenRecord)
 	mux.HandleFunc("/api/screen-record-video", s.handleScreenRecordVideo)
 
+	// Scrcpy (bundled binary) screen mirror
+	mux.HandleFunc("/api/scrcpy/start", s.handleScrcpyStart)
+	mux.HandleFunc("/api/scrcpy/stop", s.handleScrcpyStop)
+	mux.HandleFunc("/api/scrcpy/action", s.handleScrcpyAction)
+	mux.HandleFunc("/api/scrcpy/status", s.handleScrcpyStatus)
+
 	// Wireless ADB
 	mux.HandleFunc("/api/adb-wireless-pair", s.handleAdbWirelessPair)
 	mux.HandleFunc("/api/adb-wireless-connect", s.handleAdbWirelessConnect)
@@ -137,5 +145,10 @@ func (s *Server) Handler() http.Handler {
 		mux.Handle("/", http.FileServer(http.FS(webFS)))
 	}
 
-	return recoverHTTP(observeHTTP(requireLoopback(mux)))
+	// Order matters: loggingMiddleware sits outside everything else so
+	// it sees the final status code even when recover/observe wrap the
+	// response. requireLoopback is inside so non-loopback requests are
+	// short-circuited before we'd bother logging them — though they
+	// still appear in the log for completeness (shows up as 403).
+	return recoverHTTP(observeHTTP(loggingMiddleware(requireLoopback(mux))))
 }

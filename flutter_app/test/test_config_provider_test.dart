@@ -84,6 +84,23 @@ void main() {
     expect(reloaded.apps, hasLength(2));
     expect(reloaded.currentApp?.displayName, '抽象音乐 - 测试包');
   });
+
+  test('import appends apps by packageName, replaces duplicates', () async {
+    final provider = TestConfigProvider(baseDirectory: tempDir);
+    await provider.importFromJsonString(_musicConfigJson);
+    expect(provider.apps, hasLength(2));
+
+    final result = await provider.importFromJsonString(_anotherConfigJson);
+    expect(result.importedCount, 1);
+    expect(provider.apps, hasLength(3));
+    final packages = provider.apps.map((a) => a.packageName).toSet();
+    expect(packages, containsAll([
+      'com.hua.music.debug',
+      'com.hua.music',
+      'com.example.app',
+    ]));
+    expect(result.configName, '另一个测试配置');
+  });
 }
 
 const _musicConfigJson = '''
@@ -161,6 +178,30 @@ const _musicConfigJson = '''
           "sensitive": true
         }
       ]
+    }
+  ]
+}
+''';
+
+const _anotherConfigJson = '''
+{
+  "schemaVersion": 1,
+  "configName": "另一个测试配置",
+  "description": "追加导入测试",
+  "apps": [
+    {
+      "appName": "示例应用",
+      "packageName": "com.example.app",
+      "appType": "",
+      "notes": "",
+      "logcat": {
+        "keywords": ["crash", "error"],
+        "tags": [],
+        "defaultLevel": "warn"
+      },
+      "deepLinks": [],
+      "filePaths": [],
+      "testTexts": []
     }
   ]
 }

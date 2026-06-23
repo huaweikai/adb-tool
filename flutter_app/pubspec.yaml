@@ -30,5 +30,19 @@ dev_dependencies:
   drift_dev: ^2.22.1
   build_runner: ^2.4.13
 
+# drift_dev 2.34.x has a parser bug in column.dart where the legacy
+# `text()()` column syntax trips an internal AST cast when paired with
+# analyzer 12.x (the version pulled in by current flutter). Pinning
+# analyzer to ^10.0.0 keeps the older AST shape and lets the legacy
+# syntax parse cleanly. Drop this override once drift_dev publishes a
+# fix (or migrate column definitions to the drift3Preview syntax and
+# drop this override along with the build_runner entries above).
+dependency_overrides:
+  # (see history) — keep this block even if empty so the next person
+  # knows where to look when analyzer/drift_dev/dart_style versions
+  # drift again.
+  analyzer: ^13.0.0
+  dart_style: ^3.1.9
+
 flutter:
   uses-material-design: true

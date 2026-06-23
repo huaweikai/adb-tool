@@ -34,7 +34,7 @@ func main() {
 		listenAddr = server.DefaultListenAddr
 	}
 	fmt.Printf("[2/3] Starting HTTP server on %s...\n", listenAddr)
-	srv := server.New(adbPath, webFS, clipboardHelperApk)
+	srv := server.New(adbPath, webFS, clipboardHelperApk, scrcpyEmbedFS)
 	shutdownCh := make(chan struct{})
 	var shutdownOnce sync.Once
 	requestShutdown := func() {

@@ -26,6 +26,7 @@ import 'api/file_api.dart';
 import 'api/packages_api.dart';
 import 'api/logcat_api.dart';
 import 'api/screen_api.dart';
+import 'api/scrcpy_api.dart';
 import 'api/wireless_api.dart';
 import 'api/clipboard_api.dart';
 import 'api/adb_command_api.dart';
@@ -36,6 +37,7 @@ export 'api/file_api.dart' show FileApi;
 export 'api/packages_api.dart' show PackagesApi;
 export 'api/logcat_api.dart' show LogcatApi;
 export 'api/screen_api.dart' show ScreenApi;
+export 'api/scrcpy_api.dart' show ScrcpyApi, ScrcpyStatus;
 export 'api/wireless_api.dart' show WirelessApi;
 export 'api/clipboard_api.dart' show ClipboardApi;
 export 'api/adb_command_api.dart' show AdbCommandApi;
@@ -297,6 +299,7 @@ class ApiClient = ApiBase
         PackagesApi,
         LogcatApi,
         ScreenApi,
+        ScrcpyApi,
         WirelessApi,
         ClipboardApi,
         AdbCommandApi,
