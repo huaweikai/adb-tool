@@ -19,7 +19,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.adbtool.data.model.Device
 import com.adbtool.theme.AdbToolColorScheme
-import com.adbtool.i18n.Translations
+import com.adbtool.i18n.stringResource
 import com.adbtool.ui.common.EmptyView
 import com.adbtool.ui.common.LoadingView
 
@@ -31,7 +31,6 @@ data class DeviceProperty(
 
 @Composable
 fun DeviceInfoScreen(
-    tr: Translations,
     device: Device? = null,
     properties: List<DeviceProperty> = emptyList(),
     isLoading: Boolean = false,
@@ -45,14 +44,14 @@ fun DeviceInfoScreen(
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         if (selectedDeviceSerial == null || device == null) {
-            EmptyView(tr)
+            EmptyView()
         } else {
-            DeviceInfoToolbar(tr, device, onRefresh, onReboot, onScreenshot, onScreenRecord, onOpenApps, onInstallApk)
+            DeviceInfoToolbar(device, onRefresh, onReboot, onScreenshot, onScreenRecord, onOpenApps, onInstallApk)
 
             Box(modifier = Modifier.weight(1f)) {
                 when {
                     isLoading -> LoadingView()
-                    else -> DeviceInfoContent(tr, device, properties)
+                    else -> DeviceInfoContent(device, properties)
                 }
             }
         }
@@ -61,7 +60,6 @@ fun DeviceInfoScreen(
 
 @Composable
 private fun DeviceInfoToolbar(
-    tr: Translations,
     device: Device,
     onRefresh: () -> Unit,
     onReboot: () -> Unit,
@@ -85,15 +83,15 @@ private fun DeviceInfoToolbar(
 
             Spacer(Modifier.weight(1f))
 
-            ActionButton(Icons.Default.Refresh, tr.refresh, onRefresh)
+            ActionButton(Icons.Default.Refresh, stringResource("refresh"), onRefresh)
             Spacer(Modifier.width(8.dp))
-            ActionButton(Icons.Default.RestartAlt, tr.restart, onReboot)
+            ActionButton(Icons.Default.RestartAlt, stringResource("restart"), onReboot)
             Spacer(Modifier.width(8.dp))
-            ActionButton(Icons.Default.CameraAlt, tr.screenshot, onScreenshot)
+            ActionButton(Icons.Default.CameraAlt, stringResource("screenshot"), onScreenshot)
             Spacer(Modifier.width(8.dp))
             ActionButton(Icons.Default.Videocam, "Record", onScreenRecord)
             Spacer(Modifier.width(8.dp))
-            ActionButton(Icons.Default.Apps, tr.apps, onOpenApps)
+            ActionButton(Icons.Default.Apps, stringResource("apps"), onOpenApps)
             Spacer(Modifier.width(8.dp))
             ActionButton(Icons.Default.InstallMobile, "APK", onInstallApk)
         }
@@ -110,18 +108,18 @@ private fun ActionButton(icon: ImageVector, label: String, onClick: () -> Unit) 
 }
 
 @Composable
-private fun DeviceInfoContent(tr: Translations, device: Device, properties: List<DeviceProperty>) {
+private fun DeviceInfoContent(device: Device, properties: List<DeviceProperty>) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        item { DeviceBasicCard(tr, device) }
+        item { DeviceBasicCard(device) }
         if (properties.isNotEmpty()) {
             item {
                 Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text(tr.deviceInfo, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                        Text(stringResource("device_info"), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                         Spacer(Modifier.height(12.dp))
                         properties.chunked(2).forEach { row ->
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -140,7 +138,7 @@ private fun DeviceInfoContent(tr: Translations, device: Device, properties: List
 }
 
 @Composable
-private fun DeviceBasicCard(tr: Translations, device: Device) {
+private fun DeviceBasicCard(device: Device) {
     Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
         Row(modifier = Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(modifier = Modifier.size(64.dp).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) {

@@ -28,15 +28,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.adbtool.data.model.FileItem
 import com.adbtool.theme.AdbToolColorScheme
-import com.adbtool.i18n.Translations
 import com.adbtool.ui.common.ErrorView
 import com.adbtool.ui.common.LoadingView
+import com.adbtool.i18n.stringResource
 
 enum class SortKey { Name, Date, Size }
 
 @Composable
 fun FileBrowserScreen(
-    tr: Translations,
     currentPath: String = "/",
     files: List<FileItem> = emptyList(),
     isLoading: Boolean = false,
@@ -70,10 +69,9 @@ fun FileBrowserScreen(
 
     Column(modifier = Modifier.fillMaxSize()) {
         if (selectedDeviceSerial == null) {
-            EmptyView(tr)
+            EmptyView()
         } else {
             FilePathBar(
-                tr = tr,
                 currentPath = currentPath,
                 isGridMode = isGridMode,
                 isTransferring = isTransferring,
@@ -92,16 +90,14 @@ fun FileBrowserScreen(
             Box(modifier = Modifier.weight(1f)) {
                 when {
                     isLoading -> LoadingView()
-                    error != null -> ErrorView(tr, error, onRefresh)
-                    files.isEmpty() -> EmptyDirView(tr)
+                    error != null -> ErrorView(error, onRefresh)
+                    files.isEmpty() -> EmptyDirView()
                     isGridMode -> FileGridView(
-                        tr = tr,
                         files = sortedFiles(files, sortKey, sortAsc),
                         onFileClick = { file -> if (file.isDir) onNavigate(file.path) },
                         onFileLongClick = {}
                     )
                     else -> FileListView(
-                        tr = tr,
                         files = sortedFiles(files, sortKey, sortAsc),
                         onFileClick = { file -> if (file.isDir) onNavigate(file.path) },
                         onFileLongClick = {}
@@ -109,7 +105,7 @@ fun FileBrowserScreen(
                 }
 
                 if (isTransferring) {
-                    TransferOverlay(tr, transferFileName, transferProgress, transferPhase, onCancelTransfer)
+                    TransferOverlay(transferFileName, transferProgress, transferPhase, onCancelTransfer)
                 }
             }
         }
@@ -127,7 +123,6 @@ private fun sortedFiles(files: List<FileItem>, sortKey: SortKey, asc: Boolean): 
 
 @Composable
 private fun FilePathBar(
-    tr: Translations,
     currentPath: String,
     isGridMode: Boolean,
     isTransferring: Boolean,
@@ -151,17 +146,17 @@ private fun FilePathBar(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onGoHome, enabled = !isTransferring) {
-                Icon(Icons.Default.Home, contentDescription = tr.selectDevice, modifier = Modifier.size(20.dp))
+                Icon(Icons.Default.Home, contentDescription = stringResource("select_device"), modifier = Modifier.size(20.dp))
             }
             IconButton(onClick = onGoUp, enabled = !isTransferring && currentPath != "/") {
-                Icon(Icons.Filled.ArrowUpward, contentDescription = tr.path, modifier = Modifier.size(20.dp))
+                Icon(Icons.Filled.ArrowUpward, contentDescription = stringResource("path"), modifier = Modifier.size(20.dp))
             }
 
             Spacer(Modifier.width(8.dp))
 
             listOf(
-                "/" to tr.name,
-                "/storage/emulated/0" to tr.files
+                "/" to stringResource("name"),
+                "/storage/emulated/0" to stringResource("files")
             ).forEach { (_, label) ->
                 QuickPathButton(label = label, isActive = false, onClick = {})
                 Spacer(Modifier.width(4.dp))
@@ -193,15 +188,15 @@ private fun FilePathBar(
                             Spacer(Modifier.width(4.dp))
                             Text("${
                                 when (sortKey) {
-                                    SortKey.Name -> tr.name
-                                    SortKey.Date -> tr.modified
-                                    SortKey.Size -> tr.size
+                                    SortKey.Name -> stringResource("name")
+                                    SortKey.Date -> stringResource("modified")
+                                    SortKey.Size -> stringResource("attr_size")
                                 }
                             }${if (sortAsc) " ↑" else " ↓"}", fontSize = 11.sp)
                         }
                     }
                     ExposedDropdownMenu(expanded = sortExpanded, onDismissRequest = { sortExpanded = false }) {
-                        listOf(SortKey.Name to tr.name, SortKey.Date to tr.modified, SortKey.Size to tr.size).forEach { (key, label) ->
+                        listOf(SortKey.Name to stringResource("name"), SortKey.Date to stringResource("modified"), SortKey.Size to stringResource("attr_size")).forEach { (key, label) ->
                             DropdownMenuItem(
                                 text = { Text(label, fontSize = 12.sp) },
                                 onClick = { onSortChange(key); sortExpanded = false },
@@ -223,7 +218,7 @@ private fun FilePathBar(
             FilledTonalButton(onClick = onScreenshot, enabled = !isTransferring, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)) {
                 Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(4.dp))
-                Text(tr.screenshot, fontSize = 12.sp)
+                Text(stringResource("screenshot"), fontSize = 12.sp)
             }
 
             Spacer(Modifier.width(8.dp))
@@ -231,13 +226,13 @@ private fun FilePathBar(
             FilledTonalButton(onClick = onUpload, enabled = !isTransferring, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)) {
                 Icon(Icons.Default.Upload, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(4.dp))
-                Text(tr.upload, fontSize = 12.sp)
+                Text(stringResource("action_upload"), fontSize = 12.sp)
             }
 
             Spacer(Modifier.width(8.dp))
 
             IconButton(onClick = onRefresh, enabled = !isTransferring) {
-                Icon(Icons.Default.Refresh, contentDescription = tr.refresh, modifier = Modifier.size(20.dp))
+                Icon(Icons.Default.Refresh, contentDescription = stringResource("refresh"), modifier = Modifier.size(20.dp))
             }
         }
     }
@@ -256,17 +251,17 @@ private fun QuickPathButton(label: String, isActive: Boolean, onClick: () -> Uni
 }
 
 @Composable
-private fun FileListView(tr: Translations, files: List<FileItem>, onFileClick: (FileItem) -> Unit, onFileLongClick: (FileItem) -> Unit) {
+private fun FileListView(files: List<FileItem>, onFileClick: (FileItem) -> Unit, onFileLongClick: (FileItem) -> Unit) {
     LazyColumn(modifier = Modifier.fillMaxSize()) {
         items(files, key = { it.path }) { file ->
-            FileListItem(tr, file, onFileClick, onFileLongClick)
+            FileListItem(file, onFileClick, onFileLongClick)
         }
     }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun FileListItem(tr: Translations, file: FileItem, onClick: (FileItem) -> Unit, onLongClick: (FileItem) -> Unit) {
+private fun FileListItem(file: FileItem, onClick: (FileItem) -> Unit, onLongClick: (FileItem) -> Unit) {
     val isTextFile = listOf(".txt", ".json", ".xml", ".log", ".md", ".kt", ".java", ".gradle", ".properties").any { file.name.endsWith(it) }
 
     Row(
@@ -293,17 +288,17 @@ private fun FileListItem(tr: Translations, file: FileItem, onClick: (FileItem) -
 }
 
 @Composable
-private fun FileGridView(tr: Translations, files: List<FileItem>, onFileClick: (FileItem) -> Unit, onFileLongClick: (FileItem) -> Unit) {
+private fun FileGridView(files: List<FileItem>, onFileClick: (FileItem) -> Unit, onFileLongClick: (FileItem) -> Unit) {
     LazyVerticalGrid(columns = GridCells.Fixed(5), contentPadding = PaddingValues(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         items(files, key = { it.path }) { file ->
-            FileGridItem(tr, file, onFileClick, onFileLongClick)
+            FileGridItem(file, onFileClick, onFileLongClick)
         }
     }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun FileGridItem(tr: Translations, file: FileItem, onClick: (FileItem) -> Unit, onLongClick: (FileItem) -> Unit) {
+private fun FileGridItem(file: FileItem, onClick: (FileItem) -> Unit, onLongClick: (FileItem) -> Unit) {
     val isTextFile = listOf(".txt", ".json", ".xml", ".log", ".md", ".kt", ".java").any { file.name.endsWith(it) }
 
     Card(
@@ -332,25 +327,25 @@ private fun FileGridItem(tr: Translations, file: FileItem, onClick: (FileItem) -
 }
 
 @Composable
-private fun EmptyDirView(tr: Translations) {
+private fun EmptyDirView() {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(tr.selectDevice, color = Color.Gray)
+        Text(stringResource("select_device"), color = Color.Gray)
     }
 }
 
 @Composable
-private fun EmptyView(tr: Translations) {
+private fun EmptyView() {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(64.dp), tint = Color.Gray.copy(alpha = 0.5f))
             Spacer(Modifier.height(16.dp))
-            Text(tr.selectDeviceHint, color = Color.Gray)
+            Text(stringResource("select_device_hint"), color = Color.Gray)
         }
     }
 }
 
 @Composable
-private fun TransferOverlay(tr: Translations, fileName: String, progress: Float, phase: String, onCancel: () -> Unit) {
+private fun TransferOverlay(fileName: String, progress: Float, phase: String, onCancel: () -> Unit) {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Surface(modifier = Modifier.fillMaxSize(), color = Color.Black.copy(alpha = 0.5f)) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -362,7 +357,7 @@ private fun TransferOverlay(tr: Translations, fileName: String, progress: Float,
                         Spacer(Modifier.height(8.dp))
                         Text("${(progress * 100).toInt()}% - $phase", fontSize = 12.sp)
                         Spacer(Modifier.height(16.dp))
-                        OutlinedButton(onClick = onCancel) { Text(tr.cancel) }
+                        OutlinedButton(onClick = onCancel) { Text(stringResource("cancel")) }
                     }
                 }
             }

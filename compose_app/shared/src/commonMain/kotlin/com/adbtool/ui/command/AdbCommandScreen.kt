@@ -20,7 +20,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.adbtool.theme.MonoSmallTypography
-import com.adbtool.i18n.Translations
+import com.adbtool.i18n.stringResource
 
 data class CommandHistory(
     val id: Long,
@@ -40,7 +40,6 @@ data class QuickCommand(
 
 @Composable
 fun AdbCommandScreen(
-    tr: Translations,
     currentCommand: String = "",
     commandHistory: List<CommandHistory> = emptyList(),
     quickCommands: List<QuickCommand> = emptyList(),
@@ -63,22 +62,21 @@ fun AdbCommandScreen(
 
     Column(modifier = Modifier.fillMaxSize()) {
         if (selectedDeviceSerial == null) {
-            EmptyView(tr)
+            EmptyView()
         } else {
-            CommandToolbar(tr, commandHistory.isNotEmpty(), isExecuting, onClearHistory, onStop)
+            CommandToolbar(commandHistory.isNotEmpty(), isExecuting, onClearHistory, onStop)
 
             if (quickCommands.isNotEmpty()) {
-                QuickCommandBar(tr, quickCommands, onQuickCommand)
+                QuickCommandBar(quickCommands, onQuickCommand)
             }
 
             LazyColumn(
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                state = listState,
+                modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 items(commandHistory, key = { it.id }) { item ->
-                    CommandOutputItem(tr, item, onDelete = { onDeleteHistory(item) })
+                    CommandOutputItem(item, onDelete = { onDeleteHistory(item) })
                 }
 
                 if (commandHistory.isEmpty() && !isExecuting) {
@@ -94,18 +92,18 @@ fun AdbCommandScreen(
                 }
             }
 
-            CommandInput(tr, currentCommand, isExecuting, onCommandChange, onExecute)
+            CommandInput(currentCommand, isExecuting, onCommandChange, onExecute)
         }
     }
 }
 
 @Composable
-private fun CommandToolbar(tr: Translations, hasHistory: Boolean, isExecuting: Boolean, onClearHistory: () -> Unit, onStop: () -> Unit) {
+private fun CommandToolbar(hasHistory: Boolean, isExecuting: Boolean, onClearHistory: () -> Unit, onStop: () -> Unit) {
     Surface(color = MaterialTheme.colorScheme.surfaceVariant, tonalElevation = 1.dp) {
         Row(modifier = Modifier.fillMaxWidth().padding(12.dp, 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Default.Terminal, contentDescription = null, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(8.dp))
-            Text(tr.command, style = MaterialTheme.typography.titleSmall)
+            Text(stringResource("command"), style = MaterialTheme.typography.titleSmall)
             Spacer(Modifier.weight(1f))
 
             if (isExecuting) {
@@ -120,7 +118,7 @@ private fun CommandToolbar(tr: Translations, hasHistory: Boolean, isExecuting: B
                 OutlinedButton(onClick = onStop, contentPadding = PaddingValues(horizontal = 12.dp)) {
                     Icon(Icons.Filled.Stop, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text(tr.stop, fontSize = 12.sp)
+                    Text(stringResource("action_stop"), fontSize = 12.sp)
                 }
             }
 
@@ -128,7 +126,7 @@ private fun CommandToolbar(tr: Translations, hasHistory: Boolean, isExecuting: B
                 OutlinedButton(onClick = onClearHistory, contentPadding = PaddingValues(horizontal = 12.dp)) {
                     Icon(Icons.Filled.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text(tr.clear, fontSize = 12.sp)
+                    Text(stringResource("clear"), fontSize = 12.sp)
                 }
             }
         }
@@ -136,7 +134,7 @@ private fun CommandToolbar(tr: Translations, hasHistory: Boolean, isExecuting: B
 }
 
 @Composable
-private fun QuickCommandBar(tr: Translations, commands: List<QuickCommand>, onCommandClick: (QuickCommand) -> Unit) {
+private fun QuickCommandBar(commands: List<QuickCommand>, onCommandClick: (QuickCommand) -> Unit) {
     Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 0.5.dp) {
         LazyColumn(modifier = Modifier.height(IntrinsicSize.Min), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)) {
             items(commands.chunked(4)) { row ->
@@ -152,7 +150,7 @@ private fun QuickCommandBar(tr: Translations, commands: List<QuickCommand>, onCo
 }
 
 @Composable
-private fun CommandOutputItem(tr: Translations, item: CommandHistory, onDelete: () -> Unit) {
+private fun CommandOutputItem(item: CommandHistory, onDelete: () -> Unit) {
     Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp)) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -181,7 +179,7 @@ private fun CommandOutputItem(tr: Translations, item: CommandHistory, onDelete: 
 }
 
 @Composable
-private fun CommandInput(tr: Translations, command: String, isExecuting: Boolean, onCommandChange: (String) -> Unit, onExecute: () -> Unit) {
+private fun CommandInput(command: String, isExecuting: Boolean, onCommandChange: (String) -> Unit, onExecute: () -> Unit) {
     Surface(color = MaterialTheme.colorScheme.surfaceVariant, tonalElevation = 2.dp) {
         Row(modifier = Modifier.fillMaxWidth().padding(16.dp, 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("$", fontSize = 16.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
@@ -201,19 +199,19 @@ private fun CommandInput(tr: Translations, command: String, isExecuting: Boolean
             FilledTonalButton(onClick = onExecute, enabled = command.isNotEmpty() && !isExecuting) {
                 Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(4.dp))
-                Text(tr.start)
+                Text(stringResource("action_start"))
             }
         }
     }
 }
 
 @Composable
-private fun EmptyView(tr: Translations) {
+private fun EmptyView() {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(Icons.Default.Terminal, contentDescription = null, modifier = Modifier.size(64.dp), tint = androidx.compose.ui.graphics.Color.Gray.copy(alpha = 0.5f))
             Spacer(Modifier.height(16.dp))
-            Text(tr.selectDevice, color = androidx.compose.ui.graphics.Color.Gray)
+            Text(stringResource("select_device"), color = androidx.compose.ui.graphics.Color.Gray)
         }
     }
 }

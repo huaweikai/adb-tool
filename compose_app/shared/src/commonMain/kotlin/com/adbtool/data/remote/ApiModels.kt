@@ -78,7 +78,13 @@ data class FileItemDto(
 
 @Serializable
 data class PackagesDataDto(
-    val packages: List<AppInfoDto> = emptyList()
+    val packages: List<BackendPackageDto> = emptyList()
+)
+
+@Serializable
+data class BackendPackageDto(
+    val packageName: String,
+    val sourceDir: String = ""
 )
 
 @Serializable
@@ -91,7 +97,19 @@ data class AppInfoDto(
     val installTime: String = "",
     val updateTime: String = "",
     val size: Long = 0
-)
+) {
+    companion object {
+        fun fromBackend(dto: BackendPackageDto): AppInfoDto {
+            val label = dto.packageName.substringAfterLast('.', dto.packageName)
+            return AppInfoDto(
+                packageName = dto.packageName,
+                sourceDir = dto.sourceDir,
+                label = label,
+                isSystemApp = dto.sourceDir.startsWith("/system") || dto.sourceDir.startsWith("/product")
+            )
+        }
+    }
+}
 
 @Serializable
 data class CommandResultDto(

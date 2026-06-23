@@ -7,6 +7,10 @@ plugins {
     alias(libs.plugins.androidx.room)
 }
 
+compose.resources {
+    publicResClass = true
+}
+
 kotlin {
     jvm()
 

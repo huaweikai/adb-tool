@@ -20,8 +20,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.adbtool.theme.AdbToolColorScheme
-import com.adbtool.i18n.Translations
 import com.adbtool.ui.common.EmptyView
+import com.adbtool.i18n.stringResource
 import com.adbtool.ui.common.ErrorView
 import com.adbtool.ui.common.LoadingView
 
@@ -45,9 +45,27 @@ data class AppInfo(
 
 enum class FilterType { All, User, System }
 
+fun filterApps(
+    apps: List<AppInfo>,
+    filterType: FilterType,
+    searchQuery: String
+): List<AppInfo> {
+    val query = searchQuery.trim().lowercase()
+    return apps.filter { app ->
+        val matchesType = when (filterType) {
+            FilterType.All -> true
+            FilterType.User -> !app.isSystemApp
+            FilterType.System -> app.isSystemApp
+        }
+        val matchesQuery = query.isBlank() ||
+            app.packageName.lowercase().contains(query) ||
+            app.label.lowercase().contains(query)
+        matchesType && matchesQuery
+    }
+}
+
 @Composable
 fun AppManagerScreen(
-    tr: Translations,
     apps: List<AppInfo> = emptyList(),
     isLoading: Boolean = false,
     error: String? = null,
@@ -65,16 +83,16 @@ fun AppManagerScreen(
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         if (selectedDeviceSerial == null) {
-            EmptyView(tr)
+            EmptyView()
         } else {
-            AppToolbar(tr, filterType, searchQuery, apps.size, onFilterChange, onSearchChange, onRefresh)
+            AppToolbar(filterType, searchQuery, apps.size, onFilterChange, onSearchChange, onRefresh)
 
             Box(modifier = Modifier.weight(1f)) {
                 when {
                     isLoading -> LoadingView()
-                    error != null -> ErrorView(tr, error, onRefresh)
-                    apps.isEmpty() -> EmptyAppsView(tr)
-                    else -> AppList(tr, apps, onAppClick, onAppLongClick, onLaunch, onStop, onUninstall)
+                    error != null -> ErrorView(error, onRefresh)
+                    apps.isEmpty() -> EmptyAppsView()
+                    else -> AppList(apps, onAppClick, onAppLongClick, onLaunch, onStop, onUninstall)
                 }
             }
         }
@@ -83,7 +101,6 @@ fun AppManagerScreen(
 
 @Composable
 private fun AppToolbar(
-    tr: Translations,
     filterType: FilterType,
     searchQuery: String,
     appCount: Int,
@@ -99,7 +116,7 @@ private fun AppToolbar(
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = onSearchChange,
-                label = { Text(tr.keyword, fontSize = 12.sp) },
+                label = { Text(stringResource("keyword"), fontSize = 12.sp) },
                 modifier = Modifier.width(250.dp),
                 textStyle = LocalTextStyle.current.copy(fontSize = 12.sp),
                 singleLine = true,
@@ -115,16 +132,16 @@ private fun AppToolbar(
 
             Spacer(Modifier.width(16.dp))
 
-            FilterChip(selected = filterType == FilterType.All, onClick = { onFilterChange(FilterType.All) }, label = { Text("${tr.all} ($appCount)", fontSize = 11.sp) })
+            FilterChip(selected = filterType == FilterType.All, onClick = { onFilterChange(FilterType.All) }, label = { Text("${stringResource("filter_all")} ($appCount)", fontSize = 11.sp) })
             Spacer(Modifier.width(8.dp))
-            FilterChip(selected = filterType == FilterType.User, onClick = { onFilterChange(FilterType.User) }, label = { Text("User", fontSize = 11.sp) })
+            FilterChip(selected = filterType == FilterType.User, onClick = { onFilterChange(FilterType.User) }, label = { Text(stringResource("apps_user"), fontSize = 11.sp) })
             Spacer(Modifier.width(8.dp))
-            FilterChip(selected = filterType == FilterType.System, onClick = { onFilterChange(FilterType.System) }, label = { Text("System", fontSize = 11.sp) })
+            FilterChip(selected = filterType == FilterType.System, onClick = { onFilterChange(FilterType.System) }, label = { Text(stringResource("apps_system"), fontSize = 11.sp) })
 
             Spacer(Modifier.weight(1f))
 
             IconButton(onClick = onRefresh) {
-                Icon(Icons.Default.Refresh, contentDescription = tr.refresh, modifier = Modifier.size(20.dp))
+                Icon(Icons.Default.Refresh, contentDescription = stringResource("refresh"), modifier = Modifier.size(20.dp))
             }
         }
     }
@@ -132,7 +149,6 @@ private fun AppToolbar(
 
 @Composable
 private fun AppList(
-    tr: Translations,
     apps: List<AppInfo>,
     onAppClick: (AppInfo) -> Unit,
     onAppLongClick: (AppInfo) -> Unit,
@@ -146,14 +162,13 @@ private fun AppList(
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         items(apps, key = { it.packageName }) { app ->
-            AppListItem(tr, app, onAppClick, onAppLongClick, onLaunch, onStop, onUninstall)
+            AppListItem(app, onAppClick, onAppLongClick, onLaunch, onStop, onUninstall)
         }
     }
 }
 
 @Composable
 private fun AppListItem(
-    tr: Translations,
     app: AppInfo,
     onClick: (AppInfo) -> Unit,
     onLongClick: (AppInfo) -> Unit,
@@ -210,7 +225,7 @@ private fun AppListItem(
                     )
                     if (!app.isSystemApp) {
                         DropdownMenuItem(
-                            text = { Text(tr.delete, fontSize = 12.sp, color = MaterialTheme.colorScheme.error) },
+                            text = { Text(stringResource("delete"), fontSize = 12.sp, color = MaterialTheme.colorScheme.error) },
                             onClick = { onUninstall(app); showMenu = false },
                             leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error) }
                         )
@@ -229,12 +244,12 @@ private fun AppBadge(text: String, color: Color) {
 }
 
 @Composable
-private fun EmptyAppsView(tr: Translations) {
+private fun EmptyAppsView() {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(Icons.Default.Apps, contentDescription = null, modifier = Modifier.size(48.dp), tint = Color.Gray)
             Spacer(Modifier.height(12.dp))
-            Text(tr.selectDevice, color = Color.Gray)
+            Text(stringResource("select_device"), color = Color.Gray)
         }
     }
 }

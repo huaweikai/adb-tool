@@ -23,6 +23,28 @@ class AdbToolApiContractTest {
     }
 
     @Test
+    fun packagesEndpointUsesSerialQuery() {
+        val request = AdbToolApiContract.packages("ABC123")
+
+        assertEquals("GET", request.method)
+        assertEquals("/api/packages", request.path)
+        assertEquals(mapOf("serial" to "ABC123"), request.query)
+    }
+
+    @Test
+    fun mapsBackendPackageToAppInfoFields() {
+        val dto = AppInfoDto.fromBackend(BackendPackageDto(
+            packageName = "com.example.demo",
+            sourceDir = "/data/app/com.example.demo/base.apk"
+        ))
+
+        assertEquals("com.example.demo", dto.packageName)
+        assertEquals("demo", dto.label)
+        assertEquals(false, dto.isSystemApp)
+        assertEquals("/data/app/com.example.demo/base.apk", dto.sourceDir)
+    }
+
+    @Test
     fun executeCommandEndpointUsesAdbExecWithArgsBody() {
         val request = AdbToolApiContract.executeCommand("ABC123", "shell pm list packages")
 

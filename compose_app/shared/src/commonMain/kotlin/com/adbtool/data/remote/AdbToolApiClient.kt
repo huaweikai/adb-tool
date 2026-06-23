@@ -64,7 +64,7 @@ class AdbToolApiClient(
         val request = AdbToolApiContract.packages(serial)
         client.get(request.path) {
             request.query.forEach { (key, value) -> parameter(key, value) }
-        }.apiBody<PackagesDataDto>().packages
+        }.apiBody<PackagesDataDto>().packages.map(AppInfoDto::fromBackend)
     }
 
     @OptIn(ExperimentalTime::class)

@@ -14,8 +14,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.adbtool.i18n.Translations
 import java.text.SimpleDateFormat
+import com.adbtool.i18n.stringResource
 import java.util.*
 
 data class ClipboardEntry(
@@ -27,7 +27,6 @@ data class ClipboardEntry(
 
 @Composable
 fun ClipboardScreen(
-    tr: Translations,
     entries: List<ClipboardEntry> = emptyList(),
     isLoading: Boolean = false,
     deviceClipboard: String = "",
@@ -43,16 +42,16 @@ fun ClipboardScreen(
 
     Column(modifier = Modifier.fillMaxSize()) {
         if (selectedDeviceSerial == null) {
-            EmptyView(tr)
+            EmptyView()
         } else {
-            ClipboardToolbar(tr, entries.isNotEmpty(), onPullFromDevice, onClearHistory)
+            ClipboardToolbar(entries.isNotEmpty(), onPullFromDevice, onClearHistory)
 
             Row(
                 modifier = Modifier.weight(1f).fillMaxWidth().padding(16.dp),
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(tr.clipboard, style = MaterialTheme.typography.titleSmall)
+                    Text(stringResource("clipboard"), style = MaterialTheme.typography.titleSmall)
                     Spacer(Modifier.height(8.dp))
                     Text(deviceClipboard.ifEmpty { "(empty)" }, fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = if (deviceClipboard.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface)
                 }
@@ -105,7 +104,7 @@ fun ClipboardScreen(
             } else {
                 LazyColumn(modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     items(entries, key = { it.id }) { entry ->
-                        ClipboardHistoryItem(tr, entry, onCopy = { onCopyToComputer(entry.content) }, onDelete = { onDelete(entry) })
+                        ClipboardHistoryItem(entry, onCopy = { onCopyToComputer(entry.content) }, onDelete = { onDelete(entry) })
                     }
                 }
             }
@@ -114,18 +113,18 @@ fun ClipboardScreen(
 }
 
 @Composable
-private fun ClipboardToolbar(tr: Translations, hasHistory: Boolean, onPullFromDevice: () -> Unit, onClearHistory: () -> Unit) {
+private fun ClipboardToolbar(hasHistory: Boolean, onPullFromDevice: () -> Unit, onClearHistory: () -> Unit) {
     Surface(color = MaterialTheme.colorScheme.surfaceVariant, tonalElevation = 1.dp) {
         Row(modifier = Modifier.fillMaxWidth().padding(12.dp, 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Default.ContentPaste, contentDescription = null, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(8.dp))
-            Text(tr.clipboard, style = MaterialTheme.typography.titleSmall)
+            Text(stringResource("clipboard"), style = MaterialTheme.typography.titleSmall)
             Spacer(Modifier.weight(1f))
             if (hasHistory) {
                 OutlinedButton(onClick = onClearHistory, contentPadding = PaddingValues(horizontal = 12.dp)) {
                     Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text(tr.clear, fontSize = 12.sp)
+                    Text(stringResource("clear"), fontSize = 12.sp)
                 }
             }
         }
@@ -133,7 +132,7 @@ private fun ClipboardToolbar(tr: Translations, hasHistory: Boolean, onPullFromDe
 }
 
 @Composable
-private fun ClipboardHistoryItem(tr: Translations, entry: ClipboardEntry, onCopy: () -> Unit, onDelete: () -> Unit) {
+private fun ClipboardHistoryItem(entry: ClipboardEntry, onCopy: () -> Unit, onDelete: () -> Unit) {
     val dateFormat = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
 
     Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp)) {
@@ -146,22 +145,22 @@ private fun ClipboardHistoryItem(tr: Translations, entry: ClipboardEntry, onCopy
                 Text(text = "${entry.source} • ${dateFormat.format(Date(entry.timestamp))}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             IconButton(onClick = onCopy) {
-                Icon(Icons.Default.ContentCopy, contentDescription = tr.copyPath, modifier = Modifier.size(18.dp))
+                Icon(Icons.Default.ContentCopy, contentDescription = stringResource("copy_path"), modifier = Modifier.size(18.dp))
             }
             IconButton(onClick = onDelete) {
-                Icon(Icons.Default.Delete, contentDescription = tr.delete, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
+                Icon(Icons.Default.Delete, contentDescription = stringResource("delete"), modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
             }
         }
     }
 }
 
 @Composable
-private fun EmptyView(tr: Translations) {
+private fun EmptyView() {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(Icons.Default.ContentPaste, contentDescription = null, modifier = Modifier.size(64.dp), tint = androidx.compose.ui.graphics.Color.Gray.copy(alpha = 0.5f))
             Spacer(Modifier.height(16.dp))
-            Text(tr.selectDevice, color = androidx.compose.ui.graphics.Color.Gray)
+            Text(stringResource("select_device"), color = androidx.compose.ui.graphics.Color.Gray)
         }
     }
 }
