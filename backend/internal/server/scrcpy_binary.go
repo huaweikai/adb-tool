@@ -43,8 +43,9 @@ type ScrcpyPaths struct {
 //   - the embed is missing the expected layout
 //   - extraction fails
 func FindScrcpy(embedFS embed.FS) (*ScrcpyPaths, error) {
-	if runtime.GOOS == "linux" {
-		return nil, fmt.Errorf("scrcpy is not bundled for linux; install it and put it on PATH")
+	goos := runtime.GOOS
+	if !supportsBundledScrcpyOS(goos) {
+		return nil, fmt.Errorf("scrcpy is only bundled for windows and macOS; current platform is %s/%s", goos, runtime.GOARCH)
 	}
 
 	archDir, err := selectScrcpyArch(embedFS)
@@ -53,11 +54,11 @@ func FindScrcpy(embedFS embed.FS) (*ScrcpyPaths, error) {
 	}
 
 	binaryName := "scrcpy"
-	if runtime.GOOS == "windows" {
+	if goos == "windows" {
 		binaryName = "scrcpy.exe"
 	}
 
-	cacheDir := filepath.Join(os.TempDir(), "adb-tool-cache", "scrcpy", archDir)
+	cacheDir := filepath.Join(os.TempDir(), "adb-tool-cache", "scrcpy", goos, archDir)
 	binaryPath := filepath.Join(cacheDir, binaryName)
 
 	// Fast path: already extracted.
@@ -65,7 +66,9 @@ func FindScrcpy(embedFS embed.FS) (*ScrcpyPaths, error) {
 		// Re-apply chmod on every call — temp dirs sometimes lose
 		// the executable bit after extraction (especially on macOS
 		// after an OS update invalidates quarantine attrs).
-		_ = os.Chmod(binaryPath, 0755)
+		if err := chmodScrcpyExecutables(goos, cacheDir, binaryPath); err != nil {
+			return nil, err
+		}
 		return &ScrcpyPaths{
 			Dir:       cacheDir,
 			Binary:    binaryPath,
@@ -77,12 +80,12 @@ func FindScrcpy(embedFS embed.FS) (*ScrcpyPaths, error) {
 	// Cold path: extract from embed. embed.FS always uses forward
 	// slashes, so build the source prefix with path (not filepath,
 	// which would emit backslashes on Windows and never match).
-	if err := extractScrcpyDir(embedFS, path.Join("binaries", "scrcpy", runtime.GOOS, archDir), cacheDir); err != nil {
+	if err := extractScrcpyDir(embedFS, path.Join("binaries", "scrcpy", goos, archDir), cacheDir); err != nil {
 		return nil, fmt.Errorf("extract scrcpy (%s): %w", archDir, err)
 	}
 
-	if err := os.Chmod(binaryPath, 0755); err != nil {
-		return nil, fmt.Errorf("chmod scrcpy binary: %w", err)
+	if err := chmodScrcpyExecutables(goos, cacheDir, binaryPath); err != nil {
+		return nil, err
 	}
 
 	return &ScrcpyPaths{
@@ -93,31 +96,67 @@ func FindScrcpy(embedFS embed.FS) (*ScrcpyPaths, error) {
 	}, nil
 }
 
-// selectScrcpyArch picks the arch subdirectory matching runtime.GOARCH.
-// If the matching arch is missing but an alternative exists (e.g. running
-// an amd64 Go toolchain on Apple Silicon without the native aarch64 bundle),
-// we fall back to whatever is available and log it via Arch.
-func selectScrcpyArch(embedFS embed.FS) (string, error) {
-	want := runtime.GOARCH
-	candidates := []string{want}
+func supportsBundledScrcpyOS(goos string) bool {
+	return goos == "windows" || goos == "darwin"
+}
 
-	// Cross-arch fallback: amd64 binary can run via Rosetta on macOS,
-	// and 386 binary can run on amd64 Windows. Prefer those over failing.
-	switch want {
-	case "arm64":
-		candidates = append(candidates, "amd64")
-	case "amd64":
-		candidates = append(candidates, "386")
+func chmodScrcpyExecutables(goos, dir, binaryPath string) error {
+	if goos == "windows" {
+		return nil
 	}
 
+	if err := os.Chmod(binaryPath, 0755); err != nil {
+		return fmt.Errorf("chmod scrcpy binary: %w", err)
+	}
+
+	adbPath := filepath.Join(dir, "adb")
+	if err := os.Chmod(adbPath, 0755); err != nil {
+		return fmt.Errorf("chmod scrcpy adb binary: %w", err)
+	}
+
+	return nil
+}
+
+// selectScrcpyArch picks the arch subdirectory matching runtime.GOARCH.
+// If the matching arch is missing but an alternative exists (e.g. running
+// an x86_64 Go toolchain on Apple Silicon without the native aarch64 bundle),
+// we fall back to whatever is available and log it via Arch.
+func selectScrcpyArch(embedFS embed.FS) (string, error) {
+	goos := runtime.GOOS
+	goarch := runtime.GOARCH
+	candidates := scrcpyArchCandidates(goos, goarch)
+
 	for _, arch := range candidates {
-		prefix := path.Join("binaries", "scrcpy", runtime.GOOS, arch)
+		prefix := path.Join("binaries", "scrcpy", goos, arch)
 		if _, err := fs.Stat(embedFS, prefix); err == nil {
 			return arch, nil
 		}
 	}
 
-	return "", fmt.Errorf("no scrcpy bundle for %s/%s (looked for %v)", runtime.GOOS, runtime.GOARCH, candidates)
+	return "", fmt.Errorf("no scrcpy bundle for %s/%s (looked for %v)", goos, goarch, candidates)
+}
+
+func scrcpyArchCandidates(goos, goarch string) []string {
+	switch goos {
+	case "darwin":
+		switch goarch {
+		case "arm64", "aarch64":
+			return []string{"aarch64", "x86_64"}
+		case "amd64", "x86_64":
+			return []string{"x86_64"}
+		}
+	case "windows":
+		switch goarch {
+		case "386", "x86":
+			return []string{"386"}
+		case "amd64", "x86_64":
+			return []string{"amd64", "386"}
+		case "arm64", "aarch64":
+			return []string{"amd64", "386"}
+		}
+	}
+
+	return []string{goarch}
 }
 
 // extractScrcpyDir walks an embed.FS subtree rooted at srcPrefix and

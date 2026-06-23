@@ -14,9 +14,10 @@ import (
 // mechanical and grep-friendly.
 //
 // Scrcpy option reference:
-//   doc/video.md    doc/audio.md    doc/window.md
-//   doc/control.md  doc/camera.md   doc/recording.md
-//   doc/shortcuts.md
+//
+//	doc/video.md    doc/audio.md    doc/window.md
+//	doc/control.md  doc/camera.md   doc/recording.md
+//	doc/shortcuts.md
 //
 // Bool-typed options use plain bool (omitempty-friendly): false means
 // "do not pass the flag", true means "pass it". Negative variants
@@ -24,21 +25,21 @@ import (
 // forms exist (e.g. NoAudio vs AudioPlayback).
 type ScrcpyOptions struct {
 	// ── Video (doc/video.md) ────────────────────────────────────
-	MaxSize            int    `json:"max_size"`               // --max-size=N, 0 = unlimited
-	VideoBitRate       string `json:"video_bit_rate"`         // --video-bit-rate=8M
-	MaxFps             int    `json:"max_fps"`                // --max-fps=N, 0 = unlimited
-	VideoCodec         string `json:"video_codec"`            // h264|h265|av1 (default h264)
+	MaxSize            int    `json:"max_size"`                // --max-size=N, 0 = unlimited
+	VideoBitRate       string `json:"video_bit_rate"`          // --video-bit-rate=8M
+	MaxFps             int    `json:"max_fps"`                 // --max-fps=N, 0 = unlimited
+	VideoCodec         string `json:"video_codec"`             // h264|h265|av1 (default h264)
 	VideoEncoder       string `json:"video_encoder,omitempty"` // --video-encoder=...
-	VideoBuffer        int    `json:"video_buffer"`           // ms, 0 = no buffering
+	VideoBuffer        int    `json:"video_buffer"`            // ms, 0 = no buffering
 	NoMipmaps          bool   `json:"no_mipmaps"`
 	CaptureOrientation string `json:"capture_orientation,omitempty"` // 0|90|180|270|flip...
 	DisplayOrientation string `json:"display_orientation,omitempty"`
-	Crop               string `json:"crop,omitempty"`         // 1224:1440:0:0
-	Angle              int    `json:"angle"`                  // --angle=N
-	DisplayId          int    `json:"display_id"`             // --display-id=N
-	RenderFit          string `json:"render_fit,omitempty"`   // letterbox|stretched|unscaled
+	Crop               string `json:"crop,omitempty"`       // 1224:1440:0:0
+	Angle              int    `json:"angle"`                // --angle=N
+	DisplayId          int    `json:"display_id"`           // --display-id=N
+	RenderFit          string `json:"render_fit,omitempty"` // letterbox|stretched|unscaled
 	BackgroundColor    string `json:"background_color,omitempty"`
-	MinSizeAlignment   int    `json:"min_size_alignment"`     // 1|2|4|8|16
+	MinSizeAlignment   int    `json:"min_size_alignment"` // 1|2|4|8|16
 	NoDownsizeOnError  bool   `json:"no_downsize_on_error"`
 	PrintFps           bool   `json:"print_fps"`
 
@@ -49,67 +50,67 @@ type ScrcpyOptions struct {
 	AudioCodec        string `json:"audio_codec,omitempty"`  // opus|aac|flac|raw
 	AudioEncoder      string `json:"audio_encoder,omitempty"`
 	AudioBitRate      string `json:"audio_bit_rate,omitempty"`
-	AudioBuffer       int    `json:"audio_buffer"`          // ms
-	AudioOutputBuffer int    `json:"audio_output_buffer"`   // ms
-	AudioDup          bool   `json:"audio_dup"`             // Android 13+
+	AudioBuffer       int    `json:"audio_buffer"`        // ms
+	AudioOutputBuffer int    `json:"audio_output_buffer"` // ms
+	AudioDup          bool   `json:"audio_dup"`           // Android 13+
 	RequireAudio      bool   `json:"require_audio"`
 
 	// ── Camera (doc/camera.md) ───────────────────────────────────
 	// VideoSource is the master switch: "display" (default) mirrors
 	// the screen, "camera" mirrors the device camera.
-	VideoSource   string  `json:"video_source,omitempty"` // display|camera
-	CameraId      int     `json:"camera_id"`              // --camera-id=N
-	CameraFacing  string  `json:"camera_facing,omitempty"` // front|back|external|any
-	CameraSize    string  `json:"camera_size,omitempty"`   // 1920x1080
-	CameraAr      string  `json:"camera_ar,omitempty"`     // 4:3|1.6|sensor
-	CameraFps     int     `json:"camera_fps"`
-	CameraHighSpeed bool  `json:"camera_high_speed"`
-	CameraTorch   bool    `json:"camera_torch"`
-	CameraZoom    float64 `json:"camera_zoom"` // 1.0 = no zoom
+	VideoSource     string  `json:"video_source,omitempty"`  // display|camera
+	CameraId        int     `json:"camera_id"`               // --camera-id=N
+	CameraFacing    string  `json:"camera_facing,omitempty"` // front|back|external|any
+	CameraSize      string  `json:"camera_size,omitempty"`   // 1920x1080
+	CameraAr        string  `json:"camera_ar,omitempty"`     // 4:3|1.6|sensor
+	CameraFps       int     `json:"camera_fps"`
+	CameraHighSpeed bool    `json:"camera_high_speed"`
+	CameraTorch     bool    `json:"camera_torch"`
+	CameraZoom      float64 `json:"camera_zoom"` // 1.0 = no zoom
 
 	// ── Window (doc/window.md) ───────────────────────────────────
-	Borderless               bool   `json:"borderless"`
-	WindowTitle              string `json:"window_title,omitempty"`
-	WindowX                  int    `json:"window_x"`
-	WindowY                  int    `json:"window_y"`
-	WindowWidth              int    `json:"window_width"`
-	WindowHeight             int    `json:"window_height"`
-	AlwaysOnTop              bool   `json:"always_on_top"`
-	Fullscreen               bool   `json:"fullscreen"`
-	DisableScreensaver       bool   `json:"disable_screensaver"`
-	NoWindow                 bool   `json:"no_window"`
-	NoWindowAspectRatioLock  bool   `json:"no_window_aspect_ratio_lock"`
+	Borderless              bool   `json:"borderless"`
+	WindowTitle             string `json:"window_title,omitempty"`
+	WindowX                 int    `json:"window_x"`
+	WindowY                 int    `json:"window_y"`
+	WindowWidth             int    `json:"window_width"`
+	WindowHeight            int    `json:"window_height"`
+	AlwaysOnTop             bool   `json:"always_on_top"`
+	Fullscreen              bool   `json:"fullscreen"`
+	DisableScreensaver      bool   `json:"disable_screensaver"`
+	NoWindow                bool   `json:"no_window"`
+	NoWindowAspectRatioLock bool   `json:"no_window_aspect_ratio_lock"`
 
 	// ── Control (doc/control.md, keyboard.md, mouse.md) ──────────
-	Keyboard           string `json:"keyboard,omitempty"` // sdk|uhid|aoa|disabled
-	Mouse              string `json:"mouse,omitempty"`    // sdk|uhid|aoa|disabled
-	NoControl          bool   `json:"no_control"`
-	MouseBind          string `json:"mouse_bind,omitempty"` // xxxx[:xxxx]
-	PreferText         bool   `json:"prefer_text"`
-	RawKeyEvents       bool   `json:"raw_key_events"`
-	NoKeyRepeat        bool   `json:"no_key_repeat"`
-	NoMouseHover       bool   `json:"no_mouse_hover"`
-	LegacyPaste        bool   `json:"legacy_paste"`
-	NoClipboardAutosync bool  `json:"no_clipboard_autosync"`
+	Keyboard            string `json:"keyboard,omitempty"` // sdk|uhid|aoa|disabled
+	Mouse               string `json:"mouse,omitempty"`    // sdk|uhid|aoa|disabled
+	NoControl           bool   `json:"no_control"`
+	MouseBind           string `json:"mouse_bind,omitempty"` // xxxx[:xxxx]
+	PreferText          bool   `json:"prefer_text"`
+	RawKeyEvents        bool   `json:"raw_key_events"`
+	NoKeyRepeat         bool   `json:"no_key_repeat"`
+	NoMouseHover        bool   `json:"no_mouse_hover"`
+	LegacyPaste         bool   `json:"legacy_paste"`
+	NoClipboardAutosync bool   `json:"no_clipboard_autosync"`
 
 	// ── Device (shortcuts.md + various) ──────────────────────────
-	StayAwake         bool   `json:"stay_awake"`
-	TurnScreenOff     bool   `json:"turn_screen_off"`
-	KeepActive        bool   `json:"keep_active"`         // scrcpy 4.0+
-	ShowTouches       bool   `json:"show_touches"`
-	PowerOffOnClose   bool   `json:"power_off_on_close"`
-	NoPowerOn         bool   `json:"no_power_on"`
-	ScreenOffTimeout  int    `json:"screen_off_timeout"`  // seconds
-	ShortcutMod       string `json:"shortcut_mod,omitempty"`
+	StayAwake        bool   `json:"stay_awake"`
+	TurnScreenOff    bool   `json:"turn_screen_off"`
+	KeepActive       bool   `json:"keep_active"` // scrcpy 4.0+
+	ShowTouches      bool   `json:"show_touches"`
+	PowerOffOnClose  bool   `json:"power_off_on_close"`
+	NoPowerOn        bool   `json:"no_power_on"`
+	ScreenOffTimeout int    `json:"screen_off_timeout"` // seconds
+	ShortcutMod      string `json:"shortcut_mod,omitempty"`
 
 	// ── Recording (doc/recording.md) ─────────────────────────────
-	RecordEnabled bool   `json:"record_enabled"`          // master switch for recording
-	Record       string `json:"record,omitempty"`        // directory path; file name auto-generated as record_yyyyMMdd_HHmmss.{ext}
-	RecordFormat string `json:"record_format,omitempty"` // mp4|mkv|opus|flac|wav|...
-	TimeLimit    int    `json:"time_limit"`              // seconds, 0 = no limit
-	NoPlayback   bool   `json:"no_playback"`
-	NoVideoPlayback bool `json:"no_video_playback"`
-	PauseOnExit  string `json:"pause_on_exit,omitempty"`  // true|false|if-error
+	RecordEnabled   bool   `json:"record_enabled"`          // master switch for recording
+	Record          string `json:"record,omitempty"`        // directory path; file name auto-generated as record_yyyyMMdd_HHmmss.{ext}
+	RecordFormat    string `json:"record_format,omitempty"` // mp4|mkv|opus|flac|wav|...
+	TimeLimit       int    `json:"time_limit"`              // seconds, 0 = no limit
+	NoPlayback      bool   `json:"no_playback"`
+	NoVideoPlayback bool   `json:"no_video_playback"`
+	PauseOnExit     string `json:"pause_on_exit,omitempty"` // true|false|if-error
 }
 
 // DefaultScrcpyOptions returns the conservative defaults we use when
@@ -361,21 +362,21 @@ func (o ScrcpyOptions) Args() []string {
 		}
 		filename := "record_" + time.Now().Format("20060102_150405") + "." + ext
 		args = append(args, "--record="+filepath.Join(o.Record, filename))
-	}
-	if o.RecordFormat != "" {
-		args = append(args, "--record-format="+o.RecordFormat)
-	}
-	if o.TimeLimit > 0 {
-		args = append(args, "--time-limit="+strconv.Itoa(o.TimeLimit))
-	}
-	if o.NoPlayback {
-		args = append(args, "--no-playback")
-	}
-	if o.NoVideoPlayback {
-		args = append(args, "--no-video-playback")
-	}
-	if o.PauseOnExit != "" {
-		args = append(args, "--pause-on-exit="+o.PauseOnExit)
+		if o.RecordFormat != "" {
+			args = append(args, "--record-format="+o.RecordFormat)
+		}
+		if o.TimeLimit > 0 {
+			args = append(args, "--time-limit="+strconv.Itoa(o.TimeLimit))
+		}
+		if o.NoPlayback {
+			args = append(args, "--no-playback")
+		}
+		if o.NoVideoPlayback {
+			args = append(args, "--no-video-playback")
+		}
+		if o.PauseOnExit != "" {
+			args = append(args, "--pause-on-exit="+o.PauseOnExit)
+		}
 	}
 
 	return args
