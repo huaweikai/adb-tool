@@ -1,8 +1,8 @@
-import 'dart:io';
-
+import 'package:adb_tool/db/database.dart';
 import 'package:adb_tool/providers/locale_provider.dart';
 import 'package:adb_tool/providers/test_config_provider.dart';
 import 'package:adb_tool/screens/test_config_screen.dart';
+import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -10,24 +10,35 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  late Directory tempDir;
+  late AppDatabase db;
+  late TestConfigProvider provider;
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({'sample_config_loaded': true});
-    tempDir =
-        await Directory.systemTemp.createTemp('adb_tool_config_screen_test_');
+    db = AppDatabase.forTesting(NativeDatabase.memory());
+    provider = TestConfigProvider(db.testAppConfigsDao);
   });
 
   tearDown(() async {
-    if (await tempDir.exists()) {
-      await tempDir.delete(recursive: true);
-    }
+    provider.dispose();
+    await db.close();
   });
 
-  testWidgets('TestConfigScreen shows imported app configs and current app',
+  testWidgets(
+      'TestConfigScreen lists imported apps and renders the current card after manual select',
       (tester) async {
-    final provider = TestConfigProvider(baseDirectory: tempDir);
     await provider.importFromJsonString(_musicConfigJson);
+    // The DAO streams are async — give them a couple of microtasks
+    // to land before we pump the widget.
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+
+    // Pre-select the first app so the "current" card is visible —
+    // imports no longer auto-select in this codebase.
+    final firstId = provider.apps.first.id;
+    expect(firstId, isNotNull);
+    await provider.selectApp(firstId!);
+    await Future<void>.delayed(Duration.zero);
 
     await tester.pumpWidget(
       MultiProvider(
@@ -39,6 +50,7 @@ void main() {
         child: const MaterialApp(home: Scaffold(body: TestConfigScreen())),
       ),
     );
+    await tester.pump();
     await tester.pump();
 
     expect(find.text('测试配置中心'), findsOneWidget);
@@ -51,8 +63,6 @@ void main() {
   testWidgets(
       'new app config dialog closes safely with Esc while input has focus',
       (tester) async {
-    final provider = TestConfigProvider(baseDirectory: tempDir);
-
     await tester.pumpWidget(
       MultiProvider(
         providers: [
@@ -65,15 +75,16 @@ void main() {
     );
     await tester.pump();
 
-    await tester.tap(find.text('新增配置'));
+    await tester.tap(find.text('新建 App 配置'));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(TextField, '应用名称'));
+    await tester.tap(find.widgetWithText(TextField, 'App 名称'));
     await tester.pump();
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
 
-    expect(find.text('新增配置'), findsOneWidget);
-    expect(find.widgetWithText(TextField, '应用名称'), findsNothing);
+    // Dialog dismissed, the screen is back behind it.
+    expect(find.text('新建 App 配置'), findsOneWidget);
+    expect(find.widgetWithText(TextField, 'App 名称'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 }

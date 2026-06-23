@@ -123,6 +123,13 @@ class _TestConfigScreenState extends State<TestConfigScreen> {
               label: Text(tr('clearConfig')),
             ),
           const SizedBox(width: 8),
+          if (provider.apps.isNotEmpty)
+            IconButton(
+              onPressed: _exportAllConfigs,
+              icon: const Icon(Icons.ios_share, size: 16),
+              tooltip: tr('exportConfigsTooltip'),
+            ),
+          const SizedBox(width: 4),
           IconButton(
             onPressed: _exportSample,
             icon: const Icon(Icons.download, size: 16),
@@ -290,7 +297,9 @@ class _TestConfigScreenState extends State<TestConfigScreen> {
                   )
                 else
                   TextButton(
-                    onPressed: () => provider.selectApp(app.id),
+                    onPressed: app.id == null
+                        ? null
+                        : () => provider.selectApp(app.id!),
                     child: Text(tr('setCurrentTestApp')),
                   ),
                 const SizedBox(width: 4),
@@ -298,6 +307,14 @@ class _TestConfigScreenState extends State<TestConfigScreen> {
                   onPressed: () => _showAppConfigDialog(context, provider, app),
                   icon: const Icon(Icons.edit, size: 16),
                   tooltip: tr('editAppConfig'),
+                  visualDensity: VisualDensity.compact,
+                ),
+                IconButton(
+                  onPressed: app.id == null
+                      ? null
+                      : () => _copyAppConfig(context, provider, app.id!),
+                  icon: const Icon(Icons.content_copy, size: 16),
+                  tooltip: tr('copyAppConfig'),
                   visualDensity: VisualDensity.compact,
                 ),
                 if (!isCurrent)
@@ -771,9 +788,7 @@ class _TestConfigScreenState extends State<TestConfigScreen> {
       return;
     }
 
-    final id = isEdit
-        ? existing.id
-        : '${result.packageName.replaceAll('.', '_')}_${DateTime.now().millisecondsSinceEpoch}';
+    final id = isEdit ? existing.id : null;
 
     final deepLinks = _parseNamedValues(result.deepLinks);
     final filePaths = _parsePathValues(result.filePaths);
@@ -855,7 +870,65 @@ class _TestConfigScreenState extends State<TestConfigScreen> {
       ),
     );
     if (ok == true) {
-      await provider.deleteApp(app.id);
+      final id = app.id;
+      if (id != null) {
+        await provider.deleteApp(id);
+      }
+    }
+  }
+
+  Future<void> _copyAppConfig(
+    BuildContext context,
+    TestConfigProvider provider,
+    int appId,
+  ) async {
+    try {
+      await provider.copyApp(appId);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(tr('configCopied'))),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${tr('copyError')}: $e')),
+      );
+    }
+  }
+
+  Future<void> _exportAllConfigs() async {
+    final provider = context.read<TestConfigProvider>();
+    if (provider.apps.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(tr('noConfigToExport'))),
+      );
+      return;
+    }
+    final location = await getSaveLocation(
+      acceptedTypeGroups: const [
+        XTypeGroup(label: 'JSON', extensions: ['json']),
+      ],
+      suggestedName: 'test_configs_export.json',
+    );
+    if (location == null) return;
+    try {
+      final file = provider.exportAsConfigFile();
+      final pretty = const JsonEncoder.withIndent('  ').convert(file.toJson());
+      await File(location.path).writeAsString(pretty);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(tr('configsExported', {
+            'count': file.apps.length.toString(),
+            'path': location.path,
+          })),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${tr('exportFailed')}: $e')),
+      );
     }
   }
 }

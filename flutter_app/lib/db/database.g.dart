@@ -7419,6 +7419,646 @@ class TestSessionIssueArtifactsCompanion
   }
 }
 
+class $TestAppConfigsTable extends TestAppConfigs
+    with TableInfo<$TestAppConfigsTable, TestAppConfigRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $TestAppConfigsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      'id', aliasedName, false,
+      hasAutoIncrement: true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
+  static const VerificationMeta _appNameMeta =
+      const VerificationMeta('appName');
+  @override
+  late final GeneratedColumn<String> appName = GeneratedColumn<String>(
+      'app_name', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _packageNameMeta =
+      const VerificationMeta('packageName');
+  @override
+  late final GeneratedColumn<String> packageName = GeneratedColumn<String>(
+      'package_name', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _appTypeMeta =
+      const VerificationMeta('appType');
+  @override
+  late final GeneratedColumn<String> appType = GeneratedColumn<String>(
+      'app_type', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(''));
+  static const VerificationMeta _notesMeta = const VerificationMeta('notes');
+  @override
+  late final GeneratedColumn<String> notes = GeneratedColumn<String>(
+      'notes', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(''));
+  static const VerificationMeta _logcatJsonMeta =
+      const VerificationMeta('logcatJson');
+  @override
+  late final GeneratedColumn<String> logcatJson = GeneratedColumn<String>(
+      'logcat_json', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _deepLinksJsonMeta =
+      const VerificationMeta('deepLinksJson');
+  @override
+  late final GeneratedColumn<String> deepLinksJson = GeneratedColumn<String>(
+      'deep_links_json', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _filePathsJsonMeta =
+      const VerificationMeta('filePathsJson');
+  @override
+  late final GeneratedColumn<String> filePathsJson = GeneratedColumn<String>(
+      'file_paths_json', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _testTextsJsonMeta =
+      const VerificationMeta('testTextsJson');
+  @override
+  late final GeneratedColumn<String> testTextsJson = GeneratedColumn<String>(
+      'test_texts_json', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _testFlowsJsonMeta =
+      const VerificationMeta('testFlowsJson');
+  @override
+  late final GeneratedColumn<String> testFlowsJson = GeneratedColumn<String>(
+      'test_flows_json', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _isCheckedMeta =
+      const VerificationMeta('isChecked');
+  @override
+  late final GeneratedColumn<bool> isChecked = GeneratedColumn<bool>(
+      'is_checked', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('CHECK ("is_checked" IN (0, 1))'),
+      defaultValue: const Constant(false));
+  static const VerificationMeta _createdAtMeta =
+      const VerificationMeta('createdAt');
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+      'created_at', aliasedName, false,
+      type: DriftSqlType.dateTime,
+      requiredDuringInsert: false,
+      defaultValue: currentDateAndTime);
+  static const VerificationMeta _updatedAtMeta =
+      const VerificationMeta('updatedAt');
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+      'updated_at', aliasedName, false,
+      type: DriftSqlType.dateTime,
+      requiredDuringInsert: false,
+      defaultValue: currentDateAndTime);
+  @override
+  List<GeneratedColumn> get $columns => [
+        id,
+        appName,
+        packageName,
+        appType,
+        notes,
+        logcatJson,
+        deepLinksJson,
+        filePathsJson,
+        testTextsJson,
+        testFlowsJson,
+        isChecked,
+        createdAt,
+        updatedAt
+      ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'test_app_configs';
+  @override
+  VerificationContext validateIntegrity(Insertable<TestAppConfigRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('app_name')) {
+      context.handle(_appNameMeta,
+          appName.isAcceptableOrUnknown(data['app_name']!, _appNameMeta));
+    } else if (isInserting) {
+      context.missing(_appNameMeta);
+    }
+    if (data.containsKey('package_name')) {
+      context.handle(
+          _packageNameMeta,
+          packageName.isAcceptableOrUnknown(
+              data['package_name']!, _packageNameMeta));
+    } else if (isInserting) {
+      context.missing(_packageNameMeta);
+    }
+    if (data.containsKey('app_type')) {
+      context.handle(_appTypeMeta,
+          appType.isAcceptableOrUnknown(data['app_type']!, _appTypeMeta));
+    }
+    if (data.containsKey('notes')) {
+      context.handle(
+          _notesMeta, notes.isAcceptableOrUnknown(data['notes']!, _notesMeta));
+    }
+    if (data.containsKey('logcat_json')) {
+      context.handle(
+          _logcatJsonMeta,
+          logcatJson.isAcceptableOrUnknown(
+              data['logcat_json']!, _logcatJsonMeta));
+    } else if (isInserting) {
+      context.missing(_logcatJsonMeta);
+    }
+    if (data.containsKey('deep_links_json')) {
+      context.handle(
+          _deepLinksJsonMeta,
+          deepLinksJson.isAcceptableOrUnknown(
+              data['deep_links_json']!, _deepLinksJsonMeta));
+    } else if (isInserting) {
+      context.missing(_deepLinksJsonMeta);
+    }
+    if (data.containsKey('file_paths_json')) {
+      context.handle(
+          _filePathsJsonMeta,
+          filePathsJson.isAcceptableOrUnknown(
+              data['file_paths_json']!, _filePathsJsonMeta));
+    } else if (isInserting) {
+      context.missing(_filePathsJsonMeta);
+    }
+    if (data.containsKey('test_texts_json')) {
+      context.handle(
+          _testTextsJsonMeta,
+          testTextsJson.isAcceptableOrUnknown(
+              data['test_texts_json']!, _testTextsJsonMeta));
+    } else if (isInserting) {
+      context.missing(_testTextsJsonMeta);
+    }
+    if (data.containsKey('test_flows_json')) {
+      context.handle(
+          _testFlowsJsonMeta,
+          testFlowsJson.isAcceptableOrUnknown(
+              data['test_flows_json']!, _testFlowsJsonMeta));
+    } else if (isInserting) {
+      context.missing(_testFlowsJsonMeta);
+    }
+    if (data.containsKey('is_checked')) {
+      context.handle(_isCheckedMeta,
+          isChecked.isAcceptableOrUnknown(data['is_checked']!, _isCheckedMeta));
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(_createdAtMeta,
+          createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(_updatedAtMeta,
+          updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  TestAppConfigRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return TestAppConfigRow(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      appName: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}app_name'])!,
+      packageName: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}package_name'])!,
+      appType: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}app_type'])!,
+      notes: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}notes'])!,
+      logcatJson: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}logcat_json'])!,
+      deepLinksJson: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}deep_links_json'])!,
+      filePathsJson: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}file_paths_json'])!,
+      testTextsJson: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}test_texts_json'])!,
+      testFlowsJson: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}test_flows_json'])!,
+      isChecked: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}is_checked'])!,
+      createdAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}created_at'])!,
+      updatedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}updated_at'])!,
+    );
+  }
+
+  @override
+  $TestAppConfigsTable createAlias(String alias) {
+    return $TestAppConfigsTable(attachedDatabase, alias);
+  }
+}
+
+class TestAppConfigRow extends DataClass
+    implements Insertable<TestAppConfigRow> {
+  final int id;
+  final String appName;
+  final String packageName;
+  final String appType;
+  final String notes;
+  final String logcatJson;
+  final String deepLinksJson;
+  final String filePathsJson;
+  final String testTextsJson;
+  final String testFlowsJson;
+  final bool isChecked;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  const TestAppConfigRow(
+      {required this.id,
+      required this.appName,
+      required this.packageName,
+      required this.appType,
+      required this.notes,
+      required this.logcatJson,
+      required this.deepLinksJson,
+      required this.filePathsJson,
+      required this.testTextsJson,
+      required this.testFlowsJson,
+      required this.isChecked,
+      required this.createdAt,
+      required this.updatedAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['app_name'] = Variable<String>(appName);
+    map['package_name'] = Variable<String>(packageName);
+    map['app_type'] = Variable<String>(appType);
+    map['notes'] = Variable<String>(notes);
+    map['logcat_json'] = Variable<String>(logcatJson);
+    map['deep_links_json'] = Variable<String>(deepLinksJson);
+    map['file_paths_json'] = Variable<String>(filePathsJson);
+    map['test_texts_json'] = Variable<String>(testTextsJson);
+    map['test_flows_json'] = Variable<String>(testFlowsJson);
+    map['is_checked'] = Variable<bool>(isChecked);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    map['updated_at'] = Variable<DateTime>(updatedAt);
+    return map;
+  }
+
+  TestAppConfigsCompanion toCompanion(bool nullToAbsent) {
+    return TestAppConfigsCompanion(
+      id: Value(id),
+      appName: Value(appName),
+      packageName: Value(packageName),
+      appType: Value(appType),
+      notes: Value(notes),
+      logcatJson: Value(logcatJson),
+      deepLinksJson: Value(deepLinksJson),
+      filePathsJson: Value(filePathsJson),
+      testTextsJson: Value(testTextsJson),
+      testFlowsJson: Value(testFlowsJson),
+      isChecked: Value(isChecked),
+      createdAt: Value(createdAt),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory TestAppConfigRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return TestAppConfigRow(
+      id: serializer.fromJson<int>(json['id']),
+      appName: serializer.fromJson<String>(json['appName']),
+      packageName: serializer.fromJson<String>(json['packageName']),
+      appType: serializer.fromJson<String>(json['appType']),
+      notes: serializer.fromJson<String>(json['notes']),
+      logcatJson: serializer.fromJson<String>(json['logcatJson']),
+      deepLinksJson: serializer.fromJson<String>(json['deepLinksJson']),
+      filePathsJson: serializer.fromJson<String>(json['filePathsJson']),
+      testTextsJson: serializer.fromJson<String>(json['testTextsJson']),
+      testFlowsJson: serializer.fromJson<String>(json['testFlowsJson']),
+      isChecked: serializer.fromJson<bool>(json['isChecked']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'appName': serializer.toJson<String>(appName),
+      'packageName': serializer.toJson<String>(packageName),
+      'appType': serializer.toJson<String>(appType),
+      'notes': serializer.toJson<String>(notes),
+      'logcatJson': serializer.toJson<String>(logcatJson),
+      'deepLinksJson': serializer.toJson<String>(deepLinksJson),
+      'filePathsJson': serializer.toJson<String>(filePathsJson),
+      'testTextsJson': serializer.toJson<String>(testTextsJson),
+      'testFlowsJson': serializer.toJson<String>(testFlowsJson),
+      'isChecked': serializer.toJson<bool>(isChecked),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+    };
+  }
+
+  TestAppConfigRow copyWith(
+          {int? id,
+          String? appName,
+          String? packageName,
+          String? appType,
+          String? notes,
+          String? logcatJson,
+          String? deepLinksJson,
+          String? filePathsJson,
+          String? testTextsJson,
+          String? testFlowsJson,
+          bool? isChecked,
+          DateTime? createdAt,
+          DateTime? updatedAt}) =>
+      TestAppConfigRow(
+        id: id ?? this.id,
+        appName: appName ?? this.appName,
+        packageName: packageName ?? this.packageName,
+        appType: appType ?? this.appType,
+        notes: notes ?? this.notes,
+        logcatJson: logcatJson ?? this.logcatJson,
+        deepLinksJson: deepLinksJson ?? this.deepLinksJson,
+        filePathsJson: filePathsJson ?? this.filePathsJson,
+        testTextsJson: testTextsJson ?? this.testTextsJson,
+        testFlowsJson: testFlowsJson ?? this.testFlowsJson,
+        isChecked: isChecked ?? this.isChecked,
+        createdAt: createdAt ?? this.createdAt,
+        updatedAt: updatedAt ?? this.updatedAt,
+      );
+  TestAppConfigRow copyWithCompanion(TestAppConfigsCompanion data) {
+    return TestAppConfigRow(
+      id: data.id.present ? data.id.value : this.id,
+      appName: data.appName.present ? data.appName.value : this.appName,
+      packageName:
+          data.packageName.present ? data.packageName.value : this.packageName,
+      appType: data.appType.present ? data.appType.value : this.appType,
+      notes: data.notes.present ? data.notes.value : this.notes,
+      logcatJson:
+          data.logcatJson.present ? data.logcatJson.value : this.logcatJson,
+      deepLinksJson: data.deepLinksJson.present
+          ? data.deepLinksJson.value
+          : this.deepLinksJson,
+      filePathsJson: data.filePathsJson.present
+          ? data.filePathsJson.value
+          : this.filePathsJson,
+      testTextsJson: data.testTextsJson.present
+          ? data.testTextsJson.value
+          : this.testTextsJson,
+      testFlowsJson: data.testFlowsJson.present
+          ? data.testFlowsJson.value
+          : this.testFlowsJson,
+      isChecked: data.isChecked.present ? data.isChecked.value : this.isChecked,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('TestAppConfigRow(')
+          ..write('id: $id, ')
+          ..write('appName: $appName, ')
+          ..write('packageName: $packageName, ')
+          ..write('appType: $appType, ')
+          ..write('notes: $notes, ')
+          ..write('logcatJson: $logcatJson, ')
+          ..write('deepLinksJson: $deepLinksJson, ')
+          ..write('filePathsJson: $filePathsJson, ')
+          ..write('testTextsJson: $testTextsJson, ')
+          ..write('testFlowsJson: $testFlowsJson, ')
+          ..write('isChecked: $isChecked, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+      id,
+      appName,
+      packageName,
+      appType,
+      notes,
+      logcatJson,
+      deepLinksJson,
+      filePathsJson,
+      testTextsJson,
+      testFlowsJson,
+      isChecked,
+      createdAt,
+      updatedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is TestAppConfigRow &&
+          other.id == this.id &&
+          other.appName == this.appName &&
+          other.packageName == this.packageName &&
+          other.appType == this.appType &&
+          other.notes == this.notes &&
+          other.logcatJson == this.logcatJson &&
+          other.deepLinksJson == this.deepLinksJson &&
+          other.filePathsJson == this.filePathsJson &&
+          other.testTextsJson == this.testTextsJson &&
+          other.testFlowsJson == this.testFlowsJson &&
+          other.isChecked == this.isChecked &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt);
+}
+
+class TestAppConfigsCompanion extends UpdateCompanion<TestAppConfigRow> {
+  final Value<int> id;
+  final Value<String> appName;
+  final Value<String> packageName;
+  final Value<String> appType;
+  final Value<String> notes;
+  final Value<String> logcatJson;
+  final Value<String> deepLinksJson;
+  final Value<String> filePathsJson;
+  final Value<String> testTextsJson;
+  final Value<String> testFlowsJson;
+  final Value<bool> isChecked;
+  final Value<DateTime> createdAt;
+  final Value<DateTime> updatedAt;
+  const TestAppConfigsCompanion({
+    this.id = const Value.absent(),
+    this.appName = const Value.absent(),
+    this.packageName = const Value.absent(),
+    this.appType = const Value.absent(),
+    this.notes = const Value.absent(),
+    this.logcatJson = const Value.absent(),
+    this.deepLinksJson = const Value.absent(),
+    this.filePathsJson = const Value.absent(),
+    this.testTextsJson = const Value.absent(),
+    this.testFlowsJson = const Value.absent(),
+    this.isChecked = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+  });
+  TestAppConfigsCompanion.insert({
+    this.id = const Value.absent(),
+    required String appName,
+    required String packageName,
+    this.appType = const Value.absent(),
+    this.notes = const Value.absent(),
+    required String logcatJson,
+    required String deepLinksJson,
+    required String filePathsJson,
+    required String testTextsJson,
+    required String testFlowsJson,
+    this.isChecked = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+  })  : appName = Value(appName),
+        packageName = Value(packageName),
+        logcatJson = Value(logcatJson),
+        deepLinksJson = Value(deepLinksJson),
+        filePathsJson = Value(filePathsJson),
+        testTextsJson = Value(testTextsJson),
+        testFlowsJson = Value(testFlowsJson);
+  static Insertable<TestAppConfigRow> custom({
+    Expression<int>? id,
+    Expression<String>? appName,
+    Expression<String>? packageName,
+    Expression<String>? appType,
+    Expression<String>? notes,
+    Expression<String>? logcatJson,
+    Expression<String>? deepLinksJson,
+    Expression<String>? filePathsJson,
+    Expression<String>? testTextsJson,
+    Expression<String>? testFlowsJson,
+    Expression<bool>? isChecked,
+    Expression<DateTime>? createdAt,
+    Expression<DateTime>? updatedAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (appName != null) 'app_name': appName,
+      if (packageName != null) 'package_name': packageName,
+      if (appType != null) 'app_type': appType,
+      if (notes != null) 'notes': notes,
+      if (logcatJson != null) 'logcat_json': logcatJson,
+      if (deepLinksJson != null) 'deep_links_json': deepLinksJson,
+      if (filePathsJson != null) 'file_paths_json': filePathsJson,
+      if (testTextsJson != null) 'test_texts_json': testTextsJson,
+      if (testFlowsJson != null) 'test_flows_json': testFlowsJson,
+      if (isChecked != null) 'is_checked': isChecked,
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+    });
+  }
+
+  TestAppConfigsCompanion copyWith(
+      {Value<int>? id,
+      Value<String>? appName,
+      Value<String>? packageName,
+      Value<String>? appType,
+      Value<String>? notes,
+      Value<String>? logcatJson,
+      Value<String>? deepLinksJson,
+      Value<String>? filePathsJson,
+      Value<String>? testTextsJson,
+      Value<String>? testFlowsJson,
+      Value<bool>? isChecked,
+      Value<DateTime>? createdAt,
+      Value<DateTime>? updatedAt}) {
+    return TestAppConfigsCompanion(
+      id: id ?? this.id,
+      appName: appName ?? this.appName,
+      packageName: packageName ?? this.packageName,
+      appType: appType ?? this.appType,
+      notes: notes ?? this.notes,
+      logcatJson: logcatJson ?? this.logcatJson,
+      deepLinksJson: deepLinksJson ?? this.deepLinksJson,
+      filePathsJson: filePathsJson ?? this.filePathsJson,
+      testTextsJson: testTextsJson ?? this.testTextsJson,
+      testFlowsJson: testFlowsJson ?? this.testFlowsJson,
+      isChecked: isChecked ?? this.isChecked,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (appName.present) {
+      map['app_name'] = Variable<String>(appName.value);
+    }
+    if (packageName.present) {
+      map['package_name'] = Variable<String>(packageName.value);
+    }
+    if (appType.present) {
+      map['app_type'] = Variable<String>(appType.value);
+    }
+    if (notes.present) {
+      map['notes'] = Variable<String>(notes.value);
+    }
+    if (logcatJson.present) {
+      map['logcat_json'] = Variable<String>(logcatJson.value);
+    }
+    if (deepLinksJson.present) {
+      map['deep_links_json'] = Variable<String>(deepLinksJson.value);
+    }
+    if (filePathsJson.present) {
+      map['file_paths_json'] = Variable<String>(filePathsJson.value);
+    }
+    if (testTextsJson.present) {
+      map['test_texts_json'] = Variable<String>(testTextsJson.value);
+    }
+    if (testFlowsJson.present) {
+      map['test_flows_json'] = Variable<String>(testFlowsJson.value);
+    }
+    if (isChecked.present) {
+      map['is_checked'] = Variable<bool>(isChecked.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('TestAppConfigsCompanion(')
+          ..write('id: $id, ')
+          ..write('appName: $appName, ')
+          ..write('packageName: $packageName, ')
+          ..write('appType: $appType, ')
+          ..write('notes: $notes, ')
+          ..write('logcatJson: $logcatJson, ')
+          ..write('deepLinksJson: $deepLinksJson, ')
+          ..write('filePathsJson: $filePathsJson, ')
+          ..write('testTextsJson: $testTextsJson, ')
+          ..write('testFlowsJson: $testFlowsJson, ')
+          ..write('isChecked: $isChecked, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -7440,6 +8080,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
       $TestSessionPlanItemsTable(this);
   late final $TestSessionIssueArtifactsTable testSessionIssueArtifacts =
       $TestSessionIssueArtifactsTable(this);
+  late final $TestAppConfigsTable testAppConfigs = $TestAppConfigsTable(this);
   late final SavedDevicesDao savedDevicesDao =
       SavedDevicesDao(this as AppDatabase);
   late final AppStatesDao appStatesDao = AppStatesDao(this as AppDatabase);
@@ -7449,6 +8090,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
       SentClipboardEntryDao(this as AppDatabase);
   late final TestSessionsDao testSessionsDao =
       TestSessionsDao(this as AppDatabase);
+  late final TestAppConfigsDao testAppConfigsDao =
+      TestAppConfigsDao(this as AppDatabase);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -7464,7 +8107,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
         testSessionNotes,
         testSessionIssues,
         testSessionPlanItems,
-        testSessionIssueArtifacts
+        testSessionIssueArtifacts,
+        testAppConfigs
       ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules(
@@ -12325,6 +12969,298 @@ typedef $$TestSessionIssueArtifactsTableProcessedTableManager
         ),
         TestSessionIssueArtifactRow,
         PrefetchHooks Function({bool issueId, bool artifactId})>;
+typedef $$TestAppConfigsTableCreateCompanionBuilder = TestAppConfigsCompanion
+    Function({
+  Value<int> id,
+  required String appName,
+  required String packageName,
+  Value<String> appType,
+  Value<String> notes,
+  required String logcatJson,
+  required String deepLinksJson,
+  required String filePathsJson,
+  required String testTextsJson,
+  required String testFlowsJson,
+  Value<bool> isChecked,
+  Value<DateTime> createdAt,
+  Value<DateTime> updatedAt,
+});
+typedef $$TestAppConfigsTableUpdateCompanionBuilder = TestAppConfigsCompanion
+    Function({
+  Value<int> id,
+  Value<String> appName,
+  Value<String> packageName,
+  Value<String> appType,
+  Value<String> notes,
+  Value<String> logcatJson,
+  Value<String> deepLinksJson,
+  Value<String> filePathsJson,
+  Value<String> testTextsJson,
+  Value<String> testFlowsJson,
+  Value<bool> isChecked,
+  Value<DateTime> createdAt,
+  Value<DateTime> updatedAt,
+});
+
+class $$TestAppConfigsTableFilterComposer
+    extends Composer<_$AppDatabase, $TestAppConfigsTable> {
+  $$TestAppConfigsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get appName => $composableBuilder(
+      column: $table.appName, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get packageName => $composableBuilder(
+      column: $table.packageName, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get appType => $composableBuilder(
+      column: $table.appType, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get notes => $composableBuilder(
+      column: $table.notes, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get logcatJson => $composableBuilder(
+      column: $table.logcatJson, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get deepLinksJson => $composableBuilder(
+      column: $table.deepLinksJson, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get filePathsJson => $composableBuilder(
+      column: $table.filePathsJson, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get testTextsJson => $composableBuilder(
+      column: $table.testTextsJson, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get testFlowsJson => $composableBuilder(
+      column: $table.testFlowsJson, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get isChecked => $composableBuilder(
+      column: $table.isChecked, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnFilters(column));
+}
+
+class $$TestAppConfigsTableOrderingComposer
+    extends Composer<_$AppDatabase, $TestAppConfigsTable> {
+  $$TestAppConfigsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get appName => $composableBuilder(
+      column: $table.appName, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get packageName => $composableBuilder(
+      column: $table.packageName, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get appType => $composableBuilder(
+      column: $table.appType, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get notes => $composableBuilder(
+      column: $table.notes, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get logcatJson => $composableBuilder(
+      column: $table.logcatJson, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get deepLinksJson => $composableBuilder(
+      column: $table.deepLinksJson,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get filePathsJson => $composableBuilder(
+      column: $table.filePathsJson,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get testTextsJson => $composableBuilder(
+      column: $table.testTextsJson,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get testFlowsJson => $composableBuilder(
+      column: $table.testFlowsJson,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get isChecked => $composableBuilder(
+      column: $table.isChecked, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnOrderings(column));
+}
+
+class $$TestAppConfigsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $TestAppConfigsTable> {
+  $$TestAppConfigsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get appName =>
+      $composableBuilder(column: $table.appName, builder: (column) => column);
+
+  GeneratedColumn<String> get packageName => $composableBuilder(
+      column: $table.packageName, builder: (column) => column);
+
+  GeneratedColumn<String> get appType =>
+      $composableBuilder(column: $table.appType, builder: (column) => column);
+
+  GeneratedColumn<String> get notes =>
+      $composableBuilder(column: $table.notes, builder: (column) => column);
+
+  GeneratedColumn<String> get logcatJson => $composableBuilder(
+      column: $table.logcatJson, builder: (column) => column);
+
+  GeneratedColumn<String> get deepLinksJson => $composableBuilder(
+      column: $table.deepLinksJson, builder: (column) => column);
+
+  GeneratedColumn<String> get filePathsJson => $composableBuilder(
+      column: $table.filePathsJson, builder: (column) => column);
+
+  GeneratedColumn<String> get testTextsJson => $composableBuilder(
+      column: $table.testTextsJson, builder: (column) => column);
+
+  GeneratedColumn<String> get testFlowsJson => $composableBuilder(
+      column: $table.testFlowsJson, builder: (column) => column);
+
+  GeneratedColumn<bool> get isChecked =>
+      $composableBuilder(column: $table.isChecked, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$TestAppConfigsTableTableManager extends RootTableManager<
+    _$AppDatabase,
+    $TestAppConfigsTable,
+    TestAppConfigRow,
+    $$TestAppConfigsTableFilterComposer,
+    $$TestAppConfigsTableOrderingComposer,
+    $$TestAppConfigsTableAnnotationComposer,
+    $$TestAppConfigsTableCreateCompanionBuilder,
+    $$TestAppConfigsTableUpdateCompanionBuilder,
+    (
+      TestAppConfigRow,
+      BaseReferences<_$AppDatabase, $TestAppConfigsTable, TestAppConfigRow>
+    ),
+    TestAppConfigRow,
+    PrefetchHooks Function()> {
+  $$TestAppConfigsTableTableManager(
+      _$AppDatabase db, $TestAppConfigsTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$TestAppConfigsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$TestAppConfigsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$TestAppConfigsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<String> appName = const Value.absent(),
+            Value<String> packageName = const Value.absent(),
+            Value<String> appType = const Value.absent(),
+            Value<String> notes = const Value.absent(),
+            Value<String> logcatJson = const Value.absent(),
+            Value<String> deepLinksJson = const Value.absent(),
+            Value<String> filePathsJson = const Value.absent(),
+            Value<String> testTextsJson = const Value.absent(),
+            Value<String> testFlowsJson = const Value.absent(),
+            Value<bool> isChecked = const Value.absent(),
+            Value<DateTime> createdAt = const Value.absent(),
+            Value<DateTime> updatedAt = const Value.absent(),
+          }) =>
+              TestAppConfigsCompanion(
+            id: id,
+            appName: appName,
+            packageName: packageName,
+            appType: appType,
+            notes: notes,
+            logcatJson: logcatJson,
+            deepLinksJson: deepLinksJson,
+            filePathsJson: filePathsJson,
+            testTextsJson: testTextsJson,
+            testFlowsJson: testFlowsJson,
+            isChecked: isChecked,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            required String appName,
+            required String packageName,
+            Value<String> appType = const Value.absent(),
+            Value<String> notes = const Value.absent(),
+            required String logcatJson,
+            required String deepLinksJson,
+            required String filePathsJson,
+            required String testTextsJson,
+            required String testFlowsJson,
+            Value<bool> isChecked = const Value.absent(),
+            Value<DateTime> createdAt = const Value.absent(),
+            Value<DateTime> updatedAt = const Value.absent(),
+          }) =>
+              TestAppConfigsCompanion.insert(
+            id: id,
+            appName: appName,
+            packageName: packageName,
+            appType: appType,
+            notes: notes,
+            logcatJson: logcatJson,
+            deepLinksJson: deepLinksJson,
+            filePathsJson: filePathsJson,
+            testTextsJson: testTextsJson,
+            testFlowsJson: testFlowsJson,
+            isChecked: isChecked,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$TestAppConfigsTableProcessedTableManager = ProcessedTableManager<
+    _$AppDatabase,
+    $TestAppConfigsTable,
+    TestAppConfigRow,
+    $$TestAppConfigsTableFilterComposer,
+    $$TestAppConfigsTableOrderingComposer,
+    $$TestAppConfigsTableAnnotationComposer,
+    $$TestAppConfigsTableCreateCompanionBuilder,
+    $$TestAppConfigsTableUpdateCompanionBuilder,
+    (
+      TestAppConfigRow,
+      BaseReferences<_$AppDatabase, $TestAppConfigsTable, TestAppConfigRow>
+    ),
+    TestAppConfigRow,
+    PrefetchHooks Function()>;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -12352,4 +13288,6 @@ class $AppDatabaseManager {
   $$TestSessionIssueArtifactsTableTableManager get testSessionIssueArtifacts =>
       $$TestSessionIssueArtifactsTableTableManager(
           _db, _db.testSessionIssueArtifacts);
+  $$TestAppConfigsTableTableManager get testAppConfigs =>
+      $$TestAppConfigsTableTableManager(_db, _db.testAppConfigs);
 }

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'services/api_client.dart';
@@ -27,6 +28,14 @@ Future<void> main() async {
   // startups. Must never block app launch.
   unawaited(LegacySessionCleanup.run());
 
+  // Fire-and-forget: best-effort delete of the pre-DB test-config
+  // JSON file. The DB is now the source of truth; the old file is
+  // dead data and we don't want it lingering on disk confusing
+  // future debugging. Silently swallow any failure (locked file,
+  // missing dir, etc.) — the worst case is a stale file we can
+  // clean up manually later.
+  unawaited(_deleteLegacyTestConfigJson());
+
   runApp(
     MultiProvider(
       providers: [
@@ -53,7 +62,7 @@ Future<void> main() async {
           ),
         ),
         ChangeNotifierProvider<TestConfigProvider>(
-          create: (_) => TestConfigProvider()..load(),
+          create: (_) => TestConfigProvider(db.testAppConfigsDao),
         ),
         ChangeNotifierProvider<ScrcpySettingsProvider>(
           create: (_) => ScrcpySettingsProvider(db: db),
@@ -65,6 +74,21 @@ Future<void> main() async {
       child: const AdbToolApp(),
     ),
   );
+}
+
+Future<void> _deleteLegacyTestConfigJson() async {
+  try {
+    final home = Platform.environment['HOME'] ??
+        Platform.environment['USERPROFILE'] ??
+        Directory.current.path;
+    final file = File('$home/ADBToolData/test_configs.json');
+    if (await file.exists()) {
+      await file.delete();
+    }
+  } catch (_) {
+    // Best-effort. Missing dir, permission denied, etc. — none of
+    // these should block app launch.
+  }
 }
 
 class AdbToolApp extends StatelessWidget {

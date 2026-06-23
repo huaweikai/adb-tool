@@ -64,7 +64,13 @@ class TestConfigFile {
 }
 
 class TestAppConfig {
-  final String id;
+  // DB-assigned primary key. null = the row hasn't been inserted yet
+  // (e.g. brand-new in-memory config waiting for createOrUpdateApp).
+  // The id is INTERNAL — it never round-trips through JSON exports
+  // or imports. Every import inserts as a new row and lets drift
+  // mint a fresh id, so a JSON file is portable across machines
+  // and re-imports never collide on a stale primary key.
+  final int? id;
   final String appName;
   final String packageName;
   final String appType;
@@ -74,18 +80,24 @@ class TestAppConfig {
   final List<TestFilePathConfig> filePaths;
   final List<TestNamedValue> testTexts;
   final List<TestFlowConfig> testFlows;
+  // True for at most one row at a time; the "current" config the
+  // rest of the app reads from. Stays a column (not a singleton
+  // table) so copy / delete / import don't have to special-case a
+  // separate settings row.
+  final bool isChecked;
 
   const TestAppConfig({
-    required this.id,
+    this.id,
     required this.appName,
     required this.packageName,
-    required this.appType,
-    required this.notes,
-    required this.logcat,
-    required this.deepLinks,
-    required this.filePaths,
-    required this.testTexts,
-    required this.testFlows,
+    this.appType = '',
+    this.notes = '',
+    this.logcat = const TestLogcatConfig(),
+    this.deepLinks = const [],
+    this.filePaths = const [],
+    this.testTexts = const [],
+    this.testFlows = const [],
+    this.isChecked = false,
   });
 
   factory TestAppConfig.fromJson(Map<String, dynamic> json, {int index = 0}) {
@@ -96,7 +108,10 @@ class TestAppConfig {
     final appName = _stringValue(json['appName'], fallback: packageName).trim();
     final appType = _stringValue(json['appType']).trim();
     return TestAppConfig(
-      id: _stringValue(json['id'], fallback: packageName),
+      // id is intentionally null on parse. The old string-based id
+      // ("com.example.app" / "com_example_app_<millis>") is dead
+      // now that the DB owns the primary key — see the doc comment
+      // on the field. If a stale export still carries one, ignore it.
       appName: appName.isEmpty ? packageName : appName,
       packageName: packageName,
       appType: appType,
@@ -113,8 +128,42 @@ class TestAppConfig {
 
   String get displayName => appType.isEmpty ? appName : '$appName - $appType';
 
+  // Returns a copy of this config with selected fields overridden.
+  // Used by the dialog save flow (id is null for new, set for update)
+  // and by copyApp (id is null so DB mints a fresh one).
+  TestAppConfig copyWith({
+    int? id,
+    String? appName,
+    String? packageName,
+    String? appType,
+    String? notes,
+    TestLogcatConfig? logcat,
+    List<TestNamedValue>? deepLinks,
+    List<TestFilePathConfig>? filePaths,
+    List<TestNamedValue>? testTexts,
+    List<TestFlowConfig>? testFlows,
+    bool? isChecked,
+  }) {
+    return TestAppConfig(
+      id: id ?? this.id,
+      appName: appName ?? this.appName,
+      packageName: packageName ?? this.packageName,
+      appType: appType ?? this.appType,
+      notes: notes ?? this.notes,
+      logcat: logcat ?? this.logcat,
+      deepLinks: deepLinks ?? this.deepLinks,
+      filePaths: filePaths ?? this.filePaths,
+      testTexts: testTexts ?? this.testTexts,
+      testFlows: testFlows ?? this.testFlows,
+      isChecked: isChecked ?? this.isChecked,
+    );
+  }
+
   Map<String, dynamic> toJson() => {
-        'id': id,
+        // We intentionally don't round-trip the DB id into the export
+        // — it's an internal primary key, not a stable cross-machine
+        // identifier. Re-importing the same export would otherwise
+        // collide on PK or, worse, overwrite the wrong row.
         'appName': appName,
         'packageName': packageName,
         'appType': appType,

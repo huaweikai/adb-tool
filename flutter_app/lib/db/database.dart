@@ -36,6 +36,19 @@
 //        on first open we wipe the corresponding SharedPreferences keys
 //        (scrcpy_opts_*, clipboard_sent_history) so the two stores
 //        don't drift. No data migration — fresh start by user request.
+//   v6 — moves test configs (previously a single JSON file at
+//        ~/ADBToolData/test_configs.json) into the DB. One
+//        test_app_configs row per app, with nested collections
+//        (logcat, deep links, file paths, test texts, test flows)
+//        stored as JSON-encoded TEXT columns. The "current" config
+//        is the row with is_checked = 1, kept on the row itself
+//        (not in a singleton settings table) so copy / delete /
+//        import don't need a second table to keep in sync. On first
+//        open the legacy JSON file is read once, inserted with
+//        is_checked = 0, and the original `currentAppId` is
+//        resolved by packageName to set is_checked = 1 on the
+//        matching new row. The JSON file is then deleted so a
+//        rollback to an older binary won't re-trigger the import.
 import 'dart:io';
 
 import 'package:drift/drift.dart';
@@ -49,11 +62,13 @@ import 'dao/app_states_dao.dart';
 import 'dao/sent_clipboard_entry_dao.dart';
 import 'dao/saved_devices_dao.dart';
 import 'dao/scrcpy_options_dao.dart';
+import 'dao/test_app_configs_dao.dart';
 import 'dao/test_sessions_dao.dart';
 import 'tables/app_states.dart';
 import 'tables/sent_clipboard_entry.dart';
 import 'tables/saved_devices.dart';
 import 'tables/scrcpy_options.dart';
+import 'tables/test_app_configs.dart';
 import 'tables/test_session_artifacts.dart';
 import 'tables/test_session_events.dart';
 import 'tables/test_session_issue_artifacts.dart';
@@ -77,6 +92,7 @@ part 'database.g.dart';
     TestSessionIssues,
     TestSessionPlanItems,
     TestSessionIssueArtifacts,
+    TestAppConfigs,
   ],
   daos: [
     SavedDevicesDao,
@@ -84,6 +100,7 @@ part 'database.g.dart';
     ScrcpyOptionsDao,
     SentClipboardEntryDao,
     TestSessionsDao,
+    TestAppConfigsDao,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -92,7 +109,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(QueryExecutor executor) : super(executor);
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -130,6 +147,14 @@ class AppDatabase extends _$AppDatabase {
               'CREATE INDEX IF NOT EXISTS idx_clipboard_history_favorites '
               'ON sent_clipboard_entry (sent_at DESC) WHERE favorite = 1',
             );
+          }
+          if (from < 6) {
+            // v5 → v6: test configs move from a JSON file into the DB.
+            // The table itself is created above via createAll / addTable;
+            // the actual JSON→DB transfer runs in beforeOpen (see below)
+            // because it needs the AppDatabase instance to read the file
+            // and is safer to retry on a fresh launch.
+            await m.createTable(testAppConfigs);
           }
         },
         beforeOpen: (details) async {

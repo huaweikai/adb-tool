@@ -1,21 +1,6 @@
 <component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="Flutter Debug" type="FlutterRunConfigurationType">
-    <option name="additionalArgs" value="" />
-    <option name="buildMode" value="DEBUG" />
-    <option name="buildTarget" value="lib/main.dart" />
-    <option name="deviceId" value="" />
-    <option name="enableHotReload" value="true" />
-    <option name="entrypoint" value="lib/main.dart" />
-    <option name="flutterSdkPath" value="" />
-    <option name="hotReload" value="true" />
-    <option name="runFlutterAsTest" value="false" />
-    <option name="targetFilePath" value="lib/main.dart" />
-    <option name="targetKind" value="DART" />
-    <option name="projectRoot" value="$PROJECT_DIR$/flutter_app" />
-    <option name="workingDirectory" value="$PROJECT_DIR$/flutter_app" />
-    <option name="vmsArguments" value="" />
-    <option name="dartFlags" value="" />
-    <option name="verboseMode" value="false" />
+  <configuration default="false" name="Flutter Debug" type="FlutterRunConfigurationType" factoryName="Flutter">
+    <option name="filePath" value="$PROJECT_DIR$/flutter_app/lib/main.dart" />
     <method v="2" />
   </configuration>
 </component>

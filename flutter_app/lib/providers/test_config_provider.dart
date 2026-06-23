@@ -1,8 +1,8 @@
-import 'dart:convert';
-import 'dart:io';
+import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 
+import '../db/dao/test_app_configs_dao.dart';
 import '../models/test_config.dart';
 
 class TestConfigImportResult {
@@ -17,66 +17,59 @@ class TestConfigImportResult {
   });
 }
 
+/// In-memory view of the test-app-config table, mirrored from the DAO
+/// via two streams:
+///   * `watchAll()` → `_apps`     (insertion-order list)
+///   * `watchChecked()` → `_currentApp` (single row, or null)
+///
+/// Same public surface the screens already use (`apps`, `currentApp`,
+/// `selectApp`, etc.) so the refactor doesn't ripple to the UI.
 class TestConfigProvider extends ChangeNotifier {
-  final Directory? baseDirectory;
+  final TestAppConfigsDao _dao;
   List<TestAppConfig> _apps = const [];
-  String? _currentAppId;
+  TestAppConfig? _currentApp;
+  StreamSubscription<List<TestAppConfigRow>>? _allSub;
+  StreamSubscription<TestAppConfigRow?>? _checkedSub;
   bool _loaded = false;
 
-  TestConfigProvider({this.baseDirectory});
+  TestConfigProvider(this._dao) {
+    _allSub = _dao.watchAll().listen((rows) {
+      _apps = rows.map(_dao.rowToModel).toList();
+      _loaded = true;
+      notifyListeners();
+    });
+    _checkedSub = _dao.watchChecked().listen((row) {
+      _currentApp = row == null ? null : _dao.rowToModel(row);
+      notifyListeners();
+    });
+  }
+
+  @override
+  void dispose() {
+    _allSub?.cancel();
+    _checkedSub?.cancel();
+    super.dispose();
+  }
 
   List<TestAppConfig> get apps => List.unmodifiable(_apps);
   bool get loaded => _loaded;
+  TestAppConfig? get currentApp => _currentApp;
+  bool get hasCurrentApp => _currentApp != null;
 
-  TestAppConfig? get currentApp {
-    if (_apps.isEmpty) return null;
-    final id = _currentAppId;
-    if (id == null || id.isEmpty) return null;
-    for (final app in _apps) {
-      if (app.id == id) return app;
-    }
-    return null;
-  }
-
-  bool get hasCurrentApp => currentApp != null;
-
-  Future<void> load() async {
-    final file = await _configFile();
-    if (!await file.exists()) {
-      _loaded = true;
-      notifyListeners();
-      return;
-    }
-    final json = jsonDecode(await file.readAsString());
-    if (json is! Map<String, dynamic>) {
-      throw const TestConfigException('本地测试配置不是有效 JSON 对象');
-    }
-    final appsJson = json['apps'];
-    _apps = appsJson is List
-        ? appsJson
-            .whereType<Map<String, dynamic>>()
-            .map(TestAppConfig.fromJson)
-            .toList()
-        : const [];
-    _currentAppId = json['currentAppId']?.toString() ?? '';
-    _loaded = true;
-    notifyListeners();
-  }
+  /// No-op kept for source compatibility with the old JSON-backed
+  /// provider. The streams above deliver the data the moment the DAO
+  /// emits it, so screens that still call `load()` don't need to be
+  /// updated.
+  Future<void> load() async {}
 
   Future<TestConfigImportResult> importFromJsonString(String source) async {
     final config = TestConfigFile.fromJsonString(source);
     final imported = config.apps;
-    final existingByPackage = {for (final app in _apps) app.packageName: app};
-    for (final app in imported) {
-      existingByPackage[app.packageName] = app;
+    for (final incoming in imported) {
+      // Insert path: brand-new packageName, or existing row was
+      // somehow missing its id. Drift assigns a fresh id.
+      await _dao.insertRow(incoming.copyWith(id: null, isChecked: false));
     }
-    _apps = existingByPackage.values.toList();
-    if (_currentAppId == null || _currentAppId!.isEmpty) {
-      _currentAppId = _apps.isEmpty ? '' : _apps.first.id;
-    }
-    _loaded = true;
-    await _persist();
-    notifyListeners();
     return TestConfigImportResult(
       configName: config.configName,
       importedCount: imported.length,
@@ -86,37 +79,54 @@ class TestConfigProvider extends ChangeNotifier {
     );
   }
 
-  Future<void> selectApp(String appId) async {
+  /// Build a JSON export containing either the given app ids (if
+  /// provided) or every config in the table. Used by the
+  /// batch-export UI button.
+  TestConfigFile exportAsConfigFile({List<int>? ids}) {
+    final selected = (ids == null)
+        ? _apps
+        : _apps.where((app) => app.id != null && ids.contains(app.id));
+    return TestConfigFile(
+      schemaVersion: 1,
+      configName: 'ADBTool 导出配置',
+      description: '',
+      apps: selected.toList(),
+    );
+  }
+
+  Future<void> selectApp(int appId) async {
     if (!_apps.any((app) => app.id == appId)) return;
-    _currentAppId = appId;
-    await _persist();
-    notifyListeners();
+    await _dao.setChecked(appId);
   }
 
   Future<void> createOrUpdateApp(TestAppConfig app) async {
-    final idx = _apps.indexWhere((a) => a.id == app.id);
-    if (idx >= 0) {
-      _apps = [..._apps]..[idx] = app;
+    if (app.id == null) {
+      // New row — strip any id the caller passed and let drift assign.
+      await _dao.insertRow(app.copyWith(id: null, isChecked: false));
     } else {
-      _apps = [..._apps, app];
+      // Update path. is_checked is preserved as-is on the existing
+      // row (we don't accidentally demote the current when the
+      // user edits a different field of it).
+      await _dao.updateRow(app.id!, app);
     }
-    await _persist();
-    notifyListeners();
   }
 
-  Future<TestAppConfig> copyApp(String appId) async {
-    final idx = _apps.indexWhere((a) => a.id == appId);
-    if (idx == -1) throw StateError('appId not found: $appId');
-    final source = _apps[idx];
-    // Append "（副本）" to name; truncate if it exceeds a reasonable length
+  /// Deep-clone `appId` and insert the copy as a brand-new row with
+  /// a fresh auto-increment id. The copy's name gets a "（副本）"
+  /// suffix and a millisecond-suffix-free body so repeated copies
+  /// of the same source stay visually distinguishable in the list.
+  Future<TestAppConfig> copyApp(int appId) async {
+    final source = _apps.firstWhere(
+      (app) => app.id == appId,
+      orElse: () => throw StateError('appId not found: $appId'),
+    );
     const suffix = '（副本）';
     const maxBase = 60;
     final base = source.appName.length > maxBase
         ? source.appName.substring(0, maxBase)
         : source.appName;
-    final newId = '${source.id}_copy_${DateTime.now().millisecondsSinceEpoch}';
     final copy = TestAppConfig(
-      id: newId,
+      // id null → drift mints a fresh int on insert
       appName: '$base$suffix',
       packageName: source.packageName,
       appType: source.appType,
@@ -141,56 +151,27 @@ class TestConfigProvider extends ChangeNotifier {
           .map((f) =>
               TestFlowConfig(name: f.name, steps: List<String>.from(f.steps)))
           .toList(),
+      // The copy is unchecked even if the source was checked —
+      // copying a config shouldn't hijack the current selection.
+      isChecked: false,
     );
-    _apps = [..._apps]..insert(idx + 1, copy);
-    await _persist();
-    notifyListeners();
-    return copy;
+    final newId = await _dao.insertRow(copy);
+    final row = await _dao.getById(newId);
+    if (row == null) {
+      throw StateError('inserted copy row not found: $newId');
+    }
+    return _dao.rowToModel(row);
   }
 
-  Future<void> deleteApp(String appId) async {
-    _apps = _apps.where((app) => app.id != appId).toList();
-    if (_currentAppId == appId) {
-      _currentAppId = '';
-    }
-    await _persist();
-    notifyListeners();
+  Future<void> deleteApp(int appId) async {
+    await _dao.deleteById(appId);
   }
 
   Future<void> deselectApp() async {
-    _currentAppId = '';
-    await _persist();
-    notifyListeners();
+    await _dao.clearChecked();
   }
 
   Future<void> clear() async {
-    _apps = const [];
-    _currentAppId = null;
-    await _persist();
-    notifyListeners();
-  }
-
-  Future<File> _configFile() async {
-    final root = await _rootDirectory();
-    await root.create(recursive: true);
-    return File('${root.path}/test_configs.json');
-  }
-
-  Future<Directory> _rootDirectory() async {
-    if (baseDirectory != null) return baseDirectory!;
-    final home = Platform.environment['HOME'] ??
-        Platform.environment['USERPROFILE'] ??
-        Directory.current.path;
-    return Directory('$home/ADBToolData');
-  }
-
-  Future<void> _persist() async {
-    final file = await _configFile();
-    await file.writeAsString(
-      const JsonEncoder.withIndent('  ').convert({
-        'currentAppId': _currentAppId,
-        'apps': _apps.map((app) => app.toJson()).toList(),
-      }),
-    );
+    await _dao.deleteAll();
   }
 }

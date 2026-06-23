@@ -17,7 +17,7 @@ void main() {
     setLang('en');
     final db = AppDatabase.forTesting(NativeDatabase.memory());
     final sessionProvider = TestSessionProvider(db: db);
-    final testConfigProvider = TestConfigProvider();
+    final testConfigProvider = TestConfigProvider(db.testAppConfigsDao);
 
     addTearDown(() async {
       sessionProvider.dispose();

@@ -60,7 +60,7 @@ class _LogcatScreenState extends State<LogcatScreen> {
   late final TextEditingController _kwCtrl;
   late final TextEditingController _pkgCtrl;
   late final TextEditingController _ruleCtrl;
-  String? _lastAppliedConfigId;
+  int? _lastAppliedConfigId;
 
   @override
   void initState() {
