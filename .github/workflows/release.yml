@@ -32,11 +32,11 @@ jobs:
         working-directory: flutter_app
         run: flutter pub get
 
-      - name: Build Windows MSI
+      - name: Build Windows MSI (amd64 + arm64)
         run: |
           $version = "${{ github.ref_name }}"
           $version = $version.TrimStart('v')
-          .\scripts\build.ps1 -Mode Release -ProductVersion $version
+          .\scripts\build.ps1 -Mode Release -GoArch all -ProductVersion $version
 
       - uses: actions/upload-artifact@v4
         with:
@@ -57,35 +57,30 @@ jobs:
         with:
           channel: 'stable'
 
-      - name: Build Go backend
-        run: |
-          cd backend
-          GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o ../flutter_app/macos/Runner/adb-tool .
-          chmod +x ../flutter_app/macos/Runner/adb-tool
+      - name: Build Go backend (disabled; build.sh handles all archs)
+        run: echo "Go backend built by scripts/build.sh --arch all"
 
       - name: Flutter pub get
         working-directory: flutter_app
         run: flutter pub get
 
-      - name: Flutter build macOS
-        working-directory: flutter_app
-        run: flutter build macos --release
+      - name: Build macOS .app (arm64 + amd64)
+        run: bash scripts/build.sh --platform macos --mode release --arch all
 
-      - name: Embed backend into .app bundle
+      - name: Zip macOS artifacts
         run: |
-          APP="$(find flutter_app/build/macos/Build/Products/Release -name '*.app' -maxdepth 1 | head -1)"
-          cp flutter_app/macos/Runner/adb-tool "$APP/Contents/MacOS/"
-          chmod +x "$APP/Contents/MacOS/adb-tool"
-          echo "APP_PATH=$APP" >> $GITHUB_ENV
-
-      - name: Package artifacts
-        run: |
-          ditto -c -k --keepParent "$APP_PATH" adb-tool-macos-arm64.zip
+          ditto -c -k --keepParent dist/macos/arm64/adb_tool.app adb-tool-macos-arm64.zip
+          ditto -c -k --keepParent dist/macos/amd64/adb_tool.app adb-tool-macos-amd64.zip
 
       - uses: actions/upload-artifact@v4
         with:
           name: adb-tool-macos-arm64
           path: adb-tool-macos-arm64.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: adb-tool-macos-amd64
+          path: adb-tool-macos-amd64.zip
 
   create-release:
     needs: [build-windows, build-macos]
@@ -101,4 +96,5 @@ jobs:
           files: |
             adb-tool-windows/*.msi
             adb-tool-macos-arm64/adb-tool-macos-arm64.zip
+            adb-tool-macos-amd64/adb-tool-macos-amd64.zip
           generate_release_notes: true
