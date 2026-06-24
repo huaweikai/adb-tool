@@ -2,26 +2,22 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'services/api_client.dart';
-import 'db/database.dart';
-import 'services/log_stream.dart';
-import 'services/server_launcher.dart';
+
+import 'di.dart';
 import 'screens/home_screen.dart';
 import 'i18n.dart';
 import 'providers/theme_provider.dart';
-import 'providers/device_provider.dart';
 import 'providers/locale_provider.dart';
 import 'providers/test_session_provider.dart';
-import 'providers/test_config_provider.dart';
-import 'providers/scrcpy_settings_provider.dart';
-import 'providers/clipboard_history_provider.dart';
+import 'services/api_client.dart';
+import 'services/server_launcher.dart';
 import 'utils/legacy_session_cleanup.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Singleton DB shared by DeviceProvider and TestSessionProvider
-  final db = AppDatabase();
+  // Initialize all app-wide singletons via GetIt
+  await setupDependencies();
 
   // Fire-and-forget: remove the pre-DB test-session on-disk storage on
   // first launch. Safe to re-run; a marker file short-circuits subsequent
@@ -38,39 +34,7 @@ Future<void> main() async {
 
   runApp(
     MultiProvider(
-      providers: [
-        Provider<AppDatabase>.value(value: db),
-        Provider<ApiClient>(
-          create: (_) => ApiClient('http://127.0.0.1:9876'),
-        ),
-        Provider<LogStreamService>(
-          create: (_) => LogStreamService(),
-        ),
-        ChangeNotifierProvider<ThemeProvider>(
-          create: (_) => ThemeProvider(),
-        ),
-        ChangeNotifierProvider<DeviceProvider>(
-          create: (_) => DeviceProvider(db: db),
-        ),
-        ChangeNotifierProvider<LocaleProvider>(
-          create: (_) => LocaleProvider(),
-        ),
-        ChangeNotifierProvider<TestSessionProvider>(
-          create: (_) => TestSessionProvider(
-            db: db,
-            deviceProvider: _.read<DeviceProvider>(),
-          ),
-        ),
-        ChangeNotifierProvider<TestConfigProvider>(
-          create: (_) => TestConfigProvider(db.testAppConfigsDao),
-        ),
-        ChangeNotifierProvider<ScrcpySettingsProvider>(
-          create: (_) => ScrcpySettingsProvider(db: db),
-        ),
-        ChangeNotifierProvider<ClipboardHistoryProvider>(
-          create: (_) => ClipboardHistoryProvider(db: db)..load(),
-        ),
-      ],
+      providers: dependencyProviders,
       child: const AdbToolApp(),
     ),
   );

@@ -63,10 +63,10 @@ class TestSessionProvider extends ChangeNotifier {
   TestSession? _currentHydrated;
 
   TestSessionProvider({
-    AppDatabase? db,
+    required AppDatabase db,
     SessionTranslate? translate,
     DeviceProvider? deviceProvider,
-  })  : _db = db ?? AppDatabase(),
+  })  : _db = db,
         _attachments = SessionAttachmentStore(),
         _exporter = SessionExporter(translate ?? _fallbackTranslate),
         _translate = translate ?? _fallbackTranslate {

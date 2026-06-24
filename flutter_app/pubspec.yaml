@@ -14,6 +14,7 @@ dependencies:
   cross_file: ^0.3.0
   dio: ^5.9.2
   provider: ^6.1.2
+  get_it: ^8.0.3
   shared_preferences: ^2.3.2
   drift: ^2.22.1
   sqlite3_flutter_libs: ^0.5.28

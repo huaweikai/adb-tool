@@ -31,7 +31,7 @@ class DeviceProvider extends ChangeNotifier {
   String? _lastDbError;
 
   StreamSubscription<List<SavedDevice>>? _savedDevicesSub;
-  AppDatabase? _db;
+  final AppDatabase _db;
 
   Future<void>? _refreshing;
 
@@ -51,13 +51,10 @@ class DeviceProvider extends ChangeNotifier {
   DateTime? get lastSuccessfulRefresh => _lastSuccessfulRefresh;
   String? get lastDbError => _lastDbError;
 
-  AppDatabase get db {
-    _db ??= AppDatabase();
-    return _db!;
-  }
+  /// Exposed for backwards compatibility. Prefer GetIt injection in new code.
+  AppDatabase get db => _db;
 
-  DeviceProvider({AppDatabase? db}) {
-    if (db != null) _db = db;
+  DeviceProvider({required AppDatabase db}) : _db = db {
     _init();
   }
 
@@ -211,7 +208,7 @@ class DeviceProvider extends ChangeNotifier {
   void dispose() {
     _savedDevicesSub?.cancel();
     _offlineController.close();
-    _db?.close();
+    // DB is owned by GetIt — do NOT close it here
     super.dispose();
   }
 }
