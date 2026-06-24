@@ -4,10 +4,14 @@ import (
 	"embed"
 	"io/fs"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
+
+	"adb-tool/backend/internal/emulator"
 )
 
 type Server struct {
@@ -22,6 +26,10 @@ type Server struct {
 	recordStarted   time.Time
 
 	sessionLogcat *SessionLogcat
+
+	// Emulator components
+	instanceManager *emulator.InstanceManager
+	statusMonitor  *emulator.StatusMonitor
 
 	startedAt  time.Time
 	onShutdown func()
@@ -43,6 +51,32 @@ func New(adbPath string, webFS fs.FS, clipboardApk []byte, scrcpyFS embed.FS) *S
 	}
 }
 
+// InitEmulator initializes the emulator components.
+func (s *Server) InitEmulator(emulatorPath, avdManagerPath, javaPath, androidHome string) error {
+	// Get data directory
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	dataDir := filepath.Join(home, ".adb-tool", "emulator")
+
+	// Create data directory if needed
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		return err
+	}
+
+	// Create instance manager
+	s.instanceManager, err = emulator.NewInstanceManager(emulatorPath, avdManagerPath, javaPath, androidHome, dataDir)
+	if err != nil {
+		return err
+	}
+
+	// Create status monitor
+	s.statusMonitor = emulator.NewStatusMonitor(s.instanceManager)
+
+	return nil
+}
+
 func (s *Server) SetShutdownFunc(fn func()) {
 	s.onShutdown = fn
 }
@@ -53,6 +87,9 @@ func (s *Server) Close() {
 		s.recordingSerial = ""
 		s.recordMu.Unlock()
 		s.adb.Close()
+		if s.statusMonitor != nil {
+			s.statusMonitor.Stop()
+		}
 	})
 }
 
@@ -157,9 +194,12 @@ func (s *Server) Handler() http.Handler {
 
 	// Emulator instances
 	mux.HandleFunc("/api/emulator/instances", s.handleEmulatorInstances)
+	mux.HandleFunc("/api/emulator/instance/get", s.handleEmulatorInstanceGet)
 	mux.HandleFunc("/api/emulator/instance/create", s.handleEmulatorInstanceCreate)
 	mux.HandleFunc("/api/emulator/instance/start", s.handleEmulatorInstanceStart)
 	mux.HandleFunc("/api/emulator/instance/stop", s.handleEmulatorInstanceStop)
+	mux.HandleFunc("/api/emulator/instance/delete", s.handleEmulatorInstanceDelete)
+	mux.HandleFunc("/ws/emulator/status", s.handleEmulatorStatusWS)
 
 	mux.HandleFunc("/api/identify", s.handleIdentify)
 	mux.HandleFunc("/api/shutdown", s.handleShutdown)

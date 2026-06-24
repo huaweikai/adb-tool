@@ -3,17 +3,35 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/emulator_image_provider.dart';
+import '../providers/emulator_instance_provider.dart';
 import '../widgets/emulator_engine_card.dart';
 import '../widgets/emulator_java_card.dart';
 import '../widgets/emulator_image_card.dart';
 import '../widgets/add_image_dialog.dart';
+import '../widgets/emulator_instance_card.dart';
+import '../widgets/create_instance_dialog.dart';
 
-class EmulatorSettingsScreen extends StatelessWidget {
+class EmulatorSettingsScreen extends StatefulWidget {
   const EmulatorSettingsScreen({super.key});
+
+  @override
+  State<EmulatorSettingsScreen> createState() => _EmulatorSettingsScreenState();
+}
+
+class _EmulatorSettingsScreenState extends State<EmulatorSettingsScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Fetch instances on load
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<EmulatorInstanceProvider>().fetchInstances();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final imageProvider = context.watch<EmulatorImageProvider>();
+    final instanceProvider = context.watch<EmulatorInstanceProvider>();
 
     return Scaffold(
       appBar: AppBar(
@@ -29,10 +47,97 @@ class EmulatorSettingsScreen extends StatelessWidget {
             const SizedBox(height: 16),
             const EmulatorJavaCard(),
             const SizedBox(height: 24),
+            _buildInstanceSection(context, instanceProvider),
+            const SizedBox(height: 24),
             _buildImageSection(context, imageProvider),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildInstanceSection(BuildContext context, EmulatorInstanceProvider provider) {
+    final theme = Theme.of(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.smartphone, color: theme.colorScheme.primary),
+            const SizedBox(width: 8),
+            Text(
+              '模拟器实例',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const Spacer(),
+            FilledButton.icon(
+              onPressed: () => _showCreateInstanceDialog(context),
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('创建实例'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        _buildInstanceList(context, provider),
+      ],
+    );
+  }
+
+  Widget _buildInstanceList(BuildContext context, EmulatorInstanceProvider provider) {
+    final instances = provider.instances;
+
+    if (provider.isLoading) {
+      return const Card(
+        child: Padding(
+          padding: EdgeInsets.all(32),
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      );
+    }
+
+    if (instances.isEmpty) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Center(
+            child: Column(
+              children: [
+                Icon(
+                  Icons.phone_android,
+                  size: 48,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant.withAlpha(100),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  '暂无模拟器实例',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '创建实例以开始使用模拟器',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant.withAlpha(150),
+                      ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      children: instances.map((instance) {
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: EmulatorInstanceCard(instance: instance),
+        );
+      }).toList(),
     );
   }
 
@@ -109,7 +214,7 @@ class EmulatorSettingsScreen extends StatelessWidget {
           child: EmulatorImageCard(
             image: image,
             onDelete: () => _confirmDelete(context, image.id),
-            onCreateInstance: image.isReady ? () => _createInstance(context, image.id) : null,
+            onCreateInstance: image.isReady ? () => _showCreateInstanceDialog(context) : null,
           ),
         );
       }).toList(),
@@ -134,7 +239,6 @@ class EmulatorSettingsScreen extends StatelessWidget {
           variant: result['variant'],
         );
       } else {
-        // TODO: Handle local path
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('本地路径功能即将推出')),
         );
@@ -169,10 +273,10 @@ class EmulatorSettingsScreen extends StatelessWidget {
     }
   }
 
-  void _createInstance(BuildContext context, String imageId) {
-    // TODO: Implement create instance dialog
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('创建实例功能即将推出')),
+  Future<void> _showCreateInstanceDialog(BuildContext context) async {
+    await showDialog(
+      context: context,
+      builder: (_) => const CreateInstanceDialog(),
     );
   }
 }

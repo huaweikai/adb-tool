@@ -7,8 +7,10 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"time"
 
 	"adb-tool/backend/internal/emulator"
+	"github.com/gorilla/websocket"
 )
 
 // EmulatorEngine holds the current engine configuration state.
@@ -552,9 +554,34 @@ func (s *Server) handleEmulatorInstances(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// TODO: Implement instance listing
+	if s.instanceManager == nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "emulator not initialized")
+		return
+	}
+
+	instances := s.instanceManager.List()
+
+	result := make([]map[string]interface{}, len(instances))
+	for i, inst := range instances {
+		result[i] = map[string]interface{}{
+			"id":           inst.ID,
+			"imageId":      inst.ImageID,
+			"name":         inst.Name,
+			"avdPath":      inst.AVDPath,
+			"config":       inst.Config,
+			"status":       inst.Status,
+			"consolePort":  inst.ConsolePort,
+			"adbPort":      inst.ADBPort,
+			"pid":          inst.PID,
+			"serial":       inst.Serial,
+			"snapshotId":   inst.SnapshotID,
+			"createdAt":    inst.CreatedAt,
+			"lastStartedAt": inst.LastStartedAt,
+		}
+	}
+
 	writeJSON(w, map[string]interface{}{
-		"instances": []interface{}{},
+		"instances": result,
 	})
 }
 
@@ -566,13 +593,21 @@ func (s *Server) handleEmulatorInstanceCreate(w http.ResponseWriter, r *http.Req
 	}
 	defer r.Body.Close()
 
+	if s.instanceManager == nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "emulator not initialized")
+		return
+	}
+
 	var req struct {
-		ImageID string `json:"imageId"`
-		Name    string `json:"name"`
-		Cores   int    `json:"cores"`
-		Memory  int    `json:"memoryMb"`
-		Width   int    `json:"width"`
-		Height  int    `json:"height"`
+		ImageID    string `json:"imageId"`
+		Name       string `json:"name"`
+		Cores      int    `json:"cores"`
+		MemoryMB   int    `json:"memoryMb"`
+		Width      int    `json:"width"`
+		Height     int    `json:"height"`
+		Density    int    `json:"density"`
+		SDCardSize string `json:"sdcardSize"`
+		GPUMode    string `json:"gpuMode"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeAPIError(w, http.StatusBadRequest, err.Error())
@@ -584,11 +619,37 @@ func (s *Server) handleEmulatorInstanceCreate(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// TODO: Implement instance creation using avdmanager
+	// Build config
+	config := emulator.InstanceConfig{
+		Cores:      req.Cores,
+		MemoryMB:   req.MemoryMB,
+		Width:      req.Width,
+		Height:     req.Height,
+		Density:    req.Density,
+		SDCardSize: req.SDCardSize,
+		GPUMode:    req.GPUMode,
+	}
+
+	// Create instance
+	instance, err := s.instanceManager.Create(emulator.CreateInstanceRequest{
+		Name:    req.Name,
+		ImageID: req.ImageID,
+		Config:  config,
+	})
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
 	writeJSON(w, map[string]interface{}{
-		"id":     "placeholder",
-		"status": "created",
-		"name":   req.Name,
+		"id":           instance.ID,
+		"name":         instance.Name,
+		"status":       instance.Status,
+		"consolePort":  instance.ConsolePort,
+		"adbPort":      instance.ADBPort,
+		"serial":       instance.Serial,
+		"avdPath":      instance.AVDPath,
+		"createdAt":    instance.CreatedAt,
 	})
 }
 
@@ -598,10 +659,37 @@ func (s *Server) handleEmulatorInstanceStart(w http.ResponseWriter, r *http.Requ
 		writeAPIError(w, http.StatusMethodNotAllowed, "POST required")
 		return
 	}
+	defer r.Body.Close()
 
-	// TODO: Implement instance start
+	if s.instanceManager == nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "emulator not initialized")
+		return
+	}
+
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		writeAPIError(w, http.StatusBadRequest, "id is required")
+		return
+	}
+
+	instance, err := s.instanceManager.Start(id)
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	// Broadcast status update
+	if s.statusMonitor != nil {
+		s.statusMonitor.BroadcastStatus(instance.ID, instance.Status)
+	}
+
 	writeJSON(w, map[string]interface{}{
-		"status": "started",
+		"id":          instance.ID,
+		"status":      instance.Status,
+		"pid":         instance.PID,
+		"serial":      instance.Serial,
+		"consolePort": instance.ConsolePort,
+		"adbPort":     instance.ADBPort,
 	})
 }
 
@@ -611,9 +699,158 @@ func (s *Server) handleEmulatorInstanceStop(w http.ResponseWriter, r *http.Reque
 		writeAPIError(w, http.StatusMethodNotAllowed, "POST required")
 		return
 	}
+	defer r.Body.Close()
 
-	// TODO: Implement instance stop
+	if s.instanceManager == nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "emulator not initialized")
+		return
+	}
+
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		writeAPIError(w, http.StatusBadRequest, "id is required")
+		return
+	}
+
+	instance, err := s.instanceManager.Get(id)
+	if err != nil {
+		writeAPIError(w, http.StatusNotFound, err.Error())
+		return
+	}
+
+	if err := s.instanceManager.Stop(id); err != nil {
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	// Broadcast status update
+	if s.statusMonitor != nil {
+		s.statusMonitor.BroadcastStatus(instance.ID, emulator.StatusStopped)
+	}
+
 	writeJSON(w, map[string]interface{}{
-		"status": "stopped",
+		"id":     instance.ID,
+		"status": emulator.StatusStopped,
 	})
+}
+
+// handleEmulatorInstanceDelete deletes an emulator instance.
+func (s *Server) handleEmulatorInstanceDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "DELETE" {
+		writeAPIError(w, http.StatusMethodNotAllowed, "DELETE required")
+		return
+	}
+	defer r.Body.Close()
+
+	if s.instanceManager == nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "emulator not initialized")
+		return
+	}
+
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		writeAPIError(w, http.StatusBadRequest, "id is required")
+		return
+	}
+
+	if err := s.instanceManager.Delete(id); err != nil {
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, map[string]interface{}{
+		"id":      id,
+		"deleted": true,
+	})
+}
+
+// handleEmulatorInstanceGet returns a specific instance.
+func (s *Server) handleEmulatorInstanceGet(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		writeAPIError(w, http.StatusMethodNotAllowed, "GET required")
+		return
+	}
+
+	if s.instanceManager == nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "emulator not initialized")
+		return
+	}
+
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		writeAPIError(w, http.StatusBadRequest, "id is required")
+		return
+	}
+
+	instance, err := s.instanceManager.Get(id)
+	if err != nil {
+		writeAPIError(w, http.StatusNotFound, err.Error())
+		return
+	}
+
+	writeJSON(w, map[string]interface{}{
+		"id":            instance.ID,
+		"imageId":       instance.ImageID,
+		"name":          instance.Name,
+		"avdPath":       instance.AVDPath,
+		"config":        instance.Config,
+		"status":        instance.Status,
+		"consolePort":   instance.ConsolePort,
+		"adbPort":       instance.ADBPort,
+		"pid":           instance.PID,
+		"serial":        instance.Serial,
+		"snapshotId":    instance.SnapshotID,
+		"createdAt":     instance.CreatedAt,
+		"lastStartedAt": instance.LastStartedAt,
+	})
+}
+
+// handleEmulatorStatusWS handles WebSocket connections for emulator status updates.
+func (s *Server) handleEmulatorStatusWS(w http.ResponseWriter, r *http.Request) {
+	if s.statusMonitor == nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "emulator not initialized")
+		return
+	}
+
+	conn, err := s.upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+
+	// Get instance IDs to watch (comma-separated)
+	instanceIDs := r.URL.Query()["id"]
+
+	// Register connection
+	s.statusMonitor.Register(conn, instanceIDs)
+	defer s.statusMonitor.Unregister(conn)
+
+	// Send initial status for watched instances
+	if len(instanceIDs) > 0 {
+		for _, id := range instanceIDs {
+			inst, err := s.instanceManager.Get(id)
+			if err == nil {
+				update := emulator.StatusUpdate{
+					Type:       "status",
+					InstanceID: inst.ID,
+					Status:     inst.Status,
+					Timestamp:  time.Now(),
+				}
+				conn.WriteJSON(update)
+			}
+		}
+	}
+
+	// Keep connection alive and handle incoming messages
+	for {
+		_, msg, err := conn.ReadMessage()
+		if err != nil {
+			break
+		}
+
+		// Handle ping/pong or commands
+		if string(msg) == "ping" {
+			conn.WriteMessage(websocket.PongMessage, nil)
+		}
+	}
 }
