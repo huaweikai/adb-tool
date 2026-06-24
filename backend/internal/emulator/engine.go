@@ -283,3 +283,140 @@ func parseJavaVersion(output string) string {
 	}
 	return ""
 }
+
+// SDKInfo represents a detected Android SDK installation.
+type SDKInfo struct {
+	Path          string `json:"path"`
+	Name          string `json:"name"`
+	HasEmulator   bool   `json:"hasEmulator"`
+	HasAvdmanager bool   `json:"hasAvdmanager"`
+	HasJava       bool   `json:"hasJava"`
+	Version       string `json:"version,omitempty"`
+}
+
+// ScanSystemSDKs scans common locations for Android SDK installations.
+func ScanSystemSDKs() []SDKInfo {
+	var results []SDKInfo
+	seen := make(map[string]bool)
+
+	// Check common SDK locations
+	candidates := getSDKCandidates()
+	for _, path := range candidates {
+		if seen[path] {
+			continue
+		}
+
+		info := checkSDKPath(path)
+		if info != nil {
+			results = append(results, *info)
+			seen[path] = true
+		}
+	}
+
+	return results
+}
+
+// getSDKCandidates returns common Android SDK installation paths.
+func getSDKCandidates() []string {
+	var candidates []string
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return candidates
+	}
+
+	switch runtime.GOOS {
+	case "darwin":
+		candidates = append(candidates,
+			filepath.Join(home, "Library", "Android", "sdk"),
+			"/usr/local/share/android-sdk",
+		)
+	case "windows":
+		candidates = append(candidates,
+			filepath.Join(home, "AppData", "Local", "Android", "Sdk"),
+		)
+	case "linux":
+		candidates = append(candidates,
+			filepath.Join(home, "Android", "Sdk"),
+			"/opt/android-sdk",
+			"/usr/local/android-sdk",
+		)
+	}
+
+	// Environment variables
+	if androidHome := os.Getenv("ANDROID_HOME"); androidHome != "" {
+		candidates = append([]string{androidHome}, candidates...)
+	}
+	if androidSdkRoot := os.Getenv("ANDROID_SDK_ROOT"); androidSdkRoot != "" {
+		candidates = append([]string{androidSdkRoot}, candidates...)
+	}
+
+	// Our managed SDK
+	managed := filepath.Join(home, ".adb-tool", "sdk")
+	candidates = append(candidates, managed)
+
+	return candidates
+}
+
+// checkSDKPath checks if a path contains a valid Android SDK.
+func checkSDKPath(path string) *SDKInfo {
+	info, err := os.Stat(path)
+	if err != nil || !info.IsDir() {
+		return nil
+	}
+
+	result := &SDKInfo{
+		Path: path,
+		Name: filepath.Base(path),
+	}
+
+	// Check emulator
+	emulatorPath := filepath.Join(path, "emulator", "emulator")
+	if runtime.GOOS == "windows" {
+		emulatorPath += ".exe"
+	}
+	if _, err := os.Stat(emulatorPath); err == nil {
+		result.HasEmulator = true
+		// Try to get version
+		if version := getEmulatorVersion(emulatorPath); version != "" {
+			result.Version = version
+			result.Name = "Android SDK " + version
+		}
+	}
+
+	// Check avdmanager
+	avdPath := filepath.Join(path, "cmdline-tools", "latest", "bin", "avdmanager")
+	if runtime.GOOS == "windows" {
+		avdPath += ".bat"
+	}
+	if _, err := os.Stat(avdPath); err == nil {
+		result.HasAvdmanager = true
+	}
+
+	// Check Java in SDK
+	javaPaths := []string{
+		filepath.Join(path, "jre", "bin", "java"),
+		filepath.Join(path, "jdk", "bin", "java"),
+	}
+	for _, javaPath := range javaPaths {
+		if runtime.GOOS == "windows" {
+			javaPath += ".exe"
+		}
+		if _, err := os.Stat(javaPath); err == nil {
+			result.HasJava = true
+			break
+		}
+	}
+
+	return result
+}
+
+// getEmulatorVersion gets the emulator version.
+func getEmulatorVersion(emulatorPath string) string {
+	cmd := exec.Command(emulatorPath, "-version")
+	output, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return parseEmulatorVersion(string(output))
+}

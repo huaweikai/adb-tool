@@ -176,6 +176,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/emulator/engine/config", s.handleEmulatorEngineConfig)
 	mux.HandleFunc("/api/emulator/sdk/import", s.handleEmulatorSDKImport)
 	mux.HandleFunc("/api/emulator/sdk/delete", s.handleEmulatorSDKDelete)
+	mux.HandleFunc("/api/emulator/sdk/detect", s.handleEmulatorSDKDetect)
+	mux.HandleFunc("/api/emulator/sdk/download", s.handleEmulatorSDKDownload)
+	mux.HandleFunc("/api/emulator/sdk/use", s.handleEmulatorSDKUse)
 
 	// Emulator Java runtime
 	mux.HandleFunc("/api/emulator/java/status", s.handleEmulatorJavaStatus)

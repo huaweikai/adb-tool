@@ -21,6 +21,7 @@ const (
 	DownloadTypeAVD    DownloadType = "avd"
 	DownloadTypeQEMU   DownloadType = "qemu"
 	DownloadTypeImage  DownloadType = "image"
+	DownloadTypeSDK    DownloadType = "sdk"
 	DownloadTypeOther DownloadType = "other"
 )
 

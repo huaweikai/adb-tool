@@ -782,12 +782,19 @@ backend/
 
 ## 九、实施计划
 
-### Phase 1: 引擎配置 + 基础框架 (MVP)
+### Phase 1: 引擎配置 + 基础框架 (MVP) ✅ 已完成
 1. 新建分支 `feature/emulator-support`
 2. Flutter: 数据模型 + 数据库表
 3. Flutter: EmulatorEngineProvider + 引擎配置 UI
 4. Backend: `/api/emulator/engine/validate` + `/api/emulator/engine/config`
 5. Backend: 模拟器数据模型 JSON 文件持久化 (SQLite 由 Flutter drift 管理)
+
+**Phase 1 增强: SDK 多来源支持 (2026-06-24)**
+- ✅ 支持扫描系统已有 SDK 路径 (`/api/emulator/sdk/detect`)
+- ✅ 支持选择/指定 SDK 路径 (`/api/emulator/sdk/use`)
+- ✅ 支持下载 SDK (`/api/emulator/sdk/download`)
+- ✅ 支持导入 SDK 压缩包 (`/api/emulator/sdk/import`)
+- ✅ Flutter UI 支持三种来源切换 + 实时进度
 
 ### Phase 2: Java 运行环境 + 工具链准备
 1. Backend: JavaRuntimeManager 检测本机 Java、内置 JRE、版本兼容性

@@ -128,6 +128,129 @@ func (s *Server) handleEmulatorSDKDelete(w http.ResponseWriter, r *http.Request)
 	})
 }
 
+// handleEmulatorSDKDetect scans the system for existing Android SDK installations.
+func (s *Server) handleEmulatorSDKDetect(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		writeAPIError(w, http.StatusMethodNotAllowed, "GET required")
+		return
+	}
+
+	// Scan common SDK locations
+	sdks := emulator.ScanSystemSDKs()
+
+	writeJSON(w, map[string]interface{}{
+		"sdks": sdks,
+	})
+}
+
+// handleEmulatorSDKDownload downloads Android SDK command-line tools from Google.
+func (s *Server) handleEmulatorSDKDownload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeAPIError(w, http.StatusMethodNotAllowed, "POST required")
+		return
+	}
+	defer r.Body.Close()
+
+	var req struct {
+		URL    string `json:"url"`
+		ID     string `json:"id"`
+		SHA256 string `json:"sha256"`
+		Name   string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if req.URL == "" || req.ID == "" {
+		writeAPIError(w, http.StatusBadRequest, "url and id are required")
+		return
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "failed to get home directory")
+		return
+	}
+
+	platform := runtime.GOOS + "-" + runtime.GOARCH
+	downloadID := req.ID + "-" + platform
+	destPath := filepath.Join(home, ".adb-tool", "sdk", "downloads", downloadID, "cmdline-tools.zip")
+
+	item := &emulator.DownloadItem{
+		ID:       downloadID,
+		Type:     emulator.DownloadTypeSDK,
+		Name:     req.Name,
+		URL:      req.URL,
+		DestPath: destPath,
+		SHA256:   req.SHA256,
+	}
+
+	download := DownloadMgr.StartDownload(item)
+
+	writeJSON(w, map[string]interface{}{
+		"id":       download.ID,
+		"status":   download.Status,
+		"progress": download.Progress,
+	})
+}
+
+// handleEmulatorSDKUse selects a detected SDK path for use.
+func (s *Server) handleEmulatorSDKUse(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeAPIError(w, http.StatusMethodNotAllowed, "POST required")
+		return
+	}
+	defer r.Body.Close()
+
+	var req struct {
+		SDKPath string `json:"sdkPath"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if req.SDKPath == "" {
+		writeAPIError(w, http.StatusBadRequest, "sdkPath is required")
+		return
+	}
+
+	// Verify the path exists and contains emulator
+	emulatorPath := filepath.Join(req.SDKPath, "emulator", "emulator")
+	if runtime.GOOS == "windows" {
+		emulatorPath += ".exe"
+	}
+	if _, err := os.Stat(emulatorPath); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid SDK path: emulator not found")
+		return
+	}
+
+	// Re-detect engine with this path
+	engine, err := emulator.DetectEmulatorEngine(req.SDKPath, "")
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	// Update global state
+	EmulatorEngine = engine
+
+	writeJSON(w, map[string]interface{}{
+		"isValid":         engine.IsValid,
+		"emulatorPath":    engine.EmulatorPath,
+		"androidHome":     engine.AndroidHome,
+		"emulatorVersion": engine.EmulatorVersion,
+		"avdmanagerPath":  engine.AvdmanagerPath,
+		"sdkmanagerPath":  engine.SdkmanagerPath,
+		"javaPath":        engine.JavaPath,
+		"javaVersion":     engine.JavaVersion,
+		"toolchainReady":  engine.ToolchainReady,
+		"lastVerified":    engine.LastVerified,
+		"error":          engine.Error,
+	})
+}
+
 // handleEmulatorEngineValidate validates the given emulator path or Android home.
 func (s *Server) handleEmulatorEngineValidate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
