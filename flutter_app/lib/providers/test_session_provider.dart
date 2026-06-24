@@ -27,6 +27,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:archive/archive_io.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
@@ -1011,16 +1012,7 @@ class TestSessionProvider extends ChangeNotifier {
     await _exporter.writeReport(session, db: _db);
     final base = await _attachments.artifactsDir(id);
     final destination = targetPath ?? '${base.path}.zip';
-    final result = await Process.run(
-      'zip',
-      ['-r', destination, '.'],
-      workingDirectory: base.path,
-    );
-    if (result.exitCode != 0) {
-      throw Exception(result.stderr.toString().isEmpty
-          ? _t('exportFailed')
-          : result.stderr.toString());
-    }
+    await _zipArtifacts(base, destination);
     return destination;
   }
 
@@ -1067,17 +1059,7 @@ class TestSessionProvider extends ChangeNotifier {
     final targetPath = location.path;
     await _exporter.writeReport(session, db: _db);
     final base = await _attachments.artifactsDir(id);
-
-    final result = await Process.run(
-      'zip',
-      ['-r', targetPath, '.'],
-      workingDirectory: base.path,
-    );
-    if (result.exitCode != 0) {
-      throw Exception(result.stderr.toString().isEmpty
-          ? _t('exportFailed')
-          : result.stderr.toString());
-    }
+    await _zipArtifacts(base, targetPath);
     return targetPath;
   }
 
@@ -1105,6 +1087,23 @@ class TestSessionProvider extends ChangeNotifier {
         .replaceAll(RegExp(r'[<>:"/\\|?*]'), '_')
         .replaceAll(RegExp(r'\s+'), '_')
         .trim();
+  }
+
+  /// Bundle the session's artifact directory into a ZIP at [destination].
+  ///
+  /// Uses the `archive` package so we don't depend on the system `zip` CLI
+  /// (which isn't shipped with Windows by default). UTF-8 filenames are
+  /// preserved, including CJK characters that the system `zip` corrupts
+  /// on Windows because it defaults to CP437 entry names.
+  Future<void> _zipArtifacts(Directory base, String destination) async {
+    try {
+      final encoder = ZipFileEncoder();
+      encoder.create(destination);
+      encoder.addDirectory(base, includeDirName: false);
+      encoder.close();
+    } catch (e) {
+      throw Exception(_t('exportFailed'));
+    }
   }
 
   // ===== Internals ========================================================

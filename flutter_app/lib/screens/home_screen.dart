@@ -363,14 +363,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         RecordingOverlay(
           db: context.read<AppDatabase>(),
           sessionProvider: context.read<TestSessionProvider>(),
-          onNavigateToSession: _navigateToSession,
+          onNavigateToRecord: _navigateToRecord,
         ),
       ],
     );
   }
 
-  void _navigateToSession(String serial) {
-    _navigateTo(serial, NavItem.session);
+  void _navigateToRecord(String serial, NavItem item) {
+    _navigateTo(serial, item);
   }
 
   Widget _buildWelcome() {
