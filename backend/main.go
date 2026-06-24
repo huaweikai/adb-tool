@@ -35,6 +35,15 @@ func main() {
 	}
 	fmt.Printf("[2/3] Starting HTTP server on %s...\n", listenAddr)
 	srv := server.New(adbPath, webFS, clipboardHelperApk, scrcpyEmbedFS)
+	
+	// Initialize emulator components (auto-detect SDK)
+	fmt.Println("[+] Initializing Android emulator support...")
+	if err := srv.InitEmulator("", "", "", ""); err != nil {
+		log.Printf("Warning: Failed to initialize emulator: %v", err)
+	} else {
+		fmt.Println("       Emulator support ready")
+	}
+	
 	shutdownCh := make(chan struct{})
 	var shutdownOnce sync.Once
 	requestShutdown := func() {

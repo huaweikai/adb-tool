@@ -24,6 +24,7 @@ import 'test_session/test_session_hub_screen.dart';
 import 'test_config_screen.dart';
 import '../widgets/wireless_adb_dialog.dart';
 import 'screen_mirror_screen.dart';
+import 'emulator_settings_screen.dart';
 
 enum NavItem {
   status,
@@ -57,6 +58,7 @@ class _NavConfig {
 
 const _backendLogKey = '_backend_logs';
 const _testConfigKey = '_test_config';
+const _emulatorKey = '_emulator_settings';
 
 class _CachedScreen extends StatelessWidget {
   final String? serial;
@@ -217,7 +219,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     int removed = 0;
     for (final k in keys) {
       if (removed >= toRemove) break;
-      if (k == _activeKey || k == _backendLogKey) continue;
+      if (k == _activeKey || k == _backendLogKey || k == _emulatorKey) continue;
       _screens.remove(k);
       removed++;
     }
@@ -243,6 +245,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     setState(() => _activeKey = _testConfigKey);
   }
 
+  void _openEmulatorSettings() {
+    if (!_screens.containsKey(_emulatorKey)) {
+      _screens[_emulatorKey] = _CachedScreen(
+        serial: null,
+        child: const EmulatorSettingsScreen(),
+      );
+    }
+    setState(() => _activeKey = _emulatorKey);
+  }
+
   /// Restore the active page from saved _activeKey
   void _restoreActivePage(List<SavedDevice> savedDevices) {
     if (_activeKey == null) return;
@@ -254,6 +266,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
     if (_activeKey == _testConfigKey) {
       _openTestConfig();
+      return;
+    }
+    if (_activeKey == _emulatorKey) {
+      _openEmulatorSettings();
       return;
     }
 
@@ -444,6 +460,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             label: tr('testConfigCenter'),
             badge: tr('config'),
             onTap: _openTestConfig,
+          ),
+          _buildGlobalEntry(
+            theme,
+            keyName: _emulatorKey,
+            icon: Icons.smartphone,
+            label: '模拟器',
+            badge: 'Android',
+            onTap: _openEmulatorSettings,
           ),
           _buildGlobalEntry(
             theme,
