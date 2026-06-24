@@ -12,6 +12,7 @@ import (
 
 // Engine represents the Android SDK emulator engine configuration.
 type Engine struct {
+	SDKPath         string `json:"sdkPath"`
 	AndroidHome    string `json:"androidHome"`
 	EmulatorPath   string `json:"emulatorPath"`
 	AvdmanagerPath string `json:"avdmanagerPath"`
@@ -25,37 +26,57 @@ type Engine struct {
 	Error          string `json:"error,omitempty"`
 }
 
+// DefaultSDKPath returns the default SDK path in .adb-tool.
+func DefaultSDKPath() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".adb-tool", "sdk")
+}
+
 // DetectEmulatorEngine attempts to find the Android SDK emulator on the system.
-// It checks common locations and validates the emulator binary.
+// Priority: 1) ~/.adb-tool/sdk, 2) ANDROID_HOME env, 3) common locations.
 func DetectEmulatorEngine(androidHome, emulatorPath string) (*Engine, error) {
-	engine := &Engine{
-		AndroidHome:  androidHome,
-		EmulatorPath: emulatorPath,
+	engine := &Engine{}
+
+	// Priority 1: Check our managed SDK path
+	managedSDK := DefaultSDKPath()
+	if _, err := os.Stat(filepath.Join(managedSDK, "emulator", "emulator")); err == nil {
+		engine.SDKPath = managedSDK
+		engine.AndroidHome = managedSDK
 	}
 
-	// If androidHome is provided, derive emulator path
+	// Priority 2: Use provided androidHome
 	if androidHome != "" {
 		engine.AndroidHome = androidHome
-		if emulatorPath == "" {
-			emulatorPath = filepath.Join(androidHome, "emulator", "emulator")
-			if runtime.GOOS == "windows" {
-				emulatorPath += ".exe"
+		if _, err := os.Stat(filepath.Join(androidHome, "emulator")); err == nil {
+			if engine.SDKPath == "" {
+				engine.SDKPath = androidHome
 			}
+		}
+	}
+
+	// Priority 3: Check environment variables
+	if engine.AndroidHome == "" {
+		if androidHome := os.Getenv("ANDROID_HOME"); androidHome != "" {
+			engine.AndroidHome = androidHome
+		} else if androidSdkRoot := os.Getenv("ANDROID_SDK_ROOT"); androidSdkRoot != "" {
+			engine.AndroidHome = androidSdkRoot
+		}
+	}
+
+	// Find emulator binary
+	if emulatorPath != "" {
+		engine.EmulatorPath = emulatorPath
+	} else if engine.AndroidHome != "" {
+		emulatorPath := filepath.Join(engine.AndroidHome, "emulator", "emulator")
+		if runtime.GOOS == "windows" {
+			emulatorPath += ".exe"
+		}
+		if _, err := os.Stat(emulatorPath); err == nil {
 			engine.EmulatorPath = emulatorPath
 		}
 	}
 
-	// If emulatorPath is provided directly, use it
-	if emulatorPath != "" && engine.AndroidHome == "" {
-		// Try to derive AndroidHome from emulator path
-		emulatorDir := filepath.Dir(emulatorPath)
-		if parent := filepath.Dir(emulatorDir); filepath.Base(emulatorDir) == "emulator" {
-			engine.AndroidHome = parent
-		}
-		engine.EmulatorPath = emulatorPath
-	}
-
-	// Try to detect if no path provided
+	// Auto-detect if still not found
 	if engine.EmulatorPath == "" {
 		candidates := getEmulatorCandidates()
 		for _, candidate := range candidates {
@@ -92,37 +113,32 @@ func getEmulatorCandidates() []string {
 		return candidates
 	}
 
+	// Our managed SDK first
+	candidates = append(candidates, filepath.Join(home, ".adb-tool", "sdk", "emulator", "emulator"))
+
 	switch runtime.GOOS {
 	case "darwin":
-		candidates = []string{
+		candidates = append(candidates,
 			filepath.Join(home, "Library", "Android", "sdk", "emulator", "emulator"),
 			"/usr/local/share/android-sdk/emulator/emulator",
-		}
+		)
 	case "windows":
-		candidates = []string{
+		candidates = append(candidates,
 			filepath.Join(home, "AppData", "Local", "Android", "Sdk", "emulator", "emulator.exe"),
-		}
+		)
 	case "linux":
-		candidates = []string{
+		candidates = append(candidates,
 			filepath.Join(home, "Android", "Sdk", "emulator", "emulator"),
 			"/opt/android-sdk/emulator/emulator",
-		}
+		)
 	}
 
-	// Also check environment variables
+	// Environment variables
 	if androidHome := os.Getenv("ANDROID_HOME"); androidHome != "" {
-		emulatorPath := filepath.Join(androidHome, "emulator", "emulator")
-		if runtime.GOOS == "windows" {
-			emulatorPath += ".exe"
-		}
-		candidates = append([]string{emulatorPath}, candidates...)
+		candidates = append([]string{filepath.Join(androidHome, "emulator", "emulator")}, candidates...)
 	}
 	if androidSdkRoot := os.Getenv("ANDROID_SDK_ROOT"); androidSdkRoot != "" {
-		emulatorPath := filepath.Join(androidSdkRoot, "emulator", "emulator")
-		if runtime.GOOS == "windows" {
-			emulatorPath += ".exe"
-		}
-		candidates = append([]string{emulatorPath}, candidates...)
+		candidates = append([]string{filepath.Join(androidSdkRoot, "emulator", "emulator")}, candidates...)
 	}
 
 	return candidates
@@ -157,7 +173,6 @@ func parseEmulatorVersion(output string) string {
 	lines := strings.Split(output, "\n")
 	for _, line := range lines {
 		if strings.Contains(line, "Android emulator version") {
-			// Extract version number
 			parts := strings.Split(line, "version")
 			if len(parts) >= 2 {
 				version := strings.TrimSpace(parts[1])
@@ -166,7 +181,6 @@ func parseEmulatorVersion(output string) string {
 			}
 		}
 	}
-	// Fallback: return first line
 	if len(lines) > 0 {
 		return strings.TrimSpace(lines[0])
 	}
@@ -175,31 +189,35 @@ func parseEmulatorVersion(output string) string {
 
 // detectToolchain checks for avdmanager and sdkmanager availability.
 func detectToolchain(engine *Engine) {
-	if engine.AndroidHome == "" {
+	sdkPath := engine.AndroidHome
+	if sdkPath == "" {
+		sdkPath = engine.SDKPath
+	}
+	if sdkPath == "" {
 		return
 	}
 
-	// Check cmdline-tools first (modern SDK structure)
-	cmdlineToolsLatest := filepath.Join(engine.AndroidHome, "cmdline-tools", "latest", "bin")
+	// Check cmdline-tools first
+	cmdlineToolsLatest := filepath.Join(sdkPath, "cmdline-tools", "latest", "bin")
 	engine.AvdmanagerPath = findBinary(filepath.Join(cmdlineToolsLatest, "avdmanager"))
 	engine.SdkmanagerPath = findBinary(filepath.Join(cmdlineToolsLatest, "sdkmanager"))
 
-	// Check older tools/bin as fallback
+	// Fallback to older tools/bin
 	if engine.AvdmanagerPath == "" {
-		toolsBin := filepath.Join(engine.AndroidHome, "tools", "bin")
+		toolsBin := filepath.Join(sdkPath, "tools", "bin")
 		if path := findBinary(filepath.Join(toolsBin, "avdmanager")); path != "" {
 			engine.AvdmanagerPath = path
 		}
 	}
 	if engine.SdkmanagerPath == "" {
-		toolsBin := filepath.Join(engine.AndroidHome, "tools", "bin")
+		toolsBin := filepath.Join(sdkPath, "tools", "bin")
 		if path := findBinary(filepath.Join(toolsBin, "sdkmanager")); path != "" {
 			engine.SdkmanagerPath = path
 		}
 	}
 
 	// Check Java
-	detectJava(engine)
+	detectJava(engine, sdkPath)
 
 	// Toolchain is ready if we have both avdmanager and Java
 	engine.ToolchainReady = engine.AvdmanagerPath != "" && engine.JavaPath != ""
@@ -219,7 +237,7 @@ func findBinary(path string) string {
 }
 
 // detectJava attempts to find a suitable Java installation.
-func detectJava(engine *Engine) {
+func detectJava(engine *Engine, sdkPath string) {
 	javaCandidates := []string{}
 
 	// Check JAVA_HOME
@@ -228,12 +246,17 @@ func detectJava(engine *Engine) {
 	}
 
 	// Check Android SDK bundled Java runtime
-	if engine.AndroidHome != "" {
-		javaRuntime := filepath.Join(engine.AndroidHome, "jre", "bin", "java")
+	if sdkPath != "" {
+		javaRuntime := filepath.Join(sdkPath, "jre", "bin", "java")
 		javaCandidates = append(javaCandidates, javaRuntime)
-		javaRuntime = filepath.Join(engine.AndroidHome, "java-runtime", "bin", "java")
+		javaRuntime = filepath.Join(sdkPath, "java-runtime", "bin", "java")
 		javaCandidates = append(javaCandidates, javaRuntime)
 	}
+
+	// Check our managed Java runtime
+	home, _ := os.UserHomeDir()
+	managedJava := filepath.Join(home, ".adb-tool", "emulator", "java-runtime", "bin", "java")
+	javaCandidates = append(javaCandidates, managedJava)
 
 	// Check system PATH
 	javaCandidates = append(javaCandidates, "java")

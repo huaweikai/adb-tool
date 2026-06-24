@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"adb-tool/backend/internal/emulator"
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 )
 
@@ -19,12 +21,18 @@ var EmulatorEngine = &emulator.Engine{}
 // DownloadMgr handles emulator-related downloads.
 var DownloadMgr = emulator.NewDownloadManager()
 
+// SDKMgr handles Android SDK import and management.
+var SDKMgr = emulator.NewSDKManager()
+
 // handleEmulatorEngineStatus returns the current emulator engine status.
 func (s *Server) handleEmulatorEngineStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" {
 		writeAPIError(w, http.StatusMethodNotAllowed, "GET required")
 		return
 	}
+
+	// Refresh engine status
+	EmulatorEngine, _ = emulator.DetectEmulatorEngine("", "")
 
 	writeJSON(w, map[string]interface{}{
 		"isValid":         EmulatorEngine.IsValid,
@@ -38,6 +46,85 @@ func (s *Server) handleEmulatorEngineStatus(w http.ResponseWriter, r *http.Reque
 		"toolchainReady":  EmulatorEngine.ToolchainReady,
 		"lastVerified":    EmulatorEngine.LastVerified,
 		"error":           EmulatorEngine.Error,
+		"hasSDK":          SDKMgr.Exists(),
+		"sdkPath":         SDKMgr.GetSDKPath(),
+	})
+}
+
+// handleEmulatorSDKImport imports an Android SDK from a zip file.
+func (s *Server) handleEmulatorSDKImport(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeAPIError(w, http.StatusMethodNotAllowed, "POST required")
+		return
+	}
+
+	// Parse multipart form
+	if err := r.ParseMultipartForm(500 << 20); err != nil { // 500MB max
+		writeAPIError(w, http.StatusBadRequest, "failed to parse form: "+err.Error())
+		return
+	}
+
+	file, _, err := r.FormFile("sdk")
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "sdk file is required")
+		return
+	}
+	defer file.Close()
+
+	// Save to temp file
+	tmpPath := filepath.Join(os.TempDir(), "sdk-import-"+uuid.New().String()+".zip")
+	tmpFile, err := os.Create(tmpPath)
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "failed to create temp file")
+		return
+	}
+	defer os.Remove(tmpPath)
+	defer tmpFile.Close()
+
+	if _, err := io.Copy(tmpFile, file); err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "failed to save temp file")
+		return
+	}
+	tmpFile.Close()
+
+	// Extract SDK
+	if err := SDKMgr.ImportSDKFromZip(tmpPath); err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "failed to extract SDK: "+err.Error())
+		return
+	}
+
+	// Re-detect engine
+	EmulatorEngine, _ = emulator.DetectEmulatorEngine("", "")
+
+	// Get SDK size
+	size, _ := SDKMgr.GetSDKSize()
+
+	writeJSON(w, map[string]interface{}{
+		"success":       true,
+		"sdkPath":       SDKMgr.GetSDKPath(),
+		"emulatorPath":  EmulatorEngine.EmulatorPath,
+		"sizeBytes":     size,
+		"toolchainReady": EmulatorEngine.ToolchainReady,
+	})
+}
+
+// handleEmulatorSDKDelete deletes the imported SDK.
+func (s *Server) handleEmulatorSDKDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "DELETE" {
+		writeAPIError(w, http.StatusMethodNotAllowed, "DELETE required")
+		return
+	}
+
+	if err := SDKMgr.DeleteSDK(); err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "failed to delete SDK: "+err.Error())
+		return
+	}
+
+	// Re-detect engine
+	EmulatorEngine, _ = emulator.DetectEmulatorEngine("", "")
+
+	writeJSON(w, map[string]interface{}{
+		"success": true,
 	})
 }
 

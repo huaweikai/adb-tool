@@ -170,10 +170,12 @@ func (s *Server) Handler() http.Handler {
 	// Meta & diagnostics
 	mux.HandleFunc("/api/backend-logs", s.handleBackendLogs)
 
-	// Emulator engine
+	// Emulator engine & SDK
 	mux.HandleFunc("/api/emulator/engine/status", s.handleEmulatorEngineStatus)
 	mux.HandleFunc("/api/emulator/engine/validate", s.handleEmulatorEngineValidate)
 	mux.HandleFunc("/api/emulator/engine/config", s.handleEmulatorEngineConfig)
+	mux.HandleFunc("/api/emulator/sdk/import", s.handleEmulatorSDKImport)
+	mux.HandleFunc("/api/emulator/sdk/delete", s.handleEmulatorSDKDelete)
 
 	// Emulator Java runtime
 	mux.HandleFunc("/api/emulator/java/status", s.handleEmulatorJavaStatus)

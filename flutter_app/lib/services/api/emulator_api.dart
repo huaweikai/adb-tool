@@ -44,6 +44,7 @@ mixin EmulatorApi on ApiBase {
 
 class EmulatorEngineStatus {
   final bool isValid;
+  final String? sdkPath;
   final String? emulatorPath;
   final String? androidHome;
   final String? emulatorVersion;
@@ -54,9 +55,11 @@ class EmulatorEngineStatus {
   final bool toolchainReady;
   final String? error;
   final DateTime? lastVerified;
+  final bool hasSDK;
 
   const EmulatorEngineStatus({
     this.isValid = false,
+    this.sdkPath,
     this.emulatorPath,
     this.androidHome,
     this.emulatorVersion,
@@ -67,11 +70,13 @@ class EmulatorEngineStatus {
     this.toolchainReady = false,
     this.error,
     this.lastVerified,
+    this.hasSDK = false,
   });
 
   factory EmulatorEngineStatus.fromJson(Map<String, dynamic> json) {
     return EmulatorEngineStatus(
       isValid: json['isValid'] as bool? ?? false,
+      sdkPath: json['sdkPath'] as String?,
       emulatorPath: json['emulatorPath'] as String?,
       androidHome: json['androidHome'] as String?,
       emulatorVersion: json['emulatorVersion'] as String?,
@@ -84,6 +89,7 @@ class EmulatorEngineStatus {
       lastVerified: json['lastVerified'] != null
           ? DateTime.tryParse(json['lastVerified'] as String)
           : null,
+      hasSDK: json['hasSDK'] as bool? ?? false,
     );
   }
 }
