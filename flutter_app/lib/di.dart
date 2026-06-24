@@ -29,6 +29,9 @@ import 'providers/test_session_provider.dart';
 import 'providers/test_config_provider.dart';
 import 'providers/scrcpy_settings_provider.dart';
 import 'providers/clipboard_history_provider.dart';
+import 'providers/emulator_engine_provider.dart';
+import 'providers/emulator_java_provider.dart';
+import 'providers/emulator_image_provider.dart';
 import 'services/api_client.dart';
 import 'services/log_stream.dart';
 
@@ -84,6 +87,21 @@ Future<void> setupDependencies() async {
       deviceProvider: getIt<DeviceProvider>(),
     ),
   );
+
+  // EmulatorEngineProvider needs ApiClient
+  getIt.registerSingleton<EmulatorEngineProvider>(
+    EmulatorEngineProvider(api: getIt<ApiClient>()),
+  );
+
+  // EmulatorJavaProvider needs ApiClient
+  getIt.registerSingleton<EmulatorJavaProvider>(
+    EmulatorJavaProvider(api: getIt<ApiClient>()),
+  );
+
+  // EmulatorImageProvider needs ApiClient
+  getIt.registerSingleton<EmulatorImageProvider>(
+    EmulatorImageProvider(api: getIt<ApiClient>()),
+  );
 }
 
 /// Build the Provider list from registered singletons.
@@ -102,6 +120,9 @@ List<SingleChildWidget> get dependencyProviders => [
       ChangeNotifierProvider<ScrcpySettingsProvider>.value(value: getIt<ScrcpySettingsProvider>()),
       ChangeNotifierProvider<ClipboardHistoryProvider>.value(value: getIt<ClipboardHistoryProvider>()),
       ChangeNotifierProvider<TestSessionProvider>.value(value: getIt<TestSessionProvider>()),
+      ChangeNotifierProvider<EmulatorEngineProvider>.value(value: getIt<EmulatorEngineProvider>()),
+      ChangeNotifierProvider<EmulatorJavaProvider>.value(value: getIt<EmulatorJavaProvider>()),
+      ChangeNotifierProvider<EmulatorImageProvider>.value(value: getIt<EmulatorImageProvider>()),
     ];
 
 /// Dispose all singletons. Call only in integration tests.

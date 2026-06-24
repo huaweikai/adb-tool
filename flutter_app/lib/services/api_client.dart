@@ -31,6 +31,9 @@ import 'api/wireless_api.dart';
 import 'api/clipboard_api.dart';
 import 'api/adb_command_api.dart';
 import 'api/backend_log_api.dart';
+import 'api/emulator_api.dart';
+import 'api/emulator_java_api.dart';
+import 'api/emulator_image_api.dart';
 
 export 'api/device_api.dart' show DeviceApi;
 export 'api/file_api.dart' show FileApi;
@@ -42,6 +45,20 @@ export 'api/wireless_api.dart' show WirelessApi;
 export 'api/clipboard_api.dart' show ClipboardApi;
 export 'api/adb_command_api.dart' show AdbCommandApi;
 export 'api/backend_log_api.dart' show BackendLogApi;
+export 'api/emulator_api.dart' show EmulatorApi, EmulatorEngineStatus;
+export 'api/emulator_java_api.dart' show
+    EmulatorJavaApi,
+    JavaRuntimeStatus,
+    JavaRuntimeInfo,
+    JavaValidationResult,
+    JavaDownloadResult,
+    JavaDownloadProgress,
+    DownloadInfo;
+export 'api/emulator_image_api.dart' show
+    EmulatorImageApi,
+    SystemImage,
+    SystemImageStatus,
+    ImageDownloadResult;
 
 // ===== Public value types shared across domains =====
 
@@ -303,4 +320,7 @@ class ApiClient = ApiBase
         WirelessApi,
         ClipboardApi,
         AdbCommandApi,
-        BackendLogApi;
+        BackendLogApi,
+        EmulatorApi,
+        EmulatorJavaApi,
+        EmulatorImageApi;

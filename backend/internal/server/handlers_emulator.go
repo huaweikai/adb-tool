@@ -1,0 +1,619 @@
+package server
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"os"
+	"path/filepath"
+	"runtime"
+
+	"adb-tool/backend/internal/emulator"
+)
+
+// EmulatorEngine holds the current engine configuration state.
+var EmulatorEngine = &emulator.Engine{}
+
+// DownloadMgr handles emulator-related downloads.
+var DownloadMgr = emulator.NewDownloadManager()
+
+// handleEmulatorEngineStatus returns the current emulator engine status.
+func (s *Server) handleEmulatorEngineStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		writeAPIError(w, http.StatusMethodNotAllowed, "GET required")
+		return
+	}
+
+	writeJSON(w, map[string]interface{}{
+		"isValid":         EmulatorEngine.IsValid,
+		"emulatorPath":    EmulatorEngine.EmulatorPath,
+		"androidHome":     EmulatorEngine.AndroidHome,
+		"emulatorVersion": EmulatorEngine.EmulatorVersion,
+		"avdmanagerPath":  EmulatorEngine.AvdmanagerPath,
+		"sdkmanagerPath":  EmulatorEngine.SdkmanagerPath,
+		"javaPath":        EmulatorEngine.JavaPath,
+		"javaVersion":     EmulatorEngine.JavaVersion,
+		"toolchainReady":  EmulatorEngine.ToolchainReady,
+		"lastVerified":    EmulatorEngine.LastVerified,
+		"error":           EmulatorEngine.Error,
+	})
+}
+
+// handleEmulatorEngineValidate validates the given emulator path or Android home.
+func (s *Server) handleEmulatorEngineValidate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeAPIError(w, http.StatusMethodNotAllowed, "POST required")
+		return
+	}
+	defer r.Body.Close()
+
+	var req struct {
+		AndroidHome  string `json:"androidHome"`
+		EmulatorPath string `json:"emulatorPath"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	engine, err := emulator.DetectEmulatorEngine(req.AndroidHome, req.EmulatorPath)
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	// Update global state
+	EmulatorEngine = engine
+
+	writeJSON(w, map[string]interface{}{
+		"isValid":         engine.IsValid,
+		"emulatorPath":    engine.EmulatorPath,
+		"androidHome":     engine.AndroidHome,
+		"emulatorVersion": engine.EmulatorVersion,
+		"avdmanagerPath":  engine.AvdmanagerPath,
+		"sdkmanagerPath":  engine.SdkmanagerPath,
+		"javaPath":        engine.JavaPath,
+		"javaVersion":     engine.JavaVersion,
+		"toolchainReady":  engine.ToolchainReady,
+		"lastVerified":    engine.LastVerified,
+		"error":          engine.Error,
+	})
+}
+
+// handleEmulatorEngineConfig updates the emulator engine configuration.
+func (s *Server) handleEmulatorEngineConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "PUT" {
+		writeAPIError(w, http.StatusMethodNotAllowed, "PUT required")
+		return
+	}
+	defer r.Body.Close()
+
+	var req struct {
+		AndroidHome  string `json:"androidHome"`
+		EmulatorPath string `json:"emulatorPath"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	engine, err := emulator.DetectEmulatorEngine(req.AndroidHome, req.EmulatorPath)
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	// Update global state
+	EmulatorEngine = engine
+
+	writeJSON(w, map[string]interface{}{
+		"isValid":         engine.IsValid,
+		"emulatorPath":    engine.EmulatorPath,
+		"androidHome":     engine.AndroidHome,
+		"emulatorVersion": engine.EmulatorVersion,
+		"avdmanagerPath":  engine.AvdmanagerPath,
+		"sdkmanagerPath":  engine.SdkmanagerPath,
+		"javaPath":        engine.JavaPath,
+		"javaVersion":     engine.JavaVersion,
+		"toolchainReady":  engine.ToolchainReady,
+		"lastVerified":    engine.LastVerified,
+		"error":          engine.Error,
+	})
+}
+
+// handleEmulatorJavaStatus returns the current Java runtime status.
+func (s *Server) handleEmulatorJavaStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		writeAPIError(w, http.StatusMethodNotAllowed, "GET required")
+		return
+	}
+
+	// Detect current Java
+	java := emulator.DetectJavaRuntime(EmulatorEngine.AndroidHome)
+
+	// Get embedded runtimes
+	embedded := emulator.GetEmbeddedJavaRuntimes()
+
+	// Get Java downloads
+	downloads := DownloadMgr.ListDownloadsByType(emulator.DownloadTypeJava)
+
+	// Convert downloads to response format
+	downloadsResp := make([]map[string]interface{}, len(downloads))
+	for i, d := range downloads {
+		downloadsResp[i] = map[string]interface{}{
+			"id":        d.ID,
+			"status":    d.Status,
+			"progress":  d.Progress,
+			"downloaded": d.Downloaded,
+			"size":      d.Size,
+		}
+	}
+
+	response := map[string]interface{}{
+		"systemJava": java,
+		"embedded":   embedded,
+		"downloads":   downloadsResp,
+	}
+
+	if java != nil {
+		response["status"] = "found"
+		response["path"] = java.Path
+		response["version"] = java.Version
+	} else {
+		response["status"] = "not_found"
+	}
+
+	writeJSON(w, response)
+}
+
+// handleEmulatorJavaValidate validates a specific Java path.
+func (s *Server) handleEmulatorJavaValidate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeAPIError(w, http.StatusMethodNotAllowed, "POST required")
+		return
+	}
+	defer r.Body.Close()
+
+	var req struct {
+		JavaPath string `json:"javaPath"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if req.JavaPath == "" {
+		writeAPIError(w, http.StatusBadRequest, "javaPath is required")
+		return
+	}
+
+	// Test the Java path by running java -version
+	if _, err := os.Stat(req.JavaPath); err != nil {
+		writeJSON(w, map[string]interface{}{
+			"valid": false,
+			"error": "Java executable not found",
+		})
+		return
+	}
+
+	writeJSON(w, map[string]interface{}{
+		"valid":   true,
+		"path":    req.JavaPath,
+	})
+}
+
+// handleEmulatorJavaDownload starts a Java runtime download.
+func (s *Server) handleEmulatorJavaDownload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeAPIError(w, http.StatusMethodNotAllowed, "POST required")
+		return
+	}
+	defer r.Body.Close()
+
+	var req struct {
+		URL    string `json:"url"`
+		ID     string `json:"id"`
+		SHA256 string `json:"sha256"`
+		Name   string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if req.URL == "" || req.ID == "" {
+		writeAPIError(w, http.StatusBadRequest, "url and id are required")
+		return
+	}
+
+	// Build download item
+	home, err := os.UserHomeDir()
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "failed to get home directory")
+		return
+	}
+
+	platform := runtime.GOOS + "-" + runtime.GOARCH
+	downloadID := req.ID + "-" + platform
+	destPath := filepath.Join(home, ".adb-tool", "emulator", "java-runtime", downloadID, "download.zip")
+
+	item := &emulator.DownloadItem{
+		ID:       downloadID,
+		Type:     emulator.DownloadTypeJava,
+		Name:     req.Name,
+		URL:      req.URL,
+		DestPath: destPath,
+		SHA256:   req.SHA256,
+	}
+
+	download := DownloadMgr.StartDownload(item)
+
+	writeJSON(w, map[string]interface{}{
+		"id":       download.ID,
+		"status":   download.Status,
+		"progress": download.Progress,
+	})
+}
+
+// handleEmulatorDownloadProgress returns the progress of a download (unified).
+func (s *Server) handleEmulatorDownloadProgress(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		writeAPIError(w, http.StatusMethodNotAllowed, "GET required")
+		return
+	}
+
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		writeAPIError(w, http.StatusBadRequest, "id is required")
+		return
+	}
+
+	download := DownloadMgr.GetDownload(id)
+	if download == nil {
+		writeJSON(w, map[string]interface{}{
+			"id":       id,
+			"status":   "not_found",
+			"progress": 0,
+		})
+		return
+	}
+
+	writeJSON(w, map[string]interface{}{
+		"id":          download.ID,
+		"type":        download.Type,
+		"name":        download.Name,
+		"status":      download.Status,
+		"progress":    download.Progress,
+		"downloaded":  download.Downloaded,
+		"size":        download.Size,
+		"error":       download.Error,
+	})
+}
+
+// handleEmulatorDownloadCancel cancels a download (unified).
+func (s *Server) handleEmulatorDownloadCancel(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeAPIError(w, http.StatusMethodNotAllowed, "POST required")
+		return
+	}
+
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		writeAPIError(w, http.StatusBadRequest, "id is required")
+		return
+	}
+
+	DownloadMgr.CancelDownload(id)
+
+	writeJSON(w, map[string]interface{}{
+		"status": "cancelled",
+	})
+}
+
+// handleEmulatorDownloadPause pauses a download.
+func (s *Server) handleEmulatorDownloadPause(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeAPIError(w, http.StatusMethodNotAllowed, "POST required")
+		return
+	}
+
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		writeAPIError(w, http.StatusBadRequest, "id is required")
+		return
+	}
+
+	DownloadMgr.PauseDownload(id)
+
+	writeJSON(w, map[string]interface{}{
+		"status": "paused",
+	})
+}
+
+// handleEmulatorDownloadResume resumes a paused download.
+func (s *Server) handleEmulatorDownloadResume(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeAPIError(w, http.StatusMethodNotAllowed, "POST required")
+		return
+	}
+
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		writeAPIError(w, http.StatusBadRequest, "id is required")
+		return
+	}
+
+	DownloadMgr.ResumeDownload(id)
+
+	item := DownloadMgr.GetDownload(id)
+	if item != nil {
+		writeJSON(w, map[string]interface{}{
+			"id":       item.ID,
+			"status":   item.Status,
+			"progress": item.Progress,
+		})
+	} else {
+		writeJSON(w, map[string]interface{}{
+			"status": "not_found",
+		})
+	}
+}
+
+// handleEmulatorDownloads returns all downloads (unified).
+func (s *Server) handleEmulatorDownloads(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		writeAPIError(w, http.StatusMethodNotAllowed, "GET required")
+		return
+	}
+
+	downloadType := r.URL.Query().Get("type")
+	var downloads []*emulator.DownloadItem
+
+	if downloadType != "" {
+		downloads = DownloadMgr.ListDownloadsByType(emulator.DownloadType(downloadType))
+	} else {
+		downloads = DownloadMgr.ListDownloads()
+	}
+
+	result := make([]map[string]interface{}, len(downloads))
+	for i, d := range downloads {
+		result[i] = map[string]interface{}{
+			"id":        d.ID,
+			"type":      d.Type,
+			"name":      d.Name,
+			"status":    d.Status,
+			"progress":  d.Progress,
+			"downloaded": d.Downloaded,
+			"size":      d.Size,
+		}
+	}
+
+	writeJSON(w, map[string]interface{}{
+		"downloads": result,
+	})
+}
+
+// handleEmulatorImages returns the list of system images.
+func (s *Server) handleEmulatorImages(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		writeAPIError(w, http.StatusMethodNotAllowed, "GET required")
+		return
+	}
+
+	// Create image manager
+	imageMgr := emulator.NewImageManager(EmulatorEngine.AndroidHome)
+
+	// Get system images
+	images := imageMgr.ListImages()
+
+	// Get download status for each image
+	downloads := DownloadMgr.ListDownloadsByType(emulator.DownloadTypeImage)
+	downloadMap := make(map[string]*emulator.DownloadItem)
+	for _, d := range downloads {
+		downloadMap[d.ID] = d
+	}
+
+	// Build response
+	result := make([]map[string]interface{}, len(images))
+	for i, img := range images {
+		// Check if image has an active download
+		download := downloadMap[img.ID]
+		status := img.Status
+		progress := 0.0
+		if download != nil {
+			status = download.Status
+			progress = download.Progress
+		}
+
+		result[i] = map[string]interface{}{
+			"id":             img.ID,
+			"name":           img.Name,
+			"apiLevel":       img.APILevel,
+			"androidVersion": img.AndroidVersion,
+			"arch":           img.Arch,
+			"variant":        img.Variant,
+			"localPath":      img.LocalPath,
+			"files":          img.Files,
+			"fileSize":       img.FileSize,
+			"status":         status,
+			"progress":       progress,
+		}
+	}
+
+	writeJSON(w, map[string]interface{}{
+		"images": result,
+	})
+}
+
+// handleEmulatorImageGet returns a specific system image.
+func (s *Server) handleEmulatorImageGet(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		writeAPIError(w, http.StatusMethodNotAllowed, "GET required")
+		return
+	}
+
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		writeAPIError(w, http.StatusBadRequest, "id is required")
+		return
+	}
+
+	imageMgr := emulator.NewImageManager(EmulatorEngine.AndroidHome)
+	image := imageMgr.GetImage(id)
+
+	if image == nil {
+		writeAPIError(w, http.StatusNotFound, "image not found")
+		return
+	}
+
+	// Check download status
+	download := DownloadMgr.GetDownload(id)
+	status := image.Status
+	progress := 0.0
+	if download != nil {
+		status = download.Status
+		progress = download.Progress
+	}
+
+	writeJSON(w, map[string]interface{}{
+		"id":             image.ID,
+		"name":           image.Name,
+		"apiLevel":       image.APILevel,
+		"androidVersion": image.AndroidVersion,
+		"arch":           image.Arch,
+		"variant":        image.Variant,
+		"localPath":      image.LocalPath,
+		"files":          image.Files,
+		"fileSize":       image.FileSize,
+		"status":         status,
+		"progress":       progress,
+	})
+}
+
+// handleEmulatorImageAdd adds a new system image for download.
+func (s *Server) handleEmulatorImageAdd(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeAPIError(w, http.StatusMethodNotAllowed, "POST required")
+		return
+	}
+	defer r.Body.Close()
+
+	var req struct {
+		URL    string `json:"url"`
+		ID     string `json:"id"`
+		Name   string `json:"name"`
+		SHA256 string `json:"sha256"`
+		APILevel int `json:"apiLevel"`
+		Arch   string `json:"arch"`
+		Variant string `json:"variant"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if req.URL == "" {
+		writeAPIError(w, http.StatusBadRequest, "url is required")
+		return
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "failed to get home directory")
+		return
+	}
+
+	// Build download ID
+	downloadID := fmt.Sprintf("image-%s-%s-%s", req.ID, req.Arch, req.Variant)
+	destPath := filepath.Join(home, ".adb-tool", "emulator", "system-images", downloadID, "download.zip")
+
+	item := &emulator.DownloadItem{
+		ID:       downloadID,
+		Type:     emulator.DownloadTypeImage,
+		Name:     req.Name,
+		URL:      req.URL,
+		DestPath: destPath,
+		SHA256:   req.SHA256,
+	}
+
+	download := DownloadMgr.StartDownload(item)
+
+	writeJSON(w, map[string]interface{}{
+		"id":       download.ID,
+		"status":   download.Status,
+		"progress": download.Progress,
+	})
+}
+
+// handleEmulatorInstances returns the list of emulator instances.
+func (s *Server) handleEmulatorInstances(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		writeAPIError(w, http.StatusMethodNotAllowed, "GET required")
+		return
+	}
+
+	// TODO: Implement instance listing
+	writeJSON(w, map[string]interface{}{
+		"instances": []interface{}{},
+	})
+}
+
+// handleEmulatorInstanceCreate creates a new emulator instance.
+func (s *Server) handleEmulatorInstanceCreate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeAPIError(w, http.StatusMethodNotAllowed, "POST required")
+		return
+	}
+	defer r.Body.Close()
+
+	var req struct {
+		ImageID string `json:"imageId"`
+		Name    string `json:"name"`
+		Cores   int    `json:"cores"`
+		Memory  int    `json:"memoryMb"`
+		Width   int    `json:"width"`
+		Height  int    `json:"height"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if req.ImageID == "" || req.Name == "" {
+		writeAPIError(w, http.StatusBadRequest, "imageId and name are required")
+		return
+	}
+
+	// TODO: Implement instance creation using avdmanager
+	writeJSON(w, map[string]interface{}{
+		"id":     "placeholder",
+		"status": "created",
+		"name":   req.Name,
+	})
+}
+
+// handleEmulatorInstanceStart starts an emulator instance.
+func (s *Server) handleEmulatorInstanceStart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeAPIError(w, http.StatusMethodNotAllowed, "POST required")
+		return
+	}
+
+	// TODO: Implement instance start
+	writeJSON(w, map[string]interface{}{
+		"status": "started",
+	})
+}
+
+// handleEmulatorInstanceStop stops an emulator instance.
+func (s *Server) handleEmulatorInstanceStop(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeAPIError(w, http.StatusMethodNotAllowed, "POST required")
+		return
+	}
+
+	// TODO: Implement instance stop
+	writeJSON(w, map[string]interface{}{
+		"status": "stopped",
+	})
+}

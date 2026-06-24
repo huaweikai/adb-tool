@@ -72,6 +72,7 @@ func (s *Server) Close() {
 //   - handlers_wireless.go  /api/adb-wireless-{pair,connect,disconnect,scan}
 //   - handlers_clipboard.go /api/clipboard-{check,install,send,uninstall}
 //   - handlers_meta.go      /api/backend-logs, /api/identify, /api/shutdown, /api/adb-exec
+//   - handlers_emulator.go  /api/emulator/engine/{status,validate,config}
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
@@ -131,6 +132,35 @@ func (s *Server) Handler() http.Handler {
 
 	// Meta & diagnostics
 	mux.HandleFunc("/api/backend-logs", s.handleBackendLogs)
+
+	// Emulator engine
+	mux.HandleFunc("/api/emulator/engine/status", s.handleEmulatorEngineStatus)
+	mux.HandleFunc("/api/emulator/engine/validate", s.handleEmulatorEngineValidate)
+	mux.HandleFunc("/api/emulator/engine/config", s.handleEmulatorEngineConfig)
+
+	// Emulator Java runtime
+	mux.HandleFunc("/api/emulator/java/status", s.handleEmulatorJavaStatus)
+	mux.HandleFunc("/api/emulator/java/validate", s.handleEmulatorJavaValidate)
+	mux.HandleFunc("/api/emulator/java/download", s.handleEmulatorJavaDownload)
+
+	// Unified download API (replaces Java-specific and image-specific download APIs)
+	mux.HandleFunc("/api/emulator/downloads", s.handleEmulatorDownloads)
+	mux.HandleFunc("/api/emulator/download/progress", s.handleEmulatorDownloadProgress)
+	mux.HandleFunc("/api/emulator/download/cancel", s.handleEmulatorDownloadCancel)
+	mux.HandleFunc("/api/emulator/download/pause", s.handleEmulatorDownloadPause)
+	mux.HandleFunc("/api/emulator/download/resume", s.handleEmulatorDownloadResume)
+
+	// Emulator system images
+	mux.HandleFunc("/api/emulator/images", s.handleEmulatorImages)
+	mux.HandleFunc("/api/emulator/image/get", s.handleEmulatorImageGet)
+	mux.HandleFunc("/api/emulator/image/add", s.handleEmulatorImageAdd)
+
+	// Emulator instances
+	mux.HandleFunc("/api/emulator/instances", s.handleEmulatorInstances)
+	mux.HandleFunc("/api/emulator/instance/create", s.handleEmulatorInstanceCreate)
+	mux.HandleFunc("/api/emulator/instance/start", s.handleEmulatorInstanceStart)
+	mux.HandleFunc("/api/emulator/instance/stop", s.handleEmulatorInstanceStop)
+
 	mux.HandleFunc("/api/identify", s.handleIdentify)
 	mux.HandleFunc("/api/shutdown", s.handleShutdown)
 	mux.HandleFunc("/api/adb-exec", s.handleAdbExec)
