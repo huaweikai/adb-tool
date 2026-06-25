@@ -73,21 +73,32 @@ class ServerLauncher {
     await _releaseOurBackendPort(serverPort);
     final path = await findServerBinary();
 
+    // 获取后端所在目录
+    final backendDir = File(path).parent.path;
+
+    // 基础环境变量
     final env = Map<String, String>.from(Platform.environment);
     env['ADB_TOOL_PARENT_PID'] = pid.toString();
-    if (Platform.isWindows) {
+
+    if (Platform.isMacOS || Platform.isLinux) {
+      // 重要：必须先从 shell 配置加载环境变量！
+      // GUI 应用（如 Flutter App）启动的子进程不会自动获取 shell 配置的环境变量
+      // 这会导致 ANDROID_HOME、JAVA_HOME 等变量丢失，影响 SDK 扫描功能
+      // 详见 _loadShellEnvironment() 的文档注释
+      final shellEnv = await _loadShellEnvironment();
+      env.addAll(shellEnv);
+    } else if (Platform.isWindows) {
       env['PATH'] =
           '${Platform.environment['SystemRoot'] ?? 'C:\\Windows'}\\System32;${env['PATH'] ?? ''}';
-    } else {
-      env['PATH'] =
-          '/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:${env['PATH'] ?? ''}';
     }
 
+    // 直接启动后端（环境变量已经包含了 shell 配置中的内容）
     _process = await Process.start(
       path,
       [],
       environment: env,
       mode: ProcessStartMode.normal,
+      workingDirectory: backendDir,
     );
 
     _process!.stdout.listen((data) {
@@ -104,6 +115,90 @@ class ServerLauncher {
     }));
 
     return true;
+  }
+
+  /// 从 shell 配置文件中加载环境变量（ANDROID_HOME 等）
+  ///
+  /// 为什么需要这个：
+  /// - Flutter App 是 GUI 程序，启动子进程时不会自动继承 shell 配置的环境变量
+  /// - ANDROID_HOME、JAVA_HOME 等通常在 ~/.zshrc、~/.zprofile 中设置
+  /// - 直接启动的后端进程无法获取这些环境变量，导致 SDK 扫描失败
+  ///
+  /// 注意：
+  /// - 必须使用 r''' raw string 来避免 Dart 的 $ 变量插值
+  /// - shell 命令中的 $ANDROID_HOME 应该在 zsh/bash 中展开，而不是 Dart
+  Future<Map<String, String>> _loadShellEnvironment() async {
+    if (Platform.isMacOS) {
+      // macOS: 使用 zsh 交互模式加载配置文件
+      try {
+        final result = await Process.run(
+          '/bin/zsh',
+          ['-i', '-c', r'''
+            source ~/.zshrc 2>/dev/null
+            source ~/.zprofile 2>/dev/null
+            source ~/.zshenv 2>/dev/null
+            echo "ANDROID_HOME=$ANDROID_HOME"
+            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+            echo "JAVA_HOME=$JAVA_HOME"
+            echo "PATH=$PATH"
+          '''],
+          environment: Platform.environment,
+        );
+
+        final output = result.stdout.toString();
+        final shellEnv = <String, String>{};
+
+        for (final line in output.split('\n')) {
+          if (line.startsWith('ANDROID_HOME=')) {
+            shellEnv['ANDROID_HOME'] = line.substring('ANDROID_HOME='.length);
+          } else if (line.startsWith('ANDROID_SDK_ROOT=')) {
+            shellEnv['ANDROID_SDK_ROOT'] = line.substring('ANDROID_SDK_ROOT='.length);
+          } else if (line.startsWith('JAVA_HOME=')) {
+            shellEnv['JAVA_HOME'] = line.substring('JAVA_HOME='.length);
+          } else if (line.startsWith('PATH=')) {
+            shellEnv['PATH'] = line.substring('PATH='.length);
+          }
+        }
+
+        return shellEnv;
+      } catch (e) {
+        stderr.writeln('Failed to load shell environment: $e');
+        return {};
+      }
+    } else if (Platform.isLinux) {
+      // Linux: 使用 bash
+      try {
+        final shell = File('/bin/bash').existsSync() ? '/bin/bash' : '/bin/sh';
+        final result = await Process.run(
+          shell,
+          ['-l', '-c', r'''
+            source ~/.bashrc 2>/dev/null
+            source ~/.bash_profile 2>/dev/null
+            source ~/.profile 2>/dev/null
+            echo "ANDROID_HOME=$ANDROID_HOME"
+            echo "PATH=$PATH"
+          '''],
+          environment: Platform.environment,
+        );
+
+        final output = result.stdout.toString();
+        final shellEnv = <String, String>{};
+
+        for (final line in output.split('\n')) {
+          if (line.startsWith('ANDROID_HOME=')) {
+            shellEnv['ANDROID_HOME'] = line.substring('ANDROID_HOME='.length);
+          } else if (line.startsWith('PATH=')) {
+            shellEnv['PATH'] = line.substring('PATH='.length);
+          }
+        }
+
+        return shellEnv;
+      } catch (e) {
+        stderr.writeln('Failed to load shell environment: $e');
+        return {};
+      }
+    }
+    return {};
   }
 
   Future<void> stop() {

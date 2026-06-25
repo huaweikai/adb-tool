@@ -13,17 +13,17 @@ import (
 // Engine represents the Android SDK emulator engine configuration.
 type Engine struct {
 	SDKPath         string `json:"sdkPath"`
-	AndroidHome    string `json:"androidHome"`
-	EmulatorPath   string `json:"emulatorPath"`
-	AvdmanagerPath string `json:"avdmanagerPath"`
-	SdkmanagerPath string `json:"sdkmanagerPath"`
-	JavaPath       string `json:"javaPath"`
-	JavaVersion    string `json:"javaVersion"`
+	AndroidHome     string `json:"androidHome"`
+	EmulatorPath    string `json:"emulatorPath"`
+	AvdmanagerPath  string `json:"avdmanagerPath"`
+	SdkmanagerPath  string `json:"sdkmanagerPath"`
+	JavaPath        string `json:"javaPath"`
+	JavaVersion     string `json:"javaVersion"`
 	EmulatorVersion string `json:"emulatorVersion"`
-	IsValid        bool   `json:"isValid"`
-	ToolchainReady bool   `json:"toolchainReady"`
-	LastVerified   string `json:"lastVerified,omitempty"`
-	Error          string `json:"error,omitempty"`
+	IsValid         bool   `json:"isValid"`
+	ToolchainReady  bool   `json:"toolchainReady"`
+	LastVerified    string `json:"lastVerified,omitempty"`
+	Error           string `json:"error,omitempty"`
 }
 
 // DefaultSDKPath returns the default SDK path in .adb-tool.
@@ -359,9 +359,19 @@ func getSDKCandidates() []string {
 }
 
 // checkSDKPath checks if a path contains a valid Android SDK.
+// It returns the info even if the SDK is partial (e.g., missing emulator)
+// or inaccessible (returns with all components false but still listed).
 func checkSDKPath(path string) *SDKInfo {
 	info, err := os.Stat(path)
-	if err != nil || !info.IsDir() {
+	if err != nil {
+		// Path doesn't exist or is inaccessible - still return it with all false
+		// This allows ANDROID_HOME to be shown even if we can't access contents
+		return &SDKInfo{
+			Path: path,
+			Name: filepath.Base(path),
+		}
+	}
+	if !info.IsDir() {
 		return nil
 	}
 
@@ -370,7 +380,7 @@ func checkSDKPath(path string) *SDKInfo {
 		Name: filepath.Base(path),
 	}
 
-	// Check emulator
+	// Check emulator (optional component)
 	emulatorPath := filepath.Join(path, "emulator", "emulator")
 	if runtime.GOOS == "windows" {
 		emulatorPath += ".exe"
@@ -384,7 +394,7 @@ func checkSDKPath(path string) *SDKInfo {
 		}
 	}
 
-	// Check avdmanager
+	// Check avdmanager (optional component)
 	avdPath := filepath.Join(path, "cmdline-tools", "latest", "bin", "avdmanager")
 	if runtime.GOOS == "windows" {
 		avdPath += ".bat"
@@ -393,10 +403,22 @@ func checkSDKPath(path string) *SDKInfo {
 		result.HasAvdmanager = true
 	}
 
-	// Check Java in SDK
+	// Also check older cmdline-tools location
+	if !result.HasAvdmanager {
+		oldAvdPath := filepath.Join(path, "tools", "bin", "avdmanager")
+		if runtime.GOOS == "windows" {
+			oldAvdPath += ".bat"
+		}
+		if _, err := os.Stat(oldAvdPath); err == nil {
+			result.HasAvdmanager = true
+		}
+	}
+
+	// Check Java in SDK (optional component)
 	javaPaths := []string{
 		filepath.Join(path, "jre", "bin", "java"),
 		filepath.Join(path, "jdk", "bin", "java"),
+		filepath.Join(path, "java-runtime", "bin", "java"),
 	}
 	for _, javaPath := range javaPaths {
 		if runtime.GOOS == "windows" {

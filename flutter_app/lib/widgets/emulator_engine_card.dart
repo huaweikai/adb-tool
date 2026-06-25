@@ -4,11 +4,26 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:file_selector/file_selector.dart';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../providers/emulator_engine_provider.dart';
 import '../services/api_client.dart';
+
+class _LogEntry {
+  final DateTime time;
+  final String operation;
+  final String message;
+  final bool isError;
+
+  _LogEntry({
+    required this.time,
+    required this.operation,
+    required this.message,
+    this.isError = false,
+  });
+}
 
 class EmulatorEngineCard extends StatefulWidget {
   const EmulatorEngineCard({super.key});
@@ -22,10 +37,37 @@ class _EmulatorEngineCardState extends State<EmulatorEngineCard> {
   bool _isDetecting = false;
   Timer? _downloadPoller;
 
-  // 展开/折叠状态
-  bool _scanExpanded = false;
-  bool _downloadExpanded = false;
-  bool _importExpanded = false;
+  // 当前选中的 Tab
+  int _selectedTab = 0; // 0=扫描检测, 1=选择路径, 2=下载 SDK, 3=导入压缩包
+  bool _debugExpanded = false;
+
+  // 调试日志
+  final List<_LogEntry> _logs = [];
+  final ScrollController _logScrollController = ScrollController();
+
+  void _addLog(String operation, String message, {bool isError = false}) {
+    final entry = _LogEntry(
+      time: DateTime.now(),
+      operation: operation,
+      message: message,
+      isError: isError,
+    );
+    setState(() {
+      _logs.insert(0, entry);
+      if (_logs.length > 100) {
+        _logs.removeLast();
+      }
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_logScrollController.hasClients) {
+        _logScrollController.animateTo(
+          0,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
 
   // 下载相关
   final _downloadUrlController = TextEditingController();
@@ -35,17 +77,21 @@ class _EmulatorEngineCardState extends State<EmulatorEngineCard> {
   // 导入相关
   final _importPathController = TextEditingController();
 
+  // 选择路径相关
+  final _customPathController = TextEditingController();
+
   @override
   void initState() {
     super.initState();
-    // 默认展开扫描检测
-    _scanExpanded = true;
+    // 默认选中扫描检测
+    _selectedTab = 0;
   }
 
   @override
   void dispose() {
     _downloadUrlController.dispose();
     _importPathController.dispose();
+    _customPathController.dispose();
     _downloadPoller?.cancel();
     super.dispose();
   }
@@ -54,8 +100,6 @@ class _EmulatorEngineCardState extends State<EmulatorEngineCard> {
   Widget build(BuildContext context) {
     final provider = context.watch<EmulatorEngineProvider>();
     final theme = Theme.of(context);
-    final status = provider.serverStatus;
-    final hasSDK = status?.androidHome?.isNotEmpty == true;
 
     return Card(
       child: Padding(
@@ -86,24 +130,23 @@ class _EmulatorEngineCardState extends State<EmulatorEngineCard> {
 
             const SizedBox(height: 12),
 
-            // 操作按钮栏
-            _buildActionBar(provider),
+            // Tab 切换栏
+            _buildTabBar(),
 
-            const Divider(height: 24),
+            const SizedBox(height: 16),
 
-            // 扫描检测区域
-            _buildScanSection(provider),
-
-            // 下载 SDK 区域
-            _buildDownloadSection(provider),
-
-            // 导入压缩包区域
-            _buildImportSection(provider),
+            // Tab 内容容器
+            _buildTabContent(provider),
 
             if (provider.errorMessage != null) ...[
               const SizedBox(height: 12),
               _buildErrorMessage(provider),
             ],
+
+            const Divider(height: 24),
+
+            // 调试日志区域
+            _buildDebugSection(),
           ],
         ),
       ),
@@ -179,8 +222,6 @@ class _EmulatorEngineCardState extends State<EmulatorEngineCard> {
             children: [
               if (status.emulatorVersion != null)
                 _infoChip(Icons.apps, 'Emulator ${status.emulatorVersion}'),
-              if (status.javaVersion != null)
-                _infoChip(Icons.coffee, status.javaVersion!.split('\n').first.trim()),
               if (status.avdmanagerPath != null)
                 _infoChip(Icons.settings, 'AVD Manager ✓'),
               if (status.sdkmanagerPath != null)
@@ -267,69 +308,137 @@ class _EmulatorEngineCardState extends State<EmulatorEngineCard> {
     );
   }
 
-  Widget _buildActionBar(EmulatorEngineProvider provider) {
+  Widget _buildTabBar() {
     return Row(
       children: [
-        OutlinedButton.icon(
-          onPressed: () => _detectSDKs(context),
-          icon: Icon(_isDetecting ? Icons.sync : Icons.search, size: 16),
-          label: Text(_isDetecting ? '扫描中...' : '扫描检测'),
+        _buildTabButton(
+          index: 0,
+          icon: Icons.search,
+          label: '扫描检测',
+          isLoading: _isDetecting,
         ),
         const SizedBox(width: 8),
-        OutlinedButton.icon(
-          onPressed: () => _showSelectPathDialog(context, provider),
-          icon: const Icon(Icons.folder_open, size: 16),
-          label: const Text('选择路径'),
+        _buildTabButton(
+          index: 1,
+          icon: Icons.folder_open,
+          label: '选择路径',
         ),
         const SizedBox(width: 8),
-        OutlinedButton.icon(
-          onPressed: () => setState(() {
-            _downloadExpanded = !_downloadExpanded;
-            _scanExpanded = false;
-            _importExpanded = false;
-          }),
-          icon: Icon(_downloadExpanded ? Icons.cloud_download : Icons.cloud_download_outlined, size: 16),
-          label: const Text('下载 SDK'),
+        _buildTabButton(
+          index: 2,
+          icon: Icons.cloud_download,
+          label: '下载 SDK',
         ),
         const SizedBox(width: 8),
-        OutlinedButton.icon(
-          onPressed: () => setState(() {
-            _importExpanded = !_importExpanded;
-            _scanExpanded = false;
-            _downloadExpanded = false;
-          }),
-          icon: Icon(_importExpanded ? Icons.upload_file : Icons.upload_outlined, size: 16),
-          label: const Text('导入压缩包'),
+        _buildTabButton(
+          index: 3,
+          icon: Icons.upload_file,
+          label: '导入压缩包',
         ),
       ],
     );
   }
 
-  Widget _buildScanSection(EmulatorEngineProvider provider) {
-    if (!_scanExpanded) {
-      return const SizedBox.shrink();
-    }
+  Widget _buildTabButton({
+    required int index,
+    required IconData icon,
+    required String label,
+    bool isLoading = false,
+  }) {
+    final isSelected = _selectedTab == index;
 
+    return Expanded(
+      child: OutlinedButton.icon(
+        onPressed: () => setState(() => _selectedTab = index),
+        icon: Icon(isLoading ? Icons.sync : icon, size: 16),
+        label: Text(isLoading ? '处理中...' : label),
+        style: OutlinedButton.styleFrom(
+          backgroundColor: isSelected ? Colors.blue.withAlpha(10) : null,
+          foregroundColor: isSelected ? Colors.blue.shade700 : null,
+          side: isSelected ? BorderSide(color: Colors.blue.shade300) : null,
+          padding: const EdgeInsets.symmetric(vertical: 12),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTabContent(EmulatorEngineProvider provider) {
+    switch (_selectedTab) {
+      case 0:
+        return _buildScanContent(provider);
+      case 1:
+        return _buildSelectPathContent(provider);
+      case 2:
+        return _buildDownloadContent();
+      case 3:
+        return _buildImportContent();
+      default:
+        return const SizedBox.shrink();
+    }
+  }
+
+  Widget _buildScanContent(EmulatorEngineProvider provider) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            const Icon(Icons.search, size: 16),
-            const SizedBox(width: 8),
-            const Text(
-              '扫描结果',
-              style: TextStyle(fontWeight: FontWeight.w500),
-            ),
-            const Spacer(),
-            TextButton.icon(
-              onPressed: () => _detectSDKs(context),
-              icon: const Icon(Icons.refresh, size: 14),
-              label: const Text('重新扫描'),
-            ),
-          ],
+        // 说明信息
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.blue.withAlpha(10),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.blue.withAlpha(30)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.info_outline, size: 16, color: Colors.blue.shade700),
+                  const SizedBox(width: 8),
+                  Text(
+                    '扫描说明',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w500,
+                      color: Colors.blue.shade700,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '将扫描以下位置查找 Android SDK：',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+              ),
+              const SizedBox(height: 4),
+              _buildScanPathHint('~/Library/Android/sdk', 'Android Studio 默认路径'),
+              _buildScanPathHint('/Volumes/xxx/Android/sdk', '外置硬盘（如有）'),
+              _buildScanPathHint('~/.adb-tool/sdk', '我们管理的 SDK（如有）'),
+              _buildScanPathHint('ANDROID_HOME', '环境变量路径'),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  FilledButton.icon(
+                    onPressed: _isDetecting ? null : () => _detectSDKs(context),
+                    icon: Icon(_isDetecting ? Icons.sync : Icons.search, size: 16),
+                    label: Text(_isDetecting ? '扫描中...' : '开始扫描'),
+                  ),
+                  const SizedBox(width: 8),
+                  if (provider.detectedSDKs.isNotEmpty)
+                    TextButton.icon(
+                      onPressed: _isDetecting ? null : () => _detectSDKs(context),
+                      icon: Icon(Icons.refresh, size: 14, color: Colors.grey),
+                      label: Text('重新扫描', style: TextStyle(color: Colors.grey.shade600)),
+                    ),
+                ],
+              ),
+            ],
+          ),
         ),
-        const SizedBox(height: 8),
+
+        const SizedBox(height: 12),
+
+        // 扫描结果
         if (provider.detectedSDKs.isEmpty && !_isDetecting)
           Container(
             padding: const EdgeInsets.all(16),
@@ -339,7 +448,7 @@ class _EmulatorEngineCardState extends State<EmulatorEngineCard> {
             ),
             child: const Center(
               child: Text(
-                '点击「扫描检测」查找系统中的 SDK',
+                '点击上方按钮扫描系统中的 SDK',
                 style: TextStyle(color: Colors.grey),
               ),
             ),
@@ -364,14 +473,47 @@ class _EmulatorEngineCardState extends State<EmulatorEngineCard> {
               ],
             ),
           )
-        else
+        else ...[
+          Row(
+            children: [
+              const Icon(Icons.check_circle, size: 16, color: Colors.green),
+              const SizedBox(width: 8),
+              Text(
+                '扫描结果（${provider.detectedSDKs.length} 个）',
+                style: const TextStyle(fontWeight: FontWeight.w500),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
           ...provider.detectedSDKs.map((sdk) => _buildSDKItem(context, sdk, provider)),
+        ],
         const SizedBox(height: 16),
       ],
     );
   }
 
-  Widget _buildSDKItem(BuildContext context, DetectedSDK sdk, EmulatorEngineProvider provider) {
+  Widget _buildScanPathHint(String path, String description) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Row(
+        children: [
+          Icon(Icons.arrow_right, size: 14, color: Colors.grey.shade500),
+          const SizedBox(width: 4),
+          Text(
+            path,
+            style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '- $description',
+            style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSDKItem(BuildContext context, SDKDetectResult sdk, EmulatorEngineProvider provider) {
     final currentPath = provider.serverStatus?.androidHome ?? '';
     final isActive = sdk.path == currentPath;
 
@@ -417,8 +559,7 @@ class _EmulatorEngineCardState extends State<EmulatorEngineCard> {
                     _miniChip(Icons.apps, 'Emulator', sdk.hasEmulator),
                     const SizedBox(width: 6),
                     _miniChip(Icons.settings, 'AVD', sdk.hasAvdmanager),
-                    const SizedBox(width: 6),
-                    _miniChip(Icons.coffee, 'Java', sdk.hasJava),
+                    // Java 环境不在这里显示，应该在单独的 Java 检查区域
                   ],
                 ),
               ],
@@ -482,14 +623,103 @@ class _EmulatorEngineCardState extends State<EmulatorEngineCard> {
     );
   }
 
-  Widget _buildDownloadSection(EmulatorEngineProvider provider) {
-    if (!_downloadExpanded) {
-      return const SizedBox.shrink();
-    }
+  // ========== Tab 内容 ==========
 
+  Widget _buildSelectPathContent(EmulatorEngineProvider provider) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.blue.withAlpha(10),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.blue.withAlpha(30)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.folder_open, color: Colors.blue, size: 18),
+              SizedBox(width: 8),
+              Text(
+                '手动输入 SDK 路径',
+                style: TextStyle(fontWeight: FontWeight.w500),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _customPathController,
+                  decoration: InputDecoration(
+                    hintText: '/Users/xxx/Library/Android/sdk',
+                    hintStyle: TextStyle(color: Colors.grey.shade400),
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    border: const OutlineInputBorder(),
+                    suffixIcon: IconButton(
+                      icon: const Icon(Icons.clear, size: 16),
+                      onPressed: () => _customPathController.clear(),
+                    ),
+                  ),
+                  onSubmitted: (value) {
+                    if (value.trim().isNotEmpty) {
+                      _useSDK(context, value.trim());
+                    }
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                onPressed: () => _selectFolder(),
+                icon: const Icon(Icons.folder_open, size: 16),
+                label: const Text('浏览'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '输入 Android SDK 根目录路径',
+            style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: () {
+                    final path = _customPathController.text.trim();
+                    if (path.isNotEmpty) {
+                      _useSDK(context, path);
+                    }
+                  },
+                  icon: const Icon(Icons.check, size: 16),
+                  label: const Text('使用此路径'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                onPressed: () async {
+                  // 打开官方下载页面
+                  final url = Uri.parse('https://developer.android.com/studio#command-line-tools-only');
+                  if (await canLaunchUrl(url)) {
+                    await launchUrl(url);
+                  }
+                },
+                icon: const Icon(Icons.help_outline, size: 16),
+                label: const Text('不知道在哪？'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDownloadContent() {
+    return Container(
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.green.withAlpha(10),
         borderRadius: BorderRadius.circular(8),
@@ -503,7 +733,7 @@ class _EmulatorEngineCardState extends State<EmulatorEngineCard> {
               const Icon(Icons.cloud_download, color: Colors.green, size: 18),
               const SizedBox(width: 8),
               const Text(
-                '下载 SDK',
+                '下载 Android SDK',
                 style: TextStyle(fontWeight: FontWeight.w500),
               ),
               const Spacer(),
@@ -520,21 +750,15 @@ class _EmulatorEngineCardState extends State<EmulatorEngineCard> {
             ],
           ),
           const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _downloadUrlController,
-                  decoration: InputDecoration(
-                    hintText: '输入 SDK 下载 URL',
-                    hintStyle: TextStyle(color: Colors.grey.shade400),
-                    isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    border: const OutlineInputBorder(),
-                  ),
-                ),
-              ),
-            ],
+          TextField(
+            controller: _downloadUrlController,
+            decoration: InputDecoration(
+              hintText: '输入 SDK 下载 URL',
+              hintStyle: TextStyle(color: Colors.grey.shade400),
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              border: const OutlineInputBorder(),
+            ),
           ),
           const SizedBox(height: 8),
           Text(
@@ -580,14 +804,9 @@ class _EmulatorEngineCardState extends State<EmulatorEngineCard> {
     );
   }
 
-  Widget _buildImportSection(EmulatorEngineProvider provider) {
-    if (!_importExpanded) {
-      return const SizedBox.shrink();
-    }
-
+  Widget _buildImportContent() {
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.purple.withAlpha(10),
         borderRadius: BorderRadius.circular(8),
@@ -607,21 +826,15 @@ class _EmulatorEngineCardState extends State<EmulatorEngineCard> {
             ],
           ),
           const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _importPathController,
-                  decoration: InputDecoration(
-                    hintText: '输入 SDK 压缩包路径 (.zip)',
-                    hintStyle: TextStyle(color: Colors.grey.shade400),
-                    isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    border: const OutlineInputBorder(),
-                  ),
-                ),
-              ),
-            ],
+          TextField(
+            controller: _importPathController,
+            decoration: InputDecoration(
+              hintText: '输入 SDK 压缩包路径 (.zip)',
+              hintStyle: TextStyle(color: Colors.grey.shade400),
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              border: const OutlineInputBorder(),
+            ),
           ),
           const SizedBox(height: 8),
           Text(
@@ -662,72 +875,229 @@ class _EmulatorEngineCardState extends State<EmulatorEngineCard> {
     );
   }
 
+  Widget _buildDebugSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 标题栏
+        InkWell(
+          onTap: () => setState(() => _debugExpanded = !_debugExpanded),
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Row(
+              children: [
+                Icon(
+                  _debugExpanded ? Icons.terminal : Icons.terminal_outlined,
+                  size: 16,
+                  color: Colors.blueGrey,
+                ),
+                const SizedBox(width: 8),
+                const Text(
+                  '调试日志',
+                  style: TextStyle(fontWeight: FontWeight.w500, color: Colors.blueGrey),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: _logs.isEmpty ? Colors.grey.withAlpha(20) : Colors.blue.withAlpha(20),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '${_logs.length}',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: _logs.isEmpty ? Colors.grey : Colors.blue,
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                Icon(
+                  _debugExpanded ? Icons.expand_less : Icons.expand_more,
+                  size: 20,
+                  color: Colors.grey,
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        // 日志内容
+        if (_debugExpanded) ...[
+          const SizedBox(height: 8),
+          // 操作按钮
+          Row(
+            children: [
+              TextButton.icon(
+                onPressed: () => setState(() => _logs.clear()),
+                icon: const Icon(Icons.delete_outline, size: 14),
+                label: const Text('清空'),
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.grey,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: () {
+                  // 模拟一些测试日志
+                  _addLog('TEST', '这是一条测试日志 - ${DateTime.now()}');
+                  _addLog('API', 'GET /api/emulator/sdk/detect');
+                  _addLog('SDK', '检测到路径: ~/Library/Android/sdk');
+                },
+                icon: const Icon(Icons.play_arrow, size: 14),
+                label: const Text('测试日志'),
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.blue,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // 日志列表
+          Container(
+            height: 200,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade900,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: _logs.isEmpty
+                ? const Center(
+                    child: Text(
+                      '暂无日志',
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                  )
+                : ListView.builder(
+                    controller: _logScrollController,
+                    padding: const EdgeInsets.all(8),
+                    itemCount: _logs.length,
+                    itemBuilder: (ctx, index) {
+                      final log = _logs[index];
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: RichText(
+                          text: TextSpan(
+                            style: const TextStyle(
+                              fontFamily: 'monospace',
+                              fontSize: 11,
+                              height: 1.4,
+                            ),
+                            children: [
+                              TextSpan(
+                                text: '[${_formatTime(log.time)}] ',
+                                style: TextStyle(color: Colors.grey.shade500),
+                              ),
+                              TextSpan(
+                                text: '${log.operation}: ',
+                                style: TextStyle(
+                                  color: log.isError ? Colors.red.shade300 : Colors.cyan.shade300,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              TextSpan(
+                                text: log.message,
+                                style: TextStyle(
+                                  color: log.isError ? Colors.red.shade200 : Colors.grey.shade300,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  String _formatTime(DateTime time) {
+    return '${time.hour.toString().padLeft(2, '0')}:'
+        '${time.minute.toString().padLeft(2, '0')}:'
+        '${time.second.toString().padLeft(2, '0')}';
+  }
+
+  /// 打开文件夹选择对话框，选择 SDK 目录
+  Future<void> _selectFolder() async {
+    try {
+      final String? selectedDirectory = await getDirectoryPath();
+      if (selectedDirectory != null && selectedDirectory.isNotEmpty) {
+        setState(() {
+          _customPathController.text = selectedDirectory;
+        });
+      }
+    } catch (e) {
+      debugPrint('Failed to open folder picker: $e');
+    }
+  }
+
   Future<void> _detectSDKs(BuildContext context) async {
+    _addLog('SDK', '开始扫描...');
+
     setState(() {
       _isDetecting = true;
-      _scanExpanded = true;
     });
-    final provider = context.read<EmulatorEngineProvider>();
-    await provider.detectSDKs();
+
+    try {
+      final provider = context.read<EmulatorEngineProvider>();
+      final sdks = await provider.detectSDKs();
+      _addLog('SDK', '检测到 ${sdks.length} 个 SDK');
+    } catch (e) {
+      _addLog('ERROR', '扫描失败: $e', isError: true);
+    }
+
     setState(() => _isDetecting = false);
   }
 
   Future<void> _useSDK(BuildContext context, String path) async {
-    final provider = context.read<EmulatorEngineProvider>();
-    await provider.useSDK(path);
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已切换到: $path'), duration: const Duration(seconds: 2)),
-      );
+    _addLog('USE', '========== 切换 SDK ==========');
+    _addLog('USE', '目标路径: $path');
+
+    try {
+      final api = context.read<ApiClient>();
+      _addLog('USE', '发送 POST /api/emulator/sdk/use');
+      _addLog('USE', '请求体: {"sdkPath": "$path"}');
+
+      final response = await api.dio.post('/api/emulator/sdk/use', data: {
+        'sdkPath': path,
+      });
+
+      _addLog('USE', '收到响应: 状态码=${response.statusCode}');
+      _addLog('USE', '响应体: ${response.data}');
+
+      if (response.data['ok'] == true) {
+        _addLog('USE', '✅ 后端确认成功!');
+        _addLog('USE', '调用 provider.refreshStatus()...');
+
+        final provider = context.read<EmulatorEngineProvider>();
+        await provider.refreshStatus();
+
+        _addLog('USE', '✅ refreshStatus 完成');
+        _addLog('USE', '当前 engine 状态:');
+        _addLog('  ', 'androidHome: ${provider.serverStatus?.androidHome}');
+        _addLog('  ', 'emulatorVersion: ${provider.serverStatus?.emulatorVersion}');
+        _addLog('  ', 'isValid: ${provider.serverStatus?.isValid}');
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('已切换到: $path'),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      } else {
+        _addLog('USE', '❌ 后端返回失败: ${response.data['error']}', isError: true);
+      }
+
+      _addLog('USE', '========== 切换 SDK 完成 ==========');
+    } catch (e, stack) {
+      _addLog('USE', '❌ 异常: $e', isError: true);
+      _addLog('USE', '堆栈: $stack', isError: true);
     }
-  }
-
-  Future<void> _showSelectPathDialog(BuildContext context, EmulatorEngineProvider provider) async {
-    final pathController = TextEditingController();
-
-    final result = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('选择 SDK 路径'),
-        content: SizedBox(
-          width: 500,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              TextField(
-                controller: pathController,
-                decoration: const InputDecoration(
-                  labelText: 'SDK 路径',
-                  hintText: '/Users/xxx/Library/Android/sdk',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                '输入 Android SDK 根目录路径',
-                style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, pathController.text),
-            child: const Text('使用此路径'),
-          ),
-        ],
-      ),
-    );
-
-    if (result == null || result.isEmpty) return;
-    if (!mounted) return;
-
-    await _useSDK(context, result);
   }
 
   Future<void> _startDownload(BuildContext context) async {

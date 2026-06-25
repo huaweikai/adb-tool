@@ -36,7 +36,7 @@
 //        on first open we wipe the corresponding SharedPreferences keys
 //        (scrcpy_opts_*, clipboard_sent_history) so the two stores
 //        don't drift. No data migration — fresh start by user request.
-//   v6 — moves test configs (previously a single JSON file at
+//   v7 — reserved for emulator support
 //        ~/ADBToolData/test_configs.json) into the DB. One
 //        test_app_configs row per app, with nested collections
 //        (logcat, deep links, file paths, test texts, test flows)

@@ -209,6 +209,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/identify", s.handleIdentify)
 	mux.HandleFunc("/api/shutdown", s.handleShutdown)
 	mux.HandleFunc("/api/adb-exec", s.handleAdbExec)
+	mux.HandleFunc("/api/debug/env", s.handleEnvDebug) // 诊断环境变量
 
 	// Static web assets
 	webFS, err := fs.Sub(s.webFS, "web")

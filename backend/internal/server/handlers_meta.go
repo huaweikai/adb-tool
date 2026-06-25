@@ -95,6 +95,38 @@ func (s *Server) handleIdentify(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleEnvDebug returns the environment variables of this backend process.
+// Useful for debugging why ANDROID_HOME is not available.
+func (s *Server) handleEnvDebug(w http.ResponseWriter, r *http.Request) {
+	envVars := []map[string]string{
+		{"ANDROID_HOME": os.Getenv("ANDROID_HOME")},
+		{"ANDROID_SDK_ROOT": os.Getenv("ANDROID_SDK_ROOT")},
+		{"HOME": os.Getenv("HOME")},
+		{"PATH": os.Getenv("PATH")},
+		{"USER": os.Getenv("USER")},
+		{"PWD": os.Getenv("PWD")},
+	}
+
+	// Check some common SDK paths
+	home, _ := os.UserHomeDir()
+	paths := map[string]bool{}
+	if home != "" {
+		paths["~/Library/Android/sdk"] = directoryExists(home + "/Library/Android/sdk")
+		paths["~/.adb-tool/sdk"] = directoryExists(home + "/.adb-tool/sdk")
+	}
+
+	writeJSON(w, map[string]interface{}{
+		"pid": os.Getpid(),
+		"env": envVars,
+		"paths": paths,
+	})
+}
+
+func directoryExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
+}
+
 // handleShutdown gracefully shuts down the backend. Only loopback callers
 // (enforced by requireLoopback middleware) may invoke it.
 func (s *Server) handleShutdown(w http.ResponseWriter, r *http.Request) {

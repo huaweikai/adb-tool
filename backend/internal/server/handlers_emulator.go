@@ -100,11 +100,11 @@ func (s *Server) handleEmulatorSDKImport(w http.ResponseWriter, r *http.Request)
 	size, _ := SDKMgr.GetSDKSize()
 
 	writeJSON(w, map[string]interface{}{
-		"success":       true,
-		"sdkPath":       SDKMgr.GetSDKPath(),
-		"emulatorPath":  EmulatorEngine.EmulatorPath,
-		"sizeBytes":     size,
-		"toolchainReady": EmulatorEngine.ToolchainReady,
+		"success":         true,
+		"sdkPath":         SDKMgr.GetSDKPath(),
+		"emulatorPath":   EmulatorEngine.EmulatorPath,
+		"sizeBytes":       size,
+		"toolchainReady":  EmulatorEngine.ToolchainReady,
 	})
 }
 
@@ -241,13 +241,13 @@ func (s *Server) handleEmulatorSDKUse(w http.ResponseWriter, r *http.Request) {
 		"emulatorPath":    engine.EmulatorPath,
 		"androidHome":     engine.AndroidHome,
 		"emulatorVersion": engine.EmulatorVersion,
-		"avdmanagerPath":  engine.AvdmanagerPath,
-		"sdkmanagerPath":  engine.SdkmanagerPath,
+		"avdmanagerPath":   engine.AvdmanagerPath,
+		"sdkmanagerPath":   engine.SdkmanagerPath,
 		"javaPath":        engine.JavaPath,
-		"javaVersion":     engine.JavaVersion,
+		"javaVersion":      engine.JavaVersion,
 		"toolchainReady":  engine.ToolchainReady,
-		"lastVerified":    engine.LastVerified,
-		"error":          engine.Error,
+		"lastVerified":     engine.LastVerified,
+		"error":           engine.Error,
 	})
 }
 
@@ -409,8 +409,8 @@ func (s *Server) handleEmulatorJavaValidate(w http.ResponseWriter, r *http.Reque
 	}
 
 	writeJSON(w, map[string]interface{}{
-		"valid":   true,
-		"path":    req.JavaPath,
+		"valid": true,
+		"path":  req.JavaPath,
 	})
 }
 
@@ -491,14 +491,14 @@ func (s *Server) handleEmulatorDownloadProgress(w http.ResponseWriter, r *http.R
 	}
 
 	writeJSON(w, map[string]interface{}{
-		"id":          download.ID,
-		"type":        download.Type,
-		"name":        download.Name,
-		"status":      download.Status,
-		"progress":    download.Progress,
-		"downloaded":  download.Downloaded,
-		"size":        download.Size,
-		"error":       download.Error,
+		"id":         download.ID,
+		"type":       download.Type,
+		"name":       download.Name,
+		"status":     download.Status,
+		"progress":   download.Progress,
+		"downloaded": download.Downloaded,
+		"size":       download.Size,
+		"error":      download.Error,
 	})
 }
 

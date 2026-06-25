@@ -13,57 +13,6 @@ enum EngineValidationState {
   error,
 }
 
-/// Represents a detected Android SDK on the system.
-class DetectedSDK {
-  final String path;
-  final String name;
-  final bool hasEmulator;
-  final bool hasAvdmanager;
-  final bool hasJava;
-  final String? version;
-
-  DetectedSDK({
-    required this.path,
-    required this.name,
-    required this.hasEmulator,
-    required this.hasAvdmanager,
-    required this.hasJava,
-    this.version,
-  });
-
-  factory DetectedSDK.fromJson(Map<String, dynamic> json) {
-    return DetectedSDK(
-      path: json['path'] as String,
-      name: json['name'] as String,
-      hasEmulator: json['hasEmulator'] as bool? ?? false,
-      hasAvdmanager: json['hasAvdmanager'] as bool? ?? false,
-      hasJava: json['hasJava'] as bool? ?? false,
-      version: json['version'] as String?,
-    );
-  }
-}
-
-/// Represents an SDK download.
-class SDKDownload {
-  final String id;
-  final String status;
-  final double progress;
-
-  SDKDownload({
-    required this.id,
-    required this.status,
-    required this.progress,
-  });
-
-  factory SDKDownload.fromJson(Map<String, dynamic> json) {
-    return SDKDownload(
-      id: json['id'] as String,
-      status: json['status'] as String,
-      progress: (json['progress'] as num?)?.toDouble() ?? 0.0,
-    );
-  }
-}
-
 class EmulatorEngineProvider extends ChangeNotifier {
   final ApiClient _api;
 
@@ -71,8 +20,8 @@ class EmulatorEngineProvider extends ChangeNotifier {
   EmulatorEngineStatus? _serverStatus;
   EngineValidationState _validationState = EngineValidationState.unknown;
   String? _errorMessage;
-  List<DetectedSDK> _detectedSDKs = [];
-  SDKDownload? _currentDownload;
+  List<SDKDetectResult> _detectedSDKs = [];
+  SDKDownloadResult? _currentDownload;
   bool _isDetecting = false;
   bool _isDownloading = false;
 
@@ -84,8 +33,8 @@ class EmulatorEngineProvider extends ChangeNotifier {
   EmulatorEngineStatus? get serverStatus => _serverStatus;
   EngineValidationState get validationState => _validationState;
   String? get errorMessage => _errorMessage;
-  List<DetectedSDK> get detectedSDKs => _detectedSDKs;
-  SDKDownload? get currentDownload => _currentDownload;
+  List<SDKDetectResult> get detectedSDKs => _detectedSDKs;
+  SDKDownloadResult? get currentDownload => _currentDownload;
   bool get isDetecting => _isDetecting;
   bool get isDownloading => _isDownloading;
 
@@ -106,20 +55,15 @@ class EmulatorEngineProvider extends ChangeNotifier {
   }
 
   /// Detect SDKs on the system
-  Future<List<DetectedSDK>> detectSDKs() async {
+  Future<List<SDKDetectResult>> detectSDKs() async {
     _isDetecting = true;
     _errorMessage = null;
     notifyListeners();
 
     try {
-      final response = await _api.dio.get('/api/emulator/sdk/detect');
-      final sdks = (response.data['sdks'] as List?)
-              ?.map((e) => DetectedSDK.fromJson(e))
-              .toList() ??
-          [];
-      _detectedSDKs = sdks;
+      _detectedSDKs = await _api.detectSDKs();
       notifyListeners();
-      return sdks;
+      return _detectedSDKs;
     } catch (e) {
       debugPrint('[EmulatorEngineProvider] detectSDKs error: $e');
       _errorMessage = '检测失败: $e';
@@ -138,11 +82,7 @@ class EmulatorEngineProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final response = await _api.dio.post('/api/emulator/sdk/use', data: {
-        'sdkPath': sdkPath,
-      });
-
-      final status = EmulatorEngineStatus.fromJson(response.data);
+      final status = await _api.useSDK(sdkPath);
       _serverStatus = status;
       _updateConfigFromStatus(status);
 
@@ -150,7 +90,7 @@ class EmulatorEngineProvider extends ChangeNotifier {
         _validationState = EngineValidationState.valid;
       } else {
         _validationState = EngineValidationState.invalid;
-        _errorMessage = status.error ?? 'SDK 验证失败';
+        _errorMessage = status.error?.isNotEmpty == true ? status.error : 'SDK 验证失败';
       }
       notifyListeners();
     } catch (e) {
@@ -173,14 +113,12 @@ class EmulatorEngineProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final response = await _api.dio.post('/api/emulator/sdk/download', data: {
-        'url': url,
-        'id': id,
-        'name': name,
-        if (sha256 != null) 'sha256': sha256,
-      });
-
-      _currentDownload = SDKDownload.fromJson(response.data);
+      _currentDownload = await _api.downloadSDK(
+        url: url,
+        id: id,
+        name: name,
+        sha256: sha256,
+      );
       notifyListeners();
     } catch (e) {
       debugPrint('[EmulatorEngineProvider] downloadSDK error: $e');
@@ -192,9 +130,7 @@ class EmulatorEngineProvider extends ChangeNotifier {
   /// Check download progress
   Future<void> checkDownloadProgress(String id) async {
     try {
-      final response =
-          await _api.dio.get('/api/emulator/download/progress', queryParameters: {'id': id});
-      _currentDownload = SDKDownload.fromJson(response.data);
+      _currentDownload = await _api.checkDownloadProgress(id);
       notifyListeners();
 
       // If completed, refresh status
@@ -209,13 +145,12 @@ class EmulatorEngineProvider extends ChangeNotifier {
   /// Refresh engine status from backend
   Future<void> refreshStatus() async {
     try {
-      final status = await _api.getEngineStatus();
-      _serverStatus = status;
-      _updateConfigFromStatus(status);
-      _validationState = status.isValid
+      _serverStatus = await _api.getEngineStatus();
+      _updateConfigFromStatus(_serverStatus!);
+      _validationState = _serverStatus!.isValid
           ? EngineValidationState.valid
           : EngineValidationState.invalid;
-      _errorMessage = status.error;
+      _errorMessage = _serverStatus!.error?.isNotEmpty == true ? _serverStatus!.error : null;
       notifyListeners();
     } catch (e) {
       debugPrint('[EmulatorEngineProvider] refreshStatus error: $e');
@@ -235,18 +170,17 @@ class EmulatorEngineProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final status = await _api.validateEngine(
+      _serverStatus = await _api.validateEngine(
         androidHome: androidHome,
         emulatorPath: emulatorPath,
       );
-      _serverStatus = status;
-      _updateConfigFromStatus(status);
+      _updateConfigFromStatus(_serverStatus!);
 
-      if (status.isValid) {
+      if (_serverStatus!.isValid) {
         _validationState = EngineValidationState.valid;
       } else {
         _validationState = EngineValidationState.invalid;
-        _errorMessage = status.error ?? 'Emulator validation failed';
+        _errorMessage = _serverStatus!.error?.isNotEmpty == true ? _serverStatus!.error : null;
       }
       notifyListeners();
     } catch (e) {
@@ -263,18 +197,17 @@ class EmulatorEngineProvider extends ChangeNotifier {
     String? emulatorPath,
   }) async {
     try {
-      final status = await _api.updateEngineConfig(
+      _serverStatus = await _api.updateEngineConfig(
         androidHome: androidHome,
         emulatorPath: emulatorPath,
       );
-      _serverStatus = status;
-      _updateConfigFromStatus(status);
+      _updateConfigFromStatus(_serverStatus!);
 
-      if (status.isValid) {
+      if (_serverStatus!.isValid) {
         _validationState = EngineValidationState.valid;
       } else {
         _validationState = EngineValidationState.invalid;
-        _errorMessage = status.error;
+        _errorMessage = _serverStatus!.error;
       }
       notifyListeners();
     } catch (e) {

@@ -40,6 +40,107 @@ mixin EmulatorApi on ApiBase {
     final data = responseMap(response);
     return EmulatorEngineStatus.fromJson(data);
   }
+
+  /// Detect SDKs on the system.
+  Future<List<SDKDetectResult>> detectSDKs() async {
+    final response = await dio.get('/api/emulator/sdk/detect');
+    final data = responseMap(response);
+    final sdkList = data['sdks'] as List? ?? [];
+    return sdkList
+        .map((e) => SDKDetectResult.fromJson(asMap(e)))
+        .toList();
+  }
+
+  /// Use a detected SDK path.
+  Future<EmulatorEngineStatus> useSDK(String sdkPath) async {
+    final response = await dio.post(
+      '/api/emulator/sdk/use',
+      data: {'sdkPath': sdkPath},
+    );
+    final data = responseMap(response);
+    return EmulatorEngineStatus.fromJson(data);
+  }
+
+  /// Download SDK from URL.
+  Future<SDKDownloadResult> downloadSDK({
+    required String url,
+    required String id,
+    required String name,
+    String? sha256,
+  }) async {
+    final response = await dio.post(
+      '/api/emulator/sdk/download',
+      data: {
+        'url': url,
+        'id': id,
+        'name': name,
+        if (sha256 != null) 'sha256': sha256,
+      },
+    );
+    final data = responseMap(response);
+    return SDKDownloadResult.fromJson(data);
+  }
+
+  /// Check download progress.
+  Future<SDKDownloadResult> checkDownloadProgress(String id) async {
+    final response = await dio.get(
+      '/api/emulator/download/progress',
+      queryParameters: {'id': id},
+    );
+    final data = responseMap(response);
+    return SDKDownloadResult.fromJson(data);
+  }
+}
+
+/// Represents a detected Android SDK on the system.
+class SDKDetectResult {
+  final String path;
+  final String name;
+  final bool hasEmulator;
+  final bool hasAvdmanager;
+  final bool hasJava;
+  final String? version;
+
+  const SDKDetectResult({
+    required this.path,
+    required this.name,
+    this.hasEmulator = false,
+    this.hasAvdmanager = false,
+    this.hasJava = false,
+    this.version,
+  });
+
+  factory SDKDetectResult.fromJson(Map<String, dynamic> json) {
+    return SDKDetectResult(
+      path: json['path'] as String,
+      name: json['name'] as String,
+      hasEmulator: json['hasEmulator'] as bool? ?? false,
+      hasAvdmanager: json['hasAvdmanager'] as bool? ?? false,
+      hasJava: json['hasJava'] as bool? ?? false,
+      version: json['version'] as String?,
+    );
+  }
+}
+
+/// SDK download result.
+class SDKDownloadResult {
+  final String id;
+  final String status;
+  final double progress;
+
+  const SDKDownloadResult({
+    required this.id,
+    required this.status,
+    this.progress = 0.0,
+  });
+
+  factory SDKDownloadResult.fromJson(Map<String, dynamic> json) {
+    return SDKDownloadResult(
+      id: json['id'] as String,
+      status: json['status'] as String,
+      progress: (json['progress'] as num?)?.toDouble() ?? 0.0,
+    );
+  }
 }
 
 class EmulatorEngineStatus {
