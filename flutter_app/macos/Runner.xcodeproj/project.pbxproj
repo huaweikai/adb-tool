@@ -349,7 +349,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "SRC=\"$SRCROOT/Runner/adb-tool\"\nDST=\"$CODESIGNING_FOLDER_PATH/Contents/MacOS/adb-tool\"\nif [ -f \"$SRC\" ]; then\n  cp \"$SRC\" \"$DST\"\n  chmod +x \"$DST\"\n  echo \"Copied adb-tool to $DST\"\nelse\n  echo \"Warning: adb-tool not found at $SRC\"\nfi\n";
+			shellScript = "SRC=\"$SRCROOT/Runner/adb-tool\"\nDST=\"$CODESIGNING_FOLDER_PATH/Contents/MacOS/adb-tool\"\nif [ -f \"$SRC\" ]; then\n  cp \"$SRC\" \"$DST\"\n  chmod +x \"$DST\"\n  echo \"Copied adb-tool to $DST\"\n  # 单独给 adb-tool 签 ad-hoc,让父 .app 签名时能找到有效的子签名\n  codesign --force --sign - \"$DST\" || {\n    echo \"error: failed to codesign adb-tool at $DST\"\n    exit 1\n  }\nelse\n  echo \"Warning: adb-tool not found at $SRC\"\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
