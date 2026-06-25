@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -203,6 +204,22 @@ func (dm *DownloadManager) runDownload(item *DownloadItem) {
 		}
 		item.ExtractedPath = extractDir
 		os.Remove(item.DestPath)
+
+		// For system images, register the extracted real path into the
+		// persisted registry so it shows up in listings without re-scanning.
+		if item.Type == DownloadTypeImage {
+			log.Printf("[image] download complete: extracted to %s, registering...", extractDir)
+			im := NewImageManager("")
+			if imageDir, err := findImageDir(extractDir); err == nil {
+				log.Printf("[image] download: found image dir %s", imageDir)
+				n, regErr := im.ScanAndRegister(imageDir)
+				log.Printf("[image] download: registered %d image(s), err=%v", n, regErr)
+			} else {
+				log.Printf("[image] download: findImageDir failed (%v), registering extractDir %s", err, extractDir)
+				n, regErr := im.ScanAndRegister(extractDir)
+				log.Printf("[image] download: registered %d image(s), err=%v", n, regErr)
+			}
+		}
 	}
 }
 

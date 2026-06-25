@@ -49,6 +49,148 @@ mixin EmulatorImageApi on ApiBase {
     final data = responseMap(response);
     return ImageDownloadResult.fromJson(data);
   }
+
+  /// Import a system image from a server-side local path.
+  ///
+  /// The path may point at either an already-extracted image directory or a
+  /// `.zip` archive; the backend figures out which based on the file type.
+  /// The server scans the path, registers every image it finds, and returns
+  /// the freshly registered entries (one for a single-image dir, possibly
+  /// more for a zip containing several API levels or a directory tree of
+  /// extracted images).
+  Future<List<SystemImage>> importImageFromPath(String path) async {
+    final response = await dio.post(
+      '/api/emulator/image/import-path',
+      data: {'path': path},
+    );
+    final data = responseMap(response);
+    return _parseImportedImages(data);
+  }
+
+  /// Import a system image from a local `.zip` file via multipart upload.
+  ///
+  /// [localPath] is the path on the user's machine; it gets streamed up to
+  /// the backend, which extracts and stores it.
+  Future<List<SystemImage>> importImageFromZip(String localPath) async {
+    final data = await postLocalFile('/api/emulator/image/import', localPath);
+    return _parseImportedImages(data);
+  }
+
+  /// Parses the import response, which now carries an `images` array plus a
+  /// legacy `image` field for backward compatibility. Returns an empty list
+  /// if neither field is present.
+  List<SystemImage> _parseImportedImages(Map<String, dynamic> data) {
+    final list = data['images'] as List<dynamic>?;
+    if (list != null) {
+      return list
+          .whereType<Map>()
+          .map((e) => SystemImage.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+    }
+    final single = data['image'];
+    if (single is Map) {
+      return [SystemImage.fromJson(Map<String, dynamic>.from(single))];
+    }
+    return [];
+  }
+
+  /// Scan a server-side path for system images and register the discovered
+  /// real paths into the persisted registry. Returns the number of images
+  /// found. Subsequent listings just validate these stored paths instead of
+  /// re-scanning.
+  Future<int> scanImagePath(String path) async {
+    final response = await dio.post(
+      '/api/emulator/image/scan',
+      data: {'path': path},
+    );
+    final data = responseMap(response);
+    return (data['found'] as num?)?.toInt() ?? 0;
+  }
+
+  /// Get the persisted image-source address book.
+  Future<List<ImageSource>> getImageSources() async {
+    final response = await dio.get('/api/emulator/image/sources');
+    final data = responseMap(response);
+    return (data['sources'] as List<dynamic>?)
+            ?.map((e) => ImageSource.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        [];
+  }
+
+  /// Append a new image-source URL. The backend dedupes by URL and returns the
+  /// full updated list.
+  Future<List<ImageSource>> addImageSource({
+    required String url,
+    String? name,
+    int? apiLevel,
+    String? arch,
+    String? variant,
+    String? sha256,
+  }) async {
+    final response = await dio.post(
+      '/api/emulator/image/source/add',
+      data: {
+        'url': url,
+        if (name != null) 'name': name,
+        if (apiLevel != null) 'apiLevel': apiLevel,
+        if (arch != null) 'arch': arch,
+        if (variant != null) 'variant': variant,
+        if (sha256 != null) 'sha256': sha256,
+      },
+    );
+    final data = responseMap(response);
+    return (data['sources'] as List<dynamic>?)
+            ?.map((e) => ImageSource.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        [];
+  }
+
+  /// Remove an image-source URL from the address book.
+  Future<List<ImageSource>> removeImageSource(String url) async {
+    final response = await dio.post(
+      '/api/emulator/image/source/remove',
+      data: {'url': url},
+    );
+    final data = responseMap(response);
+    return (data['sources'] as List<dynamic>?)
+            ?.map((e) => ImageSource.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        [];
+  }
+}
+
+class ImageSource {
+  final String url;
+  final String name;
+  final int apiLevel;
+  final String arch;
+  final String variant;
+  final String sha256;
+  final String addedAt;
+
+  const ImageSource({
+    required this.url,
+    this.name = '',
+    this.apiLevel = 0,
+    this.arch = '',
+    this.variant = '',
+    this.sha256 = '',
+    this.addedAt = '',
+  });
+
+  factory ImageSource.fromJson(Map<String, dynamic> json) {
+    return ImageSource(
+      url: json['url'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      apiLevel: json['apiLevel'] as int? ?? 0,
+      arch: json['arch'] as String? ?? '',
+      variant: json['variant'] as String? ?? '',
+      sha256: json['sha256'] as String? ?? '',
+      addedAt: json['addedAt'] as String? ?? '',
+    );
+  }
+
+  String get displayName => name.isNotEmpty ? name : url;
 }
 
 class SystemImage {

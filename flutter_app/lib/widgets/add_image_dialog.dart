@@ -1,8 +1,17 @@
 // Add image dialog for adding system images via URL or local path.
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import '../services/api/emulator_image_api.dart';
 
 class AddImageDialog extends StatefulWidget {
-  const AddImageDialog({super.key});
+  final List<ImageSource> savedSources;
+  final void Function(String url)? onRemoveSource;
+
+  const AddImageDialog({
+    super.key,
+    this.savedSources = const [],
+    this.onRemoveSource,
+  });
 
   @override
   State<AddImageDialog> createState() => _AddImageDialogState();
@@ -10,18 +19,14 @@ class AddImageDialog extends StatefulWidget {
 
 class _AddImageDialogState extends State<AddImageDialog> {
   int _selectedSource = 0; // 0 = URL, 1 = Local Path
+  int _localKind = 0; // 0 = Folder, 1 = Zip
   final _urlController = TextEditingController();
   final _pathController = TextEditingController();
-  final _nameController = TextEditingController();
-  int _selectedApiLevel = 34;
-  String _selectedArch = 'arm64-v8a';
-  String _selectedVariant = 'google_apis';
 
   @override
   void dispose() {
     _urlController.dispose();
     _pathController.dispose();
-    _nameController.dispose();
     super.dispose();
   }
 
@@ -65,115 +70,99 @@ class _AddImageDialogState extends State<AddImageDialog> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  '提示: 可以从 Google 官方或内部镜像服务器下载',
+                  '提示: 下载完成后会自动解压到缓存目录，并解析镜像信息',
                   style: TextStyle(fontSize: 12, color: Colors.grey),
                 ),
+                if (widget.savedSources.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  const Text(
+                    '历史下载地址',
+                    style: TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
+                  ),
+                  const SizedBox(height: 4),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 160),
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: widget.savedSources.length,
+                      itemBuilder: (context, index) {
+                        final s = widget.savedSources[index];
+                        return ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.history, size: 18),
+                          title: Text(
+                            s.displayName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                          subtitle: s.name.isNotEmpty
+                              ? Text(
+                                  s.url,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 11),
+                                )
+                              : null,
+                          trailing: widget.onRemoveSource != null
+                              ? IconButton(
+                                  icon: const Icon(Icons.close, size: 16),
+                                  tooltip: '从历史中移除',
+                                  onPressed: () =>
+                                      widget.onRemoveSource!(s.url),
+                                )
+                              : null,
+                          onTap: () {
+                            setState(() => _urlController.text = s.url);
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ],
               ],
 
               // Local path input
               if (_selectedSource == 1) ...[
+                SegmentedButton<int>(
+                  segments: const [
+                    ButtonSegment(value: 0, label: Text('选择文件夹')),
+                    ButtonSegment(value: 1, label: Text('选择 Zip')),
+                  ],
+                  selected: {_localKind},
+                  onSelectionChanged: (selection) {
+                    setState(() {
+                      _localKind = selection.first;
+                      _pathController.clear();
+                    });
+                  },
+                ),
+                const SizedBox(height: 12),
                 TextField(
                   controller: _pathController,
+                  readOnly: true,
                   decoration: InputDecoration(
-                    labelText: '本地路径',
-                    hintText: '/Users/xxx/Library/Android/sdk/system-images/android-34/...',
+                    labelText: _localKind == 0 ? '镜像文件夹' : '镜像 Zip 文件',
+                    hintText: _localKind == 0
+                        ? '包含 system.img / config.ini 的目录'
+                        : '系统镜像压缩包 (.zip)',
                     suffixIcon: IconButton(
-                      icon: const Icon(Icons.folder_open),
-                      onPressed: _pickFolder,
+                      icon: Icon(
+                        _localKind == 0
+                            ? Icons.folder_open
+                            : Icons.archive_outlined,
+                      ),
+                      onPressed: _localKind == 0 ? _pickFolder : _pickZip,
                     ),
                   ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  '提示: 镜像信息（API 级别、架构、变体）会从所选内容自动探测',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
                 ),
               ],
-
-              const SizedBox(height: 16),
-              const Divider(),
-              const SizedBox(height: 16),
-
-              // Image info
-              const Text(
-                '镜像信息',
-                style: TextStyle(fontWeight: FontWeight.w500),
-              ),
-              const SizedBox(height: 12),
-
-              TextField(
-                controller: _nameController,
-                decoration: const InputDecoration(
-                  labelText: '名称',
-                  hintText: 'Android 14 (API 34) - google_apis - arm64-v8a',
-                ),
-              ),
-              const SizedBox(height: 12),
-
-              Row(
-                children: [
-                  Expanded(
-                    child: DropdownButtonFormField<int>(
-                      value: _selectedApiLevel,
-                      decoration: const InputDecoration(
-                        labelText: 'API 级别',
-                      ),
-                      items: _apiLevelOptions,
-                      onChanged: (value) {
-                        if (value != null) {
-                          setState(() => _selectedApiLevel = value);
-                        }
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: DropdownButtonFormField<String>(
-                      value: _selectedArch,
-                      decoration: const InputDecoration(
-                        labelText: '架构',
-                      ),
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'arm64-v8a',
-                          child: Text('arm64-v8a (Apple Silicon)'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'x86_64',
-                          child: Text('x86_64 (Intel)'),
-                        ),
-                      ],
-                      onChanged: (value) {
-                        if (value != null) {
-                          setState(() => _selectedArch = value);
-                        }
-                      },
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-
-              DropdownButtonFormField<String>(
-                value: _selectedVariant,
-                decoration: const InputDecoration(
-                  labelText: '变体',
-                ),
-                items: const [
-                  DropdownMenuItem(
-                    value: 'google_apis',
-                    child: Text('Google APIs (推荐)'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'google_apis_playstore',
-                    child: Text('Google Play'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'default',
-                    child: Text('Default (无 Google 服务)'),
-                  ),
-                ],
-                onChanged: (value) {
-                  if (value != null) {
-                    setState(() => _selectedVariant = value);
-                  }
-                },
-              ),
             ],
           ),
         ),
@@ -191,28 +180,36 @@ class _AddImageDialogState extends State<AddImageDialog> {
     );
   }
 
-  List<DropdownMenuItem<int>> get _apiLevelOptions {
-    final levels = <int, String>{
-      33: 'Android 13 (API 33)',
-      34: 'Android 14 (API 34)',
-      35: 'Android 15 (API 35)',
-    };
-    return levels.entries
-        .map((e) => DropdownMenuItem(
-              value: e.key,
-              child: Text(e.value),
-            ))
-        .toList();
+  void _pickFolder() async {
+    try {
+      final dir = await getDirectoryPath();
+      if (dir != null && dir.isNotEmpty) {
+        setState(() => _pathController.text = dir);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('选择文件夹失败: $e')),
+      );
+    }
   }
 
-  void _pickFolder() {
-    // TODO: Implement folder picker
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('文件夹选择功能即将推出'),
-        duration: Duration(seconds: 2),
-      ),
-    );
+  void _pickZip() async {
+    try {
+      final file = await openFile(
+        acceptedTypeGroups: const [
+          XTypeGroup(label: 'Zip', extensions: ['zip']),
+        ],
+      );
+      if (file != null && file.path.isNotEmpty) {
+        setState(() => _pathController.text = file.path);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('选择文件失败: $e')),
+      );
+    }
   }
 
   void _submit() {
@@ -226,26 +223,22 @@ class _AddImageDialogState extends State<AddImageDialog> {
       }
       Navigator.pop(context, {
         'source': 'url',
-        'url': _urlController.text,
-        'name': _nameController.text.isNotEmpty
-            ? _nameController.text
-            : 'Android $_selectedApiLevel ($_selectedVariant, $_selectedArch)',
-        'apiLevel': _selectedApiLevel,
-        'arch': _selectedArch,
-        'variant': _selectedVariant,
+        'url': _urlController.text.trim(),
       });
     } else {
       // Local path
       if (_pathController.text.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('请输入本地路径')),
+          SnackBar(
+            content: Text(_localKind == 0 ? '请选择镜像文件夹' : '请选择镜像 Zip 文件'),
+          ),
         );
         return;
       }
       Navigator.pop(context, {
         'source': 'local',
         'path': _pathController.text,
-        'name': _nameController.text,
+        'isZip': _localKind == 1,
       });
     }
   }

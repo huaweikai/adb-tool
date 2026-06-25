@@ -157,6 +157,8 @@ class EmulatorEngineStatus {
   final String? error;
   final DateTime? lastVerified;
   final bool hasSDK;
+  final String? selectedSDKPath;
+  final bool selectedSDKInvalid;
 
   const EmulatorEngineStatus({
     this.isValid = false,
@@ -172,6 +174,8 @@ class EmulatorEngineStatus {
     this.error,
     this.lastVerified,
     this.hasSDK = false,
+    this.selectedSDKPath,
+    this.selectedSDKInvalid = false,
   });
 
   factory EmulatorEngineStatus.fromJson(Map<String, dynamic> json) {
@@ -191,6 +195,8 @@ class EmulatorEngineStatus {
           ? DateTime.tryParse(json['lastVerified'] as String)
           : null,
       hasSDK: json['hasSDK'] as bool? ?? false,
+      selectedSDKPath: json['selectedSDKPath'] as String?,
+      selectedSDKInvalid: json['selectedSDKInvalid'] as bool? ?? false,
     );
   }
 }

@@ -33,9 +33,9 @@ class EmulatorInstance {
 
   factory EmulatorInstance.fromJson(Map<String, dynamic> json) {
     return EmulatorInstance(
-      id: json['id'] as String,
-      imageId: json['imageId'] as String,
-      avdName: json['avdName'] as String,
+      id: json['id'] as String? ?? '',
+      imageId: json['imageId'] as String? ?? '',
+      avdName: (json['avdName'] ?? json['name']) as String? ?? '',
       avdPath: json['avdPath'] as String? ?? '',
       config: EmulatorInstanceConfig.fromJson(
           json['config'] as Map<String, dynamic>? ?? {}),
@@ -48,7 +48,8 @@ class EmulatorInstance {
       pid: json['pid'] as int?,
       serial: json['serial'] as String? ?? '',
       snapshotId: json['snapshotId'] as String?,
-      createdAt: DateTime.parse(json['createdAt'] as String),
+      createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ??
+          DateTime.now(),
       lastStartedAt: json['lastStartedAt'] != null
           ? DateTime.tryParse(json['lastStartedAt'] as String)
           : null,

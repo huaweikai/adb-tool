@@ -158,6 +158,41 @@ class _EmulatorEngineCardState extends State<EmulatorEngineCard> {
     final hasSDK = status?.androidHome?.isNotEmpty == true;
 
     if (!hasSDK) {
+      final invalidPath = status?.selectedSDKInvalid == true
+          ? status?.selectedSDKPath
+          : null;
+      if (invalidPath != null && invalidPath.isNotEmpty) {
+        return Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.red.withAlpha(20),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.red.withAlpha(60)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.error_outline, color: Colors.red, size: 20),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '上次选择的 SDK 已失效，请重新选择或扫描',
+                      style: TextStyle(color: Colors.red, fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                invalidPath,
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 11, color: Colors.grey),
+              ),
+            ],
+          ),
+        );
+      }
       return Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(

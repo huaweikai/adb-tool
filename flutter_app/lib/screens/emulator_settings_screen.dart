@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/emulator_image_provider.dart';
 import '../providers/emulator_instance_provider.dart';
+import '../providers/emulator_engine_provider.dart';
+import '../providers/emulator_java_provider.dart';
 import '../widgets/emulator_engine_card.dart';
 import '../widgets/emulator_java_card.dart';
 import '../widgets/emulator_image_card.dart';
@@ -22,8 +24,13 @@ class _EmulatorSettingsScreenState extends State<EmulatorSettingsScreen> {
   @override
   void initState() {
     super.initState();
-    // Fetch instances on load
+    // Pull persisted state from backend on load so SDK / Java selections and
+    // imported images are restored without requiring a manual scan.
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<EmulatorEngineProvider>().refreshStatus();
+      context.read<EmulatorJavaProvider>().refreshStatus();
+      context.read<EmulatorImageProvider>().loadImages();
       context.read<EmulatorInstanceProvider>().fetchInstances();
     });
   }
@@ -222,25 +229,42 @@ class _EmulatorSettingsScreenState extends State<EmulatorSettingsScreen> {
   }
 
   Future<void> _showAddImageDialog(BuildContext context) async {
+    final provider = context.read<EmulatorImageProvider>();
+    await provider.loadSources();
+    if (!context.mounted) return;
+
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (_) => const AddImageDialog(),
+      builder: (_) => AddImageDialog(
+        savedSources: provider.sources,
+        onRemoveSource: (url) async {
+          await provider.removeSource(url);
+          if (context.mounted) {
+            Navigator.of(context).pop();
+            _showAddImageDialog(context);
+          }
+        },
+      ),
     );
 
     if (result != null && context.mounted) {
-      final provider = context.read<EmulatorImageProvider>();
-
       if (result['source'] == 'url') {
-        await provider.addImage(
-          url: result['url'],
-          name: result['name'],
-          apiLevel: result['apiLevel'],
-          arch: result['arch'],
-          variant: result['variant'],
-        );
+        await provider.addImage(url: result['url']);
       } else {
+        final path = result['path'] as String;
+        final isZip = result['isZip'] == true;
+        final ok = isZip
+            ? await provider.importFromZip(path)
+            : await provider.importFromPath(path);
+        if (!context.mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('本地路径功能即将推出')),
+          SnackBar(
+            content: Text(
+              ok
+                  ? '镜像导入成功'
+                  : '镜像导入失败: ${provider.errorMessage ?? '未知错误'}',
+            ),
+          ),
         );
       }
     }

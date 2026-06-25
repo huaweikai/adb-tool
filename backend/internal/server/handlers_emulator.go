@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"adb-tool/backend/internal/emulator"
@@ -692,6 +694,46 @@ func (s *Server) handleEmulatorDownloads(w http.ResponseWriter, r *http.Request)
 	})
 }
 
+// handleEmulatorImageScan scans a given path for system images and registers
+// the discovered ones (real paths) into the persisted registry. After this,
+// listing no longer needs to re-scan — it just validates stored paths.
+func (s *Server) handleEmulatorImageScan(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeAPIError(w, http.StatusMethodNotAllowed, "POST required")
+		return
+	}
+	defer r.Body.Close()
+
+	var req struct {
+		Path string `json:"path"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	req.Path = strings.TrimSpace(req.Path)
+	if req.Path == "" {
+		writeAPIError(w, http.StatusBadRequest, "path is required")
+		return
+	}
+	if _, err := os.Stat(req.Path); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "path not accessible: "+err.Error())
+		return
+	}
+
+	imageMgr := emulator.NewImageManager(EmulatorEngine.AndroidHome)
+	count, err := imageMgr.ScanAndRegister(req.Path)
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, map[string]interface{}{
+		"success": true,
+		"found":   count,
+	})
+}
+
 // handleEmulatorImages returns the list of system images.
 func (s *Server) handleEmulatorImages(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" {
@@ -703,7 +745,9 @@ func (s *Server) handleEmulatorImages(w http.ResponseWriter, r *http.Request) {
 	imageMgr := emulator.NewImageManager(EmulatorEngine.AndroidHome)
 
 	// Get system images
+	log.Printf("[image] GET /api/emulator/images: AndroidHome=%q", EmulatorEngine.AndroidHome)
 	images := imageMgr.ListImages()
+	log.Printf("[image] GET /api/emulator/images: returning %d image(s)", len(images))
 
 	// Get download status for each image
 	downloads := DownloadMgr.ListDownloadsByType(emulator.DownloadTypeImage)
@@ -837,11 +881,255 @@ func (s *Server) handleEmulatorImageAdd(w http.ResponseWriter, r *http.Request) 
 
 	download := DownloadMgr.StartDownload(item)
 
+	// Remember this URL in the persisted address book (dedup by URL).
+	_, _ = emulator.AddImageSource(emulator.ImageSource{
+		URL:      req.URL,
+		Name:     req.Name,
+		APILevel: req.APILevel,
+		Arch:     req.Arch,
+		Variant:  req.Variant,
+		SHA256:   req.SHA256,
+	})
+
 	writeJSON(w, map[string]interface{}{
 		"id":       download.ID,
 		"status":   download.Status,
 		"progress": download.Progress,
 	})
+}
+
+// handleEmulatorImageSources returns the persisted image source address book.
+func (s *Server) handleEmulatorImageSources(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		writeAPIError(w, http.StatusMethodNotAllowed, "GET required")
+		return
+	}
+	writeJSON(w, map[string]interface{}{
+		"sources": emulator.LoadImageSources(),
+	})
+}
+
+// handleEmulatorImageSourceAdd appends a new image source URL (dedup by URL).
+func (s *Server) handleEmulatorImageSourceAdd(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeAPIError(w, http.StatusMethodNotAllowed, "POST required")
+		return
+	}
+	defer r.Body.Close()
+
+	var req struct {
+		URL      string `json:"url"`
+		Name     string `json:"name"`
+		APILevel int    `json:"apiLevel"`
+		Arch     string `json:"arch"`
+		Variant  string `json:"variant"`
+		SHA256   string `json:"sha256"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	sources, err := emulator.AddImageSource(emulator.ImageSource{
+		URL:      req.URL,
+		Name:     req.Name,
+		APILevel: req.APILevel,
+		Arch:     req.Arch,
+		Variant:  req.Variant,
+		SHA256:   req.SHA256,
+	})
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, map[string]interface{}{
+		"success": true,
+		"sources": sources,
+	})
+}
+
+// handleEmulatorImageSourceRemove removes an image source URL.
+func (s *Server) handleEmulatorImageSourceRemove(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeAPIError(w, http.StatusMethodNotAllowed, "POST required")
+		return
+	}
+	defer r.Body.Close()
+
+	var req struct {
+		URL string `json:"url"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if req.URL == "" {
+		writeAPIError(w, http.StatusBadRequest, "url is required")
+		return
+	}
+
+	sources, err := emulator.RemoveImageSource(req.URL)
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, map[string]interface{}{
+		"success": true,
+		"sources": sources,
+	})
+}
+
+// handleEmulatorImageImportZip imports a system image uploaded as a zip file.
+func (s *Server) handleEmulatorImageImportZip(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeAPIError(w, http.StatusMethodNotAllowed, "POST required")
+		return
+	}
+
+	if err := r.ParseMultipartForm(2 << 30); err != nil { // 2GB ceiling
+		writeAPIError(w, http.StatusBadRequest, "failed to parse form: "+err.Error())
+		return
+	}
+
+	file, _, err := r.FormFile("image")
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "image file is required: "+err.Error())
+		return
+	}
+	defer file.Close()
+
+	tmpPath := filepath.Join(os.TempDir(), "image-import-"+uuid.New().String()+".zip")
+	tmpFile, err := os.Create(tmpPath)
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "failed to create temp file: "+err.Error())
+		return
+	}
+
+	if _, err := io.Copy(tmpFile, file); err != nil {
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpPath)
+		writeAPIError(w, http.StatusInternalServerError, "failed to save temp file: "+err.Error())
+		return
+	}
+	_ = tmpFile.Close()
+	defer os.Remove(tmpPath)
+
+	imageMgr := emulator.NewImageManager(EmulatorEngine.AndroidHome)
+	images, err := imageMgr.ImportImageFromZip(tmpPath)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "failed to import zip: "+err.Error())
+		return
+	}
+
+	result := make([]map[string]interface{}, 0, len(images))
+	for _, img := range images {
+		result = append(result, map[string]interface{}{
+			"id":             img.ID,
+			"name":           img.Name,
+			"apiLevel":       img.APILevel,
+			"androidVersion": img.AndroidVersion,
+			"arch":           img.Arch,
+			"variant":        img.Variant,
+			"localPath":      img.LocalPath,
+			"fileSize":       img.FileSize,
+			"status":         img.Status,
+		})
+	}
+
+	writeJSON(w, map[string]interface{}{
+		"success": true,
+		"count":   len(result),
+		"images":  result,
+		"image":   firstImageOrNil(result),
+	})
+}
+
+// handleEmulatorImageImportPath imports a system image from a server-side
+// local path. Accepts either a directory containing an extracted image or a
+// .zip archive. The Go side scans the path, registers every image it finds
+// in the persisted registry, and returns the freshly registered entries.
+func (s *Server) handleEmulatorImageImportPath(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeAPIError(w, http.StatusMethodNotAllowed, "POST required")
+		return
+	}
+	defer r.Body.Close()
+
+	var req struct {
+		Path string `json:"path"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if req.Path == "" {
+		writeAPIError(w, http.StatusBadRequest, "path is required")
+		return
+	}
+
+	info, err := os.Stat(req.Path)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "path not accessible: "+err.Error())
+		return
+	}
+
+	imageMgr := emulator.NewImageManager(EmulatorEngine.AndroidHome)
+
+	var images []*emulator.SystemImage
+	if info.IsDir() {
+		log.Printf("[image] import-path: directory import path=%s", req.Path)
+		images, err = imageMgr.ImportImageFromDirectory(req.Path)
+	} else {
+		if !strings.HasSuffix(strings.ToLower(req.Path), ".zip") {
+			writeAPIError(w, http.StatusBadRequest, "file is not a .zip archive")
+			return
+		}
+		log.Printf("[image] import-path: zip import path=%s", req.Path)
+		images, err = imageMgr.ImportImageFromZip(req.Path)
+	}
+	if err != nil {
+		log.Printf("[image] import-path: failed: %v", err)
+		writeAPIError(w, http.StatusBadRequest, "failed to import: "+err.Error())
+		return
+	}
+
+	result := make([]map[string]interface{}, 0, len(images))
+	for _, img := range images {
+		log.Printf("[image] import-path:   registered id=%s path=%s", img.ID, img.LocalPath)
+		result = append(result, map[string]interface{}{
+			"id":             img.ID,
+			"name":           img.Name,
+			"apiLevel":       img.APILevel,
+			"androidVersion": img.AndroidVersion,
+			"arch":           img.Arch,
+			"variant":        img.Variant,
+			"localPath":      img.LocalPath,
+			"fileSize":       img.FileSize,
+			"status":         img.Status,
+		})
+	}
+
+	writeJSON(w, map[string]interface{}{
+		"success": true,
+		"count":   len(result),
+		"images":  result,
+		// Legacy single-image field so older clients reading .image still
+		// see something useful.
+		"image": firstImageOrNil(result),
+	})
+}
+
+// firstImageOrNil returns the first image in the list, or nil if the list
+// is empty. Marshals to JSON null when the list is empty, which is the
+// shape legacy callers expect.
+func firstImageOrNil(images []map[string]interface{}) interface{} {
+	if len(images) == 0 {
+		return nil
+	}
+	return images[0]
 }
 
 // handleEmulatorInstances returns the list of emulator instances.
@@ -940,6 +1228,7 @@ func (s *Server) handleEmulatorInstanceCreate(w http.ResponseWriter, r *http.Req
 
 	writeJSON(w, map[string]interface{}{
 		"id":           instance.ID,
+		"imageId":      instance.ImageID,
 		"name":         instance.Name,
 		"status":       instance.Status,
 		"consolePort":  instance.ConsolePort,

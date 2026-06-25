@@ -136,13 +136,14 @@ class EmulatorImageCard extends StatelessWidget {
   }
 
   Widget _buildActions(BuildContext context) {
+    final canCreate = image.status == EmulatorImageStatus.ready;
     return Row(
       children: [
         if (onCreateInstance != null)
           FilledButton.tonalIcon(
-            onPressed: onCreateInstance,
+            onPressed: canCreate ? onCreateInstance : null,
             icon: const Icon(Icons.add, size: 16),
-            label: const Text('创建实例'),
+            label: Text(canCreate ? '创建实例' : '镜像不可用'),
           ),
         const SizedBox(width: 8),
         if (onDelete != null)

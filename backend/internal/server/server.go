@@ -3,6 +3,7 @@ package server
 import (
 	"embed"
 	"io/fs"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -30,6 +31,7 @@ type Server struct {
 	// Emulator components
 	instanceManager *emulator.InstanceManager
 	statusMonitor  *emulator.StatusMonitor
+	imageValidator chan struct{}
 
 	startedAt  time.Time
 	onShutdown func()
@@ -74,6 +76,27 @@ func (s *Server) InitEmulator(emulatorPath, avdManagerPath, javaPath, androidHom
 	// Create status monitor
 	s.statusMonitor = emulator.NewStatusMonitor(s.instanceManager)
 
+	// Start a background goroutine that periodically validates the persisted
+	// image registry paths (marks missing images as invalid).
+	if s.imageValidator == nil {
+		s.imageValidator = emulator.StartImageRegistryValidator(60 * time.Second)
+	}
+
+	// Auto-discover images that already live in the cache (from before the
+	// registry existed, or copied there by an earlier build). Runs once at
+	// boot in a goroutine so the server doesn't block on it.
+	go func() {
+		im := emulator.NewImageManager("")
+		n, err := im.ScanAndRegisterStorage()
+		if err != nil {
+			log.Printf("[emulator] startup storage scan: %v", err)
+			return
+		}
+		if n > 0 {
+			log.Printf("[emulator] startup storage scan: registered %d image(s)", n)
+		}
+	}()
+
 	return nil
 }
 
@@ -89,6 +112,10 @@ func (s *Server) Close() {
 		s.adb.Close()
 		if s.statusMonitor != nil {
 			s.statusMonitor.Stop()
+		}
+		if s.imageValidator != nil {
+			close(s.imageValidator)
+			s.imageValidator = nil
 		}
 	})
 }
@@ -198,6 +225,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/emulator/images", s.handleEmulatorImages)
 	mux.HandleFunc("/api/emulator/image/get", s.handleEmulatorImageGet)
 	mux.HandleFunc("/api/emulator/image/add", s.handleEmulatorImageAdd)
+	mux.HandleFunc("/api/emulator/image/import", s.handleEmulatorImageImportZip)
+	mux.HandleFunc("/api/emulator/image/import-path", s.handleEmulatorImageImportPath)
+	mux.HandleFunc("/api/emulator/image/scan", s.handleEmulatorImageScan)
+	mux.HandleFunc("/api/emulator/image/sources", s.handleEmulatorImageSources)
+	mux.HandleFunc("/api/emulator/image/source/add", s.handleEmulatorImageSourceAdd)
+	mux.HandleFunc("/api/emulator/image/source/remove", s.handleEmulatorImageSourceRemove)
 
 	// Emulator instances
 	mux.HandleFunc("/api/emulator/instances", s.handleEmulatorInstances)

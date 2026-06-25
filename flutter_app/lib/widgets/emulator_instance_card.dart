@@ -1,4 +1,5 @@
 // Emulator instance card widget.
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:adb_tool/models/emulator_instance.dart';
@@ -176,6 +177,16 @@ class _ActionButtons extends StatelessWidget {
           onSelected: (value) => _handleMenuAction(context, value, provider),
           itemBuilder: (context) => [
             const PopupMenuItem(
+              value: 'reveal',
+              child: Row(
+                children: [
+                  Icon(Icons.folder_open),
+                  SizedBox(width: 8),
+                  Text('在资源管理器中查看'),
+                ],
+              ),
+            ),
+            const PopupMenuItem(
               value: 'delete',
               child: Row(
                 children: [
@@ -208,6 +219,9 @@ class _ActionButtons extends StatelessWidget {
 
   Future<void> _handleMenuAction(BuildContext context, String action, EmulatorInstanceProvider provider) async {
     switch (action) {
+      case 'reveal':
+        await _revealInExplorer(context);
+        break;
       case 'delete':
         final confirmed = await showDialog<bool>(
           context: context,
@@ -231,6 +245,53 @@ class _ActionButtons extends StatelessWidget {
           await provider.deleteInstance(instance.id);
         }
         break;
+    }
+  }
+
+  Future<void> _revealInExplorer(BuildContext context) async {
+    final path = instance.avdPath;
+    if (path.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('该实例没有可用的本地路径')),
+        );
+      }
+      return;
+    }
+
+    if (!FileSystemEntity.isDirectorySync(path) &&
+        !File(path).existsSync() &&
+        !Directory(path).existsSync()) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('路径不存在: $path')),
+        );
+      }
+      return;
+    }
+
+    try {
+      if (Platform.isWindows) {
+        final isDir = FileSystemEntity.isDirectorySync(path);
+        if (isDir) {
+          await Process.run('explorer', [path]);
+        } else {
+          await Process.run('explorer', ['/select,', path]);
+        }
+      } else if (Platform.isMacOS) {
+        await Process.run('open', ['-R', path]);
+      } else if (Platform.isLinux) {
+        final dir = FileSystemEntity.isDirectorySync(path)
+            ? path
+            : File(path).parent.path;
+        await Process.run('xdg-open', [dir]);
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('打开失败: $e')),
+        );
+      }
     }
   }
 }
