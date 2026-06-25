@@ -89,14 +89,14 @@ Future<void> setupDependencies() async {
     ),
   );
 
-  // EmulatorEngineProvider needs ApiClient
+  // EmulatorEngineProvider needs ApiClient + DB
   getIt.registerSingleton<EmulatorEngineProvider>(
-    EmulatorEngineProvider(api: getIt<ApiClient>()),
+    EmulatorEngineProvider(api: getIt<ApiClient>(), db: getIt<AppDatabase>()),
   );
 
-  // EmulatorJavaProvider needs ApiClient
+  // EmulatorJavaProvider needs ApiClient + DB
   getIt.registerSingleton<EmulatorJavaProvider>(
-    EmulatorJavaProvider(api: getIt<ApiClient>()),
+    EmulatorJavaProvider(api: getIt<ApiClient>(), db: getIt<AppDatabase>()),
   );
 
   // EmulatorImageProvider needs ApiClient

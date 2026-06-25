@@ -38,6 +38,10 @@ class AppStatesDao extends DatabaseAccessor<AppDatabase>
     String? activeKey,
     List<String>? expandedSerials,
     DateTime? lastSuccessfulRefresh,
+    String? selectedSDKPath,
+    String? selectedJavaPath,
+    bool clearSDKPath = false,
+    bool clearJavaPath = false,
   }) async {
     final state = await getAppState();
     await (update(appStates)..where((t) => t.id.equals(state.id))).write(
@@ -50,6 +54,16 @@ class AppStatesDao extends DatabaseAccessor<AppDatabase>
         lastSuccessfulRefresh: lastSuccessfulRefresh != null
             ? Value(lastSuccessfulRefresh)
             : const Value.absent(),
+        selectedSDKPath: clearSDKPath
+            ? const Value(null)
+            : selectedSDKPath != null
+                ? Value(selectedSDKPath)
+                : const Value.absent(),
+        selectedJavaPath: clearJavaPath
+            ? const Value(null)
+            : selectedJavaPath != null
+                ? Value(selectedJavaPath)
+                : const Value.absent(),
       ),
     );
   }
@@ -70,6 +84,18 @@ class AppStatesDao extends DatabaseAccessor<AppDatabase>
   Future<String?> getActiveSerial() async {
     final state = await getAppState();
     return state.activeSerial;
+  }
+
+  /// Read the user's selected SDK path.
+  Future<String?> getSelectedSDKPath() async {
+    final state = await getAppState();
+    return state.selectedSDKPath;
+  }
+
+  /// Read the user's selected Java path.
+  Future<String?> getSelectedJavaPath() async {
+    final state = await getAppState();
+    return state.selectedJavaPath;
   }
 
   // --- JSON helpers --------------------------------------------------------

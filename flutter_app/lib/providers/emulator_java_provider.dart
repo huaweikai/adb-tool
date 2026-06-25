@@ -2,6 +2,7 @@
 // Manages Java runtime detection, validation, and download.
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import '../db/database.dart';
 import '../services/api_client.dart';
 
 enum JavaStatus {
@@ -15,6 +16,7 @@ enum JavaStatus {
 
 class EmulatorJavaProvider extends ChangeNotifier {
   final ApiClient _api;
+  final AppDatabase? _db;
 
   JavaRuntimeStatus? _status;
   JavaStatus _javaStatus = JavaStatus.unknown;
@@ -24,7 +26,9 @@ class EmulatorJavaProvider extends ChangeNotifier {
 
   StreamSubscription? _statusPoller;
 
-  EmulatorJavaProvider({required ApiClient api}) : _api = api;
+  EmulatorJavaProvider({required ApiClient api, AppDatabase? db})
+      : _api = api,
+        _db = db;
 
   JavaRuntimeStatus? get status => _status;
   JavaStatus get javaStatus => _javaStatus;
@@ -36,6 +40,7 @@ class EmulatorJavaProvider extends ChangeNotifier {
 
   List<JavaRuntimeInfo> get runtimes => _status?.runtimes ?? const [];
   String? get selectedPath => _status?.selectedPath;
+  bool get selectedInvalid => _status?.selectedInvalid ?? false;
 
   double get downloadProgress {
     if (_currentDownloadId == null) return 0.0;
@@ -107,7 +112,7 @@ class EmulatorJavaProvider extends ChangeNotifier {
     }
   }
 
-  /// Select a Java runtime to use (persisted on the backend)
+  /// Select a Java runtime to use (persisted on the backend and locally in DB)
   Future<bool> select(String javaPath) async {
     _javaStatus = JavaStatus.checking;
     _errorMessage = null;
@@ -116,6 +121,8 @@ class EmulatorJavaProvider extends ChangeNotifier {
     try {
       final result = await _api.selectJava(javaPath);
       if (result.selected) {
+        // Persist to local DB
+        await _db?.appStatesDao.updateAppState(selectedJavaPath: javaPath);
         await refreshStatus();
         return true;
       } else {
@@ -130,6 +137,18 @@ class EmulatorJavaProvider extends ChangeNotifier {
       notifyListeners();
       return false;
     }
+  }
+
+  /// Restore the previously selected Java path from local DB.
+  /// Call this on app startup after backend is ready.
+  Future<bool> restoreFromDB() async {
+    if (_db == null) return false;
+
+    final savedPath = await _db!.appStatesDao.getSelectedJavaPath();
+    if (savedPath == null || savedPath.isEmpty) return false;
+
+    debugPrint('[EmulatorJavaProvider] Restoring Java path from DB: $savedPath');
+    return await select(savedPath);
   }
 
   /// Start downloading a Java runtime

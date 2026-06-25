@@ -9,6 +9,8 @@ import '../providers/device_provider.dart' show DeviceSerialScope, DeviceScreenA
 import '../providers/locale_provider.dart';
 import '../providers/test_config_provider.dart';
 import '../providers/test_session_provider.dart';
+import '../providers/emulator_engine_provider.dart';
+import '../providers/emulator_java_provider.dart';
 import '../i18n.dart';
 import '../widgets/disconnected_banner.dart';
 import '../widgets/recording_fab.dart';
@@ -123,6 +125,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         ..clear()
         ..addAll(expandedSerials);
     });
+
+    // Restore emulator toolchain selections from DB
+    // Import the providers to use them
+    if (!mounted) return;
+    try {
+      final emulatorEngineProvider = context.read<EmulatorEngineProvider>();
+      final emulatorJavaProvider = context.read<EmulatorJavaProvider>();
+
+      // Restore SDK selection first, then Java
+      await emulatorEngineProvider.restoreFromDB();
+      if (!mounted) return;
+      await emulatorJavaProvider.restoreFromDB();
+    } catch (e) {
+      debugPrint('[HomeScreen] Failed to restore emulator state: $e');
+    }
   }
 
   Future<void> _startRefresh() async {

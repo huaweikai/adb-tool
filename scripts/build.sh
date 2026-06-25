@@ -10,17 +10,18 @@ DIST_MACOS_DIR="$ROOT_DIR/dist/macos"
 usage() {
   cat <<'EOF'
 用法：
-  $(basename "$0") --platform macos|windows --mode debug|release [--arch arm64|amd64|all]
+  $(basename "$0") --platform macos|windows --mode debug|release [--arch arm64|amd64|all|universal]
 
 示例：
   $(basename "$0") --platform macos --mode release --arch all
   $(basename "$0") --platform macos --mode debug --arch arm64
   $(basename "$0") --platform macos --mode release --arch amd64
+  $(basename "$0") --platform macos --mode release --arch universal
 
 说明：
   --arch 不传则按当前 Mac host 架构构建。
-  --arch all 会依次构建 arm64 与 amd64；非 host 架构依赖 Rosetta 2（Apple Silicon）
-  或 Apple Silicon 硬件（Intel Mac 上构建 arm64 会失败）。
+  --arch all 会依次构建 arm64 与 amd64 分开的包；非 host 架构依赖 Rosetta 2。
+  --arch universal 会构建通用包（arm64 + amd64 合并为一个 app）。
 EOF
 }
 
@@ -112,7 +113,12 @@ build_macos_one() {
   echo "==> 编译后端 (GOOS=darwin GOARCH=$target_arch)"
   (cd "$ROOT_DIR/backend" && GOOS=darwin GOARCH="$target_arch" go build -ldflags="-s -w" -o "$backend_out" .)
   chmod +x "$backend_out"
-  echo "后端已输出：$backend_out"
+
+  # 为 adb-tool 添加 ad-hoc 签名（Flutter 构建时会检查签名）
+  echo "==> 签名 adb-tool..."
+  codesign --force --sign - "$backend_out" 2>/dev/null || echo "  签名跳过（无签名证书，用 ad-hoc）"
+
+  echo "后端已输出并签名：$backend_out"
 
   # 强制清掉上一次构建的产物，避免 Flutter 复用导致 arch 错乱
   rm -rf "$ROOT_DIR/flutter_app/build/macos"
@@ -131,16 +137,76 @@ build_macos_one() {
     return 1
   fi
 
-  local inner_dst="$app_path/Contents/MacOS/adb-tool"
-  cp "$backend_out" "$inner_dst"
-  chmod +x "$inner_dst"
-  echo "已确保后端写入 App：$inner_dst"
+  # Flutter 构建已经包含签名后的 adb-tool，直接用
+  echo "App 已生成：$app_path"
 
   local target_dist="$DIST_MACOS_DIR/$target_arch"
   mkdir -p "$target_dist"
   rm -rf "$target_dist/adb_tool.app"
   cp -R "$app_path" "$target_dist/adb_tool.app"
   echo "产物：$target_dist/adb_tool.app"
+}
+
+# 合并两个架构的 app 为 universal app
+merge_to_universal() {
+  local arm64_app="$DIST_MACOS_DIR/arm64/adb_tool.app"
+  local amd64_app="$DIST_MACOS_DIR/amd64/adb_tool.app"
+  local universal_app="$DIST_MACOS_DIR/adb_tool.app"
+
+  if [[ ! -d "$arm64_app" ]]; then
+    echo "错误: 找不到 arm64 app：$arm64_app"
+    return 1
+  fi
+  if [[ ! -d "$amd64_app" ]]; then
+    echo "错误: 找不到 amd64 app：$amd64_app"
+    return 1
+  fi
+
+  echo "==> 以 arm64 为基础构建 universal app..."
+
+  # 复制 arm64 版本作为基础
+  rm -rf "$universal_app"
+  cp -R "$arm64_app" "$universal_app"
+
+  # 合并主程序 adb-tool
+  echo "  合并 adb-tool..."
+  lipo -create \
+    "$arm64_app/Contents/MacOS/adb-tool" \
+    "$amd64_app/Contents/MacOS/adb-tool" \
+    -output "$universal_app/Contents/MacOS/adb-tool"
+  chmod +x "$universal_app/Contents/MacOS/adb-tool"
+
+  # 合并 Flutter 引擎 (FlutterMacOS.framework)
+  local arm64_fw="$arm64_app/Contents/Frameworks/FlutterMacOS.framework"
+  local amd64_fw="$amd64_app/Contents/Frameworks/FlutterMacOS.framework"
+  local uni_fw="$universal_app/Contents/Frameworks/FlutterMacOS.framework"
+
+  if [[ -d "$arm64_fw" && -d "$amd64_fw" ]]; then
+    echo "  合并 FlutterMacOS.framework..."
+    rm -rf "$uni_fw"
+    cp -R "$arm64_fw" "$universal_app/Contents/Frameworks/"
+
+    # 合并 FlutterMacOS 二进制
+    lipo -create \
+      "$arm64_fw/Contents/MacOS/FlutterMacOS" \
+      "$amd64_fw/Contents/MacOS/FlutterMacOS" \
+      -output "$uni_fw/Contents/MacOS/FlutterMacOS"
+  fi
+
+  # 合并其他 frameworks (如果有的话)
+  for fw in "$arm64_app/Contents/Frameworks"/*.framework; do
+    [[ -e "$fw" ]] || continue
+    local fw_name="$(basename "$fw")"
+    local arm64_bin="$fw/Contents/MacOS/$fw_name"
+    local amd64_bin="$amd64_app/Contents/Frameworks/$fw_name/Contents/MacOS/$fw_name"
+
+    if [[ -f "$arm64_bin" && -f "$amd64_bin" ]]; then
+      echo "  合并 $fw_name..."
+      lipo -create "$arm64_bin" "$amd64_bin" -output "$uni_fw/Contents/MacOS/$fw_name"
+    fi
+  done
+
+  echo "==> Universal app 已生成：$universal_app"
 }
 
 if [[ "$PLATFORM" == "macos" ]]; then
@@ -162,10 +228,19 @@ if [[ "$PLATFORM" == "macos" ]]; then
     else
       TARGETS=("amd64" "arm64")
     fi
-  elif [[ "$GOARCH" == "arm64" || "$GOARCH" == "amd64" ]]; then
-    TARGETS=("$GOARCH")
+  elif [[ "$GOARCH" == "arm64" || "$GOARCH" == "amd64" || "$GOARCH" == "universal" ]]; then
+    if [[ "$GOARCH" == "universal" ]]; then
+      if [[ "$HOST_ARCH" == "arm64" ]]; then
+        TARGETS=("arm64" "amd64")
+      else
+        TARGETS=("amd64" "arm64")
+      fi
+      IS_UNIVERSAL=1
+    else
+      TARGETS=("$GOARCH")
+    fi
   else
-    echo "--arch 只能是 arm64、amd64 或 all"
+    echo "--arch 只能是 arm64、amd64、all 或 universal"
     exit 1
   fi
 
@@ -198,6 +273,13 @@ if [[ "$PLATFORM" == "macos" ]]; then
       fi
     fi
   done
+
+  # 如果是 universal 模式，合并两个架构
+  if [[ "${IS_UNIVERSAL:-0}" == "1" && "${QUIET_FINAL:-0}" != "1" ]]; then
+    echo ""
+    echo "==> 合并为 Universal App..."
+    merge_to_universal
+  fi
 
   if [[ "${QUIET_FINAL:-0}" != "1" ]]; then
     echo ""

@@ -1,6 +1,7 @@
 package emulator
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -24,6 +25,56 @@ type Engine struct {
 	ToolchainReady  bool   `json:"toolchainReady"`
 	LastVerified    string `json:"lastVerified,omitempty"`
 	Error           string `json:"error,omitempty"`
+	// SelectedSDKInvalid is true when a persisted SDK selection exists but the
+	// path is no longer usable, so the UI can warn the user.
+	SelectedSDKInvalid bool   `json:"selectedSDKInvalid,omitempty"`
+	SelectedSDKPath    string `json:"selectedSDKPath,omitempty"`
+}
+
+// sdkConfigPath returns the path to the persisted SDK selection config.
+func sdkConfigPath() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".adb-tool", "emulator", "sdk-config.json")
+}
+
+type sdkConfig struct {
+	SelectedPath string `json:"selectedPath"`
+}
+
+// LoadSelectedSDKPath returns the user-selected SDK path, or "" if none.
+func LoadSelectedSDKPath() string {
+	data, err := os.ReadFile(sdkConfigPath())
+	if err != nil {
+		return ""
+	}
+	var cfg sdkConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return ""
+	}
+	return cfg.SelectedPath
+}
+
+// SaveSelectedSDKPath persists the user-selected SDK path.
+func SaveSelectedSDKPath(path string) error {
+	cfgPath := sdkConfigPath()
+	if err := os.MkdirAll(filepath.Dir(cfgPath), 0755); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(sdkConfig{SelectedPath: path}, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(cfgPath, data, 0644)
+}
+
+// sdkPathHasEmulator reports whether the given SDK path contains the emulator binary.
+func sdkPathHasEmulator(sdkPath string) bool {
+	emulatorPath := filepath.Join(sdkPath, "emulator", "emulator")
+	if runtime.GOOS == "windows" {
+		emulatorPath += ".exe"
+	}
+	_, err := os.Stat(emulatorPath)
+	return err == nil
 }
 
 // DefaultSDKPath returns the default SDK path in .adb-tool.
@@ -37,20 +88,43 @@ func DefaultSDKPath() string {
 func DetectEmulatorEngine(androidHome, emulatorPath string) (*Engine, error) {
 	engine := &Engine{}
 
-	// Priority 1: Check our managed SDK path
-	managedSDK := DefaultSDKPath()
-	if _, err := os.Stat(filepath.Join(managedSDK, "emulator", "emulator")); err == nil {
-		engine.SDKPath = managedSDK
-		engine.AndroidHome = managedSDK
+	// Priority 0: Honor the user's persisted SDK selection if still usable.
+	if selected := LoadSelectedSDKPath(); selected != "" {
+		engine.SelectedSDKPath = selected
+		if sdkPathHasEmulator(selected) {
+			engine.SDKPath = selected
+			engine.AndroidHome = selected
+		} else {
+			// Persisted selection is no longer usable; flag it and fall back.
+			engine.SelectedSDKInvalid = true
+		}
 	}
 
-	// Priority 2: Use provided androidHome
-	if androidHome != "" {
+	// Priority 1: Use explicitly provided androidHome (higher priority than persisted)
+	if androidHome != "" && sdkPathHasEmulator(androidHome) {
+		engine.SDKPath = androidHome
 		engine.AndroidHome = androidHome
-		if _, err := os.Stat(filepath.Join(androidHome, "emulator")); err == nil {
-			if engine.SDKPath == "" {
-				engine.SDKPath = androidHome
-			}
+		engine.SelectedSDKPath = "" // Clear persisted since we're using explicit
+		engine.SelectedSDKInvalid = false
+	}
+
+	// Priority 2: Check our managed SDK path
+	managedSDK := DefaultSDKPath()
+	if engine.SDKPath == "" {
+		if _, err := os.Stat(filepath.Join(managedSDK, "emulator", "emulator")); err == nil {
+			engine.SDKPath = managedSDK
+			engine.AndroidHome = managedSDK
+		}
+	}
+
+	// Priority 3: Check environment variables
+	if engine.AndroidHome == "" {
+		if androidHomeEnv := os.Getenv("ANDROID_HOME"); androidHomeEnv != "" && sdkPathHasEmulator(androidHomeEnv) {
+			engine.AndroidHome = androidHomeEnv
+			engine.SDKPath = androidHomeEnv
+		} else if androidSdkRoot := os.Getenv("ANDROID_SDK_ROOT"); androidSdkRoot != "" && sdkPathHasEmulator(androidSdkRoot) {
+			engine.AndroidHome = androidSdkRoot
+			engine.SDKPath = androidSdkRoot
 		}
 	}
 
@@ -236,52 +310,13 @@ func findBinary(path string) string {
 	return ""
 }
 
-// detectJava attempts to find a suitable Java installation.
+// detectJava resolves the effective Java runtime via the single source of
+// truth (DetectJavaRuntime), which honors the user's persisted selection.
 func detectJava(engine *Engine, sdkPath string) {
-	javaCandidates := []string{}
-
-	// Check JAVA_HOME
-	if javaHome := os.Getenv("JAVA_HOME"); javaHome != "" {
-		javaCandidates = append(javaCandidates, filepath.Join(javaHome, "bin", "java"))
+	if rt := DetectJavaRuntime(sdkPath); rt != nil {
+		engine.JavaPath = rt.Path
+		engine.JavaVersion = rt.Version
 	}
-
-	// Check Android SDK bundled Java runtime
-	if sdkPath != "" {
-		javaRuntime := filepath.Join(sdkPath, "jre", "bin", "java")
-		javaCandidates = append(javaCandidates, javaRuntime)
-		javaRuntime = filepath.Join(sdkPath, "java-runtime", "bin", "java")
-		javaCandidates = append(javaCandidates, javaRuntime)
-	}
-
-	// Check our managed Java runtime
-	home, _ := os.UserHomeDir()
-	managedJava := filepath.Join(home, ".adb-tool", "emulator", "java-runtime", "bin", "java")
-	javaCandidates = append(javaCandidates, managedJava)
-
-	// Check system PATH
-	javaCandidates = append(javaCandidates, "java")
-
-	for _, javaPath := range javaCandidates {
-		if path := findBinary(javaPath); path != "" {
-			cmd := exec.Command(path, "-version")
-			output, err := cmd.CombinedOutput()
-			if err != nil {
-				continue
-			}
-			engine.JavaPath = path
-			engine.JavaVersion = parseJavaVersion(string(output))
-			return
-		}
-	}
-}
-
-// parseJavaVersion extracts Java version info.
-func parseJavaVersion(output string) string {
-	lines := strings.Split(output, "\n")
-	if len(lines) >= 1 {
-		return strings.TrimSpace(lines[0])
-	}
-	return ""
 }
 
 // SDKInfo represents a detected Android SDK installation.

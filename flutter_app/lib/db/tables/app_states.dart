@@ -12,4 +12,8 @@ class AppStates extends Table {
   TextColumn get activeKey => text().nullable()();
   TextColumn get expandedSerials => text()(); // JSON array
   DateTimeColumn get lastSuccessfulRefresh => dateTime().nullable()();
+
+  // Emulator toolchain selections (SDK and Java paths)
+  TextColumn get selectedSDKPath => text().nullable()();
+  TextColumn get selectedJavaPath => text().nullable()();
 }

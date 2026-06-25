@@ -109,7 +109,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(QueryExecutor executor) : super(executor);
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -155,6 +155,11 @@ class AppDatabase extends _$AppDatabase {
             // because it needs the AppDatabase instance to read the file
             // and is safer to retry on a fresh launch.
             await m.createTable(testAppConfigs);
+          }
+          if (from < 7) {
+            // v6 → v7: add emulator toolchain selections (SDK and Java paths)
+            await m.addColumn(appStates, appStates.selectedSDKPath);
+            await m.addColumn(appStates, appStates.selectedJavaPath);
           }
         },
         beforeOpen: (details) async {

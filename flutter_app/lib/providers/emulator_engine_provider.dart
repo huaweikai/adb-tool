@@ -2,6 +2,7 @@
 // Manages Android SDK emulator path detection, validation, and status.
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import '../db/database.dart';
 import '../models/emulator_engine.dart';
 import '../services/api_client.dart';
 
@@ -15,6 +16,7 @@ enum EngineValidationState {
 
 class EmulatorEngineProvider extends ChangeNotifier {
   final ApiClient _api;
+  final AppDatabase? _db;
 
   EmulatorEngineConfig _config = EmulatorEngineConfig.empty();
   EmulatorEngineStatus? _serverStatus;
@@ -27,7 +29,9 @@ class EmulatorEngineProvider extends ChangeNotifier {
 
   StreamSubscription? _statusPoller;
 
-  EmulatorEngineProvider({required ApiClient api}) : _api = api;
+  EmulatorEngineProvider({required ApiClient api, AppDatabase? db})
+      : _api = api,
+        _db = db;
 
   EmulatorEngineConfig get config => _config;
   EmulatorEngineStatus? get serverStatus => _serverStatus;
@@ -86,6 +90,9 @@ class EmulatorEngineProvider extends ChangeNotifier {
       _serverStatus = status;
       _updateConfigFromStatus(status);
 
+      // Persist to local DB
+      await _db?.appStatesDao.updateAppState(selectedSDKPath: sdkPath);
+
       if (status.isValid) {
         _validationState = EngineValidationState.valid;
       } else {
@@ -99,6 +106,19 @@ class EmulatorEngineProvider extends ChangeNotifier {
       _errorMessage = e.toString();
       notifyListeners();
     }
+  }
+
+  /// Restore the previously selected SDK path from local DB.
+  /// Call this on app startup after backend is ready.
+  Future<bool> restoreFromDB() async {
+    if (_db == null) return false;
+
+    final savedPath = await _db!.appStatesDao.getSelectedSDKPath();
+    if (savedPath == null || savedPath.isEmpty) return false;
+
+    debugPrint('[EmulatorEngineProvider] Restoring SDK path from DB: $savedPath');
+    await useSDK(savedPath);
+    return true;
   }
 
   /// Download SDK from URL

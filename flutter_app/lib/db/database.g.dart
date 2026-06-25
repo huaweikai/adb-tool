@@ -600,9 +600,21 @@ class $AppStatesTable extends AppStates
   late final GeneratedColumn<DateTime> lastSuccessfulRefresh =
       GeneratedColumn<DateTime>('last_successful_refresh', aliasedName, true,
           type: DriftSqlType.dateTime, requiredDuringInsert: false);
+  static const VerificationMeta _selectedSDKPathMeta =
+      const VerificationMeta('selectedSDKPath');
+  @override
+  late final GeneratedColumn<String> selectedSDKPath = GeneratedColumn<String>(
+      'selected_sdk_path', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _selectedJavaPathMeta =
+      const VerificationMeta('selectedJavaPath');
+  @override
+  late final GeneratedColumn<String> selectedJavaPath = GeneratedColumn<String>(
+      'selected_java_path', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
   @override
   List<GeneratedColumn> get $columns =>
-      [id, activeSerial, activeKey, expandedSerials, lastSuccessfulRefresh];
+      [id, activeSerial, activeKey, expandedSerials, lastSuccessfulRefresh, selectedSDKPath, selectedJavaPath];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -640,6 +652,18 @@ class $AppStatesTable extends AppStates
           lastSuccessfulRefresh.isAcceptableOrUnknown(
               data['last_successful_refresh']!, _lastSuccessfulRefreshMeta));
     }
+    if (data.containsKey('selected_sdk_path')) {
+      context.handle(
+          _selectedSDKPathMeta,
+          selectedSDKPath.isAcceptableOrUnknown(
+              data['selected_sdk_path']!, _selectedSDKPathMeta));
+    }
+    if (data.containsKey('selected_java_path')) {
+      context.handle(
+          _selectedJavaPathMeta,
+          selectedJavaPath.isAcceptableOrUnknown(
+              data['selected_java_path']!, _selectedJavaPathMeta));
+    }
     return context;
   }
 
@@ -660,6 +684,10 @@ class $AppStatesTable extends AppStates
       lastSuccessfulRefresh: attachedDatabase.typeMapping.read(
           DriftSqlType.dateTime,
           data['${effectivePrefix}last_successful_refresh']),
+      selectedSDKPath: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}selected_sdk_path']),
+      selectedJavaPath: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}selected_java_path']),
     );
   }
 
@@ -675,12 +703,16 @@ class AppState extends DataClass implements Insertable<AppState> {
   final String? activeKey;
   final String expandedSerials;
   final DateTime? lastSuccessfulRefresh;
+  final String? selectedSDKPath;
+  final String? selectedJavaPath;
   const AppState(
       {required this.id,
       this.activeSerial,
       this.activeKey,
       required this.expandedSerials,
-      this.lastSuccessfulRefresh});
+      this.lastSuccessfulRefresh,
+      this.selectedSDKPath,
+      this.selectedJavaPath});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -695,6 +727,12 @@ class AppState extends DataClass implements Insertable<AppState> {
     if (!nullToAbsent || lastSuccessfulRefresh != null) {
       map['last_successful_refresh'] =
           Variable<DateTime>(lastSuccessfulRefresh);
+    }
+    if (!nullToAbsent || selectedSDKPath != null) {
+      map['selected_sdk_path'] = Variable<String>(selectedSDKPath);
+    }
+    if (!nullToAbsent || selectedJavaPath != null) {
+      map['selected_java_path'] = Variable<String>(selectedJavaPath);
     }
     return map;
   }
@@ -712,6 +750,12 @@ class AppState extends DataClass implements Insertable<AppState> {
       lastSuccessfulRefresh: lastSuccessfulRefresh == null && nullToAbsent
           ? const Value.absent()
           : Value(lastSuccessfulRefresh),
+      selectedSDKPath: selectedSDKPath == null && nullToAbsent
+          ? const Value.absent()
+          : Value(selectedSDKPath),
+      selectedJavaPath: selectedJavaPath == null && nullToAbsent
+          ? const Value.absent()
+          : Value(selectedJavaPath),
     );
   }
 
@@ -725,6 +769,8 @@ class AppState extends DataClass implements Insertable<AppState> {
       expandedSerials: serializer.fromJson<String>(json['expandedSerials']),
       lastSuccessfulRefresh:
           serializer.fromJson<DateTime?>(json['lastSuccessfulRefresh']),
+      selectedSDKPath: serializer.fromJson<String?>(json['selectedSDKPath']),
+      selectedJavaPath: serializer.fromJson<String?>(json['selectedJavaPath']),
     );
   }
   @override
@@ -737,6 +783,8 @@ class AppState extends DataClass implements Insertable<AppState> {
       'expandedSerials': serializer.toJson<String>(expandedSerials),
       'lastSuccessfulRefresh':
           serializer.toJson<DateTime?>(lastSuccessfulRefresh),
+      'selectedSDKPath': serializer.toJson<String?>(selectedSDKPath),
+      'selectedJavaPath': serializer.toJson<String?>(selectedJavaPath),
     };
   }
 
@@ -745,7 +793,9 @@ class AppState extends DataClass implements Insertable<AppState> {
           Value<String?> activeSerial = const Value.absent(),
           Value<String?> activeKey = const Value.absent(),
           String? expandedSerials,
-          Value<DateTime?> lastSuccessfulRefresh = const Value.absent()}) =>
+          Value<DateTime?> lastSuccessfulRefresh = const Value.absent(),
+          Value<String?> selectedSDKPath = const Value.absent(),
+          Value<String?> selectedJavaPath = const Value.absent()}) =>
       AppState(
         id: id ?? this.id,
         activeSerial:
@@ -755,6 +805,10 @@ class AppState extends DataClass implements Insertable<AppState> {
         lastSuccessfulRefresh: lastSuccessfulRefresh.present
             ? lastSuccessfulRefresh.value
             : this.lastSuccessfulRefresh,
+        selectedSDKPath:
+            selectedSDKPath.present ? selectedSDKPath.value : this.selectedSDKPath,
+        selectedJavaPath:
+            selectedJavaPath.present ? selectedJavaPath.value : this.selectedJavaPath,
       );
   AppState copyWithCompanion(AppStatesCompanion data) {
     return AppState(
@@ -769,6 +823,12 @@ class AppState extends DataClass implements Insertable<AppState> {
       lastSuccessfulRefresh: data.lastSuccessfulRefresh.present
           ? data.lastSuccessfulRefresh.value
           : this.lastSuccessfulRefresh,
+      selectedSDKPath: data.selectedSDKPath.present
+          ? data.selectedSDKPath.value
+          : this.selectedSDKPath,
+      selectedJavaPath: data.selectedJavaPath.present
+          ? data.selectedJavaPath.value
+          : this.selectedJavaPath,
     );
   }
 
@@ -779,14 +839,17 @@ class AppState extends DataClass implements Insertable<AppState> {
           ..write('activeSerial: $activeSerial, ')
           ..write('activeKey: $activeKey, ')
           ..write('expandedSerials: $expandedSerials, ')
-          ..write('lastSuccessfulRefresh: $lastSuccessfulRefresh')
+          ..write('lastSuccessfulRefresh: $lastSuccessfulRefresh, ')
+          ..write('selectedSDKPath: $selectedSDKPath, ')
+          ..write('selectedJavaPath: $selectedJavaPath')
           ..write(')'))
         .toString();
   }
 
   @override
   int get hashCode => Object.hash(
-      id, activeSerial, activeKey, expandedSerials, lastSuccessfulRefresh);
+      id, activeSerial, activeKey, expandedSerials, lastSuccessfulRefresh,
+      selectedSDKPath, selectedJavaPath);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -795,7 +858,9 @@ class AppState extends DataClass implements Insertable<AppState> {
           other.activeSerial == this.activeSerial &&
           other.activeKey == this.activeKey &&
           other.expandedSerials == this.expandedSerials &&
-          other.lastSuccessfulRefresh == this.lastSuccessfulRefresh);
+          other.lastSuccessfulRefresh == this.lastSuccessfulRefresh &&
+          other.selectedSDKPath == this.selectedSDKPath &&
+          other.selectedJavaPath == this.selectedJavaPath);
 }
 
 class AppStatesCompanion extends UpdateCompanion<AppState> {
@@ -804,12 +869,16 @@ class AppStatesCompanion extends UpdateCompanion<AppState> {
   final Value<String?> activeKey;
   final Value<String> expandedSerials;
   final Value<DateTime?> lastSuccessfulRefresh;
+  final Value<String?> selectedSDKPath;
+  final Value<String?> selectedJavaPath;
   const AppStatesCompanion({
     this.id = const Value.absent(),
     this.activeSerial = const Value.absent(),
     this.activeKey = const Value.absent(),
     this.expandedSerials = const Value.absent(),
     this.lastSuccessfulRefresh = const Value.absent(),
+    this.selectedSDKPath = const Value.absent(),
+    this.selectedJavaPath = const Value.absent(),
   });
   AppStatesCompanion.insert({
     this.id = const Value.absent(),
@@ -817,6 +886,8 @@ class AppStatesCompanion extends UpdateCompanion<AppState> {
     this.activeKey = const Value.absent(),
     required String expandedSerials,
     this.lastSuccessfulRefresh = const Value.absent(),
+    this.selectedSDKPath = const Value.absent(),
+    this.selectedJavaPath = const Value.absent(),
   }) : expandedSerials = Value(expandedSerials);
   static Insertable<AppState> custom({
     Expression<int>? id,
@@ -824,6 +895,8 @@ class AppStatesCompanion extends UpdateCompanion<AppState> {
     Expression<String>? activeKey,
     Expression<String>? expandedSerials,
     Expression<DateTime>? lastSuccessfulRefresh,
+    Expression<String>? selectedSDKPath,
+    Expression<String>? selectedJavaPath,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -832,6 +905,8 @@ class AppStatesCompanion extends UpdateCompanion<AppState> {
       if (expandedSerials != null) 'expanded_serials': expandedSerials,
       if (lastSuccessfulRefresh != null)
         'last_successful_refresh': lastSuccessfulRefresh,
+      if (selectedSDKPath != null) 'selected_sdk_path': selectedSDKPath,
+      if (selectedJavaPath != null) 'selected_java_path': selectedJavaPath,
     });
   }
 
@@ -840,7 +915,9 @@ class AppStatesCompanion extends UpdateCompanion<AppState> {
       Value<String?>? activeSerial,
       Value<String?>? activeKey,
       Value<String>? expandedSerials,
-      Value<DateTime?>? lastSuccessfulRefresh}) {
+      Value<DateTime?>? lastSuccessfulRefresh,
+      Value<String?>? selectedSDKPath,
+      Value<String?>? selectedJavaPath}) {
     return AppStatesCompanion(
       id: id ?? this.id,
       activeSerial: activeSerial ?? this.activeSerial,
@@ -848,6 +925,8 @@ class AppStatesCompanion extends UpdateCompanion<AppState> {
       expandedSerials: expandedSerials ?? this.expandedSerials,
       lastSuccessfulRefresh:
           lastSuccessfulRefresh ?? this.lastSuccessfulRefresh,
+      selectedSDKPath: selectedSDKPath ?? this.selectedSDKPath,
+      selectedJavaPath: selectedJavaPath ?? this.selectedJavaPath,
     );
   }
 
@@ -870,6 +949,12 @@ class AppStatesCompanion extends UpdateCompanion<AppState> {
       map['last_successful_refresh'] =
           Variable<DateTime>(lastSuccessfulRefresh.value);
     }
+    if (selectedSDKPath.present) {
+      map['selected_sdk_path'] = Variable<String>(selectedSDKPath.value);
+    }
+    if (selectedJavaPath.present) {
+      map['selected_java_path'] = Variable<String>(selectedJavaPath.value);
+    }
     return map;
   }
 
@@ -880,7 +965,9 @@ class AppStatesCompanion extends UpdateCompanion<AppState> {
           ..write('activeSerial: $activeSerial, ')
           ..write('activeKey: $activeKey, ')
           ..write('expandedSerials: $expandedSerials, ')
-          ..write('lastSuccessfulRefresh: $lastSuccessfulRefresh')
+          ..write('lastSuccessfulRefresh: $lastSuccessfulRefresh, ')
+          ..write('selectedSDKPath: $selectedSDKPath, ')
+          ..write('selectedJavaPath: $selectedJavaPath')
           ..write(')'))
         .toString();
   }
