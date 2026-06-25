@@ -116,7 +116,12 @@ build_macos_one() {
 
   # 为 adb-tool 添加 ad-hoc 签名（Flutter 构建时会检查签名）
   echo "==> 签名 adb-tool..."
-  codesign --force --sign - "$backend_out" 2>/dev/null || echo "  签名跳过（无签名证书，用 ad-hoc）"
+  if ! codesign --force --sign - "$backend_out"; then
+    echo "错误: adb-tool 签名失败,Flutter 会拒绝打包"
+    codesign -dv "$backend_out" 2>&1 || true
+    exit 1
+  fi
+  codesign -dv "$backend_out" 2>&1 | head -3
 
   echo "后端已输出并签名：$backend_out"
 
