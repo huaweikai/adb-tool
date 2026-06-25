@@ -34,6 +34,10 @@ class EmulatorJavaCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 16),
+            if (provider.selectedInvalid) ...[
+              _buildSelectionInvalidWarning(context),
+              const SizedBox(height: 12),
+            ],
             _buildJavaInfo(context, provider),
             if (provider.errorMessage != null) ...[
               const SizedBox(height: 12),
@@ -118,9 +122,11 @@ class EmulatorJavaCard extends StatelessWidget {
     }
 
     final selectedPath = provider.selectedPath;
-    final effectivePath = (selectedPath != null && selectedPath.isNotEmpty)
-        ? selectedPath
-        : provider.status?.systemJava?.path;
+    final effectivePath = provider.selectedInvalid
+        ? null
+        : (selectedPath != null && selectedPath.isNotEmpty)
+            ? selectedPath
+            : provider.status?.systemJava?.path;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -199,6 +205,29 @@ class EmulatorJavaCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildSelectionInvalidWarning(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.orange.withAlpha(20),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.orange.withAlpha(50)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.warning_amber, size: 16, color: Colors.orange),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '之前选择的 Java 运行环境已失效，请重新选择',
+              style: const TextStyle(fontSize: 12, color: Colors.orange),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -82,6 +82,7 @@ class JavaRuntimeStatus {
   final JavaRuntimeInfo? systemJava;
   final List<JavaRuntimeInfo> runtimes;
   final String? selectedPath;
+  final bool selectedInvalid;
   final List<JavaRuntimeInfo> embedded;
   final List<DownloadInfo> downloads;
 
@@ -92,6 +93,7 @@ class JavaRuntimeStatus {
     this.systemJava,
     this.runtimes = const [],
     this.selectedPath,
+    this.selectedInvalid = false,
     this.embedded = const [],
     this.downloads = const [],
   });
@@ -109,6 +111,7 @@ class JavaRuntimeStatus {
               .toList() ??
           [],
       selectedPath: json['selectedPath'] as String?,
+      selectedInvalid: json['selectedInvalid'] as bool? ?? false,
       embedded: (json['embedded'] as List<dynamic>?)
               ?.map((e) => JavaRuntimeInfo.fromJson(e as Map<String, dynamic>))
               .toList() ??

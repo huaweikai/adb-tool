@@ -48,6 +48,8 @@ func (s *Server) handleEmulatorEngineStatus(w http.ResponseWriter, r *http.Reque
 		"error":           EmulatorEngine.Error,
 		"hasSDK":          SDKMgr.Exists(),
 		"sdkPath":         SDKMgr.GetSDKPath(),
+		"selectedSDKPath":    EmulatorEngine.SelectedSDKPath,
+		"selectedSDKInvalid": EmulatorEngine.SelectedSDKInvalid,
 	})
 }
 
@@ -233,6 +235,12 @@ func (s *Server) handleEmulatorSDKUse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Persist the selection so it survives restarts.
+	if err := emulator.SaveSelectedSDKPath(req.SDKPath); err != nil {
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
 	// Update global state
 	EmulatorEngine = engine
 
@@ -349,6 +357,12 @@ func (s *Server) handleEmulatorJavaStatus(w http.ResponseWriter, r *http.Request
 	// Persisted user selection
 	selectedPath := emulator.LoadSelectedJavaPath()
 
+	// A persisted selection that no longer resolves to a usable Java is invalid.
+	selectedInvalid := false
+	if selectedPath != "" && emulator.ValidateJavaPath(selectedPath) == nil {
+		selectedInvalid = true
+	}
+
 	// Get embedded runtimes
 	embedded := emulator.GetEmbeddedJavaRuntimes()
 
@@ -368,11 +382,12 @@ func (s *Server) handleEmulatorJavaStatus(w http.ResponseWriter, r *http.Request
 	}
 
 	response := map[string]interface{}{
-		"systemJava":   java,
-		"runtimes":     runtimes,
-		"selectedPath": selectedPath,
-		"embedded":     embedded,
-		"downloads":    downloadsResp,
+		"systemJava":      java,
+		"runtimes":        runtimes,
+		"selectedPath":    selectedPath,
+		"selectedInvalid": selectedInvalid,
+		"embedded":        embedded,
+		"downloads":       downloadsResp,
 	}
 
 	if java != nil {
