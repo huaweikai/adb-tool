@@ -11,6 +11,7 @@
 // (i.e. not above dialogs / sheets / system overlays) — those are handled
 // by the OS natively.
 import 'dart:async';
+import 'package:adb_tool/screens/home_screen.dart';
 import 'package:flutter/material.dart';
 import '../db/database.dart';
 import '../i18n.dart';
@@ -43,18 +44,18 @@ class _ActiveRecording {
 }
 
 /// Signature called when the user picks a recording to jump to.
-typedef OnNavigateToSession = void Function(String serial);
+typedef OnNavigateToRecord = void Function(String serial, NavItem item);
 
 class RecordingOverlay extends StatefulWidget {
   final AppDatabase db;
   final TestSessionProvider sessionProvider;
-  final OnNavigateToSession onNavigateToSession;
+  final OnNavigateToRecord onNavigateToRecord;
 
   const RecordingOverlay({
     super.key,
     required this.db,
     required this.sessionProvider,
-    required this.onNavigateToSession,
+    required this.onNavigateToRecord,
   });
 
   @override
@@ -137,10 +138,20 @@ class _RecordingOverlayState extends State<RecordingOverlay> {
 
   /// Single recording: a simple FAB that navigates directly on tap.
   Widget _buildSingleFab(_ActiveRecording r) {
+    final recordDesc = switch (r.owner) {
+      ScreenRecordOwner.testSession => r.sessionName,
+      _ => tr('files'),
+    };
     return FloatingActionButton.extended(
       heroTag: 'recording_fab_single',
       backgroundColor: Colors.red,
-      onPressed: () => widget.onNavigateToSession(r.serial),
+      onPressed: () => {
+         if (r.owner == ScreenRecordOwner.testSession) {
+           widget.onNavigateToRecord(r.serial, NavItem.session)
+         } else {
+           widget.onNavigateToRecord(r.serial, NavItem.files)
+         }
+      },
       icon: const Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -159,17 +170,15 @@ class _RecordingOverlayState extends State<RecordingOverlay> {
               fontSize: 13,
             ),
           ),
-          if (r.sessionName != null) ...[
-            const SizedBox(width: 8),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 100),
-              child: Text(
-                r.sessionName!,
-                style: const TextStyle(color: Colors.white70, fontSize: 11),
-                overflow: TextOverflow.ellipsis,
-              ),
+          const SizedBox(width: 8),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 100),
+            child: Text(
+              recordDesc!,
+              style: const TextStyle(color: Colors.white70, fontSize: 11),
+              overflow: TextOverflow.ellipsis,
             ),
-          ],
+          )
         ],
       ),
     );
@@ -179,8 +188,18 @@ class _RecordingOverlayState extends State<RecordingOverlay> {
   Widget _buildMultiFab(List<_ActiveRecording> recordings) {
     return PopupMenuButton<_ActiveRecording>(
       tooltip: tr('recordingActiveDevices', {'count': recordings.length.toString()}),
-      onSelected: (r) => widget.onNavigateToSession(r.serial),
+      onSelected: (r) => {
+        if (r.owner == ScreenRecordOwner.testSession) {
+          widget.onNavigateToRecord(r.serial, NavItem.session)
+        } else {
+          widget.onNavigateToRecord(r.serial, NavItem.files)
+        }
+      },
       itemBuilder: (context) => recordings.map((r) {
+        final recordDesc = switch (r.owner) {
+          ScreenRecordOwner.testSession => r.sessionName,
+          _ => tr('files'),
+        };
         return PopupMenuItem<_ActiveRecording>(
           value: r,
           child: Row(
@@ -197,15 +216,14 @@ class _RecordingOverlayState extends State<RecordingOverlay> {
                       style: const TextStyle(fontWeight: FontWeight.w600),
                       overflow: TextOverflow.ellipsis,
                     ),
-                    if (r.sessionName != null)
-                      Text(
-                        r.sessionName!,
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                        overflow: TextOverflow.ellipsis,
+                    Text(
+                      recordDesc!,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ],
                 ),
               ),

@@ -1,7 +1,7 @@
 param(
   [ValidateSet('Debug', 'Release')][string]$Mode = 'Release',
   [ValidateSet('Windows')][string]$Platform = 'Windows',
-  [ValidateSet('amd64', 'arm64')][string]$GoArch = 'amd64',
+  [ValidateSet('amd64', 'arm64', 'all')][string]$GoArch = 'all',
   [string]$ProductVersion = '1.0.0'
 )
 
@@ -281,6 +281,99 @@ function New-WixSource([string]$TemplatePath, [string]$SourceDir, [string]$Outpu
   Set-Content -Path $OutputPath -Value $content -Encoding UTF8
 }
 
+function Build-WindowsOne {
+  param(
+    [string]$CurrentGoArch,
+    [string]$CurrentMode,
+    [string]$CurrentProductVersion,
+    [string]$CurrentBackendDir,
+    [string]$CurrentFlutterDir,
+    [string]$CurrentRunnerResDir,
+    [string]$CurrentBuildWindowsDir,
+    [string]$CurrentDistDir,
+    [string]$CurrentInstallerSource,
+    [string]$CurrentGeneratedInstallerSource,
+    [string]$CurrentBackendOut,
+    [string]$CurrentFlutterFlag,
+    [string[]]$CurrentStopPaths
+  )
+
+  if (Test-Path $CurrentBuildWindowsDir) {
+    Write-Host "==> Removing stale Flutter Windows build cache (arch=$CurrentGoArch)"
+    Remove-DirectoryStrict $CurrentBuildWindowsDir
+  }
+
+  Write-Host "==> Stopping running build outputs (arch=$CurrentGoArch)"
+  Stop-BuildProcesses -Paths $CurrentStopPaths
+
+  Write-Host "==> Building runtime (GOOS=windows GOARCH=$CurrentGoArch)"
+  Push-Location $CurrentBackendDir
+  $env:GOOS = 'windows'
+  $env:GOARCH = $CurrentGoArch
+  Run-Command go @('build', '-ldflags=-s -w', '-o', $CurrentBackendOut, '.')
+  Pop-Location
+  Write-Host "Runtime output: $CurrentBackendOut"
+
+  if (-not (Test-Path (Join-Path $CurrentFlutterDir 'windows'))) {
+    throw "flutter_app/windows not found. Run in flutter_app: flutter create --platforms=windows ."
+  }
+
+  Write-Host "==> Building Flutter Windows ($CurrentMode, arch=$CurrentGoArch)"
+  Push-Location $CurrentFlutterDir
+  Run-Command flutter @('build', 'windows', $CurrentFlutterFlag)
+  Pop-Location
+
+  $ExpectedRunnerOut = Join-Path $CurrentBuildWindowsDir "x64\runner\$CurrentMode"
+  if ($CurrentGoArch -eq 'arm64') {
+    $ExpectedRunnerOut = Join-Path $CurrentBuildWindowsDir "arm64\runner\$CurrentMode"
+  }
+
+  if (Test-Path $ExpectedRunnerOut) {
+    $RunnerOutDir = Get-Item $ExpectedRunnerOut
+  } else {
+    $RunnerOutDir = Get-ChildItem -Path $CurrentBuildWindowsDir -Directory -Recurse -ErrorAction SilentlyContinue |
+      Where-Object { $_.FullName -match '\\runner\\[^\\]*$' } |
+      Select-Object -First 1
+  }
+
+  if (-not $RunnerOutDir) {
+    throw "Runner output directory not found under: $CurrentBuildWindowsDir"
+  }
+
+  Write-Host "Flutter build output: $($RunnerOutDir.FullName)"
+
+  $RuntimeInOutput = Join-Path $RunnerOutDir.FullName 'runtime.exe'
+  if (-not (Test-Path $RuntimeInOutput)) {
+    Copy-Item -Force $CurrentBackendOut $RuntimeInOutput
+  }
+
+  $UninstallOut = Join-Path $RunnerOutDir.FullName 'uninstall.exe'
+  Write-Host "==> Building uninstaller (arch=$CurrentGoArch)"
+  Push-Location $CurrentBackendDir
+  Run-Command go @('build', '-ldflags=-H windowsgui -s -w', '-o', $UninstallOut, './uninstall/')
+  Pop-Location
+
+  Get-ChildItem -Path $RunnerOutDir.FullName -Filter 'adb_tool*.exe' -File -ErrorAction SilentlyContinue | Remove-Item -Force
+  Get-ChildItem -Path $RunnerOutDir.FullName -Filter 'adb-tool.exe' -File -ErrorAction SilentlyContinue | Remove-Item -Force
+
+  $MsiOut = Join-Path $CurrentDistDir "ADBToolSetup-$CurrentProductVersion-windows-$CurrentGoArch.msi"
+  if (Test-Path $MsiOut) {
+    Remove-Item $MsiOut -Force
+  }
+
+  Write-Host "==> Generating MSI source (arch=$CurrentGoArch)"
+  New-WixSource $CurrentInstallerSource $RunnerOutDir.FullName $CurrentGeneratedInstallerSource
+
+  Write-Host "==> Building MSI (arch=$CurrentGoArch)"
+  Run-Command wix @('build', $CurrentGeneratedInstallerSource, '-ext', 'WixToolset.UI.wixext', '-d', "ProductVersion=$CurrentProductVersion", '-o', $MsiOut)
+
+  if (-not (Test-Path $MsiOut)) {
+    throw "MSI was not created: $MsiOut"
+  }
+
+  Write-Host "==> MSI ready: $MsiOut"
+}
+
 Require-Command go
 Require-Command flutter
 Require-Command wix
@@ -306,93 +399,48 @@ $InstallerSource = Join-Path $RootDir 'scripts\installer.wxs'
 $GeneratedInstallerSource = Join-Path $DistDir 'installer.generated.wxs'
 $BackendOut = Join-Path $RunnerResDir 'runtime.exe'
 $AdbCacheDir = Join-Path ([System.IO.Path]::GetTempPath()) 'adb-tool-cache'
+$FlutterFlag = if ($Mode -eq 'Release') { '--release' } else { '--debug' }
+
+$ArchList = if ($GoArch -eq 'all') { @('amd64', 'arm64') } else { @($GoArch) }
 
 New-Item -ItemType Directory -Force -Path $RunnerResDir | Out-Null
 New-Item -ItemType Directory -Force -Path $DistDir | Out-Null
 
-Write-Host "==> Stopping running build outputs"
+# Shared setup that runs once regardless of arch count.
+Write-Host "==> Stopping running build outputs (initial)"
 Stop-BuildProcesses -Paths @($BuildWindowsDir, $RunnerResDir, $DistDir, $AdbCacheDir)
-
-if (Test-Path $BuildWindowsDir) {
-  Write-Host "==> Removing stale Flutter Windows build cache"
-  Remove-DirectoryStrict $BuildWindowsDir
-}
 
 Build-ClipboardHelperApk $ClipboardAppDir $ClipboardApkSource $ClipboardApkDestination
 if (-not (Test-Path $ClipboardApkDestination)) {
   throw "Clipboard helper APK was not found: $ClipboardApkDestination"
 }
 
-Write-Host "==> Building runtime (GOOS=windows GOARCH=$GoArch)"
-Push-Location $BackendDir
-$env:GOOS = 'windows'
-$env:GOARCH = $GoArch
-Run-Command go @('build', '-ldflags=-s -w', '-o', $BackendOut, '.')
-Pop-Location
-Write-Host "Runtime output: $BackendOut"
-
-if (-not (Test-Path (Join-Path $FlutterDir 'windows'))) {
-  throw "flutter_app/windows not found. Run in flutter_app: flutter create --platforms=windows ."
-}
-
-$FlutterFlag = if ($Mode -eq 'Release') { '--release' } else { '--debug' }
-
-Write-Host "==> Building Flutter Windows ($Mode)"
-Push-Location $FlutterDir
-Run-Command flutter @('build', 'windows', $FlutterFlag)
-Pop-Location
-
-$ExpectedRunnerOut = Join-Path $BuildWindowsDir "x64\runner\$Mode"
-if ($GoArch -eq 'arm64') {
-  $ExpectedRunnerOut = Join-Path $BuildWindowsDir "arm64\runner\$Mode"
-}
-
-if (Test-Path $ExpectedRunnerOut) {
-  $RunnerOutDir = Get-Item $ExpectedRunnerOut
-} else {
-  $RunnerOutDir = Get-ChildItem -Path $BuildWindowsDir -Directory -Recurse -ErrorAction SilentlyContinue |
-    Where-Object { $_.FullName -match '\\runner\\[^\\]*$' } |
-    Select-Object -First 1
-}
-
-if (-not $RunnerOutDir) {
-  throw "Runner output directory not found under: $BuildWindowsDir"
-}
-
-Write-Host "Flutter build output: $($RunnerOutDir.FullName)"
-
-$RuntimeInOutput = Join-Path $RunnerOutDir.FullName 'runtime.exe'
-if (-not (Test-Path $RuntimeInOutput)) {
-  Copy-Item -Force $BackendOut $RuntimeInOutput
-}
-
-$UninstallOut = Join-Path $RunnerOutDir.FullName 'uninstall.exe'
-Write-Host "==> Building uninstaller"
-Push-Location $BackendDir
-Run-Command go @('build', '-ldflags=-H windowsgui -s -w', '-o', $UninstallOut, './uninstall/')
-Pop-Location
-
-Get-ChildItem -Path $RunnerOutDir.FullName -Filter 'adb_tool*.exe' -File -ErrorAction SilentlyContinue | Remove-Item -Force
-Get-ChildItem -Path $RunnerOutDir.FullName -Filter 'adb-tool.exe' -File -ErrorAction SilentlyContinue | Remove-Item -Force
-
-$MsiOut = Join-Path $DistDir "ADBToolSetup-$ProductVersion-windows-$GoArch.msi"
-if (Test-Path $MsiOut) {
-  Remove-Item $MsiOut -Force
-}
-
 Ensure-WixExtension 'WixToolset.UI.wixext' '5.0.2'
 
-Write-Host "==> Generating MSI source"
-New-WixSource $InstallerSource $RunnerOutDir.FullName $GeneratedInstallerSource
-
-Write-Host "==> Building MSI"
-Run-Command wix @('build', $GeneratedInstallerSource, '-ext', 'WixToolset.UI.wixext', '-d', "ProductVersion=$ProductVersion", '-o', $MsiOut)
-
-if (-not (Test-Path $MsiOut)) {
-  throw "MSI was not created: $MsiOut"
+foreach ($CurrentGoArch in $ArchList) {
+  Write-Host ""
+  Write-Host "================================================================"
+  Write-Host "  Building Windows / $CurrentGoArch / $Mode"
+  Write-Host "================================================================"
+  Build-WindowsOne `
+    -CurrentGoArch $CurrentGoArch `
+    -CurrentMode $Mode `
+    -CurrentProductVersion $ProductVersion `
+    -CurrentBackendDir $BackendDir `
+    -CurrentFlutterDir $FlutterDir `
+    -CurrentRunnerResDir $RunnerResDir `
+    -CurrentBuildWindowsDir $BuildWindowsDir `
+    -CurrentDistDir $DistDir `
+    -CurrentInstallerSource $InstallerSource `
+    -CurrentGeneratedInstallerSource $GeneratedInstallerSource `
+    -CurrentBackendOut $BackendOut `
+    -CurrentFlutterFlag $FlutterFlag `
+    -CurrentStopPaths @($BuildWindowsDir, $RunnerResDir, $DistDir, $AdbCacheDir)
 }
 
-Write-Host "==> MSI ready: $MsiOut"
+Write-Host ""
+Write-Host "==> All Windows builds complete:"
+Get-ChildItem -Path $DistDir -Filter '*.msi' -File | ForEach-Object { Write-Host "    $($_.FullName)" }
 Write-Host "Installed app entry: launcher.exe"
 Write-Host "Installed runtime: runtime.exe"
 Write-Host "Installed uninstaller: uninstall.exe"
