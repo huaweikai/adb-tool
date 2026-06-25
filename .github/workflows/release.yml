@@ -43,8 +43,9 @@ jobs:
           name: adb-tool-windows
           path: dist/windows/*.msi
 
-  build-macos:
-    runs-on: macos-latest
+  build-macos-arm64:
+    # Apple Silicon runner,原生 arm64,不碰 Rosetta,codesign/xcodebuild 都稳
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
 
@@ -57,25 +58,52 @@ jobs:
         with:
           channel: 'stable'
 
-      - name: Build Go backend (disabled; build.sh handles all archs)
-        run: echo "Go backend built by scripts/build.sh --arch all"
+      - name: Build Go backend (disabled; build.sh handles it)
+        run: echo "Go backend built by scripts/build.sh --arch arm64"
 
       - name: Flutter pub get
         working-directory: flutter_app
         run: flutter pub get
 
-      - name: Build macOS .app (arm64 + amd64)
-        run: bash scripts/build.sh --platform macos --mode release --arch all
+      - name: Build macOS .app (arm64)
+        run: bash scripts/build.sh --platform macos --mode release --arch arm64
 
-      - name: Zip macOS artifacts
-        run: |
-          ditto -c -k --keepParent dist/macos/arm64/adb_tool.app adb-tool-macos-arm64.zip
-          ditto -c -k --keepParent dist/macos/amd64/adb_tool.app adb-tool-macos-amd64.zip
+      - name: Zip macOS arm64 artifact
+        run: ditto -c -k --keepParent dist/macos/arm64/adb_tool.app adb-tool-macos-arm64.zip
 
       - uses: actions/upload-artifact@v4
         with:
           name: adb-tool-macos-arm64
           path: adb-tool-macos-arm64.zip
+
+  build-macos-amd64:
+    # Intel x86_64 runner,原生 amd64 —— 这是打 amd64 包唯一稳的路
+    # (M 系列 runner 走 Rosetta 跑 codesign 会挂,跟本机 M2 一样)
+    runs-on: macos-13
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          check-latest: true
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: Build Go backend (disabled; build.sh handles it)
+        run: echo "Go backend built by scripts/build.sh --arch amd64"
+
+      - name: Flutter pub get
+        working-directory: flutter_app
+        run: flutter pub get
+
+      - name: Build macOS .app (amd64)
+        run: bash scripts/build.sh --platform macos --mode release --arch amd64
+
+      - name: Zip macOS amd64 artifact
+        run: ditto -c -k --keepParent dist/macos/amd64/adb_tool.app adb-tool-macos-amd64.zip
 
       - uses: actions/upload-artifact@v4
         with:
@@ -83,7 +111,7 @@ jobs:
           path: adb-tool-macos-amd64.zip
 
   create-release:
-    needs: [build-windows, build-macos]
+    needs: [build-windows, build-macos-arm64, build-macos-amd64]
     runs-on: ubuntu-latest
     permissions:
       contents: write
