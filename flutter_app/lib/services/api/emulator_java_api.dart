@@ -19,6 +19,23 @@ mixin EmulatorJavaApi on ApiBase {
     return JavaValidationResult.fromJson(data);
   }
 
+  /// List all detected Java runtimes plus the persisted selection.
+  Future<JavaRuntimeList> listJavaRuntimes() async {
+    final response = await dio.get('/api/emulator/java/list');
+    final data = responseMap(response);
+    return JavaRuntimeList.fromJson(data);
+  }
+
+  /// Persist the user-selected Java runtime.
+  Future<JavaSelectionResult> selectJava(String javaPath) async {
+    final response = await dio.post(
+      '/api/emulator/java/select',
+      data: {'javaPath': javaPath},
+    );
+    final data = responseMap(response);
+    return JavaSelectionResult.fromJson(data);
+  }
+
   /// Start downloading a Java runtime.
   Future<JavaDownloadResult> downloadJava({
     required String url,
@@ -63,6 +80,8 @@ class JavaRuntimeStatus {
   final String? path;
   final String? version;
   final JavaRuntimeInfo? systemJava;
+  final List<JavaRuntimeInfo> runtimes;
+  final String? selectedPath;
   final List<JavaRuntimeInfo> embedded;
   final List<DownloadInfo> downloads;
 
@@ -71,6 +90,8 @@ class JavaRuntimeStatus {
     this.path,
     this.version,
     this.systemJava,
+    this.runtimes = const [],
+    this.selectedPath,
     this.embedded = const [],
     this.downloads = const [],
   });
@@ -83,6 +104,11 @@ class JavaRuntimeStatus {
       systemJava: json['systemJava'] != null
           ? JavaRuntimeInfo.fromJson(json['systemJava'] as Map<String, dynamic>)
           : null,
+      runtimes: (json['runtimes'] as List<dynamic>?)
+              ?.map((e) => JavaRuntimeInfo.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          [],
+      selectedPath: json['selectedPath'] as String?,
       embedded: (json['embedded'] as List<dynamic>?)
               ?.map((e) => JavaRuntimeInfo.fromJson(e as Map<String, dynamic>))
               .toList() ??
@@ -96,6 +122,52 @@ class JavaRuntimeStatus {
 
   bool get isFound => status == 'found';
   bool get hasJava => systemJava != null;
+}
+
+class JavaRuntimeList {
+  final List<JavaRuntimeInfo> runtimes;
+  final String? selectedPath;
+
+  const JavaRuntimeList({
+    this.runtimes = const [],
+    this.selectedPath,
+  });
+
+  factory JavaRuntimeList.fromJson(Map<String, dynamic> json) {
+    return JavaRuntimeList(
+      runtimes: (json['runtimes'] as List<dynamic>?)
+              ?.map((e) => JavaRuntimeInfo.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          [],
+      selectedPath: json['selectedPath'] as String?,
+    );
+  }
+}
+
+class JavaSelectionResult {
+  final bool selected;
+  final String? path;
+  final String? version;
+  final String? vendor;
+  final String? error;
+
+  const JavaSelectionResult({
+    this.selected = false,
+    this.path,
+    this.version,
+    this.vendor,
+    this.error,
+  });
+
+  factory JavaSelectionResult.fromJson(Map<String, dynamic> json) {
+    return JavaSelectionResult(
+      selected: json['selected'] as bool? ?? false,
+      path: json['path'] as String?,
+      version: json['version'] as String?,
+      vendor: json['vendor'] as String?,
+      error: json['error'] as String?,
+    );
+  }
 }
 
 class JavaRuntimeInfo {

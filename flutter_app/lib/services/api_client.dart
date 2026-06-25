@@ -50,6 +50,8 @@ export 'api/emulator_java_api.dart' show
     EmulatorJavaApi,
     JavaRuntimeStatus,
     JavaRuntimeInfo,
+    JavaRuntimeList,
+    JavaSelectionResult,
     JavaValidationResult,
     JavaDownloadResult,
     JavaDownloadProgress,

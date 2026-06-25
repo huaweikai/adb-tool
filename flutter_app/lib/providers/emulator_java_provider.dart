@@ -34,6 +34,9 @@ class EmulatorJavaProvider extends ChangeNotifier {
   bool get hasJava => _status?.hasJava == true;
   bool get isDownloading => _currentDownloadId != null;
 
+  List<JavaRuntimeInfo> get runtimes => _status?.runtimes ?? const [];
+  String? get selectedPath => _status?.selectedPath;
+
   double get downloadProgress {
     if (_currentDownloadId == null) return 0.0;
     final download = _status?.downloads
@@ -97,6 +100,31 @@ class EmulatorJavaProvider extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('[EmulatorJavaProvider] validate error: $e');
+      _javaStatus = JavaStatus.error;
+      _errorMessage = e.toString();
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Select a Java runtime to use (persisted on the backend)
+  Future<bool> select(String javaPath) async {
+    _javaStatus = JavaStatus.checking;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final result = await _api.selectJava(javaPath);
+      if (result.selected) {
+        await refreshStatus();
+        return true;
+      } else {
+        _errorMessage = result.error ?? 'Java selection failed';
+        await refreshStatus();
+        return false;
+      }
+    } catch (e) {
+      debugPrint('[EmulatorJavaProvider] select error: $e');
       _javaStatus = JavaStatus.error;
       _errorMessage = e.toString();
       notifyListeners();

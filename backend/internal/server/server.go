@@ -182,6 +182,8 @@ func (s *Server) Handler() http.Handler {
 
 	// Emulator Java runtime
 	mux.HandleFunc("/api/emulator/java/status", s.handleEmulatorJavaStatus)
+	mux.HandleFunc("/api/emulator/java/list", s.handleEmulatorJavaList)
+	mux.HandleFunc("/api/emulator/java/select", s.handleEmulatorJavaSelect)
 	mux.HandleFunc("/api/emulator/java/validate", s.handleEmulatorJavaValidate)
 	mux.HandleFunc("/api/emulator/java/download", s.handleEmulatorJavaDownload)
 

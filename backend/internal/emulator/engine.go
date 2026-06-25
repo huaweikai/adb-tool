@@ -264,7 +264,7 @@ func detectJava(engine *Engine, sdkPath string) {
 	for _, javaPath := range javaCandidates {
 		if path := findBinary(javaPath); path != "" {
 			cmd := exec.Command(path, "-version")
-			output, err := cmd.Output()
+			output, err := cmd.CombinedOutput()
 			if err != nil {
 				continue
 			}

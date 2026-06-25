@@ -343,6 +343,12 @@ func (s *Server) handleEmulatorJavaStatus(w http.ResponseWriter, r *http.Request
 	// Detect current Java
 	java := emulator.DetectJavaRuntime(EmulatorEngine.AndroidHome)
 
+	// Scan all available Java runtimes
+	runtimes := emulator.ScanJavaRuntimes(EmulatorEngine.AndroidHome)
+
+	// Persisted user selection
+	selectedPath := emulator.LoadSelectedJavaPath()
+
 	// Get embedded runtimes
 	embedded := emulator.GetEmbeddedJavaRuntimes()
 
@@ -362,9 +368,11 @@ func (s *Server) handleEmulatorJavaStatus(w http.ResponseWriter, r *http.Request
 	}
 
 	response := map[string]interface{}{
-		"systemJava": java,
-		"embedded":   embedded,
-		"downloads":   downloadsResp,
+		"systemJava":   java,
+		"runtimes":     runtimes,
+		"selectedPath": selectedPath,
+		"embedded":     embedded,
+		"downloads":    downloadsResp,
 	}
 
 	if java != nil {
@@ -400,17 +408,81 @@ func (s *Server) handleEmulatorJavaValidate(w http.ResponseWriter, r *http.Reque
 	}
 
 	// Test the Java path by running java -version
-	if _, err := os.Stat(req.JavaPath); err != nil {
+	rt := emulator.ValidateJavaPath(req.JavaPath)
+	if rt == nil {
 		writeJSON(w, map[string]interface{}{
 			"valid": false,
-			"error": "Java executable not found",
+			"error": "Not a usable Java executable",
 		})
 		return
 	}
 
 	writeJSON(w, map[string]interface{}{
-		"valid": true,
-		"path":  req.JavaPath,
+		"valid":   true,
+		"path":    rt.Path,
+		"version": rt.Version,
+		"vendor":  rt.Vendor,
+	})
+}
+
+// handleEmulatorJavaList returns all detected Java runtimes plus the selection.
+func (s *Server) handleEmulatorJavaList(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		writeAPIError(w, http.StatusMethodNotAllowed, "GET required")
+		return
+	}
+
+	writeJSON(w, map[string]interface{}{
+		"runtimes":     emulator.ScanJavaRuntimes(EmulatorEngine.AndroidHome),
+		"selectedPath": emulator.LoadSelectedJavaPath(),
+	})
+}
+
+// handleEmulatorJavaSelect persists the user-selected Java runtime.
+func (s *Server) handleEmulatorJavaSelect(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeAPIError(w, http.StatusMethodNotAllowed, "POST required")
+		return
+	}
+	defer r.Body.Close()
+
+	var req struct {
+		JavaPath string `json:"javaPath"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if req.JavaPath == "" {
+		writeAPIError(w, http.StatusBadRequest, "javaPath is required")
+		return
+	}
+
+	// Verify the selected path is a usable Java executable.
+	rt := emulator.ValidateJavaPath(req.JavaPath)
+	if rt == nil {
+		writeJSON(w, map[string]interface{}{
+			"selected": false,
+			"error":    "Not a usable Java executable",
+		})
+		return
+	}
+
+	if err := emulator.SaveSelectedJavaPath(rt.Path); err != nil {
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	// Reflect the selection in the live engine so the toolchain uses it.
+	EmulatorEngine.JavaPath = rt.Path
+	EmulatorEngine.JavaVersion = rt.Version
+
+	writeJSON(w, map[string]interface{}{
+		"selected": true,
+		"path":     rt.Path,
+		"version":  rt.Version,
+		"vendor":   rt.Vendor,
 	})
 }
 
