@@ -67,8 +67,13 @@ func (s *Server) InitEmulator(emulatorPath, avdManagerPath, javaPath, androidHom
 		return err
 	}
 
+	// Build one shared ImageManager and hand it to the InstanceManager so
+	// AVD config.ini can be written with the *real* on-disk image path
+	// (instead of guessing from the imageID, which has the wrong layout).
+	imageManager := emulator.NewImageManager(androidHome)
+
 	// Create instance manager
-	s.instanceManager, err = emulator.NewInstanceManager(emulatorPath, avdManagerPath, javaPath, androidHome, dataDir)
+	s.instanceManager, err = emulator.NewInstanceManager(emulatorPath, avdManagerPath, javaPath, androidHome, dataDir, imageManager)
 	if err != nil {
 		return err
 	}
@@ -86,8 +91,7 @@ func (s *Server) InitEmulator(emulatorPath, avdManagerPath, javaPath, androidHom
 	// registry existed, or copied there by an earlier build). Runs once at
 	// boot in a goroutine so the server doesn't block on it.
 	go func() {
-		im := emulator.NewImageManager("")
-		n, err := im.ScanAndRegisterStorage()
+		n, err := imageManager.ScanAndRegisterStorage()
 		if err != nil {
 			log.Printf("[emulator] startup storage scan: %v", err)
 			return

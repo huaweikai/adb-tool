@@ -220,13 +220,23 @@ func (s *Server) handleEmulatorSDKUse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify the path exists and contains emulator
+	// Accept the path if it has EITHER the emulator binary already OR a
+	// usable cmdline-tools toolchain (sdkmanager + avdmanager). The latter
+	// case lets the user point us at a freshly-installed SDK that hasn't
+	// pulled emulator yet — they'll install it through the SDK download UI
+	// and we'll pick it up automatically.
 	emulatorPath := filepath.Join(req.SDKPath, "emulator", "emulator")
 	if runtime.GOOS == "windows" {
 		emulatorPath += ".exe"
 	}
-	if _, err := os.Stat(emulatorPath); err != nil {
-		writeAPIError(w, http.StatusBadRequest, "invalid SDK path: emulator not found")
+	hasEmulator := false
+	if _, err := os.Stat(emulatorPath); err == nil {
+		hasEmulator = true
+	}
+	hasToolchain := emulator.SdkPathHasToolchain(req.SDKPath)
+	if !hasEmulator && !hasToolchain {
+		writeAPIError(w, http.StatusBadRequest,
+			"invalid SDK path: neither <sdkPath>/emulator/emulator nor <sdkPath>/cmdline-tools/latest/bin/{sdkmanager,avdmanager} found")
 		return
 	}
 
@@ -247,17 +257,20 @@ func (s *Server) handleEmulatorSDKUse(w http.ResponseWriter, r *http.Request) {
 	EmulatorEngine = engine
 
 	writeJSON(w, map[string]interface{}{
-		"isValid":         engine.IsValid,
-		"emulatorPath":    engine.EmulatorPath,
-		"androidHome":     engine.AndroidHome,
-		"emulatorVersion": engine.EmulatorVersion,
+		"isValid":          engine.IsValid,
+		"emulatorPath":     engine.EmulatorPath,
+		"androidHome":      engine.AndroidHome,
+		"emulatorVersion":  engine.EmulatorVersion,
 		"avdmanagerPath":   engine.AvdmanagerPath,
 		"sdkmanagerPath":   engine.SdkmanagerPath,
-		"javaPath":        engine.JavaPath,
+		"javaPath":         engine.JavaPath,
 		"javaVersion":      engine.JavaVersion,
-		"toolchainReady":  engine.ToolchainReady,
+		"toolchainReady":   engine.ToolchainReady,
 		"lastVerified":     engine.LastVerified,
-		"error":           engine.Error,
+		"error":            engine.Error,
+		// emulatorMissing lets the UI show a "click here to install emulator
+		// + system image" prompt instead of treating the path as broken.
+		"emulatorMissing": !hasEmulator,
 	})
 }
 
@@ -1276,6 +1289,12 @@ func (s *Server) handleEmulatorInstanceStart(w http.ResponseWriter, r *http.Requ
 		"serial":      instance.Serial,
 		"consolePort": instance.ConsolePort,
 		"adbPort":     instance.ADBPort,
+		// LastError is empty on success but lets the UI show why a start
+		// failed (e.g. "system image not found", "exited within 3s", ...).
+		"lastError": instance.LastError,
+		// LogPath points at <AVDPath>/emulator.log so the user can read the
+		// full emulator output even when Start returns success.
+		"logPath": instance.LogPath,
 	})
 }
 
