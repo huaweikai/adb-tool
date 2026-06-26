@@ -31,3 +31,4 @@ dist/
 # - release: ~/ADBToolData (per-user), e.g. ~/Library/Application Support/... on macOS
 flutter_app/ADBToolData/
 /ADBToolData/
+/compose_app

@@ -255,12 +255,23 @@ class _EmulatorEngineCardState extends State<EmulatorEngineCard> {
             spacing: 12,
             runSpacing: 4,
             children: [
-              if (status.emulatorVersion != null)
-                _infoChip(Icons.apps, 'Emulator ${status.emulatorVersion}'),
-              if (status.avdmanagerPath != null)
-                _infoChip(Icons.settings, 'AVD Manager ✓'),
-              if (status.sdkmanagerPath != null)
-                _infoChip(Icons.inventory, 'SDK Manager ✓'),
+              _infoChip(
+                Icons.apps,
+                status.emulatorVersion != null && status.emulatorVersion!.isNotEmpty
+                    ? 'Emulator ${status.emulatorVersion}'
+                    : 'Emulator (未安装)',
+                isReady: status.emulatorVersion != null && status.emulatorVersion!.isNotEmpty,
+              ),
+              _infoChip(
+                Icons.settings,
+                'AVD Manager',
+                isReady: status.avdmanagerPath != null && status.avdmanagerPath!.isNotEmpty,
+              ),
+              _infoChip(
+                Icons.inventory,
+                'SDK Manager',
+                isReady: status.sdkmanagerPath != null && status.sdkmanagerPath!.isNotEmpty,
+              ),
             ],
           ),
         ],
@@ -268,21 +279,23 @@ class _EmulatorEngineCardState extends State<EmulatorEngineCard> {
     );
   }
 
-  Widget _infoChip(IconData icon, String label) {
+Widget _infoChip(IconData icon, String label, {required bool isReady}) {
+    final color = isReady ? Colors.green : Colors.red;
+    final suffix = isReady ? ' ✓' : ' ✗';
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.green.withAlpha(20),
+        color: color.withAlpha(20),
         borderRadius: BorderRadius.circular(4),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 12, color: Colors.green),
+          Icon(icon, size: 12, color: color),
           const SizedBox(width: 4),
           Text(
-            label,
-            style: const TextStyle(fontSize: 11, color: Colors.green),
+            '$label$suffix',
+            style: TextStyle(fontSize: 11, color: color),
           ),
         ],
       ),
@@ -293,22 +306,42 @@ class _EmulatorEngineCardState extends State<EmulatorEngineCard> {
     final status = provider.serverStatus;
     final toolchainReady = status?.toolchainReady == true;
     final hasSDK = status?.androidHome?.isNotEmpty == true;
+    // emulatorReady requires both the version string (proves validateEmulatorBinary
+    // ran successfully) and an actual EmulatorPath. toolchainReady alone only
+    // means sdkmanager + avdmanager + java are present — emulator itself can
+    // still be missing, in which case the SDK is "partially ready".
+    final emulatorReady = status != null &&
+        status.emulatorPath != null &&
+        status.emulatorPath!.isNotEmpty &&
+        status.emulatorVersion != null &&
+        status.emulatorVersion!.isNotEmpty;
+
+    // Full readiness requires emulator binary to actually be installed and
+    // runnable. toolchain-only SDKs (avdmanager + java, no emulator) are
+    // "partially ready" — usable for picking a path and downloading, but
+    // not for creating/starting instances.
+    final fullyReady = toolchainReady && emulatorReady;
 
     Color color;
     String label;
+    IconData icon;
 
     if (_isImporting || provider.isDetecting || _isDownloading) {
       color = Colors.orange;
       label = '处理中';
-    } else if (toolchainReady) {
+      icon = Icons.hourglass_top;
+    } else if (fullyReady) {
       color = Colors.green;
       label = '就绪';
+      icon = Icons.check_circle;
     } else if (hasSDK) {
       color = Colors.orange;
       label = '部分就绪';
+      icon = Icons.warning_amber_rounded;
     } else {
       color = Colors.grey;
       label = '未配置';
+      icon = Icons.info_outline;
     }
 
     return Container(
@@ -328,11 +361,7 @@ class _EmulatorEngineCardState extends State<EmulatorEngineCard> {
               child: CircularProgressIndicator(strokeWidth: 2, color: color),
             )
           else
-            Icon(
-              toolchainReady ? Icons.check_circle : (hasSDK ? Icons.warning : Icons.info_outline),
-              size: 14,
-              color: color,
-            ),
+            Icon(icon, size: 14, color: color),
           const SizedBox(width: 4),
           Text(
             label,
@@ -620,9 +649,21 @@ class _EmulatorEngineCardState extends State<EmulatorEngineCard> {
               ),
               child: const Text('使用此 SDK'),
             )
+          else if (sdk.hasAvdmanager)
+            // No emulator binary yet, but the toolchain (sdkmanager + avdmanager)
+            // is there — let the user select the SDK and we'll guide them to
+            // install emulator + system-image via sdkmanager.
+            FilledButton.tonal(
+              onPressed: () => _useSDK(context, sdk.path),
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              ),
+              child: const Text('使用此 SDK（需安装 emulator）'),
+            )
           else
+            // Neither emulator nor avdmanager — this path isn't a usable SDK.
             Tooltip(
-              message: '此目录不包含 emulator',
+              message: '此目录既没有 emulator 也没有 avdmanager，不是有效的 Android SDK',
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(

@@ -65,6 +65,16 @@ class _EmulatorSettingsScreenState extends State<EmulatorSettingsScreen> {
 
   Widget _buildInstanceSection(BuildContext context, EmulatorInstanceProvider provider) {
     final theme = Theme.of(context);
+    // Block "create instance" when the engine isn't fully ready — we need
+    // a working emulator binary + AVD manager to actually launch one.
+    final engineProvider = context.watch<EmulatorEngineProvider>();
+    final engineStatus = engineProvider.serverStatus;
+    final emulatorReady = engineStatus != null &&
+        engineStatus.emulatorPath != null &&
+        engineStatus.emulatorPath!.isNotEmpty &&
+        engineStatus.emulatorVersion != null &&
+        engineStatus.emulatorVersion!.isNotEmpty;
+    final canCreate = emulatorReady;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -80,10 +90,13 @@ class _EmulatorSettingsScreenState extends State<EmulatorSettingsScreen> {
               ),
             ),
             const Spacer(),
-            FilledButton.icon(
-              onPressed: () => _showCreateInstanceDialog(context),
-              icon: const Icon(Icons.add, size: 18),
-              label: const Text('创建实例'),
+            Tooltip(
+              message: canCreate ? '' : '请先在上方 SDK 引擎卡片中安装 emulator + system-image',
+              child: FilledButton.icon(
+                onPressed: canCreate ? () => _showCreateInstanceDialog(context) : null,
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('创建实例'),
+              ),
             ),
           ],
         ),
