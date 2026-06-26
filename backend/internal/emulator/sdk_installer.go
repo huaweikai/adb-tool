@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -41,6 +42,50 @@ type InstallJob struct {
 type SDKInstaller struct {
 	mu   sync.RWMutex
 	jobs map[string]*InstallJob
+}
+
+// splitCRorLF is a bufio.SplitFunc that splits on either '\r' or '\n'.
+//
+// Why we need this: sdkmanager paints progress updates in place by emitting
+// `\r[X...] NN% Activity...` and only flushes a real `\n` when the
+// operation is done. The default bufio.Scanner uses ScanLines which only
+// recognises `\n`, so the whole progress phase accumulates as one giant
+// "line" and we never see updates. Splitting on `\r` (and the optional
+// trailing `\n`) makes each paint arrive as its own token.
+func splitCRorLF(data []byte, atEOF bool) (advance int, token []byte, err error) {
+	if atEOF && len(data) == 0 {
+		return 0, nil, nil
+	}
+	for i, b := range data {
+		if b == '\r' || b == '\n' {
+			j := i + 1
+			// Eat the LF half of a CRLF so we don't return an empty token.
+			if b == '\r' && j < len(data) && data[j] == '\n' {
+				j++
+			}
+			return j, data[:i], nil
+		}
+	}
+	if atEOF {
+		return len(data), data, nil
+	}
+	return 0, nil, nil
+}
+
+// streamLines reads from r, splits on either CR or LF, and feeds each
+// non-empty line into handleLine. We bump the scanner buffer to 1 MiB
+// because sdkmanager can pack multiple paint updates back-to-back without
+// a `\n`, and the default 64 KiB would clip them.
+func streamLines(r io.Reader, handleLine func(string)) {
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	scanner.Split(splitCRorLF)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line != "" {
+			handleLine(line)
+		}
+	}
 }
 
 // NewSDKInstaller creates a new SDKInstaller.
@@ -132,7 +177,7 @@ func (s *SDKInstaller) run(job *InstallJob, sdkmanagerPath, sdkPath string) {
 		return
 	}
 
-	if err := cmd.Start(); err != nil {
+if err := cmd.Start(); err != nil {
 		s.fail(job, fmt.Errorf("start sdkmanager: %w", err))
 		return
 	}
@@ -145,54 +190,47 @@ func (s *SDKInstaller) run(job *InstallJob, sdkmanagerPath, sdkPath string) {
 		tailMu sync.Mutex
 		tail   []string
 	)
-	consume := func(r *bufio.Scanner) {
-		for r.Scan() {
-			line := r.Text()
-			tailMu.Lock()
-			if strings.TrimSpace(line) != "" {
-				tail = append(tail, line)
-				if len(tail) > 20 {
-					tail = tail[len(tail)-20:]
-								}
-				snapshot := append([]string{}, tail...)
-				tailMu.Unlock()
-
-				s.update(job, func() {
-					job.OutputTail = snapshot
-					if m := percentRegex.FindStringSubmatch(line); len(m) == 2 {
-						var pct float64
-						fmt.Sscanf(m[1], "%f", &pct)
-						if pct < 0 {
-							pct = 0
-						} else if pct > 100 {
-							pct = 100
-						}
-						p := pct / 100
-						// Only advance — sdkmanager sometimes prints
-						// per-file percentages that can go backwards when
-						// it moves on to the next file.
-						if p > job.Progress {
-							job.Progress = p
-						}
-					}
-					// Surface human-readable activity lines.
-					switch {
-					case strings.HasPrefix(line, "Downloading "):
-						job.Message = line
-					case strings.HasPrefix(line, "Installing "):
-						job.Message = strings.TrimPrefix(line, "Installing ")
-					case strings.HasPrefix(line, "Unzipping "):
-						job.Message = strings.TrimPrefix(line, "Unzipping ")
-					}
-				})
-			} else {
-				tailMu.Unlock()
-			}
+	consume := func(line string) {
+		tailMu.Lock()
+		tail = append(tail, line)
+		if len(tail) > 20 {
+			tail = tail[len(tail)-20:]
 		}
+		snapshot := append([]string{}, tail...)
+		tailMu.Unlock()
+
+		s.update(job, func() {
+			job.OutputTail = snapshot
+			if m := percentRegex.FindStringSubmatch(line); len(m) == 2 {
+				var pct float64
+				fmt.Sscanf(m[1], "%f", &pct)
+				if pct < 0 {
+					pct = 0
+				} else if pct > 100 {
+					pct = 100
+				}
+				p := pct / 100
+				// Only advance — sdkmanager sometimes prints
+				// per-file percentages that can go backwards when
+				// it moves on to the next file.
+				if p > job.Progress {
+					job.Progress = p
+				}
+			}
+			// Surface human-readable activity lines.
+			switch {
+			case strings.HasPrefix(line, "Downloading "):
+				job.Message = line
+			case strings.HasPrefix(line, "Installing "):
+				job.Message = strings.TrimPrefix(line, "Installing ")
+			case strings.HasPrefix(line, "Unzipping "):
+				job.Message = strings.TrimPrefix(line, "Unzipping ")
+			}
+		})
 	}
 
-	go consume(bufio.NewScanner(stdout))
-	go consume(bufio.NewScanner(stderr))
+	go streamLines(stdout, consume)
+	go streamLines(stderr, consume)
 
 	if err := cmd.Wait(); err != nil {
 		s.fail(job, fmt.Errorf("sdkmanager exited with error: %w", err))
