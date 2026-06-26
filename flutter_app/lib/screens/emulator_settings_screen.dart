@@ -1,11 +1,13 @@
 // Emulator settings screen.
 // Main screen for managing Android emulator configuration.
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/emulator_image_provider.dart';
 import '../providers/emulator_instance_provider.dart';
 import '../providers/emulator_engine_provider.dart';
 import '../providers/emulator_java_provider.dart';
+import '../services/api_client.dart';
 import '../widgets/emulator_engine_card.dart';
 import '../widgets/emulator_java_card.dart';
 import '../widgets/emulator_image_card.dart';
@@ -21,6 +23,19 @@ class EmulatorSettingsScreen extends StatefulWidget {
 }
 
 class _EmulatorSettingsScreenState extends State<EmulatorSettingsScreen> {
+  // SDK-driven system image install — shows progress in the image section
+  // until the job finishes, then we refresh the image list so the new
+  // entry shows up. Separate from engine_card's emulator install, which
+  // tracks `emulator` specifically.
+  SDKInstallJob? _systemImageInstallJob;
+  Timer? _systemImageInstallPoller;
+
+  @override
+  void dispose() {
+    _systemImageInstallPoller?.cancel();
+    super.dispose();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -185,9 +200,89 @@ class _EmulatorSettingsScreenState extends State<EmulatorSettingsScreen> {
             ),
           ],
         ),
+        if (_systemImageInstallJob != null) ...[
+          const SizedBox(height: 12),
+          _buildSystemImageInstallProgress(context),
+        ],
         const SizedBox(height: 12),
         _buildImageList(context, provider),
       ],
+    );
+  }
+
+  /// Live progress card for the in-flight SDK system-image install. Shown
+  /// between the section header and the image list whenever there's an
+  /// active job — disappears once the job is done and we've shown the
+  /// final status for a few seconds.
+  Widget _buildSystemImageInstallProgress(BuildContext context) {
+    final job = _systemImageInstallJob!;
+    final running = job.isRunning;
+    final isError = job.status == 'error';
+    final isDone = job.status == 'completed';
+    final pkg = job.packages.isNotEmpty ? job.packages.first : 'system image';
+
+    Color barColor;
+    IconData icon;
+    if (isError) {
+      barColor = Colors.red;
+      icon = Icons.error_outline;
+    } else if (isDone) {
+      barColor = Colors.green;
+      icon = Icons.check_circle;
+    } else {
+      barColor = Colors.blue;
+      icon = Icons.downloading;
+    }
+
+    return Card(
+      color: barColor.withAlpha(15),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, size: 18, color: barColor),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    isError
+                        ? '下载失败: ${job.error ?? pkg}'
+                        : isDone
+                            ? '$pkg 下载完成'
+                            : (job.message.isNotEmpty ? job.message : '正在准备...'),
+                    style: TextStyle(fontSize: 13, color: barColor, fontWeight: FontWeight.w500),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                Text(
+                  '${(job.progress * 100).toStringAsFixed(0)}%',
+                  style: TextStyle(fontSize: 12, color: barColor),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: running && job.progress > 0 ? job.progress : (running ? null : 1.0),
+                minHeight: 6,
+                backgroundColor: barColor.withAlpha(40),
+                color: barColor,
+              ),
+            ),
+            if (pkg.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                pkg,
+                style: const TextStyle(fontSize: 11, color: Colors.grey),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 
@@ -263,6 +358,13 @@ class _EmulatorSettingsScreenState extends State<EmulatorSettingsScreen> {
     if (result != null && context.mounted) {
       if (result['source'] == 'url') {
         await provider.addImage(url: result['url']);
+      } else if (result['source'] == 'sdk') {
+        // 通过 sdkmanager 下载 — 调 SDKInstaller 异步装包
+        final apiLevel = result['apiLevel'] as int;
+        final arch = result['arch'] as String;
+        final variant = result['variant'] as String;
+        final package = 'system-images;android-$apiLevel;$variant;$arch';
+        await _installSystemImageViaSdk(context, package);
       } else {
         final path = result['path'] as String;
         final isZip = result['isZip'] == true;
@@ -281,6 +383,74 @@ class _EmulatorSettingsScreenState extends State<EmulatorSettingsScreen> {
         );
       }
     }
+  }
+
+  /// Start an sdkmanager-driven system image install. We kick off the job
+  /// and poll its progress every 800ms — both to drive the progress bar
+  /// in the image section and so the user can see when it finishes. On
+  /// completion we refresh the image list so the new entry shows up.
+  Future<void> _installSystemImageViaSdk(
+    BuildContext context,
+    String package,
+  ) async {
+    final api = context.read<ApiClient>();
+    final imageProvider = context.read<EmulatorImageProvider>();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('开始下载: $package'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+
+    SDKInstallJob job;
+    try {
+      job = await api.installPackages([package]);
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('启动下载失败: $e')),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() => _systemImageInstallJob = job);
+
+    _systemImageInstallPoller?.cancel();
+    _systemImageInstallPoller = Timer.periodic(const Duration(milliseconds: 800), (timer) async {
+      final current = _systemImageInstallJob;
+      if (current == null || !current.isRunning) {
+        timer.cancel();
+        return;
+      }
+      try {
+        final updated = await api.getInstallStatus(current.id);
+        if (!mounted) return;
+        setState(() => _systemImageInstallJob = updated);
+        if (updated.isDone) {
+          timer.cancel();
+          if (updated.status == 'completed') {
+            await imageProvider.refreshImages();
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('镜像安装完成: $package')),
+              );
+            }
+          } else if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('镜像下载失败: ${updated.error ?? "未知错误"}')),
+            );
+          }
+          // Drop the job after a short delay so the user can see the final
+          // status; then clear.
+          Future.delayed(const Duration(seconds: 4), () {
+            if (mounted) setState(() => _systemImageInstallJob = null);
+          });
+        }
+      } catch (e) {
+        // network blip — keep polling
+      }
+    });
   }
 
   Future<void> _confirmDelete(BuildContext context, String imageId) async {

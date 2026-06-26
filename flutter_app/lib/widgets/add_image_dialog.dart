@@ -18,10 +18,17 @@ class AddImageDialog extends StatefulWidget {
 }
 
 class _AddImageDialogState extends State<AddImageDialog> {
-  int _selectedSource = 0; // 0 = URL, 1 = Local Path
+  // 0 = URL 下载, 1 = SDK 下载, 2 = 本地路径
+  int _selectedSource = 0;
   int _localKind = 0; // 0 = Folder, 1 = Zip
   final _urlController = TextEditingController();
   final _pathController = TextEditingController();
+
+  // "SDK 下载" 用的镜像配置：选 API level + variant + arch 后，构造
+  // system-images;android-XX;variant;arch 包名交给 SDKInstaller。
+  int _sdkApiLevel = 33;
+  String _sdkArch = 'arm64-v8a';
+  String _sdkVariant = 'google_apis_playstore';
 
   @override
   void dispose() {
@@ -50,7 +57,8 @@ class _AddImageDialogState extends State<AddImageDialog> {
               SegmentedButton<int>(
                 segments: const [
                   ButtonSegment(value: 0, label: Text('URL 下载')),
-                  ButtonSegment(value: 1, label: Text('本地路径')),
+                  ButtonSegment(value: 1, label: Text('SDK 下载')),
+                  ButtonSegment(value: 2, label: Text('本地路径')),
                 ],
                 selected: {_selectedSource},
                 onSelectionChanged: (selection) {
@@ -123,8 +131,78 @@ class _AddImageDialogState extends State<AddImageDialog> {
                 ],
               ],
 
-              // Local path input
+              // SDK 下载：通过 sdkmanager / avdmanager 下载选定的镜像配置
               if (_selectedSource == 1) ...[
+                const Text(
+                  '镜像配置',
+                  style: TextStyle(fontWeight: FontWeight.w500),
+                ),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<int>(
+                  value: _sdkApiLevel,
+                  decoration: const InputDecoration(labelText: 'API 级别'),
+                  items: const [
+                    DropdownMenuItem(value: 30, child: Text('Android 11 (API 30)')),
+                    DropdownMenuItem(value: 31, child: Text('Android 12 (API 31)')),
+                    DropdownMenuItem(value: 32, child: Text('Android 12L (API 32)')),
+                    DropdownMenuItem(value: 33, child: Text('Android 13 (API 33)')),
+                    DropdownMenuItem(value: 34, child: Text('Android 14 (API 34)')),
+                    DropdownMenuItem(value: 35, child: Text('Android 15 (API 35)')),
+                  ],
+                  onChanged: (v) {
+                    if (v != null) setState(() => _sdkApiLevel = v);
+                  },
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  value: _sdkArch,
+                  decoration: const InputDecoration(labelText: '架构'),
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'arm64-v8a',
+                      child: Text('arm64-v8a (Apple Silicon)'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'x86_64',
+                      child: Text('x86_64 (Intel Mac)'),
+                    ),
+                  ],
+                  onChanged: (v) {
+                    if (v != null) setState(() => _sdkArch = v);
+                  },
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  value: _sdkVariant,
+                  decoration: const InputDecoration(labelText: '变体'),
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'google_apis_playstore',
+                      child: Text('Google Play (推荐)'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'google_apis',
+                      child: Text('Google APIs'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'default',
+                      child: Text('Default (无 Google 服务)'),
+                    ),
+                  ],
+                  onChanged: (v) {
+                    if (v != null) setState(() => _sdkVariant = v);
+                  },
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  '提示: 选好后会用 sdkmanager 下载到本地 system-images 目录，'
+                  '完成会自动出现在镜像列表里',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+              ],
+
+              // Local path input
+              if (_selectedSource == 2) ...[
                 SegmentedButton<int>(
                   segments: const [
                     ButtonSegment(value: 0, label: Text('选择文件夹')),
@@ -224,6 +302,14 @@ class _AddImageDialogState extends State<AddImageDialog> {
       Navigator.pop(context, {
         'source': 'url',
         'url': _urlController.text.trim(),
+      });
+    } else if (_selectedSource == 1) {
+      // SDK 下载 — 选好配置后让 SDKInstaller 跑 sdkmanager
+      Navigator.pop(context, {
+        'source': 'sdk',
+        'apiLevel': _sdkApiLevel,
+        'arch': _sdkArch,
+        'variant': _sdkVariant,
       });
     } else {
       // Local path
