@@ -354,10 +354,24 @@ func detectToolchain(engine *Engine) {
 }
 
 // findBinary checks if a binary exists and is executable.
+//
+// Windows resolution order: <path>.exe → <path>.bat → <path>.
+// Modern Android cmdline-tools (>= 8.0) only ship .bat wrappers + .jar files
+// under cmdline-tools/latest/bin/ (no .exe), so .bat is a required fallback.
+// Go's exec.Command handles .bat natively on Windows (it shells out via
+// cmd.exe internally), so downstream callers can pass the returned path
+// straight to exec.CommandContext without any extra massaging.
 func findBinary(path string) string {
-	if runtime.GOOS == "windows" && !strings.HasSuffix(path, ".exe") {
-		if _, err := os.Stat(path + ".exe"); err == nil {
-			return path + ".exe"
+	if runtime.GOOS == "windows" {
+		if !strings.HasSuffix(path, ".exe") {
+			if _, err := os.Stat(path + ".exe"); err == nil {
+				return path + ".exe"
+			}
+		}
+		if !strings.HasSuffix(path, ".bat") {
+			if _, err := os.Stat(path + ".bat"); err == nil {
+				return path + ".bat"
+			}
 		}
 	}
 	if _, err := os.Stat(path); err == nil {
