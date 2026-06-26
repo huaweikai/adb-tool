@@ -72,6 +72,11 @@ func (s *Server) InitEmulator(emulatorPath, avdManagerPath, javaPath, androidHom
 	// (instead of guessing from the imageID, which has the wrong layout).
 	imageManager := emulator.NewImageManager(androidHome)
 
+	// Wire the same ImageManager into the SDK installer so successful
+	// sdkmanager installs (e.g. a fresh system-image package) get
+	// registered into the image list without a manual rescan.
+	SDKInstaller.SetImageManager(imageManager)
+
 	// Create instance manager
 	s.instanceManager, err = emulator.NewInstanceManager(emulatorPath, avdManagerPath, javaPath, androidHome, dataDir, imageManager)
 	if err != nil {
@@ -95,6 +100,18 @@ func (s *Server) InitEmulator(emulatorPath, avdManagerPath, javaPath, androidHom
 		if err != nil {
 			log.Printf("[emulator] startup storage scan: %v", err)
 			return
+		}
+		if androidHome != "" {
+			// Also scan the selected SDK's own system-images dir so freshly
+			// sdkmanager-installed images (which live under <androidHome>/
+			// system-images, not under .adb-tool/emulator/system-images) get
+			// picked up on next launch.
+			if m2, err := imageManager.ScanAndRegister(
+				filepath.Join(androidHome, "system-images")); err == nil {
+				n += m2
+			} else {
+				log.Printf("[emulator] startup SDK system-images scan: %v", err)
+			}
 		}
 		if n > 0 {
 			log.Printf("[emulator] startup storage scan: registered %d image(s)", n)

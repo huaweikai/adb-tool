@@ -39,9 +39,15 @@ type InstallJob struct {
 // SDKInstaller runs sdkmanager install commands asynchronously and exposes
 // their progress to the UI. Multiple jobs can be active at once; each job
 // is tracked by an ID returned from Start.
+//
+// When an imageManager is wired in via SetImageManager, every successful
+// install re-scans the SDK's system-images directory and registers any new
+// images into the persisted registry so they show up in the UI list without
+// the user having to manually re-scan.
 type SDKInstaller struct {
-	mu   sync.RWMutex
-	jobs map[string]*InstallJob
+	mu       sync.RWMutex
+	jobs     map[string]*InstallJob
+	imageMgr *ImageManager // optional — see SetImageManager
 }
 
 // splitCRorLF is a bufio.SplitFunc that splits on either '\r' or '\n'.
@@ -91,6 +97,15 @@ func streamLines(r io.Reader, handleLine func(string)) {
 // NewSDKInstaller creates a new SDKInstaller.
 func NewSDKInstaller() *SDKInstaller {
 	return &SDKInstaller{jobs: make(map[string]*InstallJob)}
+}
+
+// SetImageManager wires in the image manager used to register newly
+// installed system images once a job completes. Safe to call before or
+// after jobs are in flight — the installer reads imageMgr at scan time.
+func (s *SDKInstaller) SetImageManager(mgr *ImageManager) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.imageMgr = mgr
 }
 
 // percentRegex matches the percentage in sdkmanager's progress lines
@@ -234,6 +249,10 @@ if err := cmd.Start(); err != nil {
 
 	if err := cmd.Wait(); err != nil {
 		s.fail(job, fmt.Errorf("sdkmanager exited with error: %w", err))
+		// Even on failure, sdkmanager may have partially unpacked some
+		// images — try to register whatever landed on disk so the user
+		// doesn't have to retry a full rescan.
+		s.scanInstalledImages(sdkPath)
 		return
 	}
 
@@ -244,6 +263,36 @@ if err := cmd.Start(); err != nil {
 		job.Message = "Installation complete"
 		job.FinishedAt = &now
 	})
+
+	// Once the install succeeds, sdkmanager has written the image into
+	// <sdkPath>/system-images/<android-XX>/<variant>/<arch>/. The frontend
+	// only lists images that are in the persisted registry, so re-scan
+	// that directory and pick up the new entries.
+	s.scanInstalledImages(sdkPath)
+}
+
+// scanInstalledImages re-registers everything currently on disk under
+// <sdkPath>/system-images so a fresh sdkmanager install shows up in the
+// image list without a manual rescan. Best-effort: any scan failure is
+// logged but doesn't fail the job.
+func (s *SDKInstaller) scanInstalledImages(sdkPath string) {
+	s.mu.RLock()
+	mgr := s.imageMgr
+	s.mu.RUnlock()
+	if mgr == nil || sdkPath == "" {
+		return
+	}
+	sysImagesDir := filepath.Join(sdkPath, "system-images")
+	if _, err := os.Stat(sysImagesDir); err != nil {
+		// No system-images dir at all yet — nothing to scan.
+		return
+	}
+	n, err := mgr.ScanAndRegister(sysImagesDir)
+	if err != nil {
+		log.Printf("[sdk-installer] post-install scan of %s failed: %v", sysImagesDir, err)
+		return
+	}
+	log.Printf("[sdk-installer] post-install scan registered %d image(s) under %s", n, sysImagesDir)
 }
 
 func (s *SDKInstaller) fail(job *InstallJob, err error) {
