@@ -245,6 +245,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/emulator/instance/delete", s.handleEmulatorInstanceDelete)
 	mux.HandleFunc("/ws/emulator/status", s.handleEmulatorStatusWS)
 
+	// SDK installer (sdkmanager-driven package install with progress)
+	mux.HandleFunc("/api/emulator/sdk/install", s.handleEmulatorSDKInstall)
+	mux.HandleFunc("/api/emulator/sdk/install/status", s.handleEmulatorSDKInstallStatus)
+
 	mux.HandleFunc("/api/identify", s.handleIdentify)
 	mux.HandleFunc("/api/shutdown", s.handleShutdown)
 	mux.HandleFunc("/api/adb-exec", s.handleAdbExec)

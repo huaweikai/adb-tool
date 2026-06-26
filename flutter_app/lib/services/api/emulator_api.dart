@@ -90,6 +90,28 @@ mixin EmulatorApi on ApiBase {
     final data = responseMap(response);
     return SDKDownloadResult.fromJson(data);
   }
+
+  /// Start an sdkmanager-driven install of one or more packages (e.g.
+  /// `["emulator"]` or `["emulator", "platform-tools",
+  /// "system-images;android-33;google_apis_playstore;arm64-v8a"]`).
+  /// Returns immediately with a job ID — poll [getInstallStatus] for
+  /// progress.
+  Future<SDKInstallJob> installPackages(List<String> packages) async {
+    final response = await dio.post(
+      '/api/emulator/sdk/install',
+      data: {'packages': packages},
+    );
+    return SDKInstallJob.fromJson(responseMap(response));
+  }
+
+  /// Poll an in-flight install job's status.
+  Future<SDKInstallJob> getInstallStatus(String id) async {
+    final response = await dio.get(
+      '/api/emulator/sdk/install/status',
+      queryParameters: {'id': id},
+    );
+    return SDKInstallJob.fromJson(responseMap(response));
+  }
 }
 
 /// Represents a detected Android SDK on the system.
@@ -199,4 +221,46 @@ class EmulatorEngineStatus {
       selectedSDKInvalid: json['selectedSDKInvalid'] as bool? ?? false,
     );
   }
+}
+
+/// Progress of an sdkmanager-driven install job.
+class SDKInstallJob {
+  final String id;
+  final List<String> packages;
+  final String status; // pending, running, completed, error
+  final double progress;
+  final String message;
+  final List<String> outputTail;
+  final String? error;
+  final DateTime? startedAt;
+  final DateTime? finishedAt;
+
+  const SDKInstallJob({
+    required this.id,
+    required this.packages,
+    required this.status,
+    required this.progress,
+    required this.message,
+    this.outputTail = const [],
+    this.error,
+    this.startedAt,
+    this.finishedAt,
+  });
+
+  factory SDKInstallJob.fromJson(Map<String, dynamic> json) {
+    return SDKInstallJob(
+      id: json['id'] as String,
+      packages: (json['packages'] as List?)?.map((e) => e as String).toList() ?? const [],
+      status: json['status'] as String? ?? 'pending',
+      progress: (json['progress'] as num?)?.toDouble() ?? 0.0,
+      message: json['message'] as String? ?? '',
+      outputTail: (json['outputTail'] as List?)?.map((e) => e as String).toList() ?? const [],
+      error: json['error'] as String?,
+      startedAt: json['startedAt'] != null ? DateTime.tryParse(json['startedAt'] as String) : null,
+      finishedAt: json['finishedAt'] != null ? DateTime.tryParse(json['finishedAt'] as String) : null,
+    );
+  }
+
+  bool get isRunning => status == 'pending' || status == 'running';
+  bool get isDone => status == 'completed' || status == 'error';
 }

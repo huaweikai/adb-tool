@@ -26,6 +26,9 @@ var DownloadMgr = emulator.NewDownloadManager()
 // SDKMgr handles Android SDK import and management.
 var SDKMgr = emulator.NewSDKManager()
 
+// SDKInstaller handles sdkmanager-driven package installs.
+var SDKInstaller = emulator.NewSDKInstaller()
+
 // handleEmulatorEngineStatus returns the current emulator engine status.
 func (s *Server) handleEmulatorEngineStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" {
@@ -1458,4 +1461,64 @@ func (s *Server) handleEmulatorStatusWS(w http.ResponseWriter, r *http.Request) 
 			conn.WriteMessage(websocket.PongMessage, nil)
 		}
 	}
+}
+
+// handleEmulatorSDKInstall starts an sdkmanager-driven install of one or more
+// SDK packages (e.g. "emulator", "platform-tools",
+// "system-images;android-33;google_apis_playstore;arm64-v8a"). The actual
+// sdkmanager process runs asynchronously — poll /install/status?id=<id>
+// for progress. Licenses must be accepted separately before this call.
+func (s *Server) handleEmulatorSDKInstall(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeAPIError(w, http.StatusMethodNotAllowed, "POST required")
+		return
+	}
+	defer r.Body.Close()
+
+	var req struct {
+		Packages []string `json:"packages"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if len(req.Packages) == 0 {
+		writeAPIError(w, http.StatusBadRequest, "packages is required (e.g. [\"emulator\"])")
+		return
+	}
+
+	sdkmanagerPath := EmulatorEngine.SdkmanagerPath
+	sdkPath := EmulatorEngine.AndroidHome
+	if sdkmanagerPath == "" || sdkPath == "" {
+		writeAPIError(w, http.StatusBadRequest,
+			"SDK not selected or sdkmanager not available — pick an SDK first")
+		return
+	}
+
+	job, err := SDKInstaller.Start(sdkmanagerPath, sdkPath, req.Packages)
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, job)
+}
+
+// handleEmulatorSDKInstallStatus returns the current state of a previously
+// started install job.
+func (s *Server) handleEmulatorSDKInstallStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		writeAPIError(w, http.StatusMethodNotAllowed, "GET required")
+		return
+	}
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		writeAPIError(w, http.StatusBadRequest, "id is required")
+		return
+	}
+	job := SDKInstaller.Get(id)
+	if job == nil {
+		writeAPIError(w, http.StatusNotFound, "install job not found")
+		return
+	}
+	writeJSON(w, job)
 }

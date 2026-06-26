@@ -45,7 +45,7 @@ export 'api/wireless_api.dart' show WirelessApi;
 export 'api/clipboard_api.dart' show ClipboardApi;
 export 'api/adb_command_api.dart' show AdbCommandApi;
 export 'api/backend_log_api.dart' show BackendLogApi;
-export 'api/emulator_api.dart' show EmulatorApi, EmulatorEngineStatus, SDKDetectResult, SDKDownloadResult;
+export 'api/emulator_api.dart' show EmulatorApi, EmulatorEngineStatus, SDKDetectResult, SDKDownloadResult, SDKInstallJob;
 export 'api/emulator_java_api.dart' show
     EmulatorJavaApi,
     JavaRuntimeStatus,

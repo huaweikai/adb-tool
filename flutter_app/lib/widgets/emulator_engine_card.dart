@@ -37,6 +37,11 @@ class _EmulatorEngineCardState extends State<EmulatorEngineCard> {
   bool _isDetecting = false;
   Timer? _downloadPoller;
 
+  // sdkmanager-driven install (e.g. emulator + system-images). Distinct from
+  // the SDK-zip download (handled by _downloadPoller above).
+  SDKInstallJob? _installJob;
+  Timer? _installPoller;
+
   // 当前选中的 Tab
   int _selectedTab = 0; // 0=扫描检测, 1=选择路径, 2=下载 SDK, 3=导入压缩包
   bool _debugExpanded = false;
@@ -93,6 +98,7 @@ class _EmulatorEngineCardState extends State<EmulatorEngineCard> {
     _importPathController.dispose();
     _customPathController.dispose();
     _downloadPoller?.cancel();
+    _installPoller?.cancel();
     super.dispose();
   }
 
@@ -274,6 +280,119 @@ class _EmulatorEngineCardState extends State<EmulatorEngineCard> {
               ),
             ],
           ),
+          // Emulator 还没装时，显示下载入口和实时进度
+          _buildInstallEmulatorSection(context, status),
+        ],
+      ),
+    );
+  }
+
+  /// "下载 emulator" 按钮 + 实时进度条。仅在 toolchain 已就绪、emulator
+  /// 二进制还没装、sdkmanager 可用时显示。一旦安装完成，下一次刷新就会让
+  /// Emulator chip 变成绿色 ✓，"创建实例"按钮也会解锁。
+  Widget _buildInstallEmulatorSection(BuildContext context, EmulatorEngineStatus status) {
+    final emulatorReady = status.emulatorVersion != null && status.emulatorVersion!.isNotEmpty;
+    final sdkmanagerReady = status.sdkmanagerPath != null && status.sdkmanagerPath!.isNotEmpty;
+
+    if (emulatorReady) return const SizedBox.shrink();
+
+    final job = _installJob;
+    final running = job != null && job.isRunning;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (running) ...[
+            // 正在下载：进度条 + 当前 activity
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        job.message.isNotEmpty ? job.message : '正在准备...',
+                        style: const TextStyle(fontSize: 12),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: LinearProgressIndicator(
+                          value: job.progress > 0 ? job.progress : null,
+                          minHeight: 6,
+                          backgroundColor: Colors.grey.withAlpha(40),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  '${(job.progress * 100).toStringAsFixed(0)}%',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ],
+            ),
+          ] else if (job != null && job.status == 'error') ...[
+            // 上一次下载失败
+            Row(
+              children: [
+                const Icon(Icons.error_outline, color: Colors.red, size: 18),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    job.error ?? '下载失败',
+                    style: const TextStyle(color: Colors.red, fontSize: 12),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: sdkmanagerReady ? () => _installEmulator(context) : null,
+                  icon: const Icon(Icons.refresh, size: 16),
+                  label: const Text('重试'),
+                ),
+              ],
+            ),
+          ] else if (job != null && job.status == 'completed') ...[
+            // 已安装但 chip 还没刷新（极端情况下）
+            Row(
+              children: const [
+                Icon(Icons.check_circle, color: Colors.green, size: 18),
+                SizedBox(width: 6),
+                Text('emulator 已安装，正在刷新状态...',
+                    style: TextStyle(color: Colors.green, fontSize: 12)),
+              ],
+            ),
+          ] else ...[
+            // 初始状态：CTA 按钮
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    sdkmanagerReady
+                        ? '使用 sdkmanager 下载 emulator（含 qemu）'
+                        : '需要先安装 cmdline-tools 才能下载 emulator',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: sdkmanagerReady ? Colors.grey.shade700 : Colors.red,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                FilledButton.tonalIcon(
+                  onPressed: sdkmanagerReady ? () => _installEmulator(context) : null,
+                  icon: const Icon(Icons.download, size: 16),
+                  label: const Text('下载 emulator'),
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -1173,6 +1292,73 @@ Widget _infoChip(IconData icon, String label, {required bool isReady}) {
     } catch (e, stack) {
       _addLog('USE', '❌ 异常: $e', isError: true);
       _addLog('USE', '堆栈: $stack', isError: true);
+    }
+  }
+
+  /// Kick off an sdkmanager-driven emulator install. Backend runs the
+  /// sdkmanager child process; we poll for progress every 800ms until the
+  /// job finishes, then refresh engine status so the chip + button flip
+  /// to "ready".
+  Future<void> _installEmulator(BuildContext context) async {
+    final api = context.read<ApiClient>();
+    final provider = context.read<EmulatorEngineProvider>();
+
+    _addLog('INSTALL', '========== 安装 emulator ==========');
+    _addLog('INSTALL', '发送 POST /api/emulator/sdk/install packages=["emulator"]');
+
+    try {
+      final job = await api.installPackages(['emulator']);
+      _addLog('INSTALL', '✅ 启动成功: jobId=${job.id}');
+      if (!mounted) return;
+
+      setState(() => _installJob = job);
+
+      _installPoller?.cancel();
+      _installPoller = Timer.periodic(const Duration(milliseconds: 800), (timer) async {
+        final current = _installJob;
+        if (current == null) {
+          timer.cancel();
+          return;
+        }
+        if (!current.isRunning) {
+          timer.cancel();
+          return;
+        }
+        try {
+          final updated = await api.getInstallStatus(current.id);
+          if (!mounted) return;
+          setState(() => _installJob = updated);
+          if (updated.isDone) {
+            timer.cancel();
+            if (updated.status == 'completed') {
+              _addLog('INSTALL', '✅ emulator 安装完成');
+              await provider.refreshStatus();
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('emulator 安装完成'), duration: Duration(seconds: 2)),
+                );
+              }
+            } else {
+              _addLog('INSTALL', '❌ 安装失败: ${updated.error}', isError: true);
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('安装失败: ${updated.error ?? "未知错误"}')),
+                );
+              }
+            }
+          }
+        } catch (e) {
+          _addLog('INSTALL', '轮询异常: $e', isError: true);
+        }
+      });
+    } catch (e, stack) {
+      _addLog('INSTALL', '❌ 启动失败: $e', isError: true);
+      _addLog('INSTALL', '堆栈: $stack', isError: true);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('启动安装失败: $e')),
+        );
+      }
     }
   }
 
