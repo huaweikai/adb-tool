@@ -21,51 +21,70 @@ import (
 
 // InstanceManager handles emulator instance lifecycle (create, delete, start, stop).
 type InstanceManager struct {
-	emulatorPath string
+	emulatorPath   string
 	avdManagerPath string
-	javaPath     string
-	androidSdk   string
-	dataDir      string
-	portAlloc    *PortAllocator
-	instances    map[string]*Instance
-	processes    map[string]*ProcessInfo
-	mu           sync.RWMutex
+	javaPath       string
+	androidSdk     string
+	dataDir        string
+	portAlloc      *PortAllocator
+	instances      map[string]*Instance
+	processes      map[string]*ProcessInfo
+	mu             sync.RWMutex
 	// imageManager is used to look up the on-disk path of a system image when
 	// generating an AVD's config.ini. May be nil, in which case we fall back to
 	// constructing the path from the imageID (legacy behaviour, often wrong).
 	imageManager *ImageManager
+	// statusMonitor is set by SetStatusMonitor after construction. nil
+	// until then, in which case boot-progress updates are silently dropped.
+	statusMonitor *StatusMonitor
+	// stopping tracks instances that the user explicitly stopped while
+	// they were still booting. monitorEmulatorProcess checks this so
+	// that, when it sees the process die, it doesn't overwrite the
+	// already-cancelled StatusStopped with a spurious StatusError.
+	stopping map[string]bool
 }
 
 // Instance represents a single emulator instance (AVD).
 type Instance struct {
-	ID           string          `json:"id"`
-	ImageID      string          `json:"imageId"`
-	Name         string          `json:"name"`
-	AVDPath      string          `json:"avdPath"`
-	Config       InstanceConfig  `json:"config"`
-	Status       InstanceStatus   `json:"status"`
-	ConsolePort  int             `json:"consolePort"`
-	ADBPort      int             `json:"adbPort"`
-	PID          int             `json:"pid,omitempty"`
-	Serial       string          `json:"serial"`
-	SnapshotID   string          `json:"snapshotId,omitempty"`
-	CreatedAt    time.Time       `json:"createdAt"`
+	ID            string         `json:"id"`
+	ImageID       string         `json:"imageId"`
+	Name          string         `json:"name"`
+	AVDPath       string         `json:"avdPath"`
+	Config        InstanceConfig `json:"config"`
+	Status        InstanceStatus `json:"status"`
+	ConsolePort   int            `json:"consolePort"`
+	ADBPort       int            `json:"adbPort"`
+	PID           int            `json:"pid,omitempty"`
+	Serial        string         `json:"serial"`
+	SnapshotID    string         `json:"snapshotId,omitempty"`
+	CreatedAt     time.Time      `json:"createdAt"`
 	LastStartedAt *time.Time     `json:"lastStartedAt,omitempty"`
 	// LogPath is the file where the emulator's stdout/stderr is captured.
 	LogPath string `json:"logPath,omitempty"`
 	// LastError records the most recent failure reason (startup crash, etc.).
 	LastError string `json:"lastError,omitempty"`
+	// BootStage names the current phase of the boot sequence. One of
+	// "launching", "booting", "adb_connecting", "ready". Empty outside
+	// StatusStarting / StatusRunning.
+	BootStage string `json:"bootStage,omitempty"`
+	// BootProgress is a 0-100 estimate of how far through the boot we are.
+	// Updated as monitorEmulatorProcess advances; never persists to disk.
+	BootProgress int `json:"bootProgress,omitempty"`
+	// BootMessage is a short human-readable description of the current
+	// stage (e.g. "Starting kernel…", "Android is starting up…"). Surfaced
+	// verbatim in the UI so the user has something to read while waiting.
+	BootMessage string `json:"bootMessage,omitempty"`
 }
 
 // InstanceConfig holds hardware configuration for an AVD.
 type InstanceConfig struct {
-	Cores       int    `json:"cores"`
-	MemoryMB    int    `json:"memoryMb"`
-	Width       int    `json:"width"`
-	Height      int    `json:"height"`
-	Density     int    `json:"density"`
-	SDCardSize  string `json:"sdcardSize,omitempty"`
-	GPUMode     string `json:"gpuMode"`
+	Cores      int    `json:"cores"`
+	MemoryMB   int    `json:"memoryMb"`
+	Width      int    `json:"width"`
+	Height     int    `json:"height"`
+	Density    int    `json:"density"`
+	SDCardSize string `json:"sdcardSize,omitempty"`
+	GPUMode    string `json:"gpuMode"`
 }
 
 // InstanceStatus represents the current state of an instance.
@@ -73,9 +92,9 @@ type InstanceStatus string
 
 const (
 	StatusStopped  InstanceStatus = "stopped"
-	StatusStarting  InstanceStatus = "starting"
-	StatusRunning   InstanceStatus = "running"
-	StatusError     InstanceStatus = "error"
+	StatusStarting InstanceStatus = "starting"
+	StatusRunning  InstanceStatus = "running"
+	StatusError    InstanceStatus = "error"
 )
 
 // ProcessInfo tracks a running emulator process.
@@ -87,9 +106,9 @@ type ProcessInfo struct {
 
 // CreateInstanceRequest holds parameters for creating a new AVD.
 type CreateInstanceRequest struct {
-	Name      string         `json:"name"`
-	ImageID   string         `json:"imageId"`
-	Config    InstanceConfig `json:"config"`
+	Name    string         `json:"name"`
+	ImageID string         `json:"imageId"`
+	Config  InstanceConfig `json:"config"`
 }
 
 // NewInstanceManager creates a new instance manager.
@@ -100,15 +119,16 @@ type CreateInstanceRequest struct {
 // correct for imageIDs that don't contain dashes.
 func NewInstanceManager(emulatorPath, avdManagerPath, javaPath, androidSdk, dataDir string, imageManager *ImageManager) (*InstanceManager, error) {
 	im := &InstanceManager{
-		emulatorPath:  emulatorPath,
+		emulatorPath:   emulatorPath,
 		avdManagerPath: avdManagerPath,
-		javaPath:      javaPath,
-		androidSdk:   androidSdk,
-		dataDir:      dataDir,
-		portAlloc:    NewPortAllocator(),
-		instances:    make(map[string]*Instance),
-		processes:    make(map[string]*ProcessInfo),
-		imageManager: imageManager,
+		javaPath:       javaPath,
+		androidSdk:     androidSdk,
+		dataDir:        dataDir,
+		portAlloc:      NewPortAllocator(),
+		instances:      make(map[string]*Instance),
+		processes:      make(map[string]*ProcessInfo),
+		imageManager:   imageManager,
+		stopping:       make(map[string]bool),
 	}
 
 	// Load existing instances from disk
@@ -123,6 +143,32 @@ func NewInstanceManager(emulatorPath, avdManagerPath, javaPath, androidSdk, data
 	}
 
 	return im, nil
+}
+
+// UpdateToolchainPaths refreshes the emulator + avdmanager binary paths the
+// InstanceManager will use when launching instances. Called by the SDK
+// use handler whenever the user picks a new SDK root, so a freshly
+// installed emulator (via the SDK installer) gets picked up without a
+// server restart.
+func (m *InstanceManager) UpdateToolchainPaths(emulatorPath, avdManagerPath string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if emulatorPath != "" {
+		m.emulatorPath = emulatorPath
+	}
+	if avdManagerPath != "" {
+		m.avdManagerPath = avdManagerPath
+	}
+}
+
+// SetStatusMonitor wires the StatusMonitor into the InstanceManager so
+// boot-progress updates from bootProgressTracker can be pushed to any
+// watching WebSocket clients. Safe to call once after construction;
+// subsequent calls are no-ops.
+func (m *InstanceManager) SetStatusMonitor(sm *StatusMonitor) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.statusMonitor = sm
 }
 
 // Create creates a new emulator instance (AVD).
@@ -268,6 +314,14 @@ func (m *InstanceManager) Start(id string) (*Instance, error) {
 	inst.LastStartedAt = &now
 	m.mu.Unlock()
 
+	// Self-heal AVDs created by older backend versions (or by avdmanager
+	// directly) that lack the fields emulator 36.x needs to identify
+	// the system image and CPU model. updateAVDConfig overwrites
+	// config.ini wholesale, so this is safe to run on every Start.
+	if err := m.ensureAVDConfig(inst); err != nil {
+		log.Printf("[emulator] warning: could not self-heal AVD config for %s: %v", id, err)
+	}
+
 	// Start the emulator process
 	if err := m.startEmulator(inst); err != nil {
 		m.mu.Lock()
@@ -306,6 +360,12 @@ func (m *InstanceManager) Start(id string) (*Instance, error) {
 }
 
 // Stop stops a running emulator instance.
+//
+// Also handles the "cancel a start that's still in progress" case: the
+// UI exposes a stop button while status == StatusStarting so the user
+// can abort a hung boot. monitorEmulatorProcess will see the dead
+// process and (correctly) flip the instance to StatusError; we force
+// it to StatusStopped here so the result is what the user asked for.
 func (m *InstanceManager) Stop(id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -315,8 +375,8 @@ func (m *InstanceManager) Stop(id string) error {
 		return fmt.Errorf("instance not found: %s", id)
 	}
 
-	if inst.Status != StatusRunning {
-		return nil // Already stopped
+	if inst.Status != StatusRunning && inst.Status != StatusStarting {
+		return nil // Already stopped / errored
 	}
 
 	if err := m.stopInstanceLocked(inst); err != nil {
@@ -325,6 +385,11 @@ func (m *InstanceManager) Stop(id string) error {
 
 	inst.Status = StatusStopped
 	inst.PID = 0
+	// Reset boot progress so a subsequent start begins from a clean
+	// state instead of showing the previous run's terminal values.
+	inst.BootStage = ""
+	inst.BootProgress = 0
+	inst.BootMessage = ""
 
 	return m.saveInstancesLocked()
 }
@@ -430,6 +495,21 @@ func (m *InstanceManager) createAVDManually(inst *Instance) error {
 
 	inst.AVDPath = avdPath
 
+	// Write the AVD pointer ini alongside the .avd directory. emulator uses
+	// <ANDROID_AVD_HOME>/<name>.ini as the entry point when launched with
+	// `-avd <name>`; without it the emulator cannot locate the AVD even when
+	// config.ini's `path` field is absolute. avdmanager would normally create
+	// this file for us, but we hit createAVDManually only when avdmanager
+	// failed (typically due to stdin prompts), so we have to write it here.
+	//
+	// The `target=` line is critical: without it, emulator 36.x falls back
+	// to a 32-bit ARM default and refuses to boot with
+	// "CPU Architecture 'arm' is not supported".
+	iniPath := filepath.Join(avdHome, inst.Name+".ini")
+	if err := m.writeAVDPointer(inst, iniPath); err != nil {
+		return err
+	}
+
 	// Create config.ini
 	if err := m.updateAVDConfig(inst); err != nil {
 		return err
@@ -440,6 +520,21 @@ func (m *InstanceManager) createAVDManually(inst *Instance) error {
 	// aborts on boot. Instead, let the emulator create/initialize it on first
 	// start (which is its default behaviour when the file is missing).
 
+	return nil
+}
+
+func (m *InstanceManager) writeAVDPointer(inst *Instance, iniPath string) error {
+	if iniPath == "" {
+		iniPath = filepath.Join(filepath.Dir(inst.AVDPath), inst.Name+".ini")
+	}
+	iniContent := fmt.Sprintf("avd.ini.encoding=UTF-8\npath=%s\npath.rel=%s\ntarget=%s\n",
+		inst.AVDPath,
+		filepath.Base(inst.AVDPath),
+		parseImageTarget(inst.ImageID),
+	)
+	if err := os.WriteFile(iniPath, []byte(iniContent), 0644); err != nil {
+		return fmt.Errorf("failed to write avd ini: %w", err)
+	}
 	return nil
 }
 
@@ -471,6 +566,67 @@ func (m *InstanceManager) resolveSystemImagePath(inst *Instance) (string, error)
 	return "", fmt.Errorf("system image %q not found (looked up via imageManager and %s)", inst.ImageID, candidate)
 }
 
+// parseImageTarget extracts the SDK target from an imageID like
+// "android-30-default-arm64-v8a" → "android-30".
+//
+// avdmanager writes `target=android-<api>` into the AVD's .ini; without it
+// the emulator can't determine which system images are compatible and falls
+// back to a 32-bit ARM default that emulator 36.x no longer supports (FATAL:
+// "CPU Architecture 'arm' is not supported").
+func parseImageTarget(imageID string) string {
+	parts := strings.SplitN(imageID, "-", 3)
+	if len(parts) < 2 {
+		return imageID
+	}
+	return parts[0] + "-" + parts[1]
+}
+
+// parseImageVariant extracts the system-image variant (the middle segment
+// between API level and ABI) from an imageID like "android-30-default-arm64-v8a"
+// → "default". avdmanager writes this as `tag.id` / `tag.ids` in config.ini;
+// without them emulator 36.x refuses to boot with "Broken AVD system path".
+func parseImageVariant(imageID string) string {
+	// imageID layout is "<apiLevel>-<variant>-<arch>"; arch itself can
+	// contain dashes (arm64-v8a), so we split into at most 4 pieces and
+	// take index 2 (variant).
+	parts := strings.SplitN(imageID, "-", 4)
+	if len(parts) < 3 {
+		return ""
+	}
+	return parts[2]
+}
+
+// parseImageArch extracts the (abi, cpuArch) pair from an imageID like
+// "android-30-default-arm64-v8a" → ("arm64-v8a", "arm64").
+//
+// `abi` matches the value avdmanager writes as abi.type in config.ini (the
+// on-disk ABI of the system image). `cpuArch` matches hw.cpu.arch (the CPU
+// model the emulator should emulate). When either is unknown we return empty
+// strings and let the emulator auto-detect from image.sysdir.1.
+//
+// Note: the arch segment may itself contain a dash (arm64-v8a, armeabi-v7a),
+// so we split imageID into ≤4 pieces and rejoin anything after variant.
+func parseImageArch(imageID string) (abi, cpuArch string) {
+	parts := strings.SplitN(imageID, "-", 4)
+	if len(parts) < 4 {
+		return "", ""
+	}
+	abi = parts[3]
+	switch abi {
+	case "arm64-v8a":
+		cpuArch = "arm64"
+	case "x86_64":
+		cpuArch = "x86_64"
+	case "x86":
+		cpuArch = "x86"
+	case "armeabi-v7a":
+		cpuArch = "arm"
+	default:
+		return "", ""
+	}
+	return abi, cpuArch
+}
+
 // updateAVDConfig writes the AVD config.ini file.
 //
 // Notes on the path fields:
@@ -491,38 +647,62 @@ func (m *InstanceManager) updateAVDConfig(inst *Instance) error {
 	if err != nil {
 		return err
 	}
+	_ = systemPath
+
+	// Derive abi / cpuArch / variant from the imageID so emulator 36.x
+	// picks the right CPU model and the right system image directory.
+	//
+	// Without `abi.type` + `hw.cpu.arch` the emulator defaults to 32-bit ARM
+	// and dies with "CPU Architecture 'arm' is not supported".
+	//
+	// Without `image.sysdir.1` (relative to ANDROID_SDK_ROOT) + `tag.id` /
+	// `tag.ids` the emulator refuses to boot with "Broken AVD system path"
+	// even when `systemPath` is set to the correct absolute path — emulator
+	// 36.x does not consult `systemPath` for system-image lookup, only
+	// `image.sysdir.*`.
+	abi, cpuArch := parseImageArch(inst.ImageID)
+	variant := parseImageVariant(inst.ImageID)
+
+	// image.sysdir.1 is a path relative to ANDROID_SDK_ROOT (NOT absolute).
+	// avdmanager writes this with a trailing slash; we mirror that.
+	sysDirRel := filepath.ToSlash(filepath.Join("system-images",
+		parseImageTarget(inst.ImageID), variant, abi)) + "/"
 
 	configPath := filepath.Join(inst.AVDPath, "config.ini")
-	config := fmt.Sprintf(`[core]
-name=%s
-path=%s
-pathRel=%s
-
-[image]
-systemPath=%s
-
-[hw]
-cpu.cores=%d
+	config := fmt.Sprintf(`AvdId=%s
+avd.ini.displayname=%s
+avd.ini.encoding=UTF-8
+abi.type=%s
+hw.cpu.arch=%s
+hw.cpu.ncore=%d
 hw.ramSize=%d
 hw.screen=dynamic
-hw.sdCard.path=%s
+hw.sdCard=%s
 hw.gps=yes
-hw.gpu.enabled=1
+hw.gpu.enabled=yes
 hw.gpu.mode=%s
-
-[disk]
-dataPartition.size=2G
-
-[screen]
+image.sysdir.1=%s
+path=%s
+path.rel=%s
+tag.id=%s
+tag.ids=%s
+disk.dataPartition.size=2G
 hw.screenWidth=%d
 hw.screenHeight=%d
 hw.lcd.density=%d
-`, inst.Name, inst.AVDPath, inst.AVDPath,
-		systemPath,
+`, inst.Name,
+		inst.Name,
+		abi,
+		cpuArch,
 		inst.Config.Cores,
 		inst.Config.MemoryMB,
-		filepath.Join(inst.AVDPath, "sdcard.img"),
+		sdCardSetting(inst),
 		inst.Config.GPUMode,
+		sysDirRel,
+		inst.AVDPath,
+		filepath.Base(inst.AVDPath),
+		variant,
+		variant,
 		inst.Config.Width,
 		inst.Config.Height,
 		inst.Config.Density)
@@ -556,9 +736,10 @@ func (m *InstanceManager) startEmulator(inst *Instance) error {
 		"-gpu", inst.Config.GPUMode,
 	}
 
-	// Add AVD path if not in standard location
-	if inst.AVDPath != "" && !strings.HasPrefix(inst.AVDPath, filepath.Join(m.androidSdk, "avd")) {
-		args = append(args, "-sysdir", inst.AVDPath)
+	if systemPath, err := m.resolveSystemImagePath(inst); err == nil && systemPath != "" {
+		args = append(args, "-sysdir", systemPath)
+	} else if err != nil {
+		return err
 	}
 
 	// Capture emulator output to a per-AVD log file. Without this, anything
@@ -571,9 +752,14 @@ func (m *InstanceManager) startEmulator(inst *Instance) error {
 	}
 
 	cmd := exec.Command(m.emulatorPath, args...)
+	// Point ANDROID_AVD_HOME at our managed AVD directory (`<dataDir>/avd`,
+	// i.e. ~/.adb-tool/emulator/avd). Previously this was set to
+	// `<androidSdk>/avd` which is the SDK root, but our AVDs live alongside
+	// the emulator cache, not the SDK — that mismatch caused
+	// "ANDROID_AVD_HOME is defined but there is no file <name>.ini" at boot.
 	cmd.Env = append(os.Environ(),
 		"ANDROID_SDK_ROOT="+m.androidSdk,
-		"ANDROID_AVD_HOME="+filepath.Join(m.androidSdk, "avd"),
+		"ANDROID_AVD_HOME="+filepath.Join(m.dataDir, "avd"),
 	)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
@@ -598,6 +784,11 @@ func (m *InstanceManager) startEmulator(inst *Instance) error {
 	// failures (bad system image path, missing KVM, broken AVD config, ...).
 	// Without this the API reports success even though the emulator died.
 	go m.monitorEmulatorProcess(inst.ID, cmd, logFile)
+	// Drive the live progress bar / stage label the UI shows while the
+	// instance is starting. The monitor above only flips the final
+	// StatusRunning/StatusError; this loop tails the log every 1.5s and
+	// maps keyword matches to user-visible boot stages.
+	go m.bootProgressTracker(inst.ID, logPath)
 
 	return nil
 }
@@ -641,8 +832,22 @@ func (m *InstanceManager) monitorEmulatorProcess(id string, cmd *exec.Cmd, logFi
 			m.mu.Lock()
 			if inst, ok := m.instances[id]; ok {
 				inst.Status = StatusRunning
+				// Snapshot the final boot state so the WS payload sent by
+				// the immediate broadcast below (and any list/get API
+				// call afterwards) reflects "ready". bootProgressTracker
+				// also races to set this; last write wins, which is fine
+				// because both write the same terminal values.
+				inst.BootStage = "ready"
+				inst.BootProgress = 100
+				inst.BootMessage = "启动完成"
 			}
 			m.mu.Unlock()
+			// Push a final "running + ready" update so any UI that
+			// missed the bootProgressTracker's terminal update sees the
+			// transition. Idempotent: stage is already "ready".
+			if m.statusMonitor != nil {
+				m.statusMonitor.BroadcastStatus(id, StatusRunning, "ready", 100, "启动完成")
+			}
 			return
 		}
 
@@ -659,19 +864,173 @@ func (m *InstanceManager) monitorEmulatorProcess(id string, cmd *exec.Cmd, logFi
 // of the emulator log into LastError, and drops the dead process from
 // m.processes so List() doesn't keep advertising a ghost PID.
 func (m *InstanceManager) recordEmulatorFailure(id, reason, logPath string) {
-	tail := readLogTail(logPath, 40)
+	tail := ReadLogTail(logPath, 40)
 	errMsg := fmt.Sprintf("%s. Log: %s\n--- last log lines ---\n%s", reason, logPath, tail)
 	log.Printf("[emulator] instance %s: %s", id, errMsg)
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	// If the user clicked "Stop" while the instance was still booting,
+	// Stop already wrote StatusStopped; don't clobber it with Error.
+	if m.stopping[id] {
+		delete(m.stopping, id)
+		m.mu.Unlock()
+		return
+	}
 	if inst, ok := m.instances[id]; ok {
 		inst.Status = StatusError
 		inst.LastError = errMsg
 		inst.LastStartedAt = nil
 		inst.PID = 0
+		// Wipe boot progress so the UI doesn't keep showing a half-finished
+		// bar on an errored instance.
+		inst.BootStage = ""
+		inst.BootProgress = 0
+		inst.BootMessage = ""
 	}
 	delete(m.processes, id)
+}
+
+// bootProgressTracker polls the emulator log every 1.5s and updates the
+// instance's BootStage / BootProgress / BootMessage based on keyword
+// matches. Runs until the instance leaves StatusStarting (either to
+// StatusRunning, in which case monitorEmulatorProcess sets the terminal
+// values, or to StatusError, in which case we exit). The log only emits
+// on events, so we also nudge the progress bar forward during quiet
+// periods so the user sees motion.
+//
+// boot stages, in order:
+//   - "launching"        process just forked
+//   - "booting_kernel"   qemu/userspace boot props written
+//   - "booting_android"  graphics / Vulkan init
+//   - "adb_connecting"   GRPC server up, adb registration
+//   - "ready"            monitorEmulatorProcess flipped to StatusRunning
+func (m *InstanceManager) bootProgressTracker(id, logPath string) {
+	const pollInterval = 1500 * time.Millisecond
+
+	// Seed the initial state so the UI has something to render
+	// immediately after Start returns.
+	m.updateBootState(id, "launching", 5, "正在启动 emulator 进程…")
+
+	stage := "launching"
+	progress := 5
+	message := "正在启动 emulator 进程…"
+
+	seenLines := 0
+	ticker := time.NewTicker(pollInterval)
+	defer ticker.Stop()
+
+	// applyUpdate is the only path that writes boot state + broadcasts,
+	// so we never double-fire the same stage+progress twice in a row.
+	applyUpdate := func(nextStage string, nextProgress int, nextMessage string) {
+		if nextStage == stage && nextProgress == progress && nextMessage == message {
+			return
+		}
+		stage, progress, message = nextStage, nextProgress, nextMessage
+		m.updateBootState(id, stage, progress, message)
+	}
+
+	for range ticker.C {
+		cur := m.getInstance(id)
+		if cur == nil {
+			return
+		}
+		// monitorEmulatorProcess already took over (running / error) —
+		// stop our own loop. StatusRunning also implies "ready", which
+		// monitorEmulatorProcess has already broadcast, so there's
+		// nothing for us to do.
+		if cur.Status != StatusStarting {
+			return
+		}
+
+		lines, total := tailLogLines(logPath, seenLines)
+		seenLines = total
+
+		if len(lines) == 0 {
+			// Quiet period. Nudge progress forward so the bar keeps
+			// moving, but cap before the "ready" zone so we never
+			// accidentally race past monitorEmulatorProcess.
+			if progress < 85 {
+				applyUpdate(stage, progress+1, message)
+			}
+			continue
+		}
+
+		// Match keywords in newest line(s). Once we see "Boot completed"
+		// we hand off to monitorEmulatorProcess and stop advancing.
+		for _, line := range lines {
+			switch {
+			case strings.Contains(line, "Boot completed"):
+				applyUpdate("ready", 100, "启动完成")
+				return
+			case strings.Contains(line, "Started GRPC server") || strings.Contains(line, "Advertising in"):
+				applyUpdate("adb_connecting", 80, "正在连接 ADB…")
+			case strings.Contains(line, "Graphics Adapter") || strings.Contains(line, "Vulkan externalMemoryMode"):
+				if progress < 50 {
+					applyUpdate("booting_android", 50, "Android 正在启动…")
+				}
+			case strings.Contains(line, "Userspace boot properties") || strings.Contains(line, "qemu=1"):
+				if progress < 20 {
+					applyUpdate("booting_kernel", 20, "正在启动内核…")
+				}
+			}
+		}
+	}
+}
+
+// updateBootState writes the boot fields on the instance and broadcasts
+// them to any watching WebSocket clients. Safe to call from any
+// goroutine; locks m.mu internally.
+func (m *InstanceManager) updateBootState(id, stage string, progress int, message string) {
+	m.mu.Lock()
+	inst, ok := m.instances[id]
+	if !ok {
+		m.mu.Unlock()
+		return
+	}
+	inst.BootStage = stage
+	inst.BootProgress = progress
+	inst.BootMessage = message
+	sm := m.statusMonitor
+	m.mu.Unlock()
+
+	if sm != nil {
+		sm.BroadcastStatus(id, StatusStarting, stage, progress, message)
+	}
+}
+
+// tailLogLines returns the lines in logPath after the first `skip`
+// lines, plus the file's total line count. Used by bootProgressTracker
+// to know which lines are new since the last poll. Returns (nil, skip)
+// if the file hasn't grown.
+func tailLogLines(logPath string, skip int) ([]string, int) {
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		return nil, skip
+	}
+	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+	if len(lines) == 1 && lines[0] == "" {
+		return nil, 0
+	}
+	if skip >= len(lines) {
+		return nil, len(lines)
+	}
+	return lines[skip:], len(lines)
+}
+
+// sdCardSetting returns the value to write for `hw.sdCard` in config.ini.
+//
+// We default to "no" — the emulator tries to create a missing sdcard.img
+// on first boot, but if a previous run already created one and then
+// the user deleted it, the next boot fails with "Could not open
+// .../sdcard.img". Disabling sdcard sidesteps that whole class of bugs.
+// If the user explicitly requested a non-empty SDCardSize, point
+// hw.sdCard at the AVD's local sdcard.img so they can mount it.
+func sdCardSetting(inst *Instance) string {
+	if inst.Config.SDCardSize == "" {
+		return "no"
+	}
+	return filepath.Join(inst.AVDPath, "sdcard.img")
 }
 
 // getInstance fetches an instance under the read lock.
@@ -679,6 +1038,45 @@ func (m *InstanceManager) getInstance(id string) *Instance {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.instances[id]
+}
+
+// ensureAVDConfig re-writes config.ini if any of the fields emulator
+// 36.x needs to identify the system image are missing. AVDs created
+// by older versions of this backend (or directly by avdmanager) lack
+// `image.sysdir.1`, `abi.type`, `tag.id`/`tag.ids`, and `hw.cpu.arch`,
+// which causes the emulator to die with
+// "CPU Architecture 'arm' is not supported" at launch. We detect this
+// lazily on Start instead of migrating at load time, so the hot
+// List() path stays cheap.
+//
+// updateAVDConfig overwrites the whole file with the canonical layout,
+// which is also fine on a healthy AVD (it produces an idempotent
+// re-write) — we just skip that re-write when nothing is missing to
+// avoid bumping mtime on every boot.
+func (m *InstanceManager) ensureAVDConfig(inst *Instance) error {
+	if inst.AVDPath == "" {
+		return nil // Nothing to repair; startEmulator will fail later.
+	}
+	configPath := filepath.Join(inst.AVDPath, "config.ini")
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return err
+	}
+	required := []string{"image.sysdir.1", "abi.type", "tag.id", "tag.ids", "hw.cpu.arch"}
+	missing := false
+	for _, key := range required {
+		if !strings.Contains(string(data), key+"=") {
+			missing = true
+			break
+		}
+	}
+	if missing {
+		log.Printf("[emulator] repairing AVD config at %s (missing %v)", configPath, required)
+		if err := m.updateAVDConfig(inst); err != nil {
+			return err
+		}
+	}
+	return m.writeAVDPointer(inst, "")
 }
 
 // checkEmulatorReady checks if emulator is ready via ADB.
@@ -696,6 +1094,13 @@ func (m *InstanceManager) checkEmulatorReady(serial string) error {
 
 // stopInstanceLocked stops an instance (must hold lock).
 func (m *InstanceManager) stopInstanceLocked(inst *Instance) error {
+	// Mark this instance as user-cancelled BEFORE killing the process.
+	// monitorEmulatorProcess races with us: once it sees the process is
+	// dead, it would call recordEmulatorFailure and overwrite our
+	// StatusStopped with StatusError. The stopping flag tells it to
+	// back off and leave the status as-is.
+	m.stopping[inst.ID] = true
+
 	if proc, ok := m.processes[inst.ID]; ok {
 		// Try graceful shutdown via ADB first
 		exec.Command("adb", "-s", inst.Serial, "emu", "kill").Run()
@@ -757,11 +1162,20 @@ func (m *InstanceManager) saveInstancesLocked() error {
 	}
 
 	instancesPath := filepath.Join(m.dataDir, "instances.json")
-	
+
 	data := make([]*Instance, 0, len(m.instances))
 	for _, inst := range m.instances {
-		// Don't save runtime state (PID, status)
+		// Strip runtime-only fields before persisting. We want a fresh
+		// boot every time the backend restarts — the user shouldn't see
+		// a "ready" instance with PID 0, and a half-finished progress
+		// bar from the previous session would be misleading.
 		saveInst := *inst
+		saveInst.PID = 0
+		saveInst.Status = StatusStopped
+		saveInst.BootStage = ""
+		saveInst.BootProgress = 0
+		saveInst.BootMessage = ""
+		saveInst.LastError = ""
 		data = append(data, &saveInst)
 	}
 
@@ -780,7 +1194,7 @@ func (m *InstanceManager) loadInstances() error {
 	}
 
 	instancesPath := filepath.Join(m.dataDir, "instances.json")
-	
+
 	data, err := os.ReadFile(instancesPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -798,7 +1212,7 @@ func (m *InstanceManager) loadInstances() error {
 		inst.Status = StatusStopped // Reset status on load
 		inst.PID = 0
 		m.instances[inst.ID] = inst
-		
+
 		// Re-allocate ports for consistency
 		m.portAlloc.Allocate() // We already allocated these when created
 	}
@@ -850,10 +1264,11 @@ func computeSHA256(path string) (string, error) {
 	return hex.EncodeToString(hash[:]), nil
 }
 
-// readLogTail returns up to the last `maxLines` non-empty lines of a log file.
-// Used to embed a short, useful error snippet into LastError when an emulator
-// crashes — the full log is still on disk at logPath for the user to inspect.
-func readLogTail(logPath string, maxLines int) string {
+// ReadLogTail returns up to the last `maxLines` non-empty lines of a log
+// file. Used to embed a short, useful error snippet into LastError when
+// an emulator crashes — the full log is still on disk at logPath for
+// the user to inspect. Exported so the HTTP /log endpoint can reuse it.
+func ReadLogTail(logPath string, maxLines int) string {
 	data, err := os.ReadFile(logPath)
 	if err != nil {
 		return fmt.Sprintf("(could not read log: %v)", err)
