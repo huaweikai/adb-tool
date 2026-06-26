@@ -77,6 +77,41 @@ func sdkPathHasEmulator(sdkPath string) bool {
 	return err == nil
 }
 
+// sdkPathHasToolchain reports whether the given SDK path contains a usable
+// command-line toolchain — sdkmanager + avdmanager — under the standard
+// cmdline-tools/latest/bin (with a fallback to the older tools/bin layout).
+//
+// A path with a working toolchain but no emulator binary is still a *valid*
+// Android SDK: it just means the user hasn't run sdkmanager to download the
+// emulator package yet. We treat it as usable so the UI can guide them
+// through that next step instead of flat-out rejecting the path.
+//
+// Exported so the HTTP handlers can run the same check before calling
+// DetectEmulatorEngine (to fail fast with a clear error).
+func SdkPathHasToolchain(sdkPath string) bool {
+	latest := filepath.Join(sdkPath, "cmdline-tools", "latest", "bin")
+	if findBinary(filepath.Join(latest, "sdkmanager")) == "" {
+		// Try the older tools/bin layout as a fallback.
+		if findBinary(filepath.Join(sdkPath, "tools", "bin", "sdkmanager")) == "" {
+			return false
+		}
+	}
+	avdLatest := filepath.Join(latest, "avdmanager")
+	if findBinary(avdLatest) == "" {
+		if findBinary(filepath.Join(sdkPath, "tools", "bin", "avdmanager")) == "" {
+			return false
+		}
+	}
+	return true
+}
+
+// sdkPathIsAcceptable reports whether the given SDK path is something we can
+// work with: either it has an emulator binary already, or it has a usable
+// toolchain (so the user can install the emulator with sdkmanager).
+func sdkPathIsAcceptable(sdkPath string) bool {
+	return sdkPathHasEmulator(sdkPath) || SdkPathHasToolchain(sdkPath)
+}
+
 // DefaultSDKPath returns the default SDK path in .adb-tool.
 func DefaultSDKPath() string {
 	home, _ := os.UserHomeDir()
@@ -85,13 +120,21 @@ func DefaultSDKPath() string {
 
 // DetectEmulatorEngine attempts to find the Android SDK emulator on the system.
 // Priority: 1) ~/.adb-tool/sdk, 2) ANDROID_HOME env, 3) common locations.
+//
+// A path is considered acceptable when it has EITHER:
+//   - the emulator binary already installed, OR
+//   - a working cmdline-tools toolchain (sdkmanager + avdmanager) so the user
+//     can install the emulator themselves.
+//
+// This lets a freshly-installed SDK that only has cmdline-tools be selected
+// as the active SDK without the UI forcing them to download emulator first.
 func DetectEmulatorEngine(androidHome, emulatorPath string) (*Engine, error) {
 	engine := &Engine{}
 
 	// Priority 0: Honor the user's persisted SDK selection if still usable.
 	if selected := LoadSelectedSDKPath(); selected != "" {
 		engine.SelectedSDKPath = selected
-		if sdkPathHasEmulator(selected) {
+		if sdkPathIsAcceptable(selected) {
 			engine.SDKPath = selected
 			engine.AndroidHome = selected
 		} else {
@@ -101,7 +144,7 @@ func DetectEmulatorEngine(androidHome, emulatorPath string) (*Engine, error) {
 	}
 
 	// Priority 1: Use explicitly provided androidHome (higher priority than persisted)
-	if androidHome != "" && sdkPathHasEmulator(androidHome) {
+	if androidHome != "" && sdkPathIsAcceptable(androidHome) {
 		engine.SDKPath = androidHome
 		engine.AndroidHome = androidHome
 		engine.SelectedSDKPath = "" // Clear persisted since we're using explicit
@@ -110,25 +153,25 @@ func DetectEmulatorEngine(androidHome, emulatorPath string) (*Engine, error) {
 
 	// Priority 2: Check our managed SDK path
 	managedSDK := DefaultSDKPath()
-	if engine.SDKPath == "" {
-		if _, err := os.Stat(filepath.Join(managedSDK, "emulator", "emulator")); err == nil {
-			engine.SDKPath = managedSDK
-			engine.AndroidHome = managedSDK
-		}
+	if engine.SDKPath == "" && sdkPathIsAcceptable(managedSDK) {
+		engine.SDKPath = managedSDK
+		engine.AndroidHome = managedSDK
 	}
 
 	// Priority 3: Check environment variables
 	if engine.AndroidHome == "" {
-		if androidHomeEnv := os.Getenv("ANDROID_HOME"); androidHomeEnv != "" && sdkPathHasEmulator(androidHomeEnv) {
+		if androidHomeEnv := os.Getenv("ANDROID_HOME"); androidHomeEnv != "" && sdkPathIsAcceptable(androidHomeEnv) {
 			engine.AndroidHome = androidHomeEnv
 			engine.SDKPath = androidHomeEnv
-		} else if androidSdkRoot := os.Getenv("ANDROID_SDK_ROOT"); androidSdkRoot != "" && sdkPathHasEmulator(androidSdkRoot) {
+		} else if androidSdkRoot := os.Getenv("ANDROID_SDK_ROOT"); androidSdkRoot != "" && sdkPathIsAcceptable(androidSdkRoot) {
 			engine.AndroidHome = androidSdkRoot
 			engine.SDKPath = androidSdkRoot
 		}
 	}
 
-	// Priority 3: Check environment variables
+	// Priority 4: Last-resort environment-variable fallback (even if the path
+	// doesn't pass the strict "has emulator or toolchain" check — let detectToolchain
+	// figure out what's actually usable below).
 	if engine.AndroidHome == "" {
 		if androidHome := os.Getenv("ANDROID_HOME"); androidHome != "" {
 			engine.AndroidHome = androidHome
@@ -161,24 +204,45 @@ func DetectEmulatorEngine(androidHome, emulatorPath string) (*Engine, error) {
 		}
 	}
 
-	// Validate emulator binary
+	// Check toolchain (avdmanager, sdkmanager) — must run before IsValid so the
+	// "toolchain ready but emulator missing" case is reported correctly.
+	detectToolchain(engine)
+
+	// Validate. The engine is considered usable when EITHER:
+	//   - the emulator binary checks out, OR
+	//   - the toolchain (avdmanager + Java) is ready so the user can install
+	//     the emulator themselves via sdkmanager.
 	if engine.EmulatorPath != "" {
 		if err := validateEmulatorBinary(engine); err != nil {
 			engine.Error = err.Error()
 			engine.IsValid = false
-			return engine, nil
+		} else {
+			engine.IsValid = true
+			engine.LastVerified = time.Now().Format(time.RFC3339)
 		}
+	} else if engine.ToolchainReady {
+		// Toolchain ready but emulator not yet installed. We intentionally do
+		// NOT set engine.Error here — the UI already conveys this via the
+		// engine card's red ✗ Emulator chip + orange "部分就绪" badge, and a
+		// popup-level error message would just be noise. Engine.Error is
+		// reserved for actual failures (bad binary, broken config, ...).
 		engine.IsValid = true
 		engine.LastVerified = time.Now().Format(time.RFC3339)
 	}
-
-	// Check toolchain (avdmanager, sdkmanager)
-	detectToolchain(engine)
 
 	return engine, nil
 }
 
 // getEmulatorCandidates returns common emulator binary locations for the current platform.
+//
+// Note: ANDROID_HOME / ANDROID_SDK_ROOT are intentionally NOT included here.
+// Those env-var paths often point at SDKs the user didn't choose — for
+// instance an external drive whose binaries stat fine but fail at runtime
+// under macOS's external-volume sandbox. Adopting such an emulator makes
+// the engine report "ready" with a (stale) version string, then crash on
+// every instance start. If the user wants that SDK they can pick it
+// explicitly via /api/emulator/sdk/use, which writes the selection to disk
+// and gets used in preference to env-var paths.
 func getEmulatorCandidates() []string {
 	var candidates []string
 
@@ -205,14 +269,6 @@ func getEmulatorCandidates() []string {
 			filepath.Join(home, "Android", "Sdk", "emulator", "emulator"),
 			"/opt/android-sdk/emulator/emulator",
 		)
-	}
-
-	// Environment variables
-	if androidHome := os.Getenv("ANDROID_HOME"); androidHome != "" {
-		candidates = append([]string{filepath.Join(androidHome, "emulator", "emulator")}, candidates...)
-	}
-	if androidSdkRoot := os.Getenv("ANDROID_SDK_ROOT"); androidSdkRoot != "" {
-		candidates = append([]string{filepath.Join(androidSdkRoot, "emulator", "emulator")}, candidates...)
 	}
 
 	return candidates
