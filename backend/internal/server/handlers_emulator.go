@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -40,19 +41,19 @@ func (s *Server) handleEmulatorEngineStatus(w http.ResponseWriter, r *http.Reque
 	EmulatorEngine, _ = emulator.DetectEmulatorEngine("", "")
 
 	writeJSON(w, map[string]interface{}{
-		"isValid":         EmulatorEngine.IsValid,
-		"emulatorPath":    EmulatorEngine.EmulatorPath,
-		"androidHome":     EmulatorEngine.AndroidHome,
-		"emulatorVersion": EmulatorEngine.EmulatorVersion,
-		"avdmanagerPath":  EmulatorEngine.AvdmanagerPath,
-		"sdkmanagerPath":  EmulatorEngine.SdkmanagerPath,
-		"javaPath":        EmulatorEngine.JavaPath,
-		"javaVersion":     EmulatorEngine.JavaVersion,
-		"toolchainReady":  EmulatorEngine.ToolchainReady,
-		"lastVerified":    EmulatorEngine.LastVerified,
-		"error":           EmulatorEngine.Error,
-		"hasSDK":          SDKMgr.Exists(),
-		"sdkPath":         SDKMgr.GetSDKPath(),
+		"isValid":            EmulatorEngine.IsValid,
+		"emulatorPath":       EmulatorEngine.EmulatorPath,
+		"androidHome":        EmulatorEngine.AndroidHome,
+		"emulatorVersion":    EmulatorEngine.EmulatorVersion,
+		"avdmanagerPath":     EmulatorEngine.AvdmanagerPath,
+		"sdkmanagerPath":     EmulatorEngine.SdkmanagerPath,
+		"javaPath":           EmulatorEngine.JavaPath,
+		"javaVersion":        EmulatorEngine.JavaVersion,
+		"toolchainReady":     EmulatorEngine.ToolchainReady,
+		"lastVerified":       EmulatorEngine.LastVerified,
+		"error":              EmulatorEngine.Error,
+		"hasSDK":             SDKMgr.Exists(),
+		"sdkPath":            SDKMgr.GetSDKPath(),
 		"selectedSDKPath":    EmulatorEngine.SelectedSDKPath,
 		"selectedSDKInvalid": EmulatorEngine.SelectedSDKInvalid,
 	})
@@ -107,11 +108,11 @@ func (s *Server) handleEmulatorSDKImport(w http.ResponseWriter, r *http.Request)
 	size, _ := SDKMgr.GetSDKSize()
 
 	writeJSON(w, map[string]interface{}{
-		"success":         true,
-		"sdkPath":         SDKMgr.GetSDKPath(),
+		"success":        true,
+		"sdkPath":        SDKMgr.GetSDKPath(),
 		"emulatorPath":   EmulatorEngine.EmulatorPath,
-		"sizeBytes":       size,
-		"toolchainReady":  EmulatorEngine.ToolchainReady,
+		"sizeBytes":      size,
+		"toolchainReady": EmulatorEngine.ToolchainReady,
 	})
 }
 
@@ -259,18 +260,27 @@ func (s *Server) handleEmulatorSDKUse(w http.ResponseWriter, r *http.Request) {
 	// Update global state
 	EmulatorEngine = engine
 
+	// Sync the resolved paths into the running InstanceManager so a freshly
+	// sdkmanager-installed emulator (which only becomes visible AFTER the
+	// initial empty-path InitEmulator call) is picked up by the next start.
+	// Without this the instance_manager keeps its original empty emulatorPath
+	// and startEmulator fails with "emulator path not configured".
+	if s.instanceManager != nil {
+		s.instanceManager.UpdateToolchainPaths(engine.EmulatorPath, engine.AvdmanagerPath)
+	}
+
 	writeJSON(w, map[string]interface{}{
-		"isValid":          engine.IsValid,
-		"emulatorPath":     engine.EmulatorPath,
-		"androidHome":      engine.AndroidHome,
-		"emulatorVersion":  engine.EmulatorVersion,
-		"avdmanagerPath":   engine.AvdmanagerPath,
-		"sdkmanagerPath":   engine.SdkmanagerPath,
-		"javaPath":         engine.JavaPath,
-		"javaVersion":      engine.JavaVersion,
-		"toolchainReady":   engine.ToolchainReady,
-		"lastVerified":     engine.LastVerified,
-		"error":            engine.Error,
+		"isValid":         engine.IsValid,
+		"emulatorPath":    engine.EmulatorPath,
+		"androidHome":     engine.AndroidHome,
+		"emulatorVersion": engine.EmulatorVersion,
+		"avdmanagerPath":  engine.AvdmanagerPath,
+		"sdkmanagerPath":  engine.SdkmanagerPath,
+		"javaPath":        engine.JavaPath,
+		"javaVersion":     engine.JavaVersion,
+		"toolchainReady":  engine.ToolchainReady,
+		"lastVerified":    engine.LastVerified,
+		"error":           engine.Error,
 		// emulatorMissing lets the UI show a "click here to install emulator
 		// + system image" prompt instead of treating the path as broken.
 		"emulatorMissing": !hasEmulator,
@@ -314,7 +324,7 @@ func (s *Server) handleEmulatorEngineValidate(w http.ResponseWriter, r *http.Req
 		"javaVersion":     engine.JavaVersion,
 		"toolchainReady":  engine.ToolchainReady,
 		"lastVerified":    engine.LastVerified,
-		"error":          engine.Error,
+		"error":           engine.Error,
 	})
 }
 
@@ -355,7 +365,7 @@ func (s *Server) handleEmulatorEngineConfig(w http.ResponseWriter, r *http.Reque
 		"javaVersion":     engine.JavaVersion,
 		"toolchainReady":  engine.ToolchainReady,
 		"lastVerified":    engine.LastVerified,
-		"error":          engine.Error,
+		"error":           engine.Error,
 	})
 }
 
@@ -391,11 +401,11 @@ func (s *Server) handleEmulatorJavaStatus(w http.ResponseWriter, r *http.Request
 	downloadsResp := make([]map[string]interface{}, len(downloads))
 	for i, d := range downloads {
 		downloadsResp[i] = map[string]interface{}{
-			"id":        d.ID,
-			"status":    d.Status,
-			"progress":  d.Progress,
+			"id":         d.ID,
+			"status":     d.Status,
+			"progress":   d.Progress,
 			"downloaded": d.Downloaded,
-			"size":      d.Size,
+			"size":       d.Size,
 		}
 	}
 
@@ -695,13 +705,13 @@ func (s *Server) handleEmulatorDownloads(w http.ResponseWriter, r *http.Request)
 	result := make([]map[string]interface{}, len(downloads))
 	for i, d := range downloads {
 		result[i] = map[string]interface{}{
-			"id":        d.ID,
-			"type":      d.Type,
-			"name":      d.Name,
-			"status":    d.Status,
-			"progress":  d.Progress,
+			"id":         d.ID,
+			"type":       d.Type,
+			"name":       d.Name,
+			"status":     d.Status,
+			"progress":   d.Progress,
 			"downloaded": d.Downloaded,
-			"size":      d.Size,
+			"size":       d.Size,
 		}
 	}
 
@@ -858,13 +868,13 @@ func (s *Server) handleEmulatorImageAdd(w http.ResponseWriter, r *http.Request) 
 	defer r.Body.Close()
 
 	var req struct {
-		URL    string `json:"url"`
-		ID     string `json:"id"`
-		Name   string `json:"name"`
-		SHA256 string `json:"sha256"`
-		APILevel int `json:"apiLevel"`
-		Arch   string `json:"arch"`
-		Variant string `json:"variant"`
+		URL      string `json:"url"`
+		ID       string `json:"id"`
+		Name     string `json:"name"`
+		SHA256   string `json:"sha256"`
+		APILevel int    `json:"apiLevel"`
+		Arch     string `json:"arch"`
+		Variant  string `json:"variant"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeAPIError(w, http.StatusBadRequest, err.Error())
@@ -1165,19 +1175,26 @@ func (s *Server) handleEmulatorInstances(w http.ResponseWriter, r *http.Request)
 	result := make([]map[string]interface{}, len(instances))
 	for i, inst := range instances {
 		result[i] = map[string]interface{}{
-			"id":           inst.ID,
-			"imageId":      inst.ImageID,
-			"name":         inst.Name,
-			"avdPath":      inst.AVDPath,
-			"config":       inst.Config,
-			"status":       inst.Status,
-			"consolePort":  inst.ConsolePort,
-			"adbPort":      inst.ADBPort,
-			"pid":          inst.PID,
-			"serial":       inst.Serial,
-			"snapshotId":   inst.SnapshotID,
-			"createdAt":    inst.CreatedAt,
+			"id":            inst.ID,
+			"imageId":       inst.ImageID,
+			"name":          inst.Name,
+			"avdPath":       inst.AVDPath,
+			"config":        inst.Config,
+			"status":        inst.Status,
+			"consolePort":   inst.ConsolePort,
+			"adbPort":       inst.ADBPort,
+			"pid":           inst.PID,
+			"serial":        inst.Serial,
+			"snapshotId":    inst.SnapshotID,
+			"createdAt":     inst.CreatedAt,
 			"lastStartedAt": inst.LastStartedAt,
+			"lastError":     inst.LastError,
+			"logPath":       inst.LogPath,
+			// Live boot progress fields; only meaningful while the
+			// instance is in StatusStarting / StatusRunning.
+			"bootStage":    inst.BootStage,
+			"bootProgress": inst.BootProgress,
+			"bootMessage":  inst.BootMessage,
 		}
 	}
 
@@ -1243,15 +1260,15 @@ func (s *Server) handleEmulatorInstanceCreate(w http.ResponseWriter, r *http.Req
 	}
 
 	writeJSON(w, map[string]interface{}{
-		"id":           instance.ID,
-		"imageId":      instance.ImageID,
-		"name":         instance.Name,
-		"status":       instance.Status,
-		"consolePort":  instance.ConsolePort,
-		"adbPort":      instance.ADBPort,
-		"serial":       instance.Serial,
-		"avdPath":      instance.AVDPath,
-		"createdAt":    instance.CreatedAt,
+		"id":          instance.ID,
+		"imageId":     instance.ImageID,
+		"name":        instance.Name,
+		"status":      instance.Status,
+		"consolePort": instance.ConsolePort,
+		"adbPort":     instance.ADBPort,
+		"serial":      instance.Serial,
+		"avdPath":     instance.AVDPath,
+		"createdAt":   instance.CreatedAt,
 	})
 }
 
@@ -1280,9 +1297,10 @@ func (s *Server) handleEmulatorInstanceStart(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Broadcast status update
+	// Broadcast status update (carries the initial boot-progress snapshot
+	// so the UI has data to render before the first tracker tick lands).
 	if s.statusMonitor != nil {
-		s.statusMonitor.BroadcastStatus(instance.ID, instance.Status)
+		s.statusMonitor.BroadcastStatus(instance.ID, instance.Status, instance.BootStage, instance.BootProgress, instance.BootMessage)
 	}
 
 	writeJSON(w, map[string]interface{}{
@@ -1298,6 +1316,11 @@ func (s *Server) handleEmulatorInstanceStart(w http.ResponseWriter, r *http.Requ
 		// LogPath points at <AVDPath>/emulator.log so the user can read the
 		// full emulator output even when Start returns success.
 		"logPath": instance.LogPath,
+		// Initial boot-progress values; the boot tracker will overwrite
+		// these over the next few seconds via WebSocket pushes.
+		"bootStage":    instance.BootStage,
+		"bootProgress": instance.BootProgress,
+		"bootMessage":  instance.BootMessage,
 	})
 }
 
@@ -1331,9 +1354,9 @@ func (s *Server) handleEmulatorInstanceStop(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Broadcast status update
+	// Broadcast status update (boot fields are cleared on Stop)
 	if s.statusMonitor != nil {
-		s.statusMonitor.BroadcastStatus(instance.ID, emulator.StatusStopped)
+		s.statusMonitor.BroadcastStatus(instance.ID, emulator.StatusStopped, "", 0, "")
 	}
 
 	writeJSON(w, map[string]interface{}{
@@ -1369,6 +1392,77 @@ func (s *Server) handleEmulatorInstanceDelete(w http.ResponseWriter, r *http.Req
 	writeJSON(w, map[string]interface{}{
 		"id":      id,
 		"deleted": true,
+	})
+}
+
+// handleEmulatorInstanceLog returns the last N lines of the per-AVD
+// emulator.log so the UI can show it without re-implementing file IO.
+//
+// Query params:
+//   - id:    instance id (required)
+//   - tail:  number of lines from the end (default 80, max 500)
+//
+// Returns {"logPath": "...", "tail": <N>, "lines": [...]} on success.
+// 200 even when the log file is missing (with empty `lines`) so the UI
+// can render a friendly "no log yet" placeholder instead of an error.
+func (s *Server) handleEmulatorInstanceLog(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		writeAPIError(w, http.StatusMethodNotAllowed, "GET required")
+		return
+	}
+
+	if s.instanceManager == nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "emulator not initialized")
+		return
+	}
+
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		writeAPIError(w, http.StatusBadRequest, "id is required")
+		return
+	}
+
+	instance, err := s.instanceManager.Get(id)
+	if err != nil {
+		writeAPIError(w, http.StatusNotFound, err.Error())
+		return
+	}
+
+	// Parse tail param. Default 80, clamp 1..500 so a misbehaving client
+	// can't ask for megabytes of log in one request.
+	tail := 80
+	if raw := r.URL.Query().Get("tail"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+			tail = n
+		}
+	}
+	if tail > 500 {
+		tail = 500
+	}
+
+	logPath := instance.LogPath
+	var lines []string
+	if logPath != "" {
+		if data, err := os.ReadFile(logPath); err == nil {
+			// Reuse ReadLogTail's "drop trailing blanks" behavior so
+			// the on-screen view doesn't end with a wall of empty
+			// lines when the emulator process just exited.
+			all := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+			if len(all) > tail {
+				all = all[len(all)-tail:]
+			}
+			for len(all) > 0 && strings.TrimSpace(all[len(all)-1]) == "" {
+				all = all[:len(all)-1]
+			}
+			lines = all
+		}
+	}
+
+	writeJSON(w, map[string]interface{}{
+		"id":      instance.ID,
+		"logPath": logPath,
+		"tail":    tail,
+		"lines":   lines,
 	})
 }
 
@@ -1410,6 +1504,11 @@ func (s *Server) handleEmulatorInstanceGet(w http.ResponseWriter, r *http.Reques
 		"snapshotId":    instance.SnapshotID,
 		"createdAt":     instance.CreatedAt,
 		"lastStartedAt": instance.LastStartedAt,
+		"lastError":     instance.LastError,
+		"logPath":       instance.LogPath,
+		"bootStage":     instance.BootStage,
+		"bootProgress":  instance.BootProgress,
+		"bootMessage":   instance.BootMessage,
 	})
 }
 

@@ -95,6 +95,15 @@ class EmulatorInstanceCard extends StatelessWidget {
                     ),
                 ],
               ),
+
+              // Live boot progress, shown only while the instance is
+              // actually starting. A real bar with a stage label beats
+              // a spinning dot in the corner: the user can see what's
+              // happening, and they can cancel the boot.
+              if (instance.status == EmulatorInstanceStatus.starting) ...[
+                const SizedBox(height: 12),
+                _BootProgressPanel(instance: instance),
+              ],
             ],
           ),
         ),
@@ -134,6 +143,111 @@ class _StatusIndicator extends StatelessWidget {
   }
 }
 
+/// Boot progress strip: shows the live stage label, a percentage, and
+/// a LinearProgressIndicator that fills in 0..100 as the backend
+/// reports progress. Visible only when the instance is in
+/// StatusStarting.
+class _BootProgressPanel extends StatelessWidget {
+  final EmulatorInstance instance;
+
+  const _BootProgressPanel({required this.instance});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    // Backend reports 0..100. Clamp defensively so a stray value
+    // outside that range doesn't blow up the progress bar.
+    final raw = instance.bootProgress;
+    final value = raw <= 0
+        ? null
+        : (raw >= 100 ? 1.0 : raw / 100.0);
+
+    final stage = _stageLabel(instance.bootStage);
+    final message = instance.bootMessage.isNotEmpty
+        ? instance.bootMessage
+        : '正在准备 emulator…';
+
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.orange.withAlpha(15),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.orange.withAlpha(60)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.orange),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  stage,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: Colors.orange.shade800,
+                  ),
+                ),
+              ),
+              Text(
+                raw > 0 ? '$raw%' : '…',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: Colors.orange.shade800,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: value,
+              minHeight: 6,
+              backgroundColor: Colors.orange.withAlpha(40),
+              color: Colors.orange,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            message,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _stageLabel(String raw) {
+    switch (raw) {
+      case 'launching':
+        return '正在启动 emulator…';
+      case 'booting_kernel':
+        return '正在启动内核…';
+      case 'booting_android':
+        return 'Android 正在启动…';
+      case 'adb_connecting':
+        return '正在连接 ADB…';
+      case 'ready':
+        return '启动完成';
+      default:
+        return '正在启动…';
+    }
+  }
+}
+
 class _ActionButtons extends StatelessWidget {
   final EmulatorInstance instance;
 
@@ -157,16 +271,21 @@ class _ActionButtons extends StatelessWidget {
             tooltip: 'Restart',
             onPressed: () => _restartInstance(context, provider),
           ),
-        ] else if (instance.status == EmulatorInstanceStatus.starting)
-          const Padding(
-            padding: EdgeInsets.all(8.0),
-            child: SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-          )
-        else
+        ] else if (instance.status == EmulatorInstanceStatus.starting) ...[
+          // Cancel a boot that the user no longer wants to wait for.
+          // Uses the same Stop endpoint — the backend treats
+          // StatusStarting as a valid target for stop.
+          IconButton(
+            icon: const Icon(Icons.close, color: Colors.red),
+            tooltip: '取消启动',
+            onPressed: () => _stopInstance(context, provider),
+          ),
+          IconButton(
+            icon: const Icon(Icons.description_outlined),
+            tooltip: '查看启动日志',
+            onPressed: () => _showInstanceLog(context, provider),
+          ),
+        ] else
           IconButton(
             icon: const Icon(Icons.play_arrow, color: Colors.green),
             tooltip: 'Start',
@@ -210,6 +329,80 @@ class _ActionButtons extends StatelessWidget {
     await provider.stopInstance(instance.id);
   }
 
+  /// Open a dialog showing the last ~80 lines of the instance's
+  /// emulator.log. Useful when a boot is hung and the user wants to
+  /// see what the emulator said before it stalled. Fetches on demand
+  /// rather than streaming so we don't need a second WebSocket.
+  Future<void> _showInstanceLog(
+      BuildContext context, EmulatorInstanceProvider provider) async {
+    final lines = await provider.fetchInstanceLog(instance.id, tail: 80);
+    if (!context.mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.description_outlined, size: 18),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text('${instance.avdName} · emulator.log',
+                  overflow: TextOverflow.ellipsis),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: 640,
+          height: 420,
+          child: lines == null
+              ? const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Text('加载日志失败'),
+                  ),
+                )
+              : lines.isEmpty
+                  ? const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(24),
+                        child: Text('暂无日志输出'),
+                      ),
+                    )
+                  : Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Theme.of(ctx)
+                            .colorScheme
+                            .surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Scrollbar(
+                        child: ListView.builder(
+                          itemCount: lines.length,
+                          itemBuilder: (_, i) => Padding(
+                            padding:
+                                const EdgeInsets.symmetric(vertical: 1),
+                            child: Text(
+                              lines[i],
+                              style: const TextStyle(
+                                fontFamily: 'Menlo',
+                                fontSize: 11,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('关闭'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _restartInstance(BuildContext context, EmulatorInstanceProvider provider) async {
     await provider.stopInstance(instance.id);
     // Wait a moment for cleanup
@@ -241,12 +434,21 @@ class _ActionButtons extends StatelessWidget {
             ],
           ),
         );
-        if (confirmed == true) {
-          await provider.deleteInstance(instance.id);
+if (confirmed == true) {
+          final ok = await provider.deleteInstance(instance.id);
+          if (!context.mounted) break;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(ok
+                  ? '实例已删除'
+                  : '删除失败: ${provider.error ?? "未知错误"}'),
+              duration: const Duration(seconds: 2),
+            ),
+          );
         }
         break;
+      }
     }
-  }
 
   Future<void> _revealInExplorer(BuildContext context) async {
     final path = instance.avdPath;

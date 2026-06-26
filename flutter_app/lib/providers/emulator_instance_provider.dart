@@ -103,7 +103,9 @@ class EmulatorInstanceProvider extends ChangeNotifier {
     }
   }
 
-  /// Stop an instance.
+  /// Stop an instance. Also used as "cancel" while the instance is
+  /// still booting — the backend's Stop endpoint accepts both
+  /// StatusRunning and StatusStarting.
   Future<void> stopInstance(String id) async {
     _error = null;
 
@@ -117,6 +119,12 @@ class EmulatorInstanceProvider extends ChangeNotifier {
         _instances[index] = _instances[index].copyWith(
           status: EmulatorInstanceStatus.stopped,
           pid: null,
+          // Wipe boot progress optimistically so the card collapses
+          // back to the "Stopped" state immediately, without waiting
+          // for the next WebSocket ping.
+          bootStage: '',
+          bootProgress: 0,
+          bootMessage: '',
         );
         notifyListeners();
       }
@@ -126,9 +134,32 @@ class EmulatorInstanceProvider extends ChangeNotifier {
     }
   }
 
-  /// Delete an instance.
-  Future<void> deleteInstance(String id) async {
+  /// Fetch the last [tail] lines of the instance's emulator.log so the
+  /// UI can pop a "view log" dialog without re-implementing file IO.
+  /// Returns null if the request failed or no log is available yet.
+  Future<List<String>?> fetchInstanceLog(String id, {int tail = 80}) async {
+    try {
+      final response = await _api.dio.get(
+        '/api/emulator/instance/log',
+        queryParameters: {'id': id, 'tail': tail},
+      );
+      final data = _api.responseMap(response);
+      final lines = data['lines'];
+      if (lines is List) {
+        return lines.map((e) => e?.toString() ?? '').toList();
+      }
+      return const [];
+    } catch (e) {
+      debugPrint('fetchInstanceLog failed: $e');
+      return null;
+    }
+  }
+
+  /// Delete an instance. Returns true on success, false if the backend
+/// rejected the request (caller should surface an error to the user).
+  Future<bool> deleteInstance(String id) async {
     _error = null;
+    notifyListeners();
 
     try {
       await _api.dio.delete(
@@ -137,9 +168,11 @@ class EmulatorInstanceProvider extends ChangeNotifier {
       );
       _instances.removeWhere((i) => i.id == id);
       notifyListeners();
+      return true;
     } catch (e) {
       _error = e.toString();
       notifyListeners();
+      return false;
     }
   }
 
@@ -190,9 +223,22 @@ class EmulatorInstanceProvider extends ChangeNotifier {
       orElse: () => EmulatorInstanceStatus.stopped,
     );
 
+    // Boot fields are sent on every status push while the instance is
+    // in flight. When the instance leaves StatusStarting / StatusRunning
+    // the backend sends empty values, so we just write them through.
+    // copyWith with null-mapped params would also accept them as
+    // "don't change", but the WS payload always carries explicit
+    // values (including empty strings), so a plain merge is correct.
+    final bootStage = update['bootStage'] as String?;
+    final bootProgress = update['bootProgress'] as int?;
+    final bootMessage = update['bootMessage'] as String?;
+
     _instances[index] = _instances[index].copyWith(
       status: status,
       pid: update['pid'] as int?,
+      bootStage: bootStage ?? '',
+      bootProgress: bootProgress ?? 0,
+      bootMessage: bootMessage ?? '',
     );
     notifyListeners();
   }

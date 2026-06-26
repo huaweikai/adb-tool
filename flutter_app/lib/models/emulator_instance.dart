@@ -14,6 +14,12 @@ class EmulatorInstance {
   final String? snapshotId;
   final DateTime createdAt;
   final DateTime? lastStartedAt;
+  // Live boot progress fields, populated by the backend while the
+  // instance is in StatusStarting / StatusRunning. Empty / 0 outside
+  // those states.
+  final String bootStage;
+  final int bootProgress;
+  final String bootMessage;
 
   const EmulatorInstance({
     required this.id,
@@ -29,6 +35,9 @@ class EmulatorInstance {
     this.snapshotId,
     required this.createdAt,
     this.lastStartedAt,
+    this.bootStage = '',
+    this.bootProgress = 0,
+    this.bootMessage = '',
   });
 
   factory EmulatorInstance.fromJson(Map<String, dynamic> json) {
@@ -53,6 +62,9 @@ class EmulatorInstance {
       lastStartedAt: json['lastStartedAt'] != null
           ? DateTime.tryParse(json['lastStartedAt'] as String)
           : null,
+      bootStage: json['bootStage'] as String? ?? '',
+      bootProgress: json['bootProgress'] as int? ?? 0,
+      bootMessage: json['bootMessage'] as String? ?? '',
     );
   }
 
@@ -70,6 +82,9 @@ class EmulatorInstance {
         'snapshotId': snapshotId,
         'createdAt': createdAt.toIso8601String(),
         'lastStartedAt': lastStartedAt?.toIso8601String(),
+        'bootStage': bootStage,
+        'bootProgress': bootProgress,
+        'bootMessage': bootMessage,
       };
 
   EmulatorInstance copyWith({
@@ -86,6 +101,9 @@ class EmulatorInstance {
     String? snapshotId,
     DateTime? createdAt,
     DateTime? lastStartedAt,
+    String? bootStage,
+    int? bootProgress,
+    String? bootMessage,
   }) {
     return EmulatorInstance(
       id: id ?? this.id,
@@ -101,11 +119,15 @@ class EmulatorInstance {
       snapshotId: snapshotId ?? this.snapshotId,
       createdAt: createdAt ?? this.createdAt,
       lastStartedAt: lastStartedAt ?? this.lastStartedAt,
+      bootStage: bootStage ?? this.bootStage,
+      bootProgress: bootProgress ?? this.bootProgress,
+      bootMessage: bootMessage ?? this.bootMessage,
     );
   }
 
   bool get isRunning => status == EmulatorInstanceStatus.running;
   bool get isStopped => status == EmulatorInstanceStatus.stopped;
+  bool get isStarting => status == EmulatorInstanceStatus.starting;
 }
 
 enum EmulatorInstanceStatus {

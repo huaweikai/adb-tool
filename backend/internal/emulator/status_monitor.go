@@ -20,12 +20,18 @@ type StatusMonitor struct {
 
 // StatusUpdate represents a status change notification.
 type StatusUpdate struct {
-	Type      string       `json:"type"` // "status", "log", "metrics"
-	InstanceID string      `json:"instanceId"`
-	Status    InstanceStatus `json:"status,omitempty"`
-	Message   string       `json:"message,omitempty"`
-	Timestamp time.Time    `json:"timestamp"`
-	Data      interface{}  `json:"data,omitempty"`
+	Type       string         `json:"type"` // "status", "log", "metrics"
+	InstanceID string         `json:"instanceId"`
+	Status     InstanceStatus `json:"status,omitempty"`
+	Message    string         `json:"message,omitempty"`
+	Timestamp  time.Time      `json:"timestamp"`
+	Data       interface{}    `json:"data,omitempty"`
+	// Boot fields are populated whenever the instance is in flight
+	// (launching / booting / adb_connecting). The UI uses them to drive a
+	// progress bar and a stage label while the user waits.
+	BootStage    string `json:"bootStage,omitempty"`
+	BootProgress int    `json:"bootProgress,omitempty"`
+	BootMessage  string `json:"bootMessage,omitempty"`
 }
 
 // NewStatusMonitor creates a new status monitor.
@@ -72,12 +78,17 @@ func (sm *StatusMonitor) SendUpdate(update StatusUpdate) {
 }
 
 // BroadcastStatus broadcasts a status change to all watching clients.
-func (sm *StatusMonitor) BroadcastStatus(instanceID string, status InstanceStatus) {
+// Optional boot fields let the UI show progress while an instance is
+// still booting — pass 0 / "" when the instance is fully up.
+func (sm *StatusMonitor) BroadcastStatus(instanceID string, status InstanceStatus, bootStage string, bootProgress int, bootMessage string) {
 	sm.SendUpdate(StatusUpdate{
-		Type:       "status",
-		InstanceID: instanceID,
-		Status:     status,
-		Timestamp:  time.Now(),
+		Type:         "status",
+		InstanceID:   instanceID,
+		Status:       status,
+		Timestamp:    time.Now(),
+		BootStage:    bootStage,
+		BootProgress: bootProgress,
+		BootMessage:  bootMessage,
 	})
 }
 
@@ -116,10 +127,13 @@ func (sm *StatusMonitor) checkAndBroadcastStatus() {
 		for _, inst := range instances {
 			if watchMap[inst.ID] || watchMap["*"] { // "*" means watch all
 				update := StatusUpdate{
-					Type:       "status",
-					InstanceID: inst.ID,
-					Status:     inst.Status,
-					Timestamp:  time.Now(),
+					Type:         "status",
+					InstanceID:   inst.ID,
+					Status:       inst.Status,
+					Timestamp:    time.Now(),
+					BootStage:    inst.BootStage,
+					BootProgress: inst.BootProgress,
+					BootMessage:  inst.BootMessage,
 					Data: map[string]interface{}{
 						"pid":       inst.PID,
 						"serial":    inst.Serial,
@@ -150,13 +164,13 @@ func (sm *StatusMonitor) Stop() {
 type EmulatorMetrics struct {
 	InstanceID    string    `json:"instanceId"`
 	CPUUsage      float64   `json:"cpuUsage"`
-	MemoryUsageMB int      `json:"memoryUsageMb"`
-	MemoryTotalMB int      `json:"memoryTotalMb"`
-	DiskUsageMB   int      `json:"diskUsageMb"`
-	NetworkRxKB   int64    `json:"networkRxKb"`
-	NetworkTxKB   int64    `json:"networkTxKb"`
+	MemoryUsageMB int       `json:"memoryUsageMb"`
+	MemoryTotalMB int       `json:"memoryTotalMb"`
+	DiskUsageMB   int       `json:"diskUsageMb"`
+	NetworkRxKB   int64     `json:"networkRxKb"`
+	NetworkTxKB   int64     `json:"networkTxKb"`
 	FrameRate     int       `json:"frameRate"`
-	Timestamp    time.Time `json:"timestamp"`
+	Timestamp     time.Time `json:"timestamp"`
 }
 
 // GetMetrics returns current metrics for an instance.

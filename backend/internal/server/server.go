@@ -30,8 +30,8 @@ type Server struct {
 
 	// Emulator components
 	instanceManager *emulator.InstanceManager
-	statusMonitor  *emulator.StatusMonitor
-	imageValidator chan struct{}
+	statusMonitor   *emulator.StatusMonitor
+	imageValidator  chan struct{}
 
 	startedAt  time.Time
 	onShutdown func()
@@ -83,8 +83,30 @@ func (s *Server) InitEmulator(emulatorPath, avdManagerPath, javaPath, androidHom
 		return err
 	}
 
-	// Create status monitor
+	// Resolve emulator + avdmanager paths if the caller left them blank
+	// (which is what main.go does — it expects us to auto-detect). Without
+	// this, InstanceManager keeps an empty emulatorPath and every
+	// startEmulator call returns "emulator path not configured".
+	resolvedEmulator, resolvedAvdmanager := emulatorPath, avdManagerPath
+	if resolvedEmulator == "" || resolvedAvdmanager == "" {
+		if engine, derr := emulator.DetectEmulatorEngine(androidHome, ""); derr == nil {
+			if resolvedEmulator == "" {
+				resolvedEmulator = engine.EmulatorPath
+			}
+			if resolvedAvdmanager == "" {
+				resolvedAvdmanager = engine.AvdmanagerPath
+			}
+			EmulatorEngine = engine
+		}
+	}
+	if resolvedEmulator != "" || resolvedAvdmanager != "" {
+		s.instanceManager.UpdateToolchainPaths(resolvedEmulator, resolvedAvdmanager)
+	}
+
+	// Create status monitor and wire it back into the instance manager
+	// so boot-progress updates can be broadcast to WebSocket clients.
 	s.statusMonitor = emulator.NewStatusMonitor(s.instanceManager)
+	s.instanceManager.SetStatusMonitor(s.statusMonitor)
 
 	// Start a background goroutine that periodically validates the persisted
 	// image registry paths (marks missing images as invalid).
@@ -146,10 +168,10 @@ func (s *Server) Close() {
 //
 // Layout:
 //   - handlers_devices.go   /api/devices, /api/info, /api/device-detail, /api/device-status,
-//                            /api/clear, /api/package-pid, /api/running-packages, /api/adb-path
+//     /api/clear, /api/package-pid, /api/running-packages, /api/adb-path
 //   - handlers_files.go     /api/files, /api/file-content, /api/pull-file, /api/push-file,
-//                            /api/file-delete, /api/file-rename, /api/file-mkdir,
-//                            /api/file-touch, /api/file-stat
+//     /api/file-delete, /api/file-rename, /api/file-mkdir,
+//     /api/file-touch, /api/file-stat
 //   - handlers_packages.go  /api/packages, /api/install-package, /api/uninstall-package
 //   - handlers_logcat.go    /ws/logs, /api/logcat-recent, /api/session-logcat
 //   - handlers_screen.go    /api/screenshot, /api/screen-record, /api/screen-record-video
@@ -260,6 +282,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/emulator/instance/start", s.handleEmulatorInstanceStart)
 	mux.HandleFunc("/api/emulator/instance/stop", s.handleEmulatorInstanceStop)
 	mux.HandleFunc("/api/emulator/instance/delete", s.handleEmulatorInstanceDelete)
+	mux.HandleFunc("/api/emulator/instance/log", s.handleEmulatorInstanceLog)
 	mux.HandleFunc("/ws/emulator/status", s.handleEmulatorStatusWS)
 
 	// SDK installer (sdkmanager-driven package install with progress)
