@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 )
 
@@ -165,20 +164,13 @@ func (s *SDKManager) DeleteSDK() error {
 
 // GetEmulatorPath returns the path to the emulator binary.
 func (s *SDKManager) GetEmulatorPath() string {
-	emulatorPath := filepath.Join(s.sdkPath, "emulator", "emulator")
-	if runtime.GOOS == "windows" {
-		emulatorPath += ".exe"
-	}
-
+	emulatorPath := executableName(filepath.Join(s.sdkPath, "emulator", "emulator"))
 	if _, err := os.Stat(emulatorPath); err == nil {
 		return emulatorPath
 	}
 
 	// Try cmdline-tools path
-	cmdlineEmulator := filepath.Join(s.sdkPath, "cmdline-tools", "latest", "bin", "emulator")
-	if runtime.GOOS == "windows" {
-		cmdlineEmulator += ".exe"
-	}
+	cmdlineEmulator := executableName(filepath.Join(s.sdkPath, "cmdline-tools", "latest", "bin", "emulator"))
 	if _, err := os.Stat(cmdlineEmulator); err == nil {
 		return cmdlineEmulator
 	}
@@ -194,22 +186,14 @@ func (s *SDKManager) GetAvdmanagerPath() string {
 // GetJavaPath returns the path to Java in the SDK.
 func (s *SDKManager) GetJavaPath() string {
 	// Check for bundled JRE
-	jrePath := filepath.Join(s.sdkPath, "jre", "bin", "java")
-	if runtime.GOOS == "windows" {
-		jrePath += ".exe"
-	}
-
+	jrePath := executableName(filepath.Join(s.sdkPath, "jre", "bin", "java"))
 	if _, err := os.Stat(jrePath); err == nil {
 		// Return the jre/bin directory
 		return filepath.Join(s.sdkPath, "jre", "bin")
 	}
 
 	// Check for full JDK
-	jdkPath := filepath.Join(s.sdkPath, "jdk", "bin", "java")
-	if runtime.GOOS == "windows" {
-		jdkPath += ".exe"
-	}
-
+	jdkPath := executableName(filepath.Join(s.sdkPath, "jdk", "bin", "java"))
 	if _, err := os.Stat(jdkPath); err == nil {
 		return filepath.Join(s.sdkPath, "jdk", "bin")
 	}

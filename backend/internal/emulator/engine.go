@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 )
@@ -69,10 +68,7 @@ func SaveSelectedSDKPath(path string) error {
 
 // sdkPathHasEmulator reports whether the given SDK path contains the emulator binary.
 func sdkPathHasEmulator(sdkPath string) bool {
-	emulatorPath := filepath.Join(sdkPath, "emulator", "emulator")
-	if runtime.GOOS == "windows" {
-		emulatorPath += ".exe"
-	}
+	emulatorPath := executableName(filepath.Join(sdkPath, "emulator", "emulator"))
 	_, err := os.Stat(emulatorPath)
 	return err == nil
 }
@@ -187,10 +183,7 @@ func DetectEmulatorEngine(androidHome, emulatorPath string) (*Engine, error) {
 	if emulatorPath != "" {
 		engine.EmulatorPath = emulatorPath
 	} else if engine.AndroidHome != "" {
-		emulatorPath := filepath.Join(engine.AndroidHome, "emulator", "emulator")
-		if runtime.GOOS == "windows" {
-			emulatorPath += ".exe"
-		}
+		emulatorPath := executableName(filepath.Join(engine.AndroidHome, "emulator", "emulator"))
 		if _, err := os.Stat(emulatorPath); err == nil {
 			engine.EmulatorPath = emulatorPath
 		}
@@ -257,22 +250,7 @@ func getEmulatorCandidates() []string {
 	// Our managed SDK first
 	candidates = append(candidates, filepath.Join(home, ".adb-tool", "sdk", "emulator", "emulator"))
 
-	switch runtime.GOOS {
-	case "darwin":
-		candidates = append(candidates,
-			filepath.Join(home, "Library", "Android", "sdk", "emulator", "emulator"),
-			"/usr/local/share/android-sdk/emulator/emulator",
-		)
-	case "windows":
-		candidates = append(candidates,
-			filepath.Join(home, "AppData", "Local", "Android", "Sdk", "emulator", "emulator.exe"),
-		)
-	case "linux":
-		candidates = append(candidates,
-			filepath.Join(home, "Android", "Sdk", "emulator", "emulator"),
-			"/opt/android-sdk/emulator/emulator",
-		)
-	}
+	candidates = append(candidates, defaultEmulatorSystemPaths(home)...)
 
 	return candidates
 }
@@ -340,32 +318,9 @@ func detectToolchain(engine *Engine) {
 	engine.ToolchainReady = engine.AvdmanagerPath != "" && engine.JavaPath != ""
 }
 
-// findBinary checks if a binary exists and is executable.
-//
-// Windows resolution order: <path>.exe → <path>.bat → <path>.
-// Modern Android cmdline-tools (>= 8.0) only ship .bat wrappers + .jar files
-// under cmdline-tools/latest/bin/ (no .exe), so .bat is a required fallback.
-// Go's exec.Command handles .bat natively on Windows (it shells out via
-// cmd.exe internally), so downstream callers can pass the returned path
-// straight to exec.CommandContext without any extra massaging.
-func findBinary(path string) string {
-	if runtime.GOOS == "windows" {
-		if !strings.HasSuffix(path, ".exe") {
-			if _, err := os.Stat(path + ".exe"); err == nil {
-				return path + ".exe"
-			}
-		}
-		if !strings.HasSuffix(path, ".bat") {
-			if _, err := os.Stat(path + ".bat"); err == nil {
-				return path + ".bat"
-			}
-		}
-	}
-	if _, err := os.Stat(path); err == nil {
-		return path
-	}
-	return ""
-}
+// findBinary is implemented per-platform: see paths_darwin.go,
+// paths_unix.go and paths_windows.go. Windows version tries .exe then
+// .bat before the raw path; Unix just stats the raw path.
 
 // detectJava resolves the effective Java runtime via the single source of
 // truth (DetectJavaRuntime), which honors the user's persisted selection.
@@ -417,23 +372,7 @@ func getSDKCandidates() []string {
 		return candidates
 	}
 
-	switch runtime.GOOS {
-	case "darwin":
-		candidates = append(candidates,
-			filepath.Join(home, "Library", "Android", "sdk"),
-			"/usr/local/share/android-sdk",
-		)
-	case "windows":
-		candidates = append(candidates,
-			filepath.Join(home, "AppData", "Local", "Android", "Sdk"),
-		)
-	case "linux":
-		candidates = append(candidates,
-			filepath.Join(home, "Android", "Sdk"),
-			"/opt/android-sdk",
-			"/usr/local/android-sdk",
-		)
-	}
+	candidates = append(candidates, defaultSDKSystemPaths(home)...)
 
 	// Environment variables
 	if androidHome := os.Getenv("ANDROID_HOME"); androidHome != "" {
@@ -473,10 +412,7 @@ func checkSDKPath(path string) *SDKInfo {
 	}
 
 	// Check emulator (optional component)
-	emulatorPath := filepath.Join(path, "emulator", "emulator")
-	if runtime.GOOS == "windows" {
-		emulatorPath += ".exe"
-	}
+	emulatorPath := executableName(filepath.Join(path, "emulator", "emulator"))
 	if _, err := os.Stat(emulatorPath); err == nil {
 		result.HasEmulator = true
 		// Try to get version
@@ -495,9 +431,7 @@ func checkSDKPath(path string) *SDKInfo {
 		filepath.Join(path, "java-runtime", "bin", "java"),
 	}
 	for _, javaPath := range javaPaths {
-		if runtime.GOOS == "windows" {
-			javaPath += ".exe"
-		}
+		javaPath = executableName(javaPath)
 		if _, err := os.Stat(javaPath); err == nil {
 			result.HasJava = true
 			break

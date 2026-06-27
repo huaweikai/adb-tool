@@ -91,10 +91,19 @@ class _CreateInstanceDialogState extends State<CreateInstanceDialog> {
                       onChanged: (value) {
                         setState(() {
                           _selectedImageId = value;
-                          // Auto-fill dimensions based on image
+                          // Auto-fill dimensions based on image. Guard
+                          // against the image disappearing between the
+                          // dropdown render and the user's click (e.g.
+                          // another tab deleted it) — without orElse
+                          // firstWhere would throw StateError and break
+                          // the dialog.
                           if (value != null) {
-                            final image = images.firstWhere((i) => i.id == value);
-                            _density = _getDensityFromVariant(image.variant);
+                            final image = images
+                                .where((i) => i.id == value)
+                                .firstOrNull;
+                            if (image != null) {
+                              _density = _getDensityFromVariant(image.variant);
+                            }
                           }
                         });
                       },

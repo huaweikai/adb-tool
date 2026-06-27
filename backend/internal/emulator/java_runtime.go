@@ -43,14 +43,8 @@ func javaCandidatePaths(androidHome string) []string {
 		}
 	}
 
-	// Check common locations on macOS
-	if runtime.GOOS == "darwin" {
-		javaCandidates = append(javaCandidates,
-			"/Library/Internet Plug-Ins/JavaAppletPlugin.plugin/Contents/Home/bin/java",
-			"/usr/bin/java",
-			filepath.Join(home, ".jenv", "shims", "java"),
-		)
-	}
+	// Check OS-specific system locations (macOS legacy plugin path, jenv shims).
+	javaCandidates = append(javaCandidates, defaultJavaSystemPaths(home)...)
 
 	// Check system PATH
 	javaCandidates = append(javaCandidates, "java")
@@ -459,10 +453,7 @@ func flattenJavaIntoDest(staging, destDir string) (string, error) {
 		inner = staging
 	}
 
-	javaBin := filepath.Join(inner, "bin", "java")
-	if runtime.GOOS == "windows" {
-		javaBin += ".exe"
-	}
+	javaBin := executableName(filepath.Join(inner, "bin", "java"))
 	if _, err := os.Stat(javaBin); err != nil {
 		return "", fmt.Errorf("extracted tree has no bin/java (looked at %s)", javaBin)
 	}
@@ -526,17 +517,16 @@ func DefaultJavaDownloadURL(version string) (string, error) {
 }
 
 func adoptiumPlatformTokens() (string, string, error) {
-	var osName, archName string
-	switch runtime.GOOS {
-	case "darwin":
-		osName = "mac"
-	case "windows":
-		osName = "windows"
-	case "linux":
-		osName = "linux"
-	default:
-		return "", "", fmt.Errorf("unsupported OS for default Java download: %s", runtime.GOOS)
-	}
+	// OS name comes from a per-platform helper (paths_darwin.go,
+	// paths_windows.go, paths_unix.go). The compile-time build tag
+	// guarantees adoptiumOSName() returns a value for every supported OS,
+	// so there's no runtime.GOOS fallback here — if we ever add a new
+	// GOOS we'll get a compile error in the corresponding
+	// paths_<goos>.go file, which is what we want.
+	osName := adoptiumOSName()
+
+	// Arch is OS-independent so we can keep the mapping inline.
+	var archName string
 	switch runtime.GOARCH {
 	case "amd64", "x86_64":
 		archName = "x64"

@@ -141,8 +141,8 @@ class SDKDetectResult {
 
   factory SDKDetectResult.fromJson(Map<String, dynamic> json) {
     return SDKDetectResult(
-      path: json['path'] as String,
-      name: json['name'] as String,
+      path: json['path'] as String? ?? '',
+      name: json['name'] as String? ?? '',
       hasEmulator: json['hasEmulator'] as bool? ?? false,
       hasAvdmanager: json['hasAvdmanager'] as bool? ?? false,
       hasJava: json['hasJava'] as bool? ?? false,
@@ -165,8 +165,8 @@ class SDKDownloadResult {
 
   factory SDKDownloadResult.fromJson(Map<String, dynamic> json) {
     return SDKDownloadResult(
-      id: json['id'] as String,
-      status: json['status'] as String,
+      id: json['id'] as String? ?? '',
+      status: json['status'] as String? ?? 'pending',
       progress: (json['progress'] as num?)?.toDouble() ?? 0.0,
     );
   }
@@ -220,9 +220,7 @@ class EmulatorEngineStatus {
       javaVersion: json['javaVersion'] as String?,
       toolchainReady: json['toolchainReady'] as bool? ?? false,
       error: json['error'] as String?,
-      lastVerified: json['lastVerified'] != null
-          ? DateTime.tryParse(json['lastVerified'] as String)
-          : null,
+      lastVerified: _parseNullableDate(json['lastVerified']),
       hasSDK: json['hasSDK'] as bool? ?? false,
       selectedSDKPath: json['selectedSDKPath'] as String?,
       selectedSDKInvalid: json['selectedSDKInvalid'] as bool? ?? false,
@@ -256,18 +254,35 @@ class SDKInstallJob {
 
   factory SDKInstallJob.fromJson(Map<String, dynamic> json) {
     return SDKInstallJob(
-      id: json['id'] as String,
-      packages: (json['packages'] as List?)?.map((e) => e as String).toList() ?? const [],
+      id: json['id'] as String? ?? '',
+      packages: (json['packages'] as List?)
+              ?.map((e) => e as String? ?? '')
+              .where((s) => s.isNotEmpty)
+              .toList() ??
+          const [],
       status: json['status'] as String? ?? 'pending',
       progress: (json['progress'] as num?)?.toDouble() ?? 0.0,
       message: json['message'] as String? ?? '',
-      outputTail: (json['outputTail'] as List?)?.map((e) => e as String).toList() ?? const [],
+      outputTail: (json['outputTail'] as List?)
+              ?.map((e) => e as String? ?? '')
+              .toList() ??
+          const [],
       error: json['error'] as String?,
-      startedAt: json['startedAt'] != null ? DateTime.tryParse(json['startedAt'] as String) : null,
-      finishedAt: json['finishedAt'] != null ? DateTime.tryParse(json['finishedAt'] as String) : null,
+      startedAt: _parseNullableDate(json['startedAt']),
+      finishedAt: _parseNullableDate(json['finishedAt']),
     );
   }
 
   bool get isRunning => status == 'pending' || status == 'running';
   bool get isDone => status == 'completed' || status == 'error';
+}
+
+/// Parses a backend timestamp into a [DateTime] without throwing when the
+/// field is missing, null, or not a string. Centralizes what used to be
+/// `json['foo'] != null ? DateTime.tryParse(json['foo'] as String) : null`
+/// at three different call sites (m8 review item: avoid `as String` casts
+/// that blow up on unexpected wire types).
+DateTime? _parseNullableDate(Object? raw) {
+  if (raw is! String) return null;
+  return DateTime.tryParse(raw);
 }
