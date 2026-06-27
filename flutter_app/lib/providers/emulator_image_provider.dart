@@ -37,8 +37,9 @@ class EmulatorImageProvider extends ChangeNotifier {
   List<EmulatorImage> get readyImages =>
       _images.where((img) => img.status == EmulatorImageStatus.ready).toList();
 
-  List<EmulatorImage> get downloadingImages =>
-      _images.where((img) => img.status == EmulatorImageStatus.downloading).toList();
+  List<EmulatorImage> get downloadingImages => _images
+      .where((img) => img.status == EmulatorImageStatus.downloading)
+      .toList();
 
   /// Start polling images periodically
   void startPolling({Duration interval = const Duration(seconds: 10)}) {
@@ -54,11 +55,14 @@ class EmulatorImageProvider extends ChangeNotifier {
   /// Refresh images from backend
   Future<void> refreshImages() async {
     try {
-      debugPrint('[EmulatorImageProvider] refreshImages: fetching from backend...');
+      debugPrint(
+          '[EmulatorImageProvider] refreshImages: fetching from backend...');
       final backendImages = await _api.getImages();
-      debugPrint('[EmulatorImageProvider] refreshImages: got ${backendImages.length} image(s) from backend');
+      debugPrint(
+          '[EmulatorImageProvider] refreshImages: got ${backendImages.length} image(s) from backend');
       for (final img in backendImages) {
-        debugPrint('[EmulatorImageProvider]   - id=${img.id} status=${img.status} '
+        debugPrint(
+            '[EmulatorImageProvider]   - id=${img.id} status=${img.status} '
             'api=${img.apiLevel} arch=${img.arch} variant=${img.variant} path=${img.localPath}');
       }
 
@@ -72,6 +76,7 @@ class EmulatorImageProvider extends ChangeNotifier {
             localPath: img.localPath,
             files: img.files,
             fileSize: img.fileSize,
+            managed: img.managed,
             status: _mapStatus(img.status),
           );
         }
@@ -84,6 +89,7 @@ class EmulatorImageProvider extends ChangeNotifier {
           localPath: img.localPath,
           files: img.files,
           fileSize: img.fileSize,
+          managed: img.managed,
           status: _mapStatus(img.status),
           downloadProgress: img.progress,
           createdAt: existing?.createdAt ?? DateTime.now(),
@@ -182,9 +188,8 @@ class EmulatorImageProvider extends ChangeNotifier {
     String? sha256,
   }) async {
     try {
-      final displayName = (name != null && name.isNotEmpty)
-          ? name
-          : _nameFromUrl(url);
+      final displayName =
+          (name != null && name.isNotEmpty) ? name : _nameFromUrl(url);
       final result = await _api.addImage(
         url: url,
         id: displayName,
@@ -272,9 +277,11 @@ class EmulatorImageProvider extends ChangeNotifier {
     try {
       debugPrint('[EmulatorImageProvider] importFromPath: path=$path');
       final imgs = await _api.importImageFromPath(path);
-      debugPrint('[EmulatorImageProvider] importFromPath: backend returned ${imgs.length} image(s)');
+      debugPrint(
+          '[EmulatorImageProvider] importFromPath: backend returned ${imgs.length} image(s)');
       for (final img in imgs) {
-        debugPrint('[EmulatorImageProvider]   - id=${img.id} api=${img.apiLevel} '
+        debugPrint(
+            '[EmulatorImageProvider]   - id=${img.id} api=${img.apiLevel} '
             'arch=${img.arch} variant=${img.variant} path=${img.localPath}');
       }
       await refreshImages();
@@ -291,7 +298,8 @@ class EmulatorImageProvider extends ChangeNotifier {
   Future<bool> importFromZip(String localPath) async {
     try {
       final imgs = await _api.importImageFromZip(localPath);
-      debugPrint('[EmulatorImageProvider] importFromZip: backend returned ${imgs.length} image(s)');
+      debugPrint(
+          '[EmulatorImageProvider] importFromZip: backend returned ${imgs.length} image(s)');
       await refreshImages();
       return true;
     } catch (e) {
@@ -324,9 +332,8 @@ class EmulatorImageProvider extends ChangeNotifier {
     return e.toString();
   }
 
-  /// Delete an image
   Future<void> deleteImage(String id) async {
-    // TODO: Implement backend API for deleting images
+    await _api.deleteImage(id);
     _images.removeWhere((img) => img.id == id);
     notifyListeners();
   }

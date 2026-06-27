@@ -10,6 +10,7 @@ class EmulatorImage {
   final String localPath;
   final Map<String, String> files;
   final int fileSize;
+  final bool managed;
   final String? checksum;
   final EmulatorImageStatus status;
   final double downloadProgress;
@@ -26,6 +27,7 @@ class EmulatorImage {
     this.localPath = '',
     this.files = const {},
     this.fileSize = 0,
+    this.managed = false,
     this.checksum,
     this.status = EmulatorImageStatus.pending,
     this.downloadProgress = 0.0,
@@ -44,6 +46,7 @@ class EmulatorImage {
       localPath: json['localPath'] as String? ?? '',
       files: Map<String, String>.from(json['files'] as Map? ?? {}),
       fileSize: json['fileSize'] as int? ?? 0,
+      managed: json['managed'] as bool? ?? false,
       checksum: json['checksum'] as String?,
       status: EmulatorImageStatus.values.firstWhere(
         (e) => e.name == json['status'],
@@ -69,6 +72,7 @@ class EmulatorImage {
         'localPath': localPath,
         'files': files,
         'fileSize': fileSize,
+        'managed': managed,
         'checksum': checksum,
         'status': status.name,
         'downloadProgress': downloadProgress,
@@ -86,6 +90,7 @@ class EmulatorImage {
     String? localPath,
     Map<String, String>? files,
     int? fileSize,
+    bool? managed,
     String? checksum,
     EmulatorImageStatus? status,
     double? downloadProgress,
@@ -102,6 +107,7 @@ class EmulatorImage {
       localPath: localPath ?? this.localPath,
       files: files ?? this.files,
       fileSize: fileSize ?? this.fileSize,
+      managed: managed ?? this.managed,
       checksum: checksum ?? this.checksum,
       status: status ?? this.status,
       downloadProgress: downloadProgress ?? this.downloadProgress,
@@ -137,15 +143,17 @@ class EmulatorImage {
   };
 
   String get displayName {
-    final version = apiLevel > 0
-        ? (_androidVersionName[apiLevel] ?? '?')
-        : '?';
+    final version = apiLevel > 0 ? (_androidVersionName[apiLevel] ?? '?') : '?';
     return 'Android $version (API $apiLevel, $variant, $arch)';
   }
 
   String get fileSizeFormatted {
-    if (fileSize < 1024) return '$fileSize B';
-    if (fileSize < 1024 * 1024) return '${(fileSize / 1024).toStringAsFixed(1)} KB';
+    if (fileSize < 1024) {
+      return '$fileSize B';
+    }
+    if (fileSize < 1024 * 1024) {
+      return '${(fileSize / 1024).toStringAsFixed(1)} KB';
+    }
     if (fileSize < 1024 * 1024 * 1024) {
       return '${(fileSize / (1024 * 1024)).toStringAsFixed(1)} MB';
     }

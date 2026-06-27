@@ -1,6 +1,19 @@
 // Emulator image API - system image listing and management.
 import 'package:adb_tool/services/api_client.dart';
 
+/// Thrown when an image delete is rejected because the image is still
+/// referenced by one or more AVD instances. The backend returns 409 in this
+/// case and includes the list of blocking instance names in `inUseBy`.
+class ImageInUseException implements Exception {
+  final String message;
+  final List<String> inUseBy;
+
+  ImageInUseException(this.message, this.inUseBy);
+
+  @override
+  String toString() => message;
+}
+
 mixin EmulatorImageApi on ApiBase {
   /// Get list of system images.
   Future<List<SystemImage>> getImages() async {
@@ -166,6 +179,28 @@ mixin EmulatorImageApi on ApiBase {
             .toList() ??
         [];
   }
+
+  Future<String?> deleteImage(String id) async {
+    final response = await dio.delete(
+      '/api/emulator/image/delete',
+      queryParameters: {'id': id, 'confirm': 'true'},
+    );
+    if (!isOk(response)) {
+      // 409 Conflict: image is still in use by an AVD instance. Surface the
+      // blocking instance names so the UI can render a precise message.
+      if (response.statusCode == 409) {
+        final data = responseMap(response);
+        final inUseBy = (data['inUseBy'] as List<dynamic>?)
+                ?.map((e) => e.toString())
+                .toList() ??
+            const <String>[];
+        throw ImageInUseException(errorMessage(response), inUseBy);
+      }
+      throw Exception(errorMessage(response));
+    }
+    final data = responseMap(response);
+    return data['path'] as String?;
+  }
 }
 
 class ImageSource {
@@ -212,6 +247,7 @@ class SystemImage {
   final String localPath;
   final Map<String, String> files;
   final int fileSize;
+  final bool managed;
   final SystemImageStatus status;
   final double progress;
 
@@ -225,6 +261,7 @@ class SystemImage {
     this.localPath = '',
     this.files = const {},
     this.fileSize = 0,
+    this.managed = false,
     this.status = SystemImageStatus.pending,
     this.progress = 0.0,
   });
@@ -240,6 +277,7 @@ class SystemImage {
       localPath: json['localPath'] as String? ?? '',
       files: Map<String, String>.from(json['files'] as Map? ?? {}),
       fileSize: json['fileSize'] as int? ?? 0,
+      managed: json['managed'] as bool? ?? false,
       status: SystemImageStatus.values.firstWhere(
         (e) => e.name == json['status'],
         orElse: () => SystemImageStatus.pending,
@@ -248,11 +286,16 @@ class SystemImage {
     );
   }
 
-  String get displayName => 'Android $androidVersion (API $apiLevel) - $variant - $arch';
+  String get displayName =>
+      'Android $androidVersion (API $apiLevel) - $variant - $arch';
 
   String get fileSizeFormatted {
-    if (fileSize < 1024) return '$fileSize B';
-    if (fileSize < 1024 * 1024) return '${(fileSize / 1024).toStringAsFixed(1)} KB';
+    if (fileSize < 1024) {
+      return '$fileSize B';
+    }
+    if (fileSize < 1024 * 1024) {
+      return '${(fileSize / 1024).toStringAsFixed(1)} KB';
+    }
     if (fileSize < 1024 * 1024 * 1024) {
       return '${(fileSize / (1024 * 1024)).toStringAsFixed(1)} MB';
     }

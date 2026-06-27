@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -1007,7 +1008,9 @@ func (s *Server) handleEmulatorImageScan(w http.ResponseWriter, r *http.Request)
 // ponytail: destructive but explicit. The image id came from the registry
 // that we just showed the user; the confirm gate matches handleEmulatorSDKDelete
 // (B2) and handleEmulatorInstanceDelete (B3) — accidental curl or stray UI
-// click can't wipe a multi-GB image dir.
+// click can't wipe a multi-GB image dir. Refuses to delete an image still
+// referenced by any AVD instance — that would break the instance's
+// image.sysdir.1 path. Returns 409 with the instance names in that case.
 func (s *Server) handleEmulatorImageDelete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "DELETE" {
 		writeAPIError(w, http.StatusMethodNotAllowed, "DELETE required")
@@ -1026,16 +1029,36 @@ func (s *Server) handleEmulatorImageDelete(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	removed, err := emulator.DeleteRegisteredImage(id)
+	removed, err := emulator.DeleteRegisteredImage(id, func(imageID string) []string {
+		if s.instanceManager == nil {
+			return nil
+		}
+		var users []string
+		for _, inst := range s.instanceManager.List() {
+			if inst.ImageID == imageID {
+				users = append(users, inst.Name)
+			}
+		}
+		return users
+	})
 	if err != nil {
+		var inUseErr *emulator.ImageInUseError
+		if errors.As(err, &inUseErr) {
+			writeAPIErrorData(w, http.StatusConflict, inUseErr.Error(), map[string]interface{}{
+				"inUseBy": inUseErr.UsedBy,
+			})
+			return
+		}
 		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	writeJSON(w, map[string]interface{}{
-		"success": true,
-		"id":      removed.ID,
-		"path":    removed.Path,
+		"success":    true,
+		"id":         removed.ID,
+		"path":       removed.Path,
+		"managed":    removed.Managed,
+		"deleteMode": string(removed.DeleteMode),
 	})
 }
 
@@ -1081,6 +1104,7 @@ func (s *Server) handleEmulatorImages(w http.ResponseWriter, r *http.Request) {
 			"arch":           img.Arch,
 			"variant":        img.Variant,
 			"localPath":      img.LocalPath,
+			"managed":        emulator.IsManagedImagePath(img.LocalPath),
 			"files":          img.Files,
 			"fileSize":       img.FileSize,
 			"status":         status,

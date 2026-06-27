@@ -273,6 +273,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/emulator/image/import", s.handleEmulatorImageImportZip)
 	mux.HandleFunc("/api/emulator/image/import-path", s.handleEmulatorImageImportPath)
 	mux.HandleFunc("/api/emulator/image/scan", s.handleEmulatorImageScan)
+	mux.HandleFunc("/api/emulator/image/delete", s.handleEmulatorImageDelete)
 	mux.HandleFunc("/api/emulator/image/sources", s.handleEmulatorImageSources)
 	mux.HandleFunc("/api/emulator/image/source/add", s.handleEmulatorImageSourceAdd)
 	mux.HandleFunc("/api/emulator/image/source/remove", s.handleEmulatorImageSourceRemove)

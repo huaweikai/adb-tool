@@ -13,24 +13,24 @@ import (
 
 // SystemImage represents an Android system image.
 type SystemImage struct {
-	ID         string            `json:"id"`
-	Name       string            `json:"name"`
-	APILevel   int               `json:"apiLevel"`
-	AndroidVersion string        `json:"androidVersion"`
-	Arch       string            `json:"arch"`
-	Variant    string            `json:"variant"` // google_apis, google_apis_playstore, default
-	LocalPath  string           `json:"localPath"`
-	Files      map[string]string `json:"files"` // file name -> relative path
-	FileSize   int64             `json:"fileSize"`
-	Status     string            `json:"status"` // pending, downloading, ready, error
-	DownloadURL string          `json:"downloadUrl,omitempty"`
-	SHA256     string            `json:"sha256,omitempty"`
+	ID             string            `json:"id"`
+	Name           string            `json:"name"`
+	APILevel       int               `json:"apiLevel"`
+	AndroidVersion string            `json:"androidVersion"`
+	Arch           string            `json:"arch"`
+	Variant        string            `json:"variant"` // google_apis, google_apis_playstore, default
+	LocalPath      string            `json:"localPath"`
+	Files          map[string]string `json:"files"` // file name -> relative path
+	FileSize       int64             `json:"fileSize"`
+	Status         string            `json:"status"` // pending, downloading, ready, error
+	DownloadURL    string            `json:"downloadUrl,omitempty"`
+	SHA256         string            `json:"sha256,omitempty"`
 }
 
 // ImageManager manages Android system images.
 type ImageManager struct {
 	AndroidHome string
-	StorageDir   string
+	StorageDir  string
 }
 
 // NewImageManager creates a new image manager.
@@ -139,6 +139,7 @@ func (im *ImageManager) ScanAndRegister(path string) (int, error) {
 			Variant:        s.Variant,
 			AddedAt:        now,
 			Valid:          valid,
+			Managed:        isManagedImagePath(s.LocalPath),
 		})
 	}
 
@@ -189,16 +190,16 @@ func (im *ImageManager) scanSystemImagesDir(baseDir string) []*SystemImage {
 				totalSize := im.calculateTotalSize(imagePath)
 
 				images = append(images, &SystemImage{
-					ID:            im.buildImageID(apiLevelDir, variant.Name(), arch.Name()),
-					Name:          fmt.Sprintf("Android %d (%s, %s)", apiLevel, variant.Name(), arch.Name()),
-					APILevel:      apiLevel,
+					ID:             im.buildImageID(apiLevelDir, variant.Name(), arch.Name()),
+					Name:           fmt.Sprintf("Android %d (%s, %s)", apiLevel, variant.Name(), arch.Name()),
+					APILevel:       apiLevel,
 					AndroidVersion: im.apiLevelToVersion(apiLevel),
-					Arch:          arch.Name(),
-					Variant:       variant.Name(),
-					LocalPath:     imagePath,
-					Files:         files,
-					FileSize:      totalSize,
-					Status:        "ready",
+					Arch:           arch.Name(),
+					Variant:        variant.Name(),
+					LocalPath:      imagePath,
+					Files:          files,
+					FileSize:       totalSize,
+					Status:         "ready",
 				})
 			}
 		}
