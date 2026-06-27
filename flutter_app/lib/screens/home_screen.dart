@@ -484,6 +484,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             icon: Icons.smartphone,
             label: '模拟器',
             badge: 'Android',
+            // Beta tag: emulator Phase 1-4 is feature-incomplete
+            // (no AVD hot-resize, no snapshot UI, no multi-display, see
+            // docs/code-review-feature-emulator-prep.md). Drawing a
+            // visible BETA so users know to expect rough edges.
+            extraBadge: 'BETA',
             onTap: _openEmulatorSettings,
           ),
           _buildGlobalEntry(
@@ -752,6 +757,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     required IconData icon,
     required String label,
     required String badge,
+    String? extraBadge,
     required VoidCallback onTap,
   }) {
     final isActive = _activeKey == keyName;
@@ -782,6 +788,27 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
+              if (extraBadge != null) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    // Amber so it pops against the primary-tinted 'Android'
+                    // chip and reads as "in-progress" rather than "stable".
+                    color: Colors.amber.shade700,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    extraBadge,
+                    style: const TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.4,
+                      color: Colors.black87,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+              ],
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
