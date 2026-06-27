@@ -14,6 +14,7 @@ import '../widgets/emulator_image_card.dart';
 import '../widgets/add_image_dialog.dart';
 import '../widgets/emulator_instance_card.dart';
 import '../widgets/create_instance_dialog.dart';
+import '../widgets/cleanup_cache_dialog.dart';
 
 class EmulatorSettingsScreen extends StatefulWidget {
   const EmulatorSettingsScreen({super.key});
@@ -59,6 +60,14 @@ class _EmulatorSettingsScreenState extends State<EmulatorSettingsScreen> {
       appBar: AppBar(
         title: const Text('Android 模拟器'),
         centerTitle: false,
+        actions: [
+          IconButton(
+            tooltip: '清理所有 adb-tool 缓存(SDK 保留)',
+            icon: const Icon(Icons.delete_sweep_outlined),
+            onPressed: () => showCleanupCacheDialog(context),
+          ),
+          const SizedBox(width: 4),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),

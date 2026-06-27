@@ -34,6 +34,7 @@ import 'api/backend_log_api.dart';
 import 'api/emulator_api.dart';
 import 'api/emulator_java_api.dart';
 import 'api/emulator_image_api.dart';
+import 'api/cleanup_api.dart';
 
 export 'api/device_api.dart' show DeviceApi;
 export 'api/file_api.dart' show FileApi;
@@ -61,6 +62,10 @@ export 'api/emulator_image_api.dart' show
     SystemImage,
     SystemImageStatus,
     ImageDownloadResult;
+export 'api/cleanup_api.dart' show
+    CleanupApi,
+    CacheCleanupResult,
+    CacheCleanupEntry;
 
 // ===== Public value types shared across domains =====
 
@@ -325,4 +330,5 @@ class ApiClient = ApiBase
         BackendLogApi,
         EmulatorApi,
         EmulatorJavaApi,
-        EmulatorImageApi;
+        EmulatorImageApi,
+        CleanupApi;

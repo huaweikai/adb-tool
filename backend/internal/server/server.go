@@ -296,6 +296,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/adb-exec", s.handleAdbExec)
 	mux.HandleFunc("/api/debug/env", s.handleEnvDebug) // 诊断环境变量
 
+	// One-shot "wipe all adb-tool caches" — UI entry in
+	// Emulator Settings. Destructive, requires ?confirm=true.
+	mux.HandleFunc("/api/cache/cleanup", s.handleCacheCleanup)
+
 	// Static web assets
 	webFS, err := fs.Sub(s.webFS, "web")
 	if err != nil {
