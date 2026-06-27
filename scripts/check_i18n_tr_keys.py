@@ -10,7 +10,11 @@ I18N_ENTRY = LIB / "i18n.dart"
 
 STRING_LITERAL = r"(?:'([^'\\]*(?:\\.[^'\\]*)*)'|\"([^\"\\]*(?:\\.[^\"\\]*)*)\")"
 TR_CALL_RE = re.compile(r"\btr\s*\(\s*" + STRING_LITERAL, re.MULTILINE)
-PART_RE = re.compile(r"part\s+['\"]([^'\"]+)['\"]\s*;")
+# `part` directives only matter at the top level of the entry file. Anchoring
+# to line-start keeps us from matching the `part 'i18n/<domain>.dart';`
+# example in the docstring above (which would otherwise be treated as a real
+# file path and fail to resolve).
+PART_RE = re.compile(r"^\s*part\s+['\"]([^'\"]+)['\"]\s*;", re.MULTILINE)
 LOCALE_BLOCK_RE = re.compile(r"'([^']+)'\s*:\s*\{")
 SPREAD_RE = re.compile(r"\.\.\.\s*([A-Za-z_]\w*)")
 MAP_RE = re.compile(r"const\s+([A-Za-z_]\w*)\s*=\s*<String,\s*String>\s*\{")

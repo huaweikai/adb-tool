@@ -1,6 +1,7 @@
 // Add image dialog for adding system images via URL or local path.
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import '../i18n.dart';
 import '../services/api/emulator_image_api.dart';
 
 class AddImageDialog extends StatefulWidget {
@@ -40,7 +41,7 @@ class _AddImageDialogState extends State<AddImageDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('添加系统镜像'),
+      title: Text(tr('addImage.title')),
       content: SizedBox(
         width: 500,
         child: SingleChildScrollView(
@@ -49,16 +50,16 @@ class _AddImageDialogState extends State<AddImageDialog> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Source selection
-              const Text(
-                '镜像来源',
-                style: TextStyle(fontWeight: FontWeight.w500),
+              Text(
+                tr('addImage.source'),
+                style: const TextStyle(fontWeight: FontWeight.w500),
               ),
               const SizedBox(height: 8),
               SegmentedButton<int>(
-                segments: const [
-                  ButtonSegment(value: 0, label: Text('URL 下载')),
-                  ButtonSegment(value: 1, label: Text('SDK 下载')),
-                  ButtonSegment(value: 2, label: Text('本地路径')),
+                segments: [
+                  ButtonSegment(value: 0, label: Text(tr('addImage.tabURL'))),
+                  ButtonSegment(value: 1, label: Text(tr('addImage.tabSDK'))),
+                  ButtonSegment(value: 2, label: Text(tr('addImage.tabLocal'))),
                 ],
                 selected: {_selectedSource},
                 onSelectionChanged: (selection) {
@@ -71,21 +72,21 @@ class _AddImageDialogState extends State<AddImageDialog> {
               if (_selectedSource == 0) ...[
                 TextField(
                   controller: _urlController,
-                  decoration: const InputDecoration(
-                    labelText: '镜像下载 URL',
+                  decoration: InputDecoration(
+                    labelText: tr('addImage.urlLabel'),
                     hintText: 'https://dl.google.com/android/repository/...',
                   ),
                 ),
                 const SizedBox(height: 8),
-                const Text(
-                  '提示: 下载完成后会自动解压到缓存目录，并解析镜像信息',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                Text(
+                  tr('addImage.urlHint'),
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
                 ),
                 if (widget.savedSources.isNotEmpty) ...[
                   const SizedBox(height: 12),
-                  const Text(
-                    '历史下载地址',
-                    style: TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
+                  Text(
+                    tr('addImage.historyTitle'),
+                    style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
                   ),
                   const SizedBox(height: 4),
                   ConstrainedBox(
@@ -116,7 +117,7 @@ class _AddImageDialogState extends State<AddImageDialog> {
                           trailing: widget.onRemoveSource != null
                               ? IconButton(
                                   icon: const Icon(Icons.close, size: 16),
-                                  tooltip: '从历史中移除',
+                                  tooltip: tr('addImage.removeFromHistory'),
                                   onPressed: () =>
                                       widget.onRemoveSource!(s.url),
                                 )
@@ -133,14 +134,14 @@ class _AddImageDialogState extends State<AddImageDialog> {
 
               // SDK 下载：通过 sdkmanager / avdmanager 下载选定的镜像配置
               if (_selectedSource == 1) ...[
-                const Text(
-                  '镜像配置',
-                  style: TextStyle(fontWeight: FontWeight.w500),
+                Text(
+                  tr('addImage.config'),
+                  style: const TextStyle(fontWeight: FontWeight.w500),
                 ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<int>(
                   value: _sdkApiLevel,
-                  decoration: const InputDecoration(labelText: 'API 级别'),
+                  decoration: InputDecoration(labelText: tr('addImage.apiLevel')),
                   items: const [
                     DropdownMenuItem(value: 30, child: Text('Android 11 (API 30)')),
                     DropdownMenuItem(value: 31, child: Text('Android 12 (API 31)')),
@@ -156,7 +157,7 @@ class _AddImageDialogState extends State<AddImageDialog> {
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
                   value: _sdkArch,
-                  decoration: const InputDecoration(labelText: '架构'),
+                  decoration: InputDecoration(labelText: tr('addImage.arch')),
                   items: const [
                     DropdownMenuItem(
                       value: 'arm64-v8a',
@@ -174,19 +175,19 @@ class _AddImageDialogState extends State<AddImageDialog> {
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
                   value: _sdkVariant,
-                  decoration: const InputDecoration(labelText: '变体'),
-                  items: const [
+                  decoration: InputDecoration(labelText: tr('addImage.variant')),
+                  items: [
                     DropdownMenuItem(
                       value: 'google_apis_playstore',
-                      child: Text('Google Play (推荐)'),
+                      child: Text(tr('addImage.variantGooglePlay')),
                     ),
                     DropdownMenuItem(
                       value: 'google_apis',
-                      child: Text('Google APIs'),
+                      child: const Text('Google APIs'),
                     ),
                     DropdownMenuItem(
                       value: 'default',
-                      child: Text('Default (无 Google 服务)'),
+                      child: Text(tr('addImage.variantDefault')),
                     ),
                   ],
                   onChanged: (v) {
@@ -194,19 +195,18 @@ class _AddImageDialogState extends State<AddImageDialog> {
                   },
                 ),
                 const SizedBox(height: 8),
-                const Text(
-                  '提示: 选好后会用 sdkmanager 下载到本地 system-images 目录，'
-                  '完成会自动出现在镜像列表里',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                Text(
+                  tr('addImage.sdkHint'),
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
                 ),
               ],
 
               // Local path input
               if (_selectedSource == 2) ...[
                 SegmentedButton<int>(
-                  segments: const [
-                    ButtonSegment(value: 0, label: Text('选择文件夹')),
-                    ButtonSegment(value: 1, label: Text('选择 Zip')),
+                  segments: [
+                    ButtonSegment(value: 0, label: Text(tr('addImage.pickFolder'))),
+                    ButtonSegment(value: 1, label: Text(tr('addImage.pickZip'))),
                   ],
                   selected: {_localKind},
                   onSelectionChanged: (selection) {
@@ -221,10 +221,10 @@ class _AddImageDialogState extends State<AddImageDialog> {
                   controller: _pathController,
                   readOnly: true,
                   decoration: InputDecoration(
-                    labelText: _localKind == 0 ? '镜像文件夹' : '镜像 Zip 文件',
+                    labelText: _localKind == 0 ? tr('addImage.folderLabel') : tr('addImage.zipLabel'),
                     hintText: _localKind == 0
-                        ? '包含 system.img / config.ini 的目录'
-                        : '系统镜像压缩包 (.zip)',
+                        ? tr('addImage.folderHint')
+                        : tr('addImage.zipFileHint'),
                     suffixIcon: IconButton(
                       icon: Icon(
                         _localKind == 0
@@ -236,9 +236,9 @@ class _AddImageDialogState extends State<AddImageDialog> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                const Text(
-                  '提示: 镜像信息（API 级别、架构、变体）会从所选内容自动探测',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                Text(
+                  tr('addImage.localHint'),
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
                 ),
               ],
             ],
@@ -248,11 +248,11 @@ class _AddImageDialogState extends State<AddImageDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
+          child: Text(tr('cancel')),
         ),
         FilledButton(
           onPressed: _submit,
-          child: Text(_selectedSource == 0 ? '开始下载' : '添加'),
+          child: Text(_selectedSource == 0 ? tr('engineCard.startDownload') : tr('addImage.confirm')),
         ),
       ],
     );
@@ -267,7 +267,7 @@ class _AddImageDialogState extends State<AddImageDialog> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('选择文件夹失败: $e')),
+        SnackBar(content: Text(tr('addImage.folderPickFailed', {'error': '$e'}))),
       );
     }
   }
@@ -285,7 +285,7 @@ class _AddImageDialogState extends State<AddImageDialog> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('选择文件失败: $e')),
+        SnackBar(content: Text(tr('addImage.filePickFailed', {'error': '$e'}))),
       );
     }
   }
@@ -295,7 +295,7 @@ class _AddImageDialogState extends State<AddImageDialog> {
       // URL download
       if (_urlController.text.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('请输入下载 URL')),
+          SnackBar(content: Text(tr('engineCard.downloadLog.needURL'))),
         );
         return;
       }
@@ -316,7 +316,7 @@ class _AddImageDialogState extends State<AddImageDialog> {
       if (_pathController.text.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(_localKind == 0 ? '请选择镜像文件夹' : '请选择镜像 Zip 文件'),
+            content: Text(_localKind == 0 ? tr('addImage.validator.folder') : tr('addImage.validator.zip')),
           ),
         );
         return;

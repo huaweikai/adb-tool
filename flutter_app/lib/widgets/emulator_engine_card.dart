@@ -2,12 +2,14 @@
 // Displays and manages the Android SDK import and configuration.
 import 'dart:async';
 import 'dart:io';
+import 'package:adb_tool/providers/locale_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../i18n.dart';
 import '../providers/emulator_engine_provider.dart';
 import '../services/api_client.dart';
 
@@ -104,6 +106,7 @@ class _EmulatorEngineCardState extends State<EmulatorEngineCard> {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<LocaleProvider>();
     final provider = context.watch<EmulatorEngineProvider>();
     final theme = Theme.of(context);
 
@@ -178,14 +181,14 @@ class _EmulatorEngineCardState extends State<EmulatorEngineCard> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Row(
+              Row(
                 children: [
-                  Icon(Icons.error_outline, color: Colors.red, size: 20),
-                  SizedBox(width: 8),
+                  const Icon(Icons.error_outline, color: Colors.red, size: 20),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      '上次选择的 SDK 已失效，请重新选择或扫描',
-                      style: TextStyle(color: Colors.red, fontWeight: FontWeight.w500),
+                      tr('engineCard.selectedSDKInvalid'),
+                      style: const TextStyle(color: Colors.red, fontWeight: FontWeight.w500),
                     ),
                   ),
                 ],
@@ -205,13 +208,13 @@ class _EmulatorEngineCardState extends State<EmulatorEngineCard> {
           color: Colors.grey.withAlpha(20),
           borderRadius: BorderRadius.circular(8),
         ),
-        child: const Row(
+        child: Row(
           children: [
-            Icon(Icons.warning_amber, color: Colors.orange, size: 20),
-            SizedBox(width: 8),
+            const Icon(Icons.warning_amber, color: Colors.orange, size: 20),
+            const SizedBox(width: 8),
             Text(
-              '尚未配置 SDK',
-              style: TextStyle(color: Colors.grey),
+              tr('engineCard.noSDKConfigured'),
+              style: const TextStyle(color: Colors.grey),
             ),
           ],
         ),
@@ -247,10 +250,10 @@ class _EmulatorEngineCardState extends State<EmulatorEngineCard> {
                 onPressed: () {
                   Clipboard.setData(ClipboardData(text: status.androidHome!));
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('路径已复制'), duration: Duration(seconds: 1)),
+                    SnackBar(content: Text(tr('engineCard.pathCopied')), duration: const Duration(seconds: 1)),
                   );
                 },
-                tooltip: '复制路径',
+                tooltip: tr('engineCard.copyPath'),
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
               ),
@@ -264,8 +267,8 @@ class _EmulatorEngineCardState extends State<EmulatorEngineCard> {
               _infoChip(
                 Icons.apps,
                 status.emulatorVersion != null && status.emulatorVersion!.isNotEmpty
-                    ? 'Emulator ${status.emulatorVersion}'
-                    : 'Emulator (未安装)',
+                    ? tr('engineCard.emulatorInstalled', {'version': status.emulatorVersion!})
+                    : tr('engineCard.emulatorMissing'),
                 isReady: status.emulatorVersion != null && status.emulatorVersion!.isNotEmpty,
               ),
               _infoChip(
@@ -313,7 +316,7 @@ class _EmulatorEngineCardState extends State<EmulatorEngineCard> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        job.message.isNotEmpty ? job.message : '正在准备...',
+                        job.message.isNotEmpty ? job.message : tr('emulatorSettings.install.downloadPreparing'),
                         style: const TextStyle(fontSize: 12),
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -344,7 +347,7 @@ class _EmulatorEngineCardState extends State<EmulatorEngineCard> {
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                    job.error ?? '下载失败',
+                    job.error ?? tr('engineCard.installFailed'),
                     style: const TextStyle(color: Colors.red, fontSize: 12),
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -352,18 +355,18 @@ class _EmulatorEngineCardState extends State<EmulatorEngineCard> {
                 TextButton.icon(
                   onPressed: sdkmanagerReady ? () => _installEmulator(context) : null,
                   icon: const Icon(Icons.refresh, size: 16),
-                  label: const Text('重试'),
+                  label: Text(tr('engineCard.retry')),
                 ),
               ],
             ),
           ] else if (job != null && job.status == 'completed') ...[
             // 已安装但 chip 还没刷新（极端情况下）
             Row(
-              children: const [
-                Icon(Icons.check_circle, color: Colors.green, size: 18),
-                SizedBox(width: 6),
-                Text('emulator 已安装，正在刷新状态...',
-                    style: TextStyle(color: Colors.green, fontSize: 12)),
+              children: [
+                const Icon(Icons.check_circle, color: Colors.green, size: 18),
+                const SizedBox(width: 6),
+                Text(tr('engineCard.installCompleted'),
+                    style: const TextStyle(color: Colors.green, fontSize: 12)),
               ],
             ),
           ] else ...[
@@ -373,8 +376,8 @@ class _EmulatorEngineCardState extends State<EmulatorEngineCard> {
                 Expanded(
                   child: Text(
                     sdkmanagerReady
-                        ? '使用 sdkmanager 下载 emulator（含 qemu）'
-                        : '需要先安装 cmdline-tools 才能下载 emulator',
+                        ? tr('engineCard.installEmulatorViaSdkmanager')
+                        : tr('engineCard.installEmulatorNeedsCmdline'),
                     style: TextStyle(
                       fontSize: 12,
                       color: sdkmanagerReady ? Colors.grey.shade700 : Colors.red,
@@ -385,7 +388,7 @@ class _EmulatorEngineCardState extends State<EmulatorEngineCard> {
                 FilledButton.tonalIcon(
                   onPressed: sdkmanagerReady ? () => _installEmulator(context) : null,
                   icon: const Icon(Icons.download, size: 16),
-                  label: const Text('下载 emulator'),
+                  label: Text(tr('engineCard.installEmulator')),
                   style: FilledButton.styleFrom(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   ),
@@ -447,19 +450,19 @@ Widget _infoChip(IconData icon, String label, {required bool isReady}) {
 
     if (_isImporting || provider.isDetecting || _isDownloading) {
       color = Colors.orange;
-      label = '处理中';
+      label = tr('engineCard.status.processing');
       icon = Icons.hourglass_top;
     } else if (fullyReady) {
       color = Colors.green;
-      label = '就绪';
+      label = tr('engineCard.status.ready');
       icon = Icons.check_circle;
     } else if (hasSDK) {
       color = Colors.orange;
-      label = '部分就绪';
+      label = tr('engineCard.status.partialReady');
       icon = Icons.warning_amber_rounded;
     } else {
       color = Colors.grey;
-      label = '未配置';
+      label = tr('engineCard.status.notConfigured');
       icon = Icons.info_outline;
     }
 
@@ -497,26 +500,26 @@ Widget _infoChip(IconData icon, String label, {required bool isReady}) {
         _buildTabButton(
           index: 0,
           icon: Icons.search,
-          label: '扫描检测',
+          label: tr('engineCard.action.scan'),
           isLoading: _isDetecting,
         ),
         const SizedBox(width: 8),
         _buildTabButton(
           index: 1,
           icon: Icons.folder_open,
-          label: '选择路径',
+          label: tr('engineCard.action.pickPath'),
         ),
         const SizedBox(width: 8),
         _buildTabButton(
           index: 2,
           icon: Icons.cloud_download,
-          label: '下载 SDK',
+          label: tr('engineCard.action.downloadSDK'),
         ),
         const SizedBox(width: 8),
         _buildTabButton(
           index: 3,
           icon: Icons.upload_file,
-          label: '导入压缩包',
+          label: tr('engineCard.action.importZip'),
         ),
       ],
     );
@@ -534,7 +537,7 @@ Widget _infoChip(IconData icon, String label, {required bool isReady}) {
       child: OutlinedButton.icon(
         onPressed: () => setState(() => _selectedTab = index),
         icon: Icon(isLoading ? Icons.sync : icon, size: 16),
-        label: Text(isLoading ? '处理中...' : label),
+        label: Text(isLoading ? tr('engineCard.status.processingDots') : label),
         style: OutlinedButton.styleFrom(
           backgroundColor: isSelected ? Colors.blue.withAlpha(10) : null,
           foregroundColor: isSelected ? Colors.blue.shade700 : null,
@@ -580,7 +583,7 @@ Widget _infoChip(IconData icon, String label, {required bool isReady}) {
                   Icon(Icons.info_outline, size: 16, color: Colors.blue.shade700),
                   const SizedBox(width: 8),
                   Text(
-                    '扫描说明',
+                    tr('engineCard.scanTitle'),
                     style: TextStyle(
                       fontWeight: FontWeight.w500,
                       color: Colors.blue.shade700,
@@ -590,28 +593,28 @@ Widget _infoChip(IconData icon, String label, {required bool isReady}) {
               ),
               const SizedBox(height: 8),
               Text(
-                '将扫描以下位置查找 Android SDK：',
+                tr('engineCard.scanIntro'),
                 style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
               ),
               const SizedBox(height: 4),
-              _buildScanPathHint('~/Library/Android/sdk', 'Android Studio 默认路径'),
-              _buildScanPathHint('/Volumes/xxx/Android/sdk', '外置硬盘（如有）'),
-              _buildScanPathHint('~/.adb-tool/sdk', '我们管理的 SDK（如有）'),
-              _buildScanPathHint('ANDROID_HOME', '环境变量路径'),
+              _buildScanPathHint('~/Library/Android/sdk', tr('engineCard.scanLoc1')),
+              _buildScanPathHint('/Volumes/xxx/Android/sdk', tr('engineCard.scanLoc2')),
+              _buildScanPathHint('~/.adb-tool/sdk', tr('engineCard.scanLoc3')),
+              _buildScanPathHint('ANDROID_HOME', tr('engineCard.scanLoc4')),
               const SizedBox(height: 12),
               Row(
                 children: [
                   FilledButton.icon(
                     onPressed: _isDetecting ? null : () => _detectSDKs(context),
                     icon: Icon(_isDetecting ? Icons.sync : Icons.search, size: 16),
-                    label: Text(_isDetecting ? '扫描中...' : '开始扫描'),
+                    label: Text(_isDetecting ? tr('engineCard.scanning') : tr('engineCard.startScan')),
                   ),
                   const SizedBox(width: 8),
                   if (provider.detectedSDKs.isNotEmpty)
                     TextButton.icon(
                       onPressed: _isDetecting ? null : () => _detectSDKs(context),
                       icon: Icon(Icons.refresh, size: 14, color: Colors.grey),
-                      label: Text('重新扫描', style: TextStyle(color: Colors.grey.shade600)),
+                      label: Text(tr('engineCard.rescan'), style: TextStyle(color: Colors.grey.shade600)),
                     ),
                 ],
               ),
@@ -629,10 +632,10 @@ Widget _infoChip(IconData icon, String label, {required bool isReady}) {
               color: Colors.grey.withAlpha(10),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: const Center(
+            child: Center(
               child: Text(
-                '点击上方按钮扫描系统中的 SDK',
-                style: TextStyle(color: Colors.grey),
+                tr('engineCard.scanHint'),
+                style: const TextStyle(color: Colors.grey),
               ),
             ),
           )
@@ -643,16 +646,16 @@ Widget _infoChip(IconData icon, String label, {required bool isReady}) {
               color: Colors.blue.withAlpha(10),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: const Row(
+            child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                SizedBox(
+                const SizedBox(
                   width: 16,
                   height: 16,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 ),
-                SizedBox(width: 8),
-                Text('正在扫描...'),
+                const SizedBox(width: 8),
+                Text(tr('engineCard.scanningDots')),
               ],
             ),
           )
@@ -662,7 +665,7 @@ Widget _infoChip(IconData icon, String label, {required bool isReady}) {
               const Icon(Icons.check_circle, size: 16, color: Colors.green),
               const SizedBox(width: 8),
               Text(
-                '扫描结果（${provider.detectedSDKs.length} 个）',
+                tr('engineCard.scanResultCount', {'count': '${provider.detectedSDKs.length}'}),
                 style: const TextStyle(fontWeight: FontWeight.w500),
               ),
             ],
@@ -755,9 +758,9 @@ Widget _infoChip(IconData icon, String label, {required bool isReady}) {
                 color: Colors.green,
                 borderRadius: BorderRadius.circular(4),
               ),
-              child: const Text(
-                '使用中',
-                style: TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.w500),
+              child: Text(
+                tr('engineCard.inUse'),
+                style: const TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.w500),
               ),
             )
           else if (sdk.hasEmulator)
@@ -766,7 +769,7 @@ Widget _infoChip(IconData icon, String label, {required bool isReady}) {
               style: FilledButton.styleFrom(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               ),
-              child: const Text('使用此 SDK'),
+              child: Text(tr('engineCard.useThisSDK')),
             )
           else if (sdk.hasAvdmanager)
             // No emulator binary yet, but the toolchain (sdkmanager + avdmanager)
@@ -777,19 +780,19 @@ Widget _infoChip(IconData icon, String label, {required bool isReady}) {
               style: FilledButton.styleFrom(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               ),
-              child: const Text('使用此 SDK（需安装 emulator）'),
+              child: Text(tr('engineCard.useThisSDKNoEmulator')),
             )
           else
             // Neither emulator nor avdmanager — this path isn't a usable SDK.
             Tooltip(
-              message: '此目录既没有 emulator 也没有 avdmanager，不是有效的 Android SDK',
+              message: tr('engineCard.invalidSDKDir'),
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   color: Colors.grey.withAlpha(20),
                   borderRadius: BorderRadius.circular(4),
                 ),
-                child: const Text('不可用', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                child: Text(tr('engineCard.unavailable'), style: const TextStyle(fontSize: 11, color: Colors.grey)),
               ),
             ),
         ],
@@ -831,13 +834,13 @@ Widget _infoChip(IconData icon, String label, {required bool isReady}) {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             children: [
-              Icon(Icons.folder_open, color: Colors.blue, size: 18),
-              SizedBox(width: 8),
+              const Icon(Icons.folder_open, color: Colors.blue, size: 18),
+              const SizedBox(width: 8),
               Text(
-                '手动输入 SDK 路径',
-                style: TextStyle(fontWeight: FontWeight.w500),
+                tr('engineCard.manualPickTitle'),
+                style: const TextStyle(fontWeight: FontWeight.w500),
               ),
             ],
           ),
@@ -869,13 +872,13 @@ Widget _infoChip(IconData icon, String label, {required bool isReady}) {
               OutlinedButton.icon(
                 onPressed: () => _selectFolder(),
                 icon: const Icon(Icons.folder_open, size: 16),
-                label: const Text('浏览'),
+                label: Text(tr('engineCard.browse')),
               ),
             ],
           ),
           const SizedBox(height: 8),
           Text(
-            '输入 Android SDK 根目录路径',
+            tr('engineCard.pathHint'),
             style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
           ),
           const SizedBox(height: 12),
@@ -890,7 +893,7 @@ Widget _infoChip(IconData icon, String label, {required bool isReady}) {
                     }
                   },
                   icon: const Icon(Icons.check, size: 16),
-                  label: const Text('使用此路径'),
+                  label: Text(tr('engineCard.useThisPath')),
                 ),
               ),
               const SizedBox(width: 8),
@@ -903,7 +906,7 @@ Widget _infoChip(IconData icon, String label, {required bool isReady}) {
                   }
                 },
                 icon: const Icon(Icons.help_outline, size: 16),
-                label: const Text('不知道在哪？'),
+                label: Text(tr('engineCard.whereIsIt')),
               ),
             ],
           ),
@@ -927,9 +930,9 @@ Widget _infoChip(IconData icon, String label, {required bool isReady}) {
             children: [
               const Icon(Icons.cloud_download, color: Colors.green, size: 18),
               const SizedBox(width: 8),
-              const Text(
-                '下载 Android SDK',
-                style: TextStyle(fontWeight: FontWeight.w500),
+              Text(
+                tr('engineCard.downloadSDKTitle'),
+                style: const TextStyle(fontWeight: FontWeight.w500),
               ),
               const Spacer(),
               TextButton.icon(
@@ -940,7 +943,7 @@ Widget _infoChip(IconData icon, String label, {required bool isReady}) {
                   }
                 },
                 icon: const Icon(Icons.open_in_new, size: 14),
-                label: const Text('官方下载页面'),
+                label: Text(tr('engineCard.officialPage')),
               ),
             ],
           ),
@@ -948,7 +951,7 @@ Widget _infoChip(IconData icon, String label, {required bool isReady}) {
           TextField(
             controller: _downloadUrlController,
             decoration: InputDecoration(
-              hintText: '输入 SDK 下载 URL',
+              hintText: tr('engineCard.urlHint'),
               hintStyle: TextStyle(color: Colors.grey.shade400),
               isDense: true,
               contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -957,7 +960,7 @@ Widget _infoChip(IconData icon, String label, {required bool isReady}) {
           ),
           const SizedBox(height: 8),
           Text(
-            '从 Android 开发者官网下载 Command Line Tools 后粘贴下载链接',
+            tr('engineCard.urlHelp'),
             style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
           ),
           const SizedBox(height: 12),
@@ -983,7 +986,7 @@ Widget _infoChip(IconData icon, String label, {required bool isReady}) {
                 const SizedBox(width: 12),
                 OutlinedButton(
                   onPressed: () => _cancelDownload(context),
-                  child: const Text('取消'),
+                  child: Text(tr('emulatorSettings.delete.cancel')),
                 ),
               ],
             ),
@@ -991,7 +994,7 @@ Widget _infoChip(IconData icon, String label, {required bool isReady}) {
             FilledButton.icon(
               onPressed: () => _startDownload(context),
               icon: const Icon(Icons.download, size: 16),
-              label: const Text('开始下载'),
+              label: Text(tr('engineCard.startDownload')),
             ),
           ],
         ],
@@ -1010,13 +1013,13 @@ Widget _infoChip(IconData icon, String label, {required bool isReady}) {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             children: [
-              Icon(Icons.upload_file, color: Colors.purple, size: 18),
-              SizedBox(width: 8),
+              const Icon(Icons.upload_file, color: Colors.purple, size: 18),
+              const SizedBox(width: 8),
               Text(
-                '导入压缩包',
-                style: TextStyle(fontWeight: FontWeight.w500),
+                tr('engineCard.action.importZip'),
+                style: const TextStyle(fontWeight: FontWeight.w500),
               ),
             ],
           ),
@@ -1024,7 +1027,7 @@ Widget _infoChip(IconData icon, String label, {required bool isReady}) {
           TextField(
             controller: _importPathController,
             decoration: InputDecoration(
-              hintText: '输入 SDK 压缩包路径 (.zip)',
+              hintText: tr('engineCard.zipHint'),
               hintStyle: TextStyle(color: Colors.grey.shade400),
               isDense: true,
               contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -1033,14 +1036,14 @@ Widget _infoChip(IconData icon, String label, {required bool isReady}) {
           ),
           const SizedBox(height: 8),
           Text(
-            '解压到 ~/.adb-tool/sdk/',
+            tr('engineCard.zipHelp'),
             style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
           ),
           const SizedBox(height: 12),
           FilledButton.icon(
             onPressed: _isImporting ? null : () => _importSDK(context),
             icon: Icon(_isImporting ? Icons.sync : Icons.upload_file, size: 16),
-            label: Text(_isImporting ? '导入中...' : '开始导入'),
+            label: Text(_isImporting ? tr('engineCard.importingDots') : tr('engineCard.startImport')),
           ),
         ],
       ),
@@ -1088,9 +1091,9 @@ Widget _infoChip(IconData icon, String label, {required bool isReady}) {
                   color: Colors.blueGrey,
                 ),
                 const SizedBox(width: 8),
-                const Text(
-                  '调试日志',
-                  style: TextStyle(fontWeight: FontWeight.w500, color: Colors.blueGrey),
+                Text(
+                  tr('engineCard.debugLogTitle'),
+                  style: const TextStyle(fontWeight: FontWeight.w500, color: Colors.blueGrey),
                 ),
                 const SizedBox(width: 8),
                 Container(
@@ -1127,7 +1130,7 @@ Widget _infoChip(IconData icon, String label, {required bool isReady}) {
               TextButton.icon(
                 onPressed: () => setState(() => _logs.clear()),
                 icon: const Icon(Icons.delete_outline, size: 14),
-                label: const Text('清空'),
+                label: Text(tr('engineCard.clearLog')),
                 style: TextButton.styleFrom(
                   foregroundColor: Colors.grey,
                   padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -1136,12 +1139,12 @@ Widget _infoChip(IconData icon, String label, {required bool isReady}) {
               TextButton.icon(
                 onPressed: () {
                   // 模拟一些测试日志
-                  _addLog('TEST', '这是一条测试日志 - ${DateTime.now()}');
+                  _addLog('TEST', tr('engineCard.testLogEntry', {'time': DateTime.now().toString()}));
                   _addLog('API', 'GET /api/emulator/sdk/detect');
-                  _addLog('SDK', '检测到路径: ~/Library/Android/sdk');
+                  _addLog('SDK', tr('engineCard.detectedPathEntry'));
                 },
                 icon: const Icon(Icons.play_arrow, size: 14),
-                label: const Text('测试日志'),
+                label: Text(tr('engineCard.testLog')),
                 style: TextButton.styleFrom(
                   foregroundColor: Colors.blue,
                   padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -1158,10 +1161,10 @@ Widget _infoChip(IconData icon, String label, {required bool isReady}) {
               borderRadius: BorderRadius.circular(8),
             ),
             child: _logs.isEmpty
-                ? const Center(
+                ? Center(
                     child: Text(
-                      '暂无日志',
-                      style: TextStyle(color: Colors.grey),
+                      tr('engineCard.noLog'),
+                      style: const TextStyle(color: Colors.grey),
                     ),
                   )
                 : ListView.builder(
@@ -1230,7 +1233,7 @@ Widget _infoChip(IconData icon, String label, {required bool isReady}) {
   }
 
   Future<void> _detectSDKs(BuildContext context) async {
-    _addLog('SDK', '开始扫描...');
+    _addLog('SDK', tr('engineCard.scanLog.start'));
 
     setState(() {
       _isDetecting = true;
@@ -1239,39 +1242,39 @@ Widget _infoChip(IconData icon, String label, {required bool isReady}) {
     try {
       final provider = context.read<EmulatorEngineProvider>();
       final sdks = await provider.detectSDKs();
-      _addLog('SDK', '检测到 ${sdks.length} 个 SDK');
+      _addLog('SDK', tr('engineCard.scanLog.found', {'count': '${sdks.length}'}));
     } catch (e) {
-      _addLog('ERROR', '扫描失败: $e', isError: true);
+      _addLog('ERROR', tr('engineCard.scanLog.failed', {'error': '$e'}), isError: true);
     }
 
     setState(() => _isDetecting = false);
   }
 
   Future<void> _useSDK(BuildContext context, String path) async {
-    _addLog('USE', '========== 切换 SDK ==========');
-    _addLog('USE', '目标路径: $path');
+    _addLog('USE', tr('engineCard.useSDKLog.header'));
+    _addLog('USE', tr('engineCard.useSDKLog.target', {'path': path}));
 
     try {
       final api = context.read<ApiClient>();
-      _addLog('USE', '发送 POST /api/emulator/sdk/use');
+      _addLog('USE', tr('engineCard.useSDKLog.request'));
       _addLog('USE', '请求体: {"sdkPath": "$path"}');
 
       final response = await api.dio.post('/api/emulator/sdk/use', data: {
         'sdkPath': path,
       });
 
-      _addLog('USE', '收到响应: 状态码=${response.statusCode}');
-      _addLog('USE', '响应体: ${response.data}');
+      _addLog('USE', tr('engineCard.useSDKLog.response', {'code': '${response.statusCode}'}));
+      _addLog('USE', tr('engineCard.useSDKLog.responseBody', {'body': '${response.data}'}));
 
       if (response.data['ok'] == true) {
-        _addLog('USE', '✅ 后端确认成功!');
-        _addLog('USE', '调用 provider.refreshStatus()...');
+        _addLog('USE', tr('engineCard.useSDKLog.backendOk'));
+        _addLog('USE', tr('engineCard.useSDKLog.refresh'));
 
         final provider = context.read<EmulatorEngineProvider>();
         await provider.refreshStatus();
 
-        _addLog('USE', '✅ refreshStatus 完成');
-        _addLog('USE', '当前 engine 状态:');
+        _addLog('USE', tr('engineCard.useSDKLog.refreshDone'));
+        _addLog('USE', tr('engineCard.useSDKLog.stateNow'));
         _addLog('  ', 'androidHome: ${provider.serverStatus?.androidHome}');
         _addLog('  ', 'emulatorVersion: ${provider.serverStatus?.emulatorVersion}');
         _addLog('  ', 'isValid: ${provider.serverStatus?.isValid}');
@@ -1279,19 +1282,19 @@ Widget _infoChip(IconData icon, String label, {required bool isReady}) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('已切换到: $path'),
+              content: Text(tr('engineCard.useSDKLog.switched', {'path': path})),
               duration: const Duration(seconds: 2),
             ),
           );
         }
       } else {
-        _addLog('USE', '❌ 后端返回失败: ${response.data['error']}', isError: true);
+        _addLog('USE', tr('engineCard.useSDKLog.backendFailed', {'error': '${response.data['error']}'}), isError: true);
       }
 
-      _addLog('USE', '========== 切换 SDK 完成 ==========');
+      _addLog('USE', tr('engineCard.useSDKLog.done'));
     } catch (e, stack) {
-      _addLog('USE', '❌ 异常: $e', isError: true);
-      _addLog('USE', '堆栈: $stack', isError: true);
+      _addLog('USE', tr('engineCard.useSDKLog.exception', {'error': '$e'}), isError: true);
+      _addLog('USE', tr('engineCard.useSDKLog.stack', {'stack': '$stack'}), isError: true);
     }
   }
 
@@ -1303,12 +1306,12 @@ Widget _infoChip(IconData icon, String label, {required bool isReady}) {
     final api = context.read<ApiClient>();
     final provider = context.read<EmulatorEngineProvider>();
 
-    _addLog('INSTALL', '========== 安装 emulator ==========');
+    _addLog('INSTALL', tr('engineCard.installLog.header'));
     _addLog('INSTALL', '发送 POST /api/emulator/sdk/install packages=["emulator"]');
 
     try {
       final job = await api.installPackages(['emulator']);
-      _addLog('INSTALL', '✅ 启动成功: jobId=${job.id}');
+      _addLog('INSTALL', tr('engineCard.installLog.started', {'id': job.id}));
       if (!mounted) return;
 
       setState(() => _installJob = job);
@@ -1331,32 +1334,37 @@ Widget _infoChip(IconData icon, String label, {required bool isReady}) {
           if (updated.isDone) {
             timer.cancel();
             if (updated.status == 'completed') {
-              _addLog('INSTALL', '✅ emulator 安装完成');
+              _addLog('INSTALL', tr('engineCard.installLog.completed'));
               await provider.refreshStatus();
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('emulator 安装完成'), duration: Duration(seconds: 2)),
+                  SnackBar(
+                      content: Text(tr('engineCard.installLog.done')),
+                      duration: const Duration(seconds: 2)),
                 );
               }
             } else {
-              _addLog('INSTALL', '❌ 安装失败: ${updated.error}', isError: true);
+              _addLog('INSTALL', tr('engineCard.installLog.failed', {'error': '${updated.error}'}), isError: true);
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('安装失败: ${updated.error ?? "未知错误"}')),
+                  SnackBar(content: Text(tr('emulatorSettings.install.failed', {
+                    'error': updated.error ??
+                        tr('emulatorSettings.common.unknownError'),
+                  }))),
                 );
               }
             }
           }
         } catch (e) {
-          _addLog('INSTALL', '轮询异常: $e', isError: true);
+          _addLog('INSTALL', tr('engineCard.installLog.pollException', {'error': '$e'}), isError: true);
         }
       });
     } catch (e, stack) {
-      _addLog('INSTALL', '❌ 启动失败: $e', isError: true);
-      _addLog('INSTALL', '堆栈: $stack', isError: true);
+      _addLog('INSTALL', tr('engineCard.installLog.startFailed', {'error': '$e'}), isError: true);
+      _addLog('INSTALL', tr('engineCard.useSDKLog.stack', {'stack': '$stack'}), isError: true);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('启动安装失败: $e')),
+          SnackBar(content: Text(tr('engineCard.installLog.kickoffFailed', {'error': '$e'}))),
         );
       }
     }
@@ -1366,7 +1374,7 @@ Widget _infoChip(IconData icon, String label, {required bool isReady}) {
     final url = _downloadUrlController.text.trim();
     if (url.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请输入下载 URL')),
+        SnackBar(content: Text(tr('engineCard.downloadLog.needURL'))),
       );
       return;
     }
@@ -1427,7 +1435,7 @@ Widget _infoChip(IconData icon, String label, {required bool isReady}) {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('取消失败: $e')),
+          SnackBar(content: Text(tr('engineCard.cancelFailed', {'error': '$e'}))),
         );
       }
     }
@@ -1437,7 +1445,7 @@ Widget _infoChip(IconData icon, String label, {required bool isReady}) {
     final path = _importPathController.text.trim();
     if (path.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请输入压缩包路径')),
+        SnackBar(content: Text(tr('engineCard.importLog.needZip'))),
       );
       return;
     }
@@ -1452,7 +1460,7 @@ Widget _infoChip(IconData icon, String label, {required bool isReady}) {
 
       final file = File(path);
       if (!await file.exists()) {
-        throw Exception('文件不存在: $path');
+        throw Exception(tr('engineCard.importLog.fileMissing', {'path': path}));
       }
 
       request.files.add(await http.MultipartFile.fromPath('sdk', path));
@@ -1461,20 +1469,22 @@ Widget _infoChip(IconData icon, String label, {required bool isReady}) {
       final response = await http.Response.fromStream(streamedResponse);
 
       if (response.statusCode != 200) {
-        throw Exception('导入失败: ${response.body}');
+        throw Exception(tr('engineCard.importLog.failedBody', {'body': response.body}));
       }
 
       if (mounted) {
         await context.read<EmulatorEngineProvider>().refreshStatus();
         _importPathController.clear();
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('SDK 导入成功！')),
+          SnackBar(content: Text(tr('engineCard.importLog.success'))),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('导入失败: $e'), backgroundColor: Colors.red),
+          SnackBar(
+              content: Text(tr('engineCard.importLog.failed', {'error': '$e'})),
+              backgroundColor: Colors.red),
         );
       }
     } finally {

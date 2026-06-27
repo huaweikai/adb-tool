@@ -1,17 +1,19 @@
 // Emulator Java runtime status card widget.
 // Displays and manages Java runtime configuration.
+import 'package:adb_tool/providers/locale_provider.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../i18n.dart';
 import '../providers/emulator_java_provider.dart';
 import '../services/api/emulator_java_api.dart';
-import '../services/api_client.dart';
 
 class EmulatorJavaCard extends StatelessWidget {
   const EmulatorJavaCard({super.key});
 
   @override
   Widget build(BuildContext context) {
+    context.watch<LocaleProvider>();
     final provider = context.watch<EmulatorJavaProvider>();
     final theme = Theme.of(context);
 
@@ -26,7 +28,7 @@ class EmulatorJavaCard extends StatelessWidget {
                 Icon(Icons.coffee, color: theme.colorScheme.primary),
                 const SizedBox(width: 8),
                 Text(
-                  'Java 运行环境',
+                  tr('javaCard.title'),
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w600,
                   ),
@@ -65,27 +67,27 @@ class EmulatorJavaCard extends StatelessWidget {
     switch (provider.javaStatus) {
       case JavaStatus.found:
         color = Colors.green;
-        label = '就绪';
+        label = tr('engineCard.status.ready');
         icon = Icons.check_circle;
       case JavaStatus.notFound:
         color = Colors.orange;
-        label = '未找到';
+        label = tr('javaCard.notFound');
         icon = Icons.warning;
       case JavaStatus.downloading:
         color = Colors.blue;
-        label = '下载中';
+        label = tr('imageCard.downloading');
         icon = Icons.downloading;
       case JavaStatus.checking:
         color = Colors.blue;
-        label = '检测中...';
+        label = tr('javaCard.detecting');
         icon = Icons.sync;
       case JavaStatus.error:
         color = Colors.red;
-        label = '错误';
+        label = tr('imageCard.error');
         icon = Icons.error;
       case JavaStatus.unknown:
         color = Colors.grey;
-        label = '未知';
+        label = tr('javaCard.unknown');
         icon = Icons.help_outline;
     }
 
@@ -115,7 +117,7 @@ class EmulatorJavaCard extends StatelessWidget {
 
     if (runtimes.isEmpty) {
       return Text(
-        '未检测到 Java 运行环境',
+        tr('javaCard.notDetected'),
         style: TextStyle(
           fontSize: 14,
           color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -134,7 +136,7 @@ class EmulatorJavaCard extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          '检测到 ${runtimes.length} 个 Java 运行环境，选择一个使用：',
+          tr('javaCard.runtimeListPrompt', {'count': '${runtimes.length}'}),
           style: TextStyle(
             fontSize: 12,
             color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -161,7 +163,7 @@ class EmulatorJavaCard extends StatelessWidget {
     final subtitleParts = <String>[
       if (rt.vendor != null && rt.vendor!.isNotEmpty) rt.vendor!,
       if (rt.arch != null && rt.arch!.isNotEmpty) rt.arch!,
-      if (rt.isEmbedded) '已下载',
+      if (rt.isEmbedded) tr('javaCard.downloaded'),
     ];
 
     return Container(
@@ -187,7 +189,7 @@ class EmulatorJavaCard extends StatelessWidget {
         ),
         onTap: (isBusy || isSelected) ? null : () => provider.select(rt.path),
         title: Text(
-          rt.version ?? '未知版本',
+          rt.version ?? tr('javaCard.unknownVersion'),
           style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
         ),
         subtitle: Column(
@@ -225,7 +227,7 @@ class EmulatorJavaCard extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              '之前选择的 Java 运行环境已失效，请重新选择',
+              tr('javaCard.selectedInvalid'),
               style: const TextStyle(fontSize: 12, color: Colors.orange),
             ),
           ),
@@ -278,7 +280,7 @@ class EmulatorJavaCard extends StatelessWidget {
           children: [
             TextButton(
               onPressed: () => provider.cancelDownload(),
-              child: const Text('取消下载'),
+              child: Text(tr('javaCard.cancelDownload')),
             ),
           ],
         ),
@@ -296,17 +298,17 @@ class EmulatorJavaCard extends StatelessWidget {
         FilledButton.icon(
           onPressed: isDownloading ? null : () => provider.refreshStatus(),
           icon: const Icon(Icons.refresh, size: 18),
-          label: const Text('重新检测'),
+          label: Text(tr('javaCard.redetect')),
         ),
         OutlinedButton.icon(
           onPressed: isDownloading ? null : () => _showDownloadDialog(context),
           icon: const Icon(Icons.download, size: 18),
-          label: const Text('下载 Java'),
+          label: Text(tr('javaCard.downloadJava')),
         ),
         OutlinedButton.icon(
           onPressed: isDownloading ? null : () => _importLocalZip(context, provider),
           icon: const Icon(Icons.archive_outlined, size: 18),
-          label: const Text('导入 Zip'),
+          label: Text(tr('javaCard.importZip')),
         ),
       ],
     );
@@ -329,21 +331,21 @@ class EmulatorJavaCard extends StatelessWidget {
     final String? id = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('导入 Java Zip'),
+        title: Text(tr('javaCard.importZipTitle')),
         content: SizedBox(
           width: 400,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('文件: ${picked.name}',
+              Text(tr('javaCard.filePicked', {'name': picked.name}),
                   style: const TextStyle(fontSize: 12, color: Colors.grey)),
               const SizedBox(height: 16),
               TextField(
                 controller: idController,
-                decoration: const InputDecoration(
-                  labelText: '运行时 ID',
-                  helperText: '仅允许字母/数字/._-',
+                decoration: InputDecoration(
+                  labelText: tr('javaCard.runtimeID'),
+                  helperText: tr('javaCard.runtimeIDHint'),
                 ),
               ),
             ],
@@ -352,11 +354,11 @@ class EmulatorJavaCard extends StatelessWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
+            child: Text(tr('cancel')),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, idController.text.trim()),
-            child: const Text('导入'),
+            child: Text(tr('javaCard.import')),
           ),
         ],
       ),
@@ -367,7 +369,12 @@ class EmulatorJavaCard extends StatelessWidget {
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(ok ? '已导入 Java: $id' : '导入失败: ${provider.errorMessage ?? ''}'),
+        content: Text(ok
+            ? tr('javaCard.importedSnack', {'id': id})
+            : tr('javaCard.importFailed', {
+                'error': provider.errorMessage ??
+                    tr('emulatorSettings.common.unknownError'),
+              })),
         duration: const Duration(seconds: 3),
       ),
     );
@@ -400,22 +407,22 @@ class EmulatorJavaCard extends StatelessWidget {
           }
 
           return AlertDialog(
-            title: const Text('下载 Java 运行环境'),
+            title: Text(tr('javaCard.downloadTitle')),
             content: SizedBox(
               width: 500,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    '下载 Eclipse Temurin (Adoptium) - 跨平台官方构建',
-                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  Text(
+                    tr('javaCard.downloadHelp'),
+                    style: const TextStyle(fontSize: 12, color: Colors.grey),
                   ),
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
                     value: selectedVersion,
-                    decoration: const InputDecoration(
-                      labelText: 'Java 版本',
+                    decoration: InputDecoration(
+                      labelText: tr('javaCard.versionLabel'),
                     ),
                     items: defaults
                         .map((d) => DropdownMenuItem(
@@ -440,15 +447,15 @@ class EmulatorJavaCard extends StatelessWidget {
                   const SizedBox(height: 16),
                   TextField(
                     controller: urlController,
-                    decoration: const InputDecoration(
-                      labelText: '下载 URL',
-                      hintText: '默认使用 Temurin 镜像，可手动替换',
+                    decoration: InputDecoration(
+                      labelText: tr('javaCard.urlLabel'),
+                      hintText: tr('javaCard.urlHint'),
                     ),
                   ),
                   if (matched != null) ...[
                     const SizedBox(height: 8),
                     Text(
-                      '来源: ${matched.name}',
+                      tr('javaCard.sourceLabel', {'name': matched.name}),
                       style: const TextStyle(fontSize: 11, color: Colors.grey),
                     ),
                   ],
@@ -458,7 +465,7 @@ class EmulatorJavaCard extends StatelessWidget {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx),
-                child: const Text('取消'),
+                child: Text(tr('cancel')),
               ),
               FilledButton(
                 onPressed: () async {
@@ -476,13 +483,16 @@ class EmulatorJavaCard extends StatelessWidget {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text(ok
-                          ? '开始下载 Java $selectedVersion...'
-                          : '启动下载失败: ${provider.errorMessage ?? ''}'),
+                          ? tr('javaCard.kickoff', {'version': selectedVersion})
+                          : tr('javaCard.kickoffFailed', {
+                              'error': provider.errorMessage ??
+                                  tr('emulatorSettings.common.unknownError'),
+                            })),
                       duration: const Duration(seconds: 2),
                     ),
                   );
                 },
-                child: const Text('开始下载'),
+                child: Text(tr('engineCard.startDownload')),
               ),
             ],
           );

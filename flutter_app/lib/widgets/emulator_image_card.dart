@@ -1,6 +1,7 @@
 // Emulator image card widget.
 // Displays a single system image with status and actions.
 import 'package:flutter/material.dart';
+import '../i18n.dart';
 import '../models/emulator_image.dart';
 
 class EmulatorImageCard extends StatelessWidget {
@@ -48,7 +49,7 @@ class EmulatorImageCard extends StatelessWidget {
             Row(
               children: [
                 Text(
-                  image.fileSize > 0 ? image.fileSizeFormatted : '未知大小',
+                  image.fileSize > 0 ? image.fileSizeFormatted : tr('imageCard.unknownSize'),
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
@@ -143,14 +144,14 @@ class EmulatorImageCard extends StatelessWidget {
           FilledButton.tonalIcon(
             onPressed: canCreate ? onCreateInstance : null,
             icon: const Icon(Icons.add, size: 16),
-            label: Text(canCreate ? '创建实例' : '镜像不可用'),
+            label: Text(canCreate ? tr('emulatorSettings.createInstance') : tr('imageCard.notReady')),
           ),
         const SizedBox(width: 8),
         if (onDelete != null)
           OutlinedButton.icon(
             onPressed: onDelete,
             icon: const Icon(Icons.delete_outline, size: 16),
-            label: const Text('删除'),
+            label: Text(tr('imageCard.delete')),
             style: OutlinedButton.styleFrom(
               foregroundColor: Theme.of(context).colorScheme.error,
             ),
@@ -188,13 +189,13 @@ class EmulatorImageCard extends StatelessWidget {
   String _getStatusLabel() {
     switch (image.status) {
       case EmulatorImageStatus.ready:
-        return '就绪';
+        return tr('engineCard.status.ready');
       case EmulatorImageStatus.downloading:
-        return '下载中';
+        return tr('imageCard.downloading');
       case EmulatorImageStatus.error:
-        return '错误';
+        return tr('imageCard.error');
       case EmulatorImageStatus.pending:
-        return '等待中';
+        return tr('imageCard.pending');
     }
   }
 }

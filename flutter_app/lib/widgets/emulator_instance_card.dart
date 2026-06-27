@@ -2,6 +2,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:adb_tool/i18n.dart';
 import 'package:adb_tool/models/emulator_instance.dart';
 import 'package:adb_tool/providers/emulator_instance_provider.dart';
 
@@ -295,23 +296,23 @@ class _ActionButtons extends StatelessWidget {
           icon: const Icon(Icons.more_vert),
           onSelected: (value) => _handleMenuAction(context, value, provider),
           itemBuilder: (context) => [
-            const PopupMenuItem(
+            PopupMenuItem(
               value: 'reveal',
               child: Row(
                 children: [
-                  Icon(Icons.folder_open),
-                  SizedBox(width: 8),
-                  Text('在资源管理器中查看'),
+                  const Icon(Icons.folder_open),
+                  const SizedBox(width: 8),
+                  Text(tr('instanceCard.openInExplorer')),
                 ],
               ),
             ),
-            const PopupMenuItem(
+            PopupMenuItem(
               value: 'delete',
               child: Row(
                 children: [
-                  Icon(Icons.delete, color: Colors.red),
-                  SizedBox(width: 8),
-                  Text('Delete'),
+                  const Icon(Icons.delete, color: Colors.red),
+                  const SizedBox(width: 8),
+                  Text(tr('delete')),
                 ],
               ),
             ),
@@ -354,17 +355,17 @@ class _ActionButtons extends StatelessWidget {
           width: 640,
           height: 420,
           child: lines == null
-              ? const Center(
+              ? Center(
                   child: Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Text('加载日志失败'),
+                    padding: const EdgeInsets.all(24),
+                    child: Text(tr('instanceCard.logLoadFailed')),
                   ),
                 )
               : lines.isEmpty
-                  ? const Center(
+                  ? Center(
                       child: Padding(
-                        padding: EdgeInsets.all(24),
-                        child: Text('暂无日志输出'),
+                        padding: const EdgeInsets.all(24),
+                        child: Text(tr('instanceCard.logEmpty')),
                       ),
                     )
                   : Container(
@@ -396,7 +397,7 @@ class _ActionButtons extends StatelessWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('关闭'),
+            child: Text(tr('instanceCard.close')),
           ),
         ],
       ),
@@ -419,17 +420,17 @@ class _ActionButtons extends StatelessWidget {
         final confirmed = await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
-            title: const Text('Delete Instance'),
+            title: Text(tr('delete') + ' Instance'),
             content: Text('Are you sure you want to delete "${instance.avdName}"? This cannot be undone.'),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context, false),
-                child: const Text('Cancel'),
+                child: Text(tr('cancel')),
               ),
               ElevatedButton(
                 onPressed: () => Navigator.pop(context, true),
                 style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                child: const Text('Delete'),
+                child: Text(tr('delete')),
               ),
             ],
           ),
@@ -440,8 +441,8 @@ if (confirmed == true) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(ok
-                  ? '实例已删除'
-                  : '删除失败: ${provider.error ?? "未知错误"}'),
+                  ? tr('instanceCard.deleted')
+                  : '${tr('delete')} failed: ${provider.error ?? tr("emulatorSettings.common.unknownError")}'),
               duration: const Duration(seconds: 2),
             ),
           );
@@ -455,7 +456,7 @@ if (confirmed == true) {
     if (path.isEmpty) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('该实例没有可用的本地路径')),
+          SnackBar(content: Text(tr('instanceCard.noLocalPath'))),
         );
       }
       return;
@@ -466,7 +467,7 @@ if (confirmed == true) {
         !Directory(path).existsSync()) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('路径不存在: $path')),
+          SnackBar(content: Text(tr('instanceCard.pathMissing', {'path': path}))),
         );
       }
       return;
@@ -491,7 +492,7 @@ if (confirmed == true) {
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('打开失败: $e')),
+          SnackBar(content: Text(tr('instanceCard.openFailed', {'error': '$e'}))),
         );
       }
     }

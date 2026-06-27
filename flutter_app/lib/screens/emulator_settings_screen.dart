@@ -1,8 +1,10 @@
 // Emulator settings screen.
 // Main screen for managing Android emulator configuration.
 import 'dart:async';
+import 'package:adb_tool/providers/locale_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../i18n.dart';
 import '../providers/emulator_image_provider.dart';
 import '../providers/emulator_instance_provider.dart';
 import '../providers/emulator_engine_provider.dart';
@@ -54,16 +56,17 @@ class _EmulatorSettingsScreenState extends State<EmulatorSettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<LocaleProvider>();
     final imageProvider = context.watch<EmulatorImageProvider>();
     final instanceProvider = context.watch<EmulatorInstanceProvider>();
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Android 模拟器'),
+        title: Text(tr('emulatorSettings.title')),
         centerTitle: false,
         actions: [
           IconButton(
-            tooltip: '清理所有 adb-tool 缓存(SDK 保留)',
+            tooltip: tr('emulatorSettings.cleanupTooltip'),
             icon: const Icon(Icons.delete_sweep_outlined),
             onPressed: () => showCleanupCacheDialog(context),
           ),
@@ -110,7 +113,7 @@ class _EmulatorSettingsScreenState extends State<EmulatorSettingsScreen> {
             Icon(Icons.smartphone, color: theme.colorScheme.primary),
             const SizedBox(width: 8),
             Text(
-              '模拟器实例',
+              tr('emulatorSettings.instanceSection'),
               style: theme.textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.w600,
               ),
@@ -118,12 +121,12 @@ class _EmulatorSettingsScreenState extends State<EmulatorSettingsScreen> {
             const Spacer(),
             Tooltip(
               message:
-                  canCreate ? '' : '请先在上方 SDK 引擎卡片中安装 emulator + system-image',
+                  canCreate ? '' : tr('emulatorSettings.installEmulatorHint'),
               child: FilledButton.icon(
                 onPressed:
                     canCreate ? () => _showCreateInstanceDialog(context) : null,
                 icon: const Icon(Icons.add, size: 18),
-                label: const Text('创建实例'),
+                label: Text(tr('emulatorSettings.createInstance')),
               ),
             ),
           ],
@@ -164,14 +167,14 @@ class _EmulatorSettingsScreenState extends State<EmulatorSettingsScreen> {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  '暂无模拟器实例',
+                  tr('emulatorSettings.emptyInstance'),
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '创建实例以开始使用模拟器',
+                  tr('emulatorSettings.emptyInstanceHint'),
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Theme.of(context)
                             .colorScheme
@@ -208,7 +211,7 @@ class _EmulatorSettingsScreenState extends State<EmulatorSettingsScreen> {
             Icon(Icons.storage, color: theme.colorScheme.primary),
             const SizedBox(width: 8),
             Text(
-              '系统镜像',
+              tr('emulatorSettings.imageSection'),
               style: theme.textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.w600,
               ),
@@ -217,7 +220,7 @@ class _EmulatorSettingsScreenState extends State<EmulatorSettingsScreen> {
             FilledButton.icon(
               onPressed: () => _showAddImageDialog(context),
               icon: const Icon(Icons.add, size: 18),
-              label: const Text('添加镜像'),
+              label: Text(tr('emulatorSettings.addImage')),
             ),
           ],
         ),
@@ -269,12 +272,14 @@ class _EmulatorSettingsScreenState extends State<EmulatorSettingsScreen> {
                 Expanded(
                   child: Text(
                     isError
-                        ? '下载失败: ${job.error ?? pkg}'
+                        ? tr('emulatorSettings.install.downloadError',
+                            {'error': job.error ?? pkg})
                         : isDone
-                            ? '$pkg 下载完成'
+                            ? tr('emulatorSettings.install.downloadDone',
+                                {'pkg': pkg})
                             : (job.message.isNotEmpty
                                 ? job.message
-                                : '正在准备...'),
+                                : tr('emulatorSettings.install.downloadPreparing')),
                     style: TextStyle(
                         fontSize: 13,
                         color: barColor,
@@ -334,14 +339,14 @@ class _EmulatorSettingsScreenState extends State<EmulatorSettingsScreen> {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  '暂无系统镜像',
+                  tr('emulatorSettings.emptyImage'),
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '点击上方按钮添加镜像',
+                  tr('emulatorSettings.emptyImageHint'),
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Theme.of(context)
                             .colorScheme
@@ -417,7 +422,12 @@ class _EmulatorSettingsScreenState extends State<EmulatorSettingsScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              ok ? '镜像导入成功' : '镜像导入失败: ${provider.errorMessage ?? '未知错误'}',
+              ok
+                  ? tr('emulatorSettings.import.success')
+                  : tr('emulatorSettings.import.failure', {
+                      'error': provider.errorMessage ??
+                          tr('emulatorSettings.common.unknownError'),
+                    }),
             ),
           ),
         );
@@ -438,7 +448,7 @@ class _EmulatorSettingsScreenState extends State<EmulatorSettingsScreen> {
     final messenger = ScaffoldMessenger.of(context);
     messenger.showSnackBar(
       SnackBar(
-        content: Text('开始下载: $package'),
+        content: Text(tr('emulatorSettings.install.kickoff', {'package': package})),
         duration: const Duration(seconds: 2),
       ),
     );
@@ -449,7 +459,7 @@ class _EmulatorSettingsScreenState extends State<EmulatorSettingsScreen> {
     } catch (e) {
       if (!context.mounted) return;
       messenger.showSnackBar(
-        SnackBar(content: Text('启动下载失败: $e')),
+        SnackBar(content: Text(tr('emulatorSettings.install.kickoffError', {'error': '$e'}))),
       );
       return;
     }
@@ -475,12 +485,15 @@ class _EmulatorSettingsScreenState extends State<EmulatorSettingsScreen> {
             await imageProvider.refreshImages();
             if (mounted) {
               messenger.showSnackBar(
-                SnackBar(content: Text('镜像安装完成: $package')),
+                SnackBar(content: Text(tr('emulatorSettings.install.completed', {'package': package}))),
               );
             }
           } else if (mounted) {
             messenger.showSnackBar(
-              SnackBar(content: Text('镜像下载失败: ${updated.error ?? "未知错误"}')),
+              SnackBar(content: Text(tr('emulatorSettings.install.failed', {
+                'error': updated.error ??
+                    tr('emulatorSettings.common.unknownError'),
+              }))),
             );
           }
           // Drop the job after a short delay so the user can see the final
@@ -501,28 +514,41 @@ class _EmulatorSettingsScreenState extends State<EmulatorSettingsScreen> {
         imageProvider.images.where((e) => e.id == imageId).firstOrNull;
     final sizeText = image != null ? image.fileSizeFormatted : '';
     final managed = image?.managed == true;
+    final sizeLine = sizeText.isNotEmpty
+        ? tr('emulatorSettings.delete.sizeLine', {'size': sizeText})
+        : '';
+    final pathLine = (image?.localPath.isNotEmpty ?? false)
+        ? tr('emulatorSettings.delete.pathLine', {'path': image!.localPath})
+        : '';
+    final pathLineNoNl = (image?.localPath.isNotEmpty ?? false)
+        ? tr('emulatorSettings.delete.pathLineNoNl', {'path': image!.localPath})
+        : '';
+    final name = image?.displayName ?? imageId;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         scrollable: true,
         icon: Icon(Icons.warning_amber_rounded,
             color: Theme.of(ctx).colorScheme.error, size: 32),
-        title: Text(managed ? '删除镜像文件' : '移除镜像记录'),
+        title: Text(managed
+            ? tr('emulatorSettings.delete.titleManaged')
+            : tr('emulatorSettings.delete.titleRegistryOnly')),
         content: Text(
           managed
-              ? '此镜像位于 adb-tool 管理目录下，确认后会永久删除磁盘文件。\n'
-                  '${image?.displayName ?? imageId}\n'
-                  '${sizeText.isNotEmpty ? "占用空间：$sizeText\n" : ""}'
-                  '${image?.localPath.isNotEmpty == true ? "路径：${image!.localPath}\n" : ""}'
-                  '此操作不可恢复。'
-              : '此镜像不在 adb-tool 管理目录下，确认后只会从 images.json 中移除记录，不会删除磁盘文件。\n'
-                  '${image?.displayName ?? imageId}\n'
-                  '${image?.localPath.isNotEmpty == true ? "路径：${image!.localPath}" : ""}',
+              ? tr('emulatorSettings.delete.bodyManaged', {
+                  'name': name,
+                  'sizeLine': sizeLine,
+                  'pathLine': pathLine,
+                })
+              : tr('emulatorSettings.delete.bodyRegistryOnly', {
+                  'name': name,
+                  'pathLine': pathLineNoNl,
+                }),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child: Text(tr('emulatorSettings.delete.cancel')),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
@@ -530,7 +556,9 @@ class _EmulatorSettingsScreenState extends State<EmulatorSettingsScreen> {
               backgroundColor: Theme.of(ctx).colorScheme.error,
               foregroundColor: Theme.of(ctx).colorScheme.onError,
             ),
-            child: Text(managed ? '删除文件' : '移除记录'),
+            child: Text(managed
+                ? tr('emulatorSettings.delete.confirmManaged')
+                : tr('emulatorSettings.delete.confirmRegistryOnly')),
           ),
         ],
       ),
@@ -541,14 +569,20 @@ class _EmulatorSettingsScreenState extends State<EmulatorSettingsScreen> {
         await imageProvider.deleteImage(imageId);
       } on ImageInUseException catch (e) {
         if (!context.mounted) return;
-        final users = e.inUseBy.isEmpty ? '' : '（${e.inUseBy.join('、')}）';
+        final users = e.inUseBy.isEmpty
+            ? ''
+            : '（${e.inUseBy.join('、')}）';
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('无法删除：以下实例正在使用此镜像$users，请先删除实例')),
+          SnackBar(
+              content: Text(tr('emulatorSettings.delete.inUse',
+                  {'users': users}))),
         );
       } catch (e) {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('删除失败：$e')),
+            SnackBar(
+                content: Text(
+                    tr('emulatorSettings.delete.failure', {'error': '$e'}))),
           );
         }
       }

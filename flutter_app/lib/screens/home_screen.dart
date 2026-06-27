@@ -482,7 +482,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             theme,
             keyName: _emulatorKey,
             icon: Icons.smartphone,
-            label: '模拟器',
+            label: tr('emulatorSettings.title'),
             badge: 'Android',
             // Beta tag: emulator Phase 1-4 is feature-incomplete
             // (no AVD hot-resize, no snapshot UI, no multi-display, see

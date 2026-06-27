@@ -10,6 +10,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../i18n.dart';
 import '../services/api/cleanup_api.dart';
 import '../services/api_client.dart';
 
@@ -100,11 +101,11 @@ class _CleanupCacheDialogState extends State<_CleanupCacheDialog> {
   Widget _buildConfirmDialog(BuildContext context) {
     final theme = Theme.of(context);
     return AlertDialog(
-      title: const Row(
+      title: Row(
         children: [
-          Icon(Icons.delete_sweep_outlined, size: 20),
-          SizedBox(width: 8),
-          Text('清理所有缓存'),
+          const Icon(Icons.delete_sweep_outlined, size: 20),
+          const SizedBox(width: 8),
+          Text(tr('cleanupCache.title')),
         ],
       ),
       content: SizedBox(
@@ -185,10 +186,10 @@ class _CleanupCacheDialogState extends State<_CleanupCacheDialog> {
                 onChanged: _busy
                     ? null
                     : (v) => setState(() => _keepSDK = v ?? true),
-                title: const Text('保留 Android SDK'),
-                subtitle: const Text(
-                  '建议勾上(SDK 重装几 GB)',
-                  style: TextStyle(fontSize: 11),
+                title: Text(tr('cleanupCache.keepSDK')),
+                subtitle: Text(
+                  tr('cleanupCache.keepSDKHint'),
+                  style: const TextStyle(fontSize: 11),
                 ),
                 controlAffinity: ListTileControlAffinity.leading,
               ),
@@ -213,7 +214,7 @@ class _CleanupCacheDialogState extends State<_CleanupCacheDialog> {
       actions: [
         TextButton(
           onPressed: _busy ? null : () => Navigator.pop(context),
-          child: const Text('取消'),
+          child: Text(tr('cancel')),
         ),
         FilledButton.tonal(
           onPressed: _busy ? null : _runCleanup,
@@ -226,7 +227,7 @@ class _CleanupCacheDialogState extends State<_CleanupCacheDialog> {
                   height: 16,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Text('清理'),
+              : Text(tr('cleanupCache.confirm')),
         ),
       ],
     );
@@ -235,11 +236,11 @@ class _CleanupCacheDialogState extends State<_CleanupCacheDialog> {
   Widget _buildResultDialog(BuildContext context, CacheCleanupResult r) {
     final theme = Theme.of(context);
     return AlertDialog(
-      title: const Row(
+      title: Row(
         children: [
-          Icon(Icons.check_circle_outline, color: Colors.green, size: 20),
-          SizedBox(width: 8),
-          Text('清理完成'),
+          const Icon(Icons.check_circle_outline, color: Colors.green, size: 20),
+          const SizedBox(width: 8),
+          Text(tr('cleanupCache.done')),
         ],
       ),
       content: SizedBox(
@@ -261,8 +262,8 @@ class _CleanupCacheDialogState extends State<_CleanupCacheDialog> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        '已释放 ${r.totalFormatted} '
-                        '(${r.cleanedCount} 项)',
+                        '${tr('cleanupCache.freed', {'size': r.totalFormatted})}'
+                        '${tr('cleanupCache.freedCount', {'count': '${r.cleanedCount}'})}',
                         style: const TextStyle(
                           fontWeight: FontWeight.w600,
                           fontSize: 14,
@@ -275,7 +276,7 @@ class _CleanupCacheDialogState extends State<_CleanupCacheDialog> {
               if (r.skipped.isNotEmpty) ...[
                 const SizedBox(height: 12),
                 Text(
-                  '跳过 ${r.skippedCount} 项(权限/不存在):',
+                  tr('cleanupCache.skippedHeader', {'count': '${r.skippedCount}'}),
                   style: TextStyle(
                     fontSize: 12,
                     color: theme.colorScheme.onSurfaceVariant,
@@ -293,14 +294,14 @@ class _CleanupCacheDialogState extends State<_CleanupCacheDialog> {
                 ),
                 if (r.skipped.length > 5)
                   Text(
-                    '... 还有 ${r.skipped.length - 5} 项',
+                    tr('cleanupCache.skippedMore', {'count': '${r.skipped.length - 5}'}),
                     style: const TextStyle(fontSize: 11, color: Colors.grey),
                   ),
               ],
               if (r.cleaned.isNotEmpty) ...[
                 const SizedBox(height: 12),
                 Text(
-                  '清理明细:',
+                  tr('cleanupCache.cleanupDetail'),
                   style: TextStyle(
                     fontSize: 12,
                     color: theme.colorScheme.onSurfaceVariant,
@@ -322,7 +323,7 @@ class _CleanupCacheDialogState extends State<_CleanupCacheDialog> {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          e.existed ? e.sizeFormatted : '不存在',
+                          e.existed ? e.sizeFormatted : tr('cleanupCache.notExists'),
                           style: const TextStyle(
                             fontSize: 11,
                             color: Colors.grey,
@@ -334,17 +335,17 @@ class _CleanupCacheDialogState extends State<_CleanupCacheDialog> {
                 ),
                 if (r.cleaned.length > 8)
                   Text(
-                    '... 还有 ${r.cleaned.length - 8} 项',
+                    tr('cleanupCache.skippedMore', {'count': '${r.cleaned.length - 8}'}),
                     style: const TextStyle(fontSize: 11, color: Colors.grey),
                   ),
               ],
               if (r.keptSDK) ...[
                 const SizedBox(height: 12),
                 Row(
-                  children: const [
-                    Icon(Icons.check, size: 14, color: Colors.green),
-                    SizedBox(width: 4),
-                    Text('Android SDK 已保留', style: TextStyle(fontSize: 11)),
+                  children: [
+                    const Icon(Icons.check, size: 14, color: Colors.green),
+                    const SizedBox(width: 4),
+                    Text(tr('cleanupCache.sdkKept'), style: const TextStyle(fontSize: 11)),
                   ],
                 ),
               ],
@@ -355,7 +356,7 @@ class _CleanupCacheDialogState extends State<_CleanupCacheDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context, r),
-          child: const Text('完成'),
+          child: Text(tr('cleanupCache.close')),
         ),
       ],
     );
