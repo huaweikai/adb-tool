@@ -6,17 +6,23 @@ import '../models/device.dart';
 import '../models/test_config.dart';
 import '../services/api_client.dart';
 import '../i18n.dart';
-import '../services/log_stream.dart';
 import '../providers/locale_provider.dart';
 import '../providers/device_provider.dart';
+import '../providers/logcat_state_provider.dart';
 import '../providers/test_session_provider.dart';
 import '../providers/test_config_provider.dart';
 import '../widgets/logcat/highlight_rule.dart';
 
+/// Logcat screen — entries / filter / streaming state now live in
+/// [LogcatStateProvider], keyed by device serial. This widget keeps only
+/// the genuinely widget-scoped resources (TextEditingController,
+/// ScrollController, flush timer, applied-config marker).
+///
+/// Per-device state survives screen rebuild AND navigation to other
+/// devices' logcat screens: switching to device B does NOT touch
+/// device A's entries / filter / scroll.
 class LogcatScreen extends StatefulWidget {
-  const LogcatScreen({
-    super.key,
-  });
+  const LogcatScreen({super.key});
 
   @override
   State<LogcatScreen> createState() => _LogcatScreenState();
@@ -25,42 +31,34 @@ class LogcatScreen extends StatefulWidget {
 class _LogcatScreenState extends State<LogcatScreen> {
   String? get _selectedSerial => context.read<DeviceSerialScope>().serial;
 
-  String? _packagePid;
-
-  String _priority = 'D';
-  String _tag = '';
-  String _keyword = '';
-  String _packageName = '';
-
+  // Highlight rules are global UI tooling (apply across all devices);
+  // keeping them widget-scoped is fine — they don't need to survive
+  // navigation away from the screen.
   final List<HighlightRule> _highlightRules = HighlightRules.defaults();
-
   final List<Color> _customRuleColors = HighlightRules.customPalette;
 
-  final List<LogEntry> _allEntries = [];
-  final List<LogEntry> _displayedEntries = [];
-  final List<LogEntry> _pendingEntries = [];
-  Timer? _flushTimer;
-  StreamSubscription<List<LogEntry>>? _logSub;
-  StreamSubscription<bool>? _connSub;
-  bool _isStreaming = false;
-  bool _isPaused = false;
-  bool _wsConnected = false;
-
-  bool get _hasLogs =>
-      _allEntries.isNotEmpty ||
-      _displayedEntries.isNotEmpty ||
-      _pendingEntries.isNotEmpty;
-
+  // Widget-scoped UI resources only. NOT business state.
   final ScrollController _scrollCtrl = ScrollController();
   bool _autoScroll = true;
   Timer? _autoScrollTimer;
-  bool _autoScrollSuspendedByUser = false;
+  Timer? _flushTimer;
+  String? _flushTimerSerial;
 
   late final TextEditingController _tagCtrl;
   late final TextEditingController _kwCtrl;
   late final TextEditingController _pkgCtrl;
   late final TextEditingController _ruleCtrl;
+
+  // UI ephemeral — tracks which config we've already applied to the
+  // filter fields, so we don't re-apply on every build.
   int? _lastAppliedConfigId;
+
+  // The serial whose filter is currently loaded into the input
+  // controllers. We hydrate controllers only when this changes (i.e.
+  // when the user switches to a different device), NEVER on every
+  // rebuild — re-hydrating per-build would clobber whatever the user
+  // has typed since the last notifyListeners().
+  String? _hydratedSerial;
 
   @override
   void initState() {
@@ -69,154 +67,82 @@ class _LogcatScreenState extends State<LogcatScreen> {
     _kwCtrl = TextEditingController();
     _pkgCtrl = TextEditingController();
     _ruleCtrl = TextEditingController();
+    _scrollCtrl.addListener(_onScrollPositionChanged);
+    _startFlushTimer();
   }
 
-  void _applyConfig(TestAppConfig config) {
-    final pkgChanged = config.packageName.isNotEmpty;
-    _pkgCtrl.text = config.packageName;
-    _packageName = config.packageName;
-    _tagCtrl.text = config.logcat.tags.join(', ');
-    _tag = config.logcat.tags.join(', ');
-    _kwCtrl.text = config.logcat.keywords.join(', ');
-    _keyword = config.logcat.keywords.join(', ');
-    if (config.logcat.defaultLevel.isNotEmpty) {
-      _priority = config.logcat.defaultLevel;
-    }
-    if (pkgChanged) {
-      _resolvePackage();
-    }
+  /// Owns the periodic flush loop for the currently-active device's
+  /// pending entries. Restarted when the active serial changes so
+  /// each device gets its own flush cadence.
+  void _startFlushTimer() {
+    _flushTimer?.cancel();
+    _flushTimer = Timer.periodic(
+      const Duration(milliseconds: 80),
+      (_) {
+        if (!mounted) return;
+        final serial = _selectedSerial;
+        if (serial == null) return;
+        context.read<LogcatStateProvider>().flushPending(serial);
+        if (_autoScroll) _tryAutoScroll();
+      },
+    );
   }
 
-  void _onUserScroll() {
+  void _onScrollPositionChanged() {
     if (!_scrollCtrl.hasClients) return;
-    final distanceFromBottom =
-        _scrollCtrl.position.maxScrollExtent - _scrollCtrl.position.pixels;
+    final pos = _scrollCtrl.position;
+    final distanceFromBottom = pos.maxScrollExtent - pos.pixels;
     if (distanceFromBottom > 80 && _autoScroll) {
       setState(() {
         _autoScroll = false;
-        _autoScrollSuspendedByUser = true;
       });
-    } else if (distanceFromBottom <= 24 && _autoScrollSuspendedByUser) {
+    } else if (distanceFromBottom <= 24 && !_autoScroll) {
       setState(() {
         _autoScroll = true;
-        _autoScrollSuspendedByUser = false;
       });
       _jumpToBottomAfterFrame();
     }
   }
 
-  LogFilter _buildFilter() => LogFilter(
-        tag: _tag,
-        priority: _priority,
-        keyword: _keyword,
-        packageName: _packageName,
-        packagePid: _packagePid ?? '',
-      );
+  /// Pull the current device's filter from the provider and load it
+  /// into the input controllers. Called only when [_hydratedSerial]
+  /// changes (i.e. first mount, or device switch). Never call from
+  /// build() unconditionally — that would clobber in-progress typing.
+  void _hydrateControllersFor(String serial) {
+    final state = context.read<LogcatStateProvider>().stateFor(serial);
+    _tagCtrl.text = state.filter.tag;
+    _kwCtrl.text = state.filter.keyword;
+    _pkgCtrl.text = state.filter.packageName;
+    _hydratedSerial = serial;
+  }
+
+  @override
+  void dispose() {
+    _autoScrollTimer?.cancel();
+    _flushTimer?.cancel();
+    _scrollCtrl.removeListener(_onScrollPositionChanged);
+    _tagCtrl.dispose();
+    _kwCtrl.dispose();
+    _pkgCtrl.dispose();
+    _ruleCtrl.dispose();
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
 
   Future<void> _resolvePackage() async {
     final serial = _selectedSerial;
-    if (_packageName.isEmpty || serial == null) {
-      setState(() => _packagePid = null);
-      _restartIfNeeded();
+    final pkg = _pkgCtrl.text.trim();
+    if (pkg.isEmpty || serial == null) {
+      context.read<LogcatStateProvider>().setPackagePid(serial ?? '', null);
+      if (serial != null) {
+        context.read<LogcatStateProvider>().updateField(serial, packageName: '');
+      }
       return;
     }
-    final pid =
-        await context.read<ApiClient>().getPackagePid(serial, _packageName);
+    context.read<LogcatStateProvider>().updateField(serial, packageName: pkg);
+    final pid = await context.read<ApiClient>().getPackagePid(serial, pkg);
     if (!mounted) return;
-    setState(() => _packagePid = pid);
-    _restartIfNeeded();
-  }
-
-  void _restartIfNeeded() {
-    if (_isStreaming) {
-      _flushPendingEntries();
-      _stopAndStart();
-    }
-  }
-
-  void _stopAndStart() {
-    _logSub?.cancel();
-    _flushTimer?.cancel();
-    context.read<LogStreamService>().stop();
-    setState(() {
-      _isStreaming = false;
-      _allEntries.clear();
-      _displayedEntries.clear();
-      _pendingEntries.clear();
-    });
-    Future.delayed(const Duration(milliseconds: 200), () {
-      if (!mounted) return;
-      _startLogs();
-    });
-  }
-
-  void _startLogs() {
-    final serial = _selectedSerial;
-    if (serial == null) return;
-    _allEntries.clear();
-    _displayedEntries.clear();
-    _pendingEntries.clear();
-    _flushTimer?.cancel();
-    _logSub?.cancel();
-
-    final filter = _buildFilter();
-    context.read<LogStreamService>().connect(serial, filter);
-    _connSub?.cancel();
-    _connSub = context.read<LogStreamService>().connectionState.listen(
-      (connected) {
-        if (!mounted) return;
-        setState(() => _wsConnected = connected);
-      },
-    );
-    _flushTimer = Timer.periodic(
-      const Duration(milliseconds: 80),
-      (_) => _flushPendingEntries(),
-    );
-    _logSub = context.read<LogStreamService>().logStream.listen(
-      (entries) {
-        if (!mounted || entries.isEmpty) return;
-        _pendingEntries.addAll(entries);
-        if (_pendingEntries.length >= 300) {
-          _flushPendingEntries();
-        }
-      },
-    );
-
-    setState(() {
-      _isStreaming = true;
-      _isPaused = false;
-    });
-  }
-
-  void _flushPendingEntries() {
-    if (!mounted || _pendingEntries.isEmpty) return;
-    final entries = List<LogEntry>.from(_pendingEntries);
-    _pendingEntries.clear();
-    setState(() {
-      _allEntries.addAll(entries);
-      _displayedEntries.addAll(entries);
-      if (_allEntries.length > 5000) {
-        final extra = _allEntries.length - 5000;
-        final removed = _allEntries.sublist(0, extra);
-        _allEntries.removeRange(0, extra);
-        for (final entry in removed) {
-          final index = _displayedEntries.indexOf(entry);
-          if (index >= 0) {
-            _displayedEntries.removeAt(index);
-          }
-        }
-      }
-    });
-    _tryAutoScroll();
-  }
-
-  void _refreshDisplayedEntries() {
-    final filter = _buildFilter();
-    setState(() {
-      _displayedEntries
-        ..clear()
-        ..addAll(_allEntries.where((e) => e.matchesFilter(filter)));
-    });
+    context.read<LogcatStateProvider>().setPackagePid(serial, pid);
   }
 
   void _tryAutoScroll() {
@@ -252,31 +178,13 @@ class _LogcatScreenState extends State<LogcatScreen> {
     });
   }
 
-  void _stopLogs() {
-    _flushPendingEntries();
-    context.read<LogStreamService>().stop();
-    _logSub?.cancel();
-    _flushTimer?.cancel();
-    setState(() {
-      _isStreaming = false;
-      _isPaused = false;
-    });
-  }
-
-  void _pauseLogs() {
-    context.read<LogStreamService>().pause();
-    setState(() => _isPaused = true);
-  }
-
-  void _resumeLogs() {
-    context.read<LogStreamService>().resume();
-    setState(() => _isPaused = false);
-  }
-
   Future<void> _saveLogsToSession() async {
-    _flushPendingEntries();
-    if (_allEntries.isEmpty) return;
-    final content = _allEntries.map((entry) => entry.raw).join('\n');
+    final serial = _selectedSerial;
+    if (serial == null) return;
+    final p = context.read<LogcatStateProvider>();
+    final state = p.stateFor(serial);
+    if (state.entries.isEmpty) return;
+    final content = state.entries.map((e) => e.raw).join('\n');
     try {
       final path =
           await context.read<TestSessionProvider>().saveLogcat(content);
@@ -298,39 +206,25 @@ class _LogcatScreenState extends State<LogcatScreen> {
     }
   }
 
-  void _clearLogs() {
-    setState(() {
-      _allEntries.clear();
-      _displayedEntries.clear();
-      _pendingEntries.clear();
-    });
-    if (_isStreaming) {
-      context.read<LogStreamService>().clear();
-    }
-    final serial = _selectedSerial;
-    if (serial != null) {
-      context.read<ApiClient>().clearLogcat(serial);
-    }
-  }
-
-  @override
-  void dispose() {
-    _flushTimer?.cancel();
-    _tagCtrl.dispose();
-    _kwCtrl.dispose();
-    _pkgCtrl.dispose();
-    _ruleCtrl.dispose();
-    _scrollCtrl.dispose();
-    _logSub?.cancel();
-    _connSub?.cancel();
-    super.dispose();
-  }
-
   @override
   Widget build(BuildContext context) {
     context.watch<LocaleProvider>();
+    final serial = _selectedSerial;
     final config = context.watch<TestConfigProvider>().currentApp;
     final configId = config?.id;
+
+    if (serial == null) {
+      return _buildNoDevice();
+    }
+
+    // Hydrate the filter input controllers exactly once per device
+    // (first mount or after a device switch). Do NOT call this on
+    // every build — that would clobber whatever the user has typed
+    // since the last stream batch arrived.
+    if (_hydratedSerial != serial) {
+      _hydrateControllersFor(serial);
+    }
+
     if (configId != null && configId != _lastAppliedConfigId) {
       _lastAppliedConfigId = configId;
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -340,17 +234,76 @@ class _LogcatScreenState extends State<LogcatScreen> {
     } else if (configId == null) {
       _lastAppliedConfigId = null;
     }
+
+    // Restart the flush timer if the active device changed.
+    if (_flushTimerSerial != serial) {
+      _flushTimerSerial = serial;
+      _startFlushTimer();
+    }
+
+    final p = context.watch<LogcatStateProvider>();
+    final state = p.stateFor(serial);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _buildToolbar(context),
-        Expanded(child: _buildLogList(context, _displayedEntries)),
-        _buildStatusBar(context, _displayedEntries),
+        _buildToolbar(context, state, serial),
+        Expanded(child: _buildLogList(context, state.displayed, serial)),
+        _buildStatusBar(context, state),
       ],
     );
   }
 
-  Widget _buildToolbar(BuildContext context) {
+  Widget _buildNoDevice() {
+    final theme = Theme.of(context);
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.article_outlined,
+              size: 48,
+              color: theme.colorScheme.onSurfaceVariant.withAlpha(80)),
+          const SizedBox(height: 12),
+          Text(tr('logcatSelectDevice'),
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+          const SizedBox(height: 4),
+          Text(tr('logsHint'),
+              style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant.withAlpha(150))),
+        ],
+      ),
+    );
+  }
+
+  void _applyConfig(TestAppConfig config) {
+    final serial = _selectedSerial;
+    if (serial == null) return;
+    final pkg = config.packageName;
+    final tag = config.logcat.tags.join(', ');
+    final kw = config.logcat.keywords.join(', ');
+    final prio = config.logcat.defaultLevel.isNotEmpty
+        ? config.logcat.defaultLevel
+        : 'D';
+
+    _pkgCtrl.text = pkg;
+    _tagCtrl.text = tag;
+    _kwCtrl.text = kw;
+
+    context.read<LogcatStateProvider>().updateField(
+          serial,
+          tag: tag,
+          keyword: kw,
+          packageName: pkg,
+          priority: prio,
+        );
+
+    if (pkg.isNotEmpty) {
+      _resolvePackage();
+    }
+  }
+
+  Widget _buildToolbar(BuildContext context, LogcatDeviceState state, String serial) {
     final theme = Theme.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -363,27 +316,28 @@ class _LogcatScreenState extends State<LogcatScreen> {
         runSpacing: 8,
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          _btn(tr('start'), Icons.play_arrow, !_isStreaming,
-              _selectedSerial == null ? null : _startLogs, true),
-          _btn(tr('stop'), Icons.stop, _isStreaming, _stopLogs, false),
-          _btn(tr('pause'), Icons.pause, _isStreaming && !_isPaused, _pauseLogs,
+          _btn(tr('start'), Icons.play_arrow, !state.streaming,
+              _selectedSerial == null ? null : () => _startStream(), true),
+          _btn(tr('stop'), Icons.stop, state.streaming, _stopStream, false),
+          _btn(tr('pause'), Icons.pause, state.streaming && !state.paused,
+              _pauseStream, false),
+          _btn(tr('resume'), Icons.play_arrow, state.paused, _resumeStream,
               false),
-          _btn(tr('resume'), Icons.play_arrow, _isPaused, _resumeLogs, false),
-          _btn(tr('clear'), Icons.delete_outline, _isStreaming || _hasLogs,
-              _clearLogs, false),
+          _btn(tr('clear'), Icons.delete_outline,
+              state.streaming || state.hasLogs, _clearLogs, false),
           _btn(
               tr('saveToSession'),
               Icons.save_alt,
-              _hasLogs &&
+              state.hasLogs &&
                   context.watch<TestSessionProvider>().hasRunningSession,
               _saveLogsToSession,
               false),
           _sep(),
-          _buildTagFilter(),
-          _buildPriortyFilter(),
-          _buildKeywordFilter(),
+          _buildTagFilter(serial),
+          _buildPriorityFilter(serial, state),
+          _buildKeywordFilter(serial),
           _sep(),
-          _buildPackageFilter(),
+          _buildPackageFilter(serial, state),
           _sep(),
           _buildHighlightRulesButton(),
           _sep(),
@@ -423,18 +377,46 @@ class _LogcatScreenState extends State<LogcatScreen> {
     );
   }
 
-  Widget _buildTagFilter() {
+  void _startStream() {
+    final serial = _selectedSerial;
+    if (serial == null) return;
+    context.read<LogcatStateProvider>().startStream(serial);
+  }
+
+  void _stopStream() {
+    final serial = _selectedSerial;
+    if (serial == null) return;
+    context.read<LogcatStateProvider>().stopStream(serial);
+  }
+
+  void _pauseStream() {
+    final serial = _selectedSerial;
+    if (serial == null) return;
+    context.read<LogcatStateProvider>().pauseStream(serial);
+  }
+
+  void _resumeStream() {
+    final serial = _selectedSerial;
+    if (serial == null) return;
+    context.read<LogcatStateProvider>().resumeStream(serial);
+  }
+
+  void _clearLogs() {
+    final serial = _selectedSerial;
+    if (serial == null) return;
+    final p = context.read<LogcatStateProvider>();
+    p.clearBuffers(serial);
+    context.read<ApiClient>().clearLogcat(serial);
+  }
+
+  Widget _buildTagFilter(String serial) {
     return SizedBox(
       width: 120,
       child: TextField(
         controller: _tagCtrl,
-        onChanged: (v) {
-          _tag = v;
-          _refreshDisplayedEntries();
-          if (_isStreaming) {
-            context.read<LogStreamService>().updateFilter(_buildFilter());
-          }
-        },
+        onChanged: (v) => context
+            .read<LogcatStateProvider>()
+            .updateField(serial, tag: v),
         decoration: InputDecoration(
           labelText: tr('tag'),
           labelStyle: const TextStyle(fontSize: 11),
@@ -448,12 +430,12 @@ class _LogcatScreenState extends State<LogcatScreen> {
     );
   }
 
-  Widget _buildPriortyFilter() {
+  Widget _buildPriorityFilter(String serial, LogcatDeviceState state) {
     const levels = ['', 'V', 'D', 'I', 'W', 'E', 'F'];
     return SizedBox(
       width: 85,
       child: DropdownButtonFormField<String>(
-        initialValue: _priority,
+        initialValue: state.filter.priority.isEmpty ? '' : state.filter.priority,
         decoration: InputDecoration(
           labelText: tr('level'),
           labelStyle: const TextStyle(fontSize: 11),
@@ -475,29 +457,23 @@ class _LogcatScreenState extends State<LogcatScreen> {
                 ))
             .toList(),
         onChanged: (v) {
-          final old = _priority;
-          setState(() => _priority = v ?? '');
-          if (old != _priority) {
-            _flushPendingEntries();
-            _restartIfNeeded();
-          }
+          final newPrio = v ?? '';
+          context
+              .read<LogcatStateProvider>()
+              .updateField(serial, priority: newPrio);
         },
       ),
     );
   }
 
-  Widget _buildKeywordFilter() {
+  Widget _buildKeywordFilter(String serial) {
     return SizedBox(
       width: 130,
       child: TextField(
         controller: _kwCtrl,
-        onChanged: (v) {
-          _keyword = v;
-          _refreshDisplayedEntries();
-          if (_isStreaming) {
-            context.read<LogStreamService>().updateFilter(_buildFilter());
-          }
-        },
+        onChanged: (v) => context
+            .read<LogcatStateProvider>()
+            .updateField(serial, keyword: v),
         decoration: InputDecoration(
           labelText: tr('keyword'),
           labelStyle: const TextStyle(fontSize: 11),
@@ -511,15 +487,12 @@ class _LogcatScreenState extends State<LogcatScreen> {
     );
   }
 
-  Widget _buildPackageFilter() {
+  Widget _buildPackageFilter(String serial, LogcatDeviceState state) {
     return SizedBox(
       width: 180,
       child: TextField(
         controller: _pkgCtrl,
-        onSubmitted: (v) {
-          setState(() => _packageName = v.trim());
-          _resolvePackage();
-        },
+        onSubmitted: (_) => _resolvePackage(),
         decoration: InputDecoration(
           labelText: tr('package'),
           labelStyle: const TextStyle(fontSize: 11),
@@ -527,10 +500,10 @@ class _LogcatScreenState extends State<LogcatScreen> {
               const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
           border: const OutlineInputBorder(
               borderRadius: BorderRadius.all(Radius.circular(6))),
-          suffixIcon: _packagePid != null
+          suffixIcon: state.packagePid != null
               ? Padding(
                   padding: const EdgeInsets.only(top: 12, right: 4),
-                  child: Text('PID:$_packagePid',
+                  child: Text('PID:${state.packagePid}',
                       style:
                           TextStyle(fontSize: 9, color: Colors.green.shade300)),
                 )
@@ -569,7 +542,6 @@ class _LogcatScreenState extends State<LogcatScreen> {
             onChanged: (v) {
               setState(() {
                 _autoScroll = v ?? true;
-                _autoScrollSuspendedByUser = false;
               });
               if (_autoScroll) {
                 _animateToBottomAfterFrame();
@@ -692,7 +664,10 @@ class _LogcatScreenState extends State<LogcatScreen> {
         );
       },
     );
-    _refreshDisplayedEntries();
+    if (!mounted) return;
+    // Force a rebuild so log rows re-evaluate highlight rules — the
+    // dialog mutates _highlightRules in-place, so setState is enough.
+    setState(() {});
   }
 
   Widget _buildRuleTile(HighlightRule rule, StateSetter setDialogState) {
@@ -735,9 +710,10 @@ class _LogcatScreenState extends State<LogcatScreen> {
     );
   }
 
-  Widget _buildLogList(BuildContext context, List<LogEntry> entries) {
+  Widget _buildLogList(BuildContext context, List<LogEntry> entries, String serial) {
     final theme = Theme.of(context);
-    if (!_isStreaming && entries.isEmpty) {
+    final serial = _selectedSerial ?? '';
+    if (entries.isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -757,20 +733,16 @@ class _LogcatScreenState extends State<LogcatScreen> {
         ),
       );
     }
-    return NotificationListener<ScrollNotification>(
-      onNotification: (n) {
-        if (n is UserScrollNotification ||
-            (n is ScrollUpdateNotification && n.dragDetails != null)) {
-          _onUserScroll();
-        }
-        return false;
-      },
-      child: ListView.builder(
-        controller: _scrollCtrl,
-        itemCount: entries.length,
-        padding: EdgeInsets.zero,
-        itemBuilder: (ctx, i) => _buildLogEntry(context, entries[i]),
-      ),
+    return ListView.builder(
+      controller: _scrollCtrl,
+      // PageStorageKey gives Flutter the signal to retain scroll
+      // position across widget unmount/remount. Combined with the
+      // per-device Provider state, this means switching devices and
+      // coming back finds you exactly where you left off.
+      key: PageStorageKey('logcat:$serial'),
+      itemCount: entries.length,
+      padding: EdgeInsets.zero,
+      itemBuilder: (ctx, i) => _buildLogEntry(context, entries[i]),
     );
   }
 
@@ -806,10 +778,6 @@ class _LogcatScreenState extends State<LogcatScreen> {
     Color? highlightColor,
   ) {
     if (entry.isContinuation) {
-      // Continuation rows share the main row's "no truncation" policy:
-      // long continuation lines (multi-line stack traces etc.) wrap
-      // naturally instead of being ellipsized. crossAxisAlignment: start
-      // keeps the │ leader at the top of multi-line continuations.
       return Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -835,24 +803,6 @@ class _LogcatScreenState extends State<LogcatScreen> {
     }
 
     final prioColor = _prioColor(entry.priority, theme);
-    // Android Studio logcat-style layout:
-    //   time | tag | pid-tid | process | level | message
-    //
-    // Every metadata column is a FIXED-width cell so the message
-    // column starts at the same x position on every row, regardless
-    // of how short the tag / pid / process happens to be. That gives
-    // the eye a clean vertical line down the left edge of message
-    // text — what makes a multi-line logcat readable at a glance.
-    //
-    // - time: padded to 175px to fit "YYYY-MM-DD HH:MM:SS.mmm"
-    //   (adb logcat -v threadtime omits the year, so we add it here).
-    // - tag: 160px; long tags ellipsize. 160 is enough for typical
-    //   "MyClass$1" style tags.
-    // - pid-tid: 11 chars ("12345 67890" via padLeft(5) each), monospace.
-    // - process: 110px reserved, currently empty (we don't have
-    //   process-name data from adb logcat — see LogEntry.process).
-    // - level: 24px badge with priority letter.
-    // - message: no maxLines / ellipsis; wraps naturally like AS does.
     final displayTime = _formatLogTimeWithYear(entry.time);
     final pidTid = '${entry.pid}-${entry.tid}';
     return Row(
@@ -879,12 +829,6 @@ class _LogcatScreenState extends State<LogcatScreen> {
           ),
         ),
         const SizedBox(width: 8),
-        // pid-tid is left-aligned within a fixed 100px cell. We don't
-        // padLeft/padRight the digits — short PIDs ("1-1") and long
-        // PIDs ("19999-99999") both start at x=0 of the cell, with
-        // the level column anchored to x=108 (= 100 + 8 gap) on every
-        // row. The 100px width covers 5-digit PIDs comfortably and
-        // leaves a small buffer for sub-pixel rounding.
         SizedBox(
           width: 100,
           child: Text(
@@ -919,13 +863,6 @@ class _LogcatScreenState extends State<LogcatScreen> {
     );
   }
 
-  // adb logcat -v threadtime emits "MM-DD HH:MM:SS.mmm" with no year.
-  // We prepend the year (and handle the new-year rollover) so the
-  // display matches Android Studio's "YYYY-MM-DD HH:MM:SS.mmm" format.
-  //
-  // Rollover: if the parsed month-day is more than 30 days ahead of
-  // today, the log is from last year (e.g. "12-31" rendered in early
-  // January). Anything closer is treated as this year.
   String _formatLogTimeWithYear(String raw) {
     final m = RegExp(r'^(\d{2})-(\d{2})\s+\d{2}:\d{2}:\d{2}\.\d+$')
         .firstMatch(raw.trim());
@@ -960,14 +897,14 @@ class _LogcatScreenState extends State<LogcatScreen> {
     }
   }
 
-  Widget _buildStatusBar(BuildContext context, List<LogEntry> entries) {
+  Widget _buildStatusBar(BuildContext context, LogcatDeviceState state) {
     final theme = Theme.of(context);
-    final statusStr = _isPaused
+    final statusStr = state.paused
         ? tr('paused')
-        : _isStreaming
+        : state.streaming
             ? tr('streaming')
             : tr('idle');
-    final wsColor = _wsConnected ? Colors.green : Colors.red;
+    final wsColor = state.wsConnected ? Colors.green : Colors.red;
     final activeRules = _highlightRules.where((r) => r.enabled).length;
     return Container(
       height: 28,
@@ -980,7 +917,7 @@ class _LogcatScreenState extends State<LogcatScreen> {
         Text('${tr('status')}: $statusStr',
             style: const TextStyle(fontSize: 11)),
         const SizedBox(width: 16),
-        Text('${tr('lines')}: ${entries.length}',
+        Text('${tr('lines')}: ${state.displayed.length}',
             style: const TextStyle(fontSize: 11)),
         const SizedBox(width: 16),
         Text('${tr('highlightRules')}: $activeRules',
@@ -991,12 +928,14 @@ class _LogcatScreenState extends State<LogcatScreen> {
           height: 8,
           decoration: BoxDecoration(shape: BoxShape.circle, color: wsColor),
         ),
-        if (_packagePid != null) ...[
+        if (state.packagePid != null) ...[
           const Spacer(),
-          Text('${tr('pid')}: $_packagePid',
+          Text('${tr('pid')}: ${state.packagePid}',
               style: TextStyle(fontSize: 11, color: theme.colorScheme.primary)),
         ],
       ]),
     );
   }
 }
+
+// (no extension needed — the flush timer is owned by State)

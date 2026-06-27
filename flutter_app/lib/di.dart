@@ -33,6 +33,7 @@ import 'providers/emulator_engine_provider.dart';
 import 'providers/emulator_java_provider.dart';
 import 'providers/emulator_image_provider.dart';
 import 'providers/emulator_instance_provider.dart';
+import 'providers/logcat_state_provider.dart';
 import 'services/api_client.dart';
 import 'services/log_stream.dart';
 
@@ -108,6 +109,11 @@ Future<void> setupDependencies() async {
   getIt.registerSingleton<EmulatorInstanceProvider>(
     EmulatorInstanceProvider(api: getIt<ApiClient>()),
   );
+
+  // LogcatStateProvider needs LogStreamService (must be registered first).
+  getIt.registerSingleton<LogcatStateProvider>(
+    LogcatStateProvider(getIt<LogStreamService>()),
+  );
 }
 
 /// Build the Provider list from registered singletons.
@@ -130,6 +136,7 @@ List<SingleChildWidget> get dependencyProviders => [
       ChangeNotifierProvider<EmulatorJavaProvider>.value(value: getIt<EmulatorJavaProvider>()),
       ChangeNotifierProvider<EmulatorImageProvider>.value(value: getIt<EmulatorImageProvider>()),
       ChangeNotifierProvider<EmulatorInstanceProvider>.value(value: getIt<EmulatorInstanceProvider>()),
+      ChangeNotifierProvider<LogcatStateProvider>.value(value: getIt<LogcatStateProvider>()),
     ];
 
 /// Dispose all singletons. Call only in integration tests.
