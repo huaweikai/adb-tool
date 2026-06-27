@@ -5,7 +5,8 @@ import 'package:provider/provider.dart';
 import '../db/database.dart';
 import '../services/api_client.dart';
 import '../providers/theme_provider.dart';
-import '../providers/device_provider.dart' show DeviceSerialScope, DeviceScreenActiveScope, DeviceProvider;
+import '../providers/device_provider.dart'
+    show DeviceSerialScope, DeviceScreenActiveScope, DeviceProvider;
 import '../providers/locale_provider.dart';
 import '../providers/test_config_provider.dart';
 import '../providers/test_session_provider.dart';
@@ -309,7 +310,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
 
     // Find the NavItem
-    final navItem = NavItem.values.where((item) => item.name == itemName).firstOrNull;
+    final navItem =
+        NavItem.values.where((item) => item.name == itemName).firstOrNull;
     if (navItem == null) return;
 
     // Expand the device in sidebar
@@ -362,6 +364,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       return _buildWelcome();
     }
 
+    final entries = _screens.entries.toList();
+    final activeIndex = entries.indexWhere((entry) => entry.key == _activeKey);
+    if (activeIndex < 0) {
+      return _buildWelcome();
+    }
+
     final screen = _screens[_activeKey]!;
     final serial = screen.serial;
     final dp = context.read<DeviceProvider>();
@@ -369,15 +377,25 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     return Stack(
       children: [
-        // Normal page content
-        Offstage(
-          offstage: false,
-          child: Provider<DeviceScreenActiveScope>.value(
-            value: DeviceScreenActiveScope(true),
-            child: SizedBox.expand(child: screen),
-          ),
+        IndexedStack(
+          index: activeIndex,
+          children: entries.map((entry) {
+            final active = entry.key == _activeKey;
+            return TickerMode(
+              enabled: active,
+              child: IgnorePointer(
+                ignoring: !active,
+                child: ExcludeSemantics(
+                  excluding: !active,
+                  child: Provider<DeviceScreenActiveScope>.value(
+                    value: DeviceScreenActiveScope(active),
+                    child: SizedBox.expand(child: entry.value),
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
         ),
-        // Disconnected banner overlay at top
         if (isDisconnected)
           Positioned(
             top: 0,
@@ -392,7 +410,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               onRemove: () => _removeDevice(serial),
             ),
           ),
-        // Global recording FAB overlay
         RecordingOverlay(
           db: context.read<AppDatabase>(),
           sessionProvider: context.read<TestSessionProvider>(),
@@ -425,21 +442,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   void _removeDevice(String serial) async {
-    // Stop any running session on this device before removing.
-    // The DB recording state was already cleared by updateDeviceConnection(false).
-    // Just finish the session so the row status flips to finished.
+    final sessionProvider = context.read<TestSessionProvider>();
+    final deviceProvider = context.read<DeviceProvider>();
     try {
-      final sessionProvider = context.read<TestSessionProvider>();
       if (sessionProvider.hasRunningSession) {
         await sessionProvider.finishSession();
       }
     } catch (_) {}
-    await context.read<DeviceProvider>().removeDevice(serial);
+    await deviceProvider.removeDevice(serial);
+    if (!mounted) return;
     setState(() {
       _screens.removeWhere((_, screen) => screen.serial == serial);
       _expandedSerials.remove(serial);
-      if (_activeKey != null &&
-          !_screens.containsKey(_activeKey)) {
+      if (_activeKey != null && !_screens.containsKey(_activeKey)) {
         _activeKey = null;
       }
     });
@@ -647,7 +662,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           onPressed: () => deviceProvider.refresh(api),
           child: Text(tr('refresh'),
               style: TextStyle(
-                    fontSize: 12, color: theme.colorScheme.onErrorContainer)),
+                  fontSize: 12, color: theme.colorScheme.onErrorContainer)),
         ),
       ],
     );
@@ -790,7 +805,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ),
               if (extraBadge != null) ...[
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(
                     // Amber so it pops against the primary-tinted 'Android'
                     // chip and reads as "in-progress" rather than "stable".
@@ -858,7 +874,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildDeviceNode(BuildContext context, SavedDevice d, ThemeData theme) {
+  Widget _buildDeviceNode(
+      BuildContext context, SavedDevice d, ThemeData theme) {
     final isExpanded = _expandedSerials.contains(d.serial);
     final hasActiveScreen =
         _screens.keys.any((k) => k.startsWith('${d.serial}_'));
@@ -896,8 +913,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     child: Text(
                       d.displayName,
                       style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500),
+                          fontSize: 12, fontWeight: FontWeight.w500),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
@@ -906,8 +922,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         ? '...${d.serial.substring(d.serial.length - 8)}'
                         : d.serial,
                     style: TextStyle(
-                        fontSize: 9,
-                        color: theme.colorScheme.onSurfaceVariant),
+                        fontSize: 9, color: theme.colorScheme.onSurfaceVariant),
                   ),
                   if (!isConnected)
                     Padding(
