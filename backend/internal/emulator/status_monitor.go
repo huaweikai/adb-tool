@@ -121,33 +121,66 @@ func (sm *StatusMonitor) pollStatus() {
 func (sm *StatusMonitor) checkAndBroadcastStatus() {
 	instances := sm.instanceManager.List()
 
+	// Fix (code-review B4): previously this ran `writeJSON(conn, …)` under
+	// RLock AND called `go sm.Unregister(conn)` on error (which needs the
+	// write Lock). Two problems:
+	//   1. RLocker + Write-want = lock-up; also gorilla/websocket will panic
+	//      on concurrent writes from the same connection.
+	//   2. A successful write to one connection that just got unregistered
+	//      by another goroutine would race against the Unregister.
+	//
+	// New shape: snapshot (conn, watchMap) pairs under the lock, then drop
+	// the lock before doing I/O. Collect dead conns into a set and unregister
+	// them in one shot after the broadcast loop.
+	type watchPair struct {
+		conn     *websocket.Conn
+		watchMap map[string]bool
+	}
+	snapshot := make([]watchPair, 0, len(sm.clients))
+
 	sm.mu.RLock()
-	// Check each client's watched instances
 	for conn, watchMap := range sm.clients {
+		// Copy the map so the iteration is safe if the client unregisters
+		// mid-broadcast (Register/Unregister mutate the map).
+		cp := make(map[string]bool, len(watchMap))
+		for k, v := range watchMap {
+			cp[k] = v
+		}
+		snapshot = append(snapshot, watchPair{conn: conn, watchMap: cp})
+	}
+	sm.mu.RUnlock()
+
+	dead := make(map[*websocket.Conn]struct{})
+	now := time.Now()
+	for _, wp := range snapshot {
 		for _, inst := range instances {
-			if watchMap[inst.ID] || watchMap["*"] { // "*" means watch all
-				update := StatusUpdate{
-					Type:         "status",
-					InstanceID:   inst.ID,
-					Status:       inst.Status,
-					Timestamp:    time.Now(),
-					BootStage:    inst.BootStage,
-					BootProgress: inst.BootProgress,
-					BootMessage:  inst.BootMessage,
-					Data: map[string]interface{}{
-						"pid":       inst.PID,
-						"serial":    inst.Serial,
-						"lastStart": inst.LastStartedAt,
-					},
-				}
-				if err := sm.writeJSON(conn, update); err != nil {
-					// Connection error, will be cleaned up
-					go sm.Unregister(conn)
-				}
+			if !wp.watchMap[inst.ID] && !wp.watchMap["*"] {
+				continue // "*" means watch all
+			}
+			update := StatusUpdate{
+				Type:         "status",
+				InstanceID:   inst.ID,
+				Status:       inst.Status,
+				Timestamp:    now,
+				BootStage:    inst.BootStage,
+				BootProgress: inst.BootProgress,
+				BootMessage:  inst.BootMessage,
+				Data: map[string]interface{}{
+					"pid":       inst.PID,
+					"serial":    inst.Serial,
+					"lastStart": inst.LastStartedAt,
+				},
+			}
+			if err := sm.writeJSON(wp.conn, update); err != nil {
+				dead[wp.conn] = struct{}{}
+				break // no point trying the same dead conn for more instances
 			}
 		}
 	}
-	sm.mu.RUnlock()
+
+	for conn := range dead {
+		sm.Unregister(conn)
+	}
 }
 
 // writeJSON writes a JSON message to the WebSocket.

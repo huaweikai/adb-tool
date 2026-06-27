@@ -9,8 +9,9 @@ mixin EmulatorJavaApi on ApiBase {
   /// Get current Java runtime status.
   Future<JavaRuntimeStatus> getJavaStatus() async {
     final response = await dio.get('/api/emulator/java/status');
-    final data = responseMap(response);
-    return JavaRuntimeStatus.fromJson(data);
+    // Fix (code-review B10): envelope guard, same as EmulatorApi.
+    if (!isOk(response)) throw Exception(errorMessage(response));
+    return JavaRuntimeStatus.fromJson(responseMap(response));
   }
 
   /// Validate a specific Java path.
@@ -19,15 +20,15 @@ mixin EmulatorJavaApi on ApiBase {
       '/api/emulator/java/validate',
       data: {'javaPath': javaPath},
     );
-    final data = responseMap(response);
-    return JavaValidationResult.fromJson(data);
+    if (!isOk(response)) throw Exception(errorMessage(response));
+    return JavaValidationResult.fromJson(responseMap(response));
   }
 
   /// List all detected Java runtimes plus the persisted selection.
   Future<JavaRuntimeList> listJavaRuntimes() async {
     final response = await dio.get('/api/emulator/java/list');
-    final data = responseMap(response);
-    return JavaRuntimeList.fromJson(data);
+    if (!isOk(response)) throw Exception(errorMessage(response));
+    return JavaRuntimeList.fromJson(responseMap(response));
   }
 
   /// Persist the user-selected Java runtime.
@@ -36,8 +37,8 @@ mixin EmulatorJavaApi on ApiBase {
       '/api/emulator/java/select',
       data: {'javaPath': javaPath},
     );
-    final data = responseMap(response);
-    return JavaSelectionResult.fromJson(data);
+    if (!isOk(response)) throw Exception(errorMessage(response));
+    return JavaSelectionResult.fromJson(responseMap(response));
   }
 
   /// Start downloading a Java runtime.
@@ -63,8 +64,8 @@ mixin EmulatorJavaApi on ApiBase {
         if (name != null) 'name': name,
       },
     );
-    final data = responseMap(response);
-    return JavaDownloadResult.fromJson(data);
+    if (!isOk(response)) throw Exception(errorMessage(response));
+    return JavaDownloadResult.fromJson(responseMap(response));
   }
 
   /// Import a Java runtime from a local `.zip` archive. [localPath] is
@@ -103,7 +104,8 @@ mixin EmulatorJavaApi on ApiBase {
   /// Delete a managed (downloaded / imported) Java runtime by id.
   /// Has no effect on system Java or other detected runtimes.
   Future<void> deleteJava(String id) async {
-    await dio.post('/api/emulator/java/delete', data: {'id': id});
+    final response = await dio.post('/api/emulator/java/delete', data: {'id': id});
+    if (!isOk(response)) throw Exception(errorMessage(response));
   }
 
   /// Get download progress.
@@ -118,16 +120,17 @@ mixin EmulatorJavaApi on ApiBase {
       '/api/emulator/download/progress',
       queryParameters: {'id': id},
     );
-    final data = responseMap(response);
-    return JavaDownloadProgress.fromJson(data);
+    if (!isOk(response)) throw Exception(errorMessage(response));
+    return JavaDownloadProgress.fromJson(responseMap(response));
   }
 
   /// Cancel a download.
   Future<void> cancelDownload(String id) async {
-    await dio.post(
+    final response = await dio.post(
       '/api/emulator/download/cancel',
       queryParameters: {'id': id},
     );
+    if (!isOk(response)) throw Exception(errorMessage(response));
   }
 }
 

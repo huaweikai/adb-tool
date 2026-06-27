@@ -5,6 +5,11 @@ mixin EmulatorImageApi on ApiBase {
   /// Get list of system images.
   Future<List<SystemImage>> getImages() async {
     final response = await dio.get('/api/emulator/images');
+    // Fix (code-review B10): same envelope-validation pattern as
+    // device_api.dart. Without this, a failed request returns an empty
+    // list (because `images` is missing) and the user sees a misleading
+    // "no system images" state instead of the real backend error.
+    if (!isOk(response)) throw Exception(errorMessage(response));
     final data = responseMap(response);
     final images = (data['images'] as List<dynamic>?)
             ?.map((e) => SystemImage.fromJson(e as Map<String, dynamic>))
@@ -19,6 +24,7 @@ mixin EmulatorImageApi on ApiBase {
       '/api/emulator/image/get',
       queryParameters: {'id': id},
     );
+    if (!isOk(response)) return null;
     final data = responseMap(response);
     if (data['id'] == null) return null;
     return SystemImage.fromJson(data);
@@ -46,8 +52,8 @@ mixin EmulatorImageApi on ApiBase {
         if (variant != null) 'variant': variant,
       },
     );
-    final data = responseMap(response);
-    return ImageDownloadResult.fromJson(data);
+    if (!isOk(response)) throw Exception(errorMessage(response));
+    return ImageDownloadResult.fromJson(responseMap(response));
   }
 
   /// Import a system image from a server-side local path.
@@ -63,8 +69,8 @@ mixin EmulatorImageApi on ApiBase {
       '/api/emulator/image/import-path',
       data: {'path': path},
     );
-    final data = responseMap(response);
-    return _parseImportedImages(data);
+    if (!isOk(response)) throw Exception(errorMessage(response));
+    return _parseImportedImages(responseMap(response));
   }
 
   /// Import a system image from a local `.zip` file via multipart upload.
@@ -103,13 +109,14 @@ mixin EmulatorImageApi on ApiBase {
       '/api/emulator/image/scan',
       data: {'path': path},
     );
-    final data = responseMap(response);
-    return (data['found'] as num?)?.toInt() ?? 0;
+    if (!isOk(response)) throw Exception(errorMessage(response));
+    return (responseMap(response)['found'] as num?)?.toInt() ?? 0;
   }
 
   /// Get the persisted image-source address book.
   Future<List<ImageSource>> getImageSources() async {
     final response = await dio.get('/api/emulator/image/sources');
+    if (!isOk(response)) throw Exception(errorMessage(response));
     final data = responseMap(response);
     return (data['sources'] as List<dynamic>?)
             ?.map((e) => ImageSource.fromJson(e as Map<String, dynamic>))
@@ -138,6 +145,7 @@ mixin EmulatorImageApi on ApiBase {
         if (sha256 != null) 'sha256': sha256,
       },
     );
+    if (!isOk(response)) throw Exception(errorMessage(response));
     final data = responseMap(response);
     return (data['sources'] as List<dynamic>?)
             ?.map((e) => ImageSource.fromJson(e as Map<String, dynamic>))
@@ -151,6 +159,7 @@ mixin EmulatorImageApi on ApiBase {
       '/api/emulator/image/source/remove',
       data: {'url': url},
     );
+    if (!isOk(response)) throw Exception(errorMessage(response));
     final data = responseMap(response);
     return (data['sources'] as List<dynamic>?)
             ?.map((e) => ImageSource.fromJson(e as Map<String, dynamic>))

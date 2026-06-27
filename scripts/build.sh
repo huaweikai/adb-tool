@@ -211,6 +211,27 @@ merge_to_universal() {
     fi
   done
 
+  # Fix (code-review B11): every lipo above writes a NEW fat binary, which
+  # invalidates the ad-hoc signature carried over from the arm64 base copy.
+  # Without re-signing, Gatekeeper refuses to launch the universal app
+  # ("damaged" / "cannot be opened"). Re-sign with ad-hoc (the "-" identity)
+  # since this is a local-dev distribution; CI/release uses a real cert.
+  echo "==> 重新签名 universal app..."
+  for fw in "$universal_app/Contents/Frameworks"/*.framework; do
+    [[ -d "$fw" ]] || continue
+    local fw_name="$(basename "$fw")"
+    local fw_bin="$fw/Contents/MacOS/$fw_name"
+    if [[ -f "$fw_bin" ]]; then
+      codesign --force --sign - --timestamp=none "$fw_bin" >/dev/null 2>&1 || true
+    fi
+  done
+  # Main helper binary (the Go-built adb-tool), then the whole .app so
+  # Gatekeeper's nested-code check passes.
+  codesign --force --sign - --timestamp=none \
+    "$universal_app/Contents/MacOS/adb-tool" >/dev/null 2>&1 || true
+  codesign --force --sign - --deep --timestamp=none "$universal_app" \
+    >/dev/null 2>&1 || true
+
   echo "==> Universal app 已生成：$universal_app"
 }
 

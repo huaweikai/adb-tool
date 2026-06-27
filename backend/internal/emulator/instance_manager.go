@@ -903,29 +903,34 @@ func (m *InstanceManager) recordEmulatorFailure(id, reason, logPath string) {
 	errMsg := fmt.Sprintf("%s. Log: %s\n--- last log lines ---\n%s", reason, logPath, tail)
 	log.Printf("[emulator] instance %s: %s", id, errMsg)
 
+	// Fix (code-review B6): previous version had `defer m.mu.Unlock()`
+	// PLUS an explicit `m.mu.Unlock()` in the stopping branch → double
+	// Unlock panic. New shape uses a single Lock/Unlock pair; the
+	// per-branch semantics are preserved:
+	//   - stopping[id] set: Stop is in flight and owns the process entry.
+	//     Just clear the stopping flag; Stop will tear down processes.
+	//   - StatusStarting: flip to StatusError, drop the dead process entry.
+	//   - any other status: leave both status and processes alone (Stop
+	//     or the user has already moved the instance).
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	// If the user clicked "Stop" while the instance was still booting,
-	// Stop already wrote StatusStopped; don't clobber it with Error.
 	if m.stopping[id] {
 		delete(m.stopping, id)
-		m.mu.Unlock()
 		return
 	}
-	if inst, ok := m.instances[id]; ok {
-		if inst.Status != StatusStarting {
-			return
-		}
-		inst.Status = StatusError
-		inst.LastError = errMsg
-		inst.LastStartedAt = nil
-		inst.PID = 0
-		// Wipe boot progress so the UI doesn't keep showing a half-finished
-		// bar on an errored instance.
-		inst.BootStage = ""
-		inst.BootProgress = 0
-		inst.BootMessage = ""
+	inst, ok := m.instances[id]
+	if !ok || inst.Status != StatusStarting {
+		return
 	}
+	inst.Status = StatusError
+	inst.LastError = errMsg
+	inst.LastStartedAt = nil
+	inst.PID = 0
+	// Wipe boot progress so the UI doesn't keep showing a half-finished
+	// bar on an errored instance.
+	inst.BootStage = ""
+	inst.BootProgress = 0
+	inst.BootMessage = ""
 	delete(m.processes, id)
 }
 

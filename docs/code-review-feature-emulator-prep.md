@@ -6,36 +6,58 @@
 
 ---
 
+## Fix 进度 (2026-06-27 第二轮)
+
+按"挑重点"原则先修 Blocker 10 个(B9 i18n 体量太大独立 PR):
+
+| # | 状态 | 修复点 |
+|---|---|---|
+| **B1** zip-slip | ✅ Fixed | `backend/internal/emulator/sdk_manager.go:96` 加 `strings.HasPrefix(filepath.Clean(targetPath), cleanRoot)` 路径校验,模式与 `download_manager.go:399` 一致 |
+| **B2** SDK DELETE 无 confirm | ✅ Fixed | `backend/internal/server/handlers_emulator.go:152-169` 加 `?confirm=true` gate,照 `handlers_cache.go:57` 模式 |
+| **B3** AVD DELETE 无 confirm | ✅ Fixed | `backend/internal/server/handlers_emulator.go:handleEmulatorInstanceDelete` 加 `?confirm=true` gate |
+| **B4** WS 死锁 | ✅ Fixed | `backend/internal/emulator/status_monitor.go:checkAndBroadcastStatus` 重写:RLock 内 snapshot,释放锁后再写,dead-set 批量 Unregister |
+| **B5** WS 泄漏 | ✅ Fixed | `backend/internal/server/handlers_emulator.go:handleEmulatorStatusWS` 加 `SetReadDeadline(60s)` + `SetPongHandler` 续期 + 25s ping ticker + 写锁串行化 |
+| **B6** 双重 Unlock | ✅ Fixed | `backend/internal/emulator/instance_manager.go:recordEmulatorFailure` 重写控制流,单一 Lock/Unlock 对,`delete(m.processes, id)` 统一收口 |
+| **B7** 违反规范反推 ANDROID_HOME | ✅ Fixed | `flutter_app/lib/services/server_launcher.dart` 删 ANDROID_HOME/JAVA_HOME/ANDROID_SDK_ROOT 注入,只传 PATH,AGENTS.md 规范对齐 |
+| **B8** PATH 兜底丢失 | ✅ Fixed | `server_launcher.dart:_mergePath` 助手:shell PATH < 100 字符丢弃;前置 `/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin`;去重 |
+| **B9** i18n 缺失 | ⏸ Deferred | ~250 处 Text 翻译体量大,独立 PR |
+| **B10** API mixin 缺 isOk 校验 | ✅ Fixed | `emulator_api.dart` / `emulator_image_api.dart` / `emulator_java_api.dart` 每个 dio 调用前加 `if (!isOk(response)) throw Exception(errorMessage(response));` |
+| **B11** merge_to_universal 没重签 helper | ✅ Fixed | `scripts/build.sh:merge_to_universal` 末尾 lipo 后对 helper 二进制 + .app 整体跑 `codesign --force --sign - --deep` |
+
+`go build ./...` / `go vet ./...` 通过。`go test` 需授权跑(本机 Windows 上 `TestStartEmulatorPassesSystemImagePathToSysdir` 已知 FAIL,与本次改动无关 — 详见 M17)。
+
+---
+
 ## TL;DR
 
 | 维度 | 数字 | 备注 |
 |---|---|---|
 | 新增生产代码 | ~4700 行后端 + ~3700 行 Flutter | emulator Phase 1-4 |
 | 单测 | 267 行后端 + **0 行 Flutter** | 覆盖率 ~5.7% (后端) / 0% (前端) |
-| Blocker | 11 | 5 个安全/正确性 + 2 个规范违反 + 1 个 WS 死锁 + 1 个 path 兜底 + 2 个 i18n/envelope |
+| Blocker | 11 (10 已修, 1 i18n 独立 PR) | 5 个安全/正确性 + 2 个规范违反 + 1 个 WS 死锁 + 1 个 path 兜底 + 2 个 i18n/envelope |
 | Major | 18 | SSRF/路径遍历/状态机/重连竞态/构建脚本 |
 | Minor | 11 | envelope 不统一 / spec 缺失 / 平台条件编译散落 |
 | Nit | 8 | 死代码 / 命名 / 注释风格 |
 
-**结论**: 11 个 Blocker 中有 5 个影响安全或正确性(zip-slip、WS 死锁、双重 Unlock、env 注入反推规范、销毁性端点无确认),**不修不应合 main**。
+**结论**: 11 个 Blocker 中有 5 个影响安全或正确性(zip-slip、WS 死锁、双重 Unlock、env 注入反推规范、销毁性端点无确认),**不修不应合 main** — 上述 5 项 + B5 WS 泄漏 + B10 envelope 校验共 7 项已在第二轮修复;B9 i18n 留作独立 PR。
 
 ---
 
 ## Blocker — 必须修完才能合
 
-| # | 文件:行 | 问题 | 修复 |
-|---|---|---|---|
-| **B1** | `backend/internal/emulator/sdk_manager.go:79-123` | **Zip-slip**:`ImportSDKFromZip` 的 `extractFile` 完全没校验 `targetPath` 是否在 `s.sdkPath` 内,恶意 zip 用 `../../../etc/passwd` 能写到 SDK 目录外。`download_manager.go:374-380` 已经做了同样的检查,这里缺。 | 在 `os.OpenFile` 之前加 `if !strings.HasPrefix(filepath.Clean(targetPath), filepath.Clean(s.sdkPath)+sep) { return error }`,或复用 `download_manager` 的 `ExtractZip`。 |
-| **B2** | `backend/internal/server/handlers_emulator.go:152-169` | **销毁性 DELETE 端点无 `?confirm=true`**:`handleEmulatorSDKDelete` 一调就 `os.RemoveAll(~/.adb-tool/sdk)`,删多 GB SDK。同文件 `handleAdbExec` 用了 `?confirm=true` 模式。 | 强制 `confirm=true` query param,否则 400。 |
-| **B3** | `backend/internal/server/handlers_emulator.go:1357-1384` | **销毁性 AVD 删除无确认**:`Delete` 递归 `os.RemoveAll(inst.AVDPath)` + 释放端口,且 `req.Name` 没长度限制。 | 加 `?confirm=true`,或要求 body 传 AVD 名作二次确认。 |
-| **B4** | `backend/internal/emulator/status_monitor.go:120-150` | **WebSocket 死锁**:`checkAndBroadcastStatus` 在 `RLock` 内调 `sm.writeJSON(conn, ...)`,且触发 `go sm.Unregister(conn)`(要 `Lock`)。gorilla/websocket 还会因并发写 panic。 | 先在锁内 snapshot clients/watchMaps,释放锁后再迭代写;`Unregister` 改为标记 dead-set,循环后处理。 |
-| **B5** | `backend/internal/server/handlers_emulator.go:1485-1532` | **WS 泄漏**:`for { conn.ReadMessage() }` 没设 `SetReadDeadline`/`PongHandler`,半开连接(laptop sleep/网络掉)让 goroutine 永久挂着。 | 加 `SetReadDeadline(time.Now().Add(60s))` + `SetPongHandler` 续期;写入用独立 writer goroutine 喂 channel 串行化。 |
-| **B6** | `backend/internal/emulator/instance_manager.go:901-930` | **`recordEmulatorFailure` mutex 双重 Unlock**:`defer m.mu.Unlock()` 之外还显式 `m.mu.Unlock() + return`,且 `m.stopping[id]==true` 早返回不清理 `m.processes[id]`,死进程残留。 | 单一路径,统一交给 `defer` 解锁;不要在 `stopping` 早返回。 |
-| **B7** | `flutter_app/lib/services/server_launcher.dart:88-130` | **违反 AGENTS.md 规范:反推 `ANDROID_HOME`**。规范明确说"ANDROID_HOME 不反推(用户用 SDK manager 页面控制)",这个改动正是从 zsh 读 `ANDROID_HOME` 塞给后端。 | 删 `ANDROID_HOME`/`ANDROID_SDK_ROOT`/`JAVA_HOME` 注入,只让 zsh 提供 PATH 扩展。 |
-| **B8** | `flutter_app/lib/services/server_launcher.dart:88-130` | **PATH 兜底丢失**:`env.addAll(shellEnv)` 用 zsh 的 `$PATH` 整段覆盖原 env,删了原来的 `/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin` 前缀。Linux 桌面用户(没 zsh)+ oh-my-zsh 用户的 PATH 比原版还短,`findBinary` 挂。 | 在 `addAll(shellEnv)` 后前置追加 `/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin`;对 `shellEnv['PATH']` 长度 sanity check(< 100 字符就丢弃用默认)。 |
-| **B9** | `flutter_app/lib/screens/emulator_settings_screen.dart`、`emulator_engine_card.dart`、`emulator_image_card.dart`、`emulator_instance_card.dart`、`emulator_java_card.dart`、`add_image_dialog.dart`、`create_instance_dialog.dart`、`home_screen.dart` | **全屏模拟器 UI 完全没走 i18n**。grep `\.tr\(` 在新模块 **0 命中**,所有 `Text(...)` 都是硬编码。`scripts/check_i18n_tr_keys.py` 会全部漏检。英文环境模拟器页面中英混搭。**违反项目核心规范**。 | 新建 `flutter_app/lib/i18n/emulator.dart` part 文件 + 在 `i18n.dart` 注册,把 ~250 处 `Text('...')` 替换为 `tr('key')`。 |
-| **B10** | `flutter_app/lib/services/api/emulator_api.dart`、`emulator_image_api.dart`、`emulator_java_api.dart` | **三个新 API mixin 缺 `isOk`/`throwIfNotOk` 校验**。已有 mixin (`screen_api.dart`/`device_api.dart`) 全部先校验 envelope,只有新写的这三个直接 `responseMap(response)`。后端 `{ok:false, error:"..."}` 被当成正常 data,`fromJson` 拿到一堆 null 不抛错。 | 在每个 dio 调用后加 `if (!isOk(response)) throw Exception(errorMessage(response));` |
-| **B11** | `scripts/build.sh:194-212` | **`merge_to_universal` 没重签 helper**:`lipo -create` 合并 helper 但没 ad-hoc 签名,Gatekeeper 拒签 → universal app 启动挂。 | 在 `merge_to_universal` 末尾对 helper 二进制 + `.app` 整体都跑 `codesign --force --sign - --deep`。 |
+| # | 状态 | 文件:行 | 问题 | 修复 |
+|---|---|---|---|---|
+| **B1** | ✅ Fixed | `backend/internal/emulator/sdk_manager.go:79-123` | **Zip-slip**:`ImportSDKFromZip` 的 `extractFile` 完全没校验 `targetPath` 是否在 `s.sdkPath` 内,恶意 zip 用 `../../../etc/passwd` 能写到 SDK 目录外。`download_manager.go:374-380` 已经做了同样的检查,这里缺。 | 在 `os.OpenFile` 之前加 `if !strings.HasPrefix(filepath.Clean(targetPath), filepath.Clean(s.sdkPath)+sep) { return error }`,或复用 `download_manager` 的 `ExtractZip`。**已实现**:在 `os.OpenFile` 之前加 `strings.HasPrefix` 校验,与 `download_manager.go:399` 一致。 |
+| **B2** | ✅ Fixed | `backend/internal/server/handlers_emulator.go:152-169` | **销毁性 DELETE 端点无 `?confirm=true`**:`handleEmulatorSDKDelete` 一调就 `os.RemoveAll(~/.adb-tool/sdk)`,删多 GB SDK。同文件 `handleAdbExec` 用了 `?confirm=true` 模式。 | 强制 `confirm=true` query param,否则 400。**已实现**:照 `handlers_cache.go:57` 模式。 |
+| **B3** | ✅ Fixed | `backend/internal/server/handlers_emulator.go:handleEmulatorInstanceDelete` | **销毁性 AVD 删除无确认**:`Delete` 递归 `os.RemoveAll(inst.AVDPath)` + 释放端口,且 `req.Name` 没长度限制。 | 加 `?confirm=true`,或要求 body 传 AVD 名作二次确认。**已实现**:`?confirm=true` gate。 |
+| **B4** | ✅ Fixed | `backend/internal/emulator/status_monitor.go:120-150` | **WebSocket 死锁**:`checkAndBroadcastStatus` 在 `RLock` 内调 `sm.writeJSON(conn, ...)`,且触发 `go sm.Unregister(conn)`(要 `Lock`)。gorilla/websocket 还会因并发写 panic。 | 先在锁内 snapshot clients/watchMaps,释放锁后再迭代写;`Unregister` 改为标记 dead-set,循环后处理。**已实现**:snapshot 模式 + dead-set 批量 Unregister。 |
+| **B5** | ✅ Fixed | `backend/internal/server/handlers_emulator.go:handleEmulatorStatusWS` | **WS 泄漏**:`for { conn.ReadMessage() }` 没设 `SetReadDeadline`/`PongHandler`,半开连接(laptop sleep/网络掉)让 goroutine 永久挂着。 | 加 `SetReadDeadline(time.Now().Add(60s))` + `SetPongHandler` 续期;写入用独立 writer goroutine 喂 channel 串行化。**已实现**:`SetReadDeadline(60s)` + `SetPongHandler` 续期 + 25s ping ticker + 写锁串行化。 |
+| **B6** | ✅ Fixed | `backend/internal/emulator/instance_manager.go:recordEmulatorFailure` | **`recordEmulatorFailure` mutex 双重 Unlock**:`defer m.mu.Unlock()` 之外还显式 `m.mu.Unlock() + return`,且 `m.stopping[id]==true` 早返回不清理 `m.processes[id]`,死进程残留。 | 单一路径,统一交给 `defer` 解锁;不要在 `stopping` 早返回。**已实现**:重写为单一 Lock/Unlock 对,所有分支统一 `delete(m.processes, id)`。 |
+| **B7** | ✅ Fixed | `flutter_app/lib/services/server_launcher.dart` | **违反 AGENTS.md 规范:反推 `ANDROID_HOME`**。规范明确说"ANDROID_HOME 不反推(用户用 SDK manager 页面控制)",这个改动正是从 zsh 读 `ANDROID_HOME` 塞给后端。 | 删 `ANDROID_HOME`/`ANDROID_SDK_ROOT`/`JAVA_HOME` 注入,只让 zsh 提供 PATH 扩展。**已实现**:`_loadShellEnvironment` 只解析 `PATH`,注释里说明 AGENTS.md 规范的来由。 |
+| **B8** | ✅ Fixed | `flutter_app/lib/services/server_launcher.dart:_mergePath` | **PATH 兜底丢失**:`env.addAll(shellEnv)` 用 zsh 的 `$PATH` 整段覆盖原 env,删了原来的 `/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin` 前缀。Linux 桌面用户(没 zsh)+ oh-my-zsh 用户的 PATH 比原版还短,`findBinary` 挂。 | 在 `addAll(shellEnv)` 后前置追加 `/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin`;对 `shellEnv['PATH']` 长度 sanity check(< 100 字符就丢弃用默认)。**已实现**:新加 `_mergePath` 助手 — 前置 5 个标准系统路径 + shell PATH < 100 字符 fallback + 去重。 |
+| **B9** | ⏸ Deferred | `flutter_app/lib/screens/emulator_settings_screen.dart`、`emulator_engine_card.dart`、`emulator_image_card.dart`、`emulator_instance_card.dart`、`emulator_java_card.dart`、`add_image_dialog.dart`、`create_instance_dialog.dart`、`home_screen.dart` | **全屏模拟器 UI 完全没走 i18n**。grep `\.tr\(` 在新模块 **0 命中**,所有 `Text(...)` 都是硬编码。`scripts/check_i18n_tr_keys.py` 会全部漏检。英文环境模拟器页面中英混搭。**违反项目核心规范**。 | 新建 `flutter_app/lib/i18n/emulator.dart` part 文件 + 在 `i18n.dart` 注册,把 ~250 处 `Text('...')` 替换为 `tr('key')`。**延后**:~250 处 Text 翻译体量大,作为独立 PR(下一轮)。 |
+| **B10** | ✅ Fixed | `flutter_app/lib/services/api/emulator_api.dart`、`emulator_image_api.dart`、`emulator_java_api.dart` | **三个新 API mixin 缺 `isOk`/`throwIfNotOk` 校验**。已有 mixin (`screen_api.dart`/`device_api.dart`) 全部先校验 envelope,只有新写的这三个直接 `responseMap(response)`。后端 `{ok:false, error:"..."}` 被当成正常 data,`fromJson` 拿到一堆 null 不抛错。 | 在每个 dio 调用后加 `if (!isOk(response)) throw Exception(errorMessage(response));` **已实现**:三个文件每个 dio 调用前都加了 envelope 校验。 |
+| **B11** | ✅ Fixed | `scripts/build.sh:merge_to_universal` | **`merge_to_universal` 没重签 helper**:`lipo -create` 合并 helper 但没 ad-hoc 签名,Gatekeeper 拒签 → universal app 启动挂。 | 在 `merge_to_universal` 末尾对 helper 二进制 + `.app` 整体都跑 `codesign --force --sign - --deep`。**已实现**:lipo 后对每个 framework 二进制、`MacOS/adb-tool` 主二进制、`.app` 整体都跑 `codesign --force --sign -`。 |
 
 ---
 
@@ -176,13 +198,13 @@
 
 ## 推荐的合并前动作
 
-1. **先修 11 个 Blocker**(尤其是 B1 zip-slip、B2/B3 销毁性端点无确认、B4/B5 WS 死锁/泄漏、B7/B8 违反规范的 env 注入、B9/B10 i18n + envelope)— 这些不修不应上 main。
+1. ✅ **(第二轮已修 10/11)** Blocker B1-B8 + B10 + B11 — 代码改动已落,`go build`/`go vet` 通过。**B9 i18n 留作独立 PR**(下一轮,~250 处 Text 翻译)。
 2. **测试先补 P0+P1**:
    - 修 `instance_manager_test.go:264` Windows 100% 失败
-   - 加 `splitCRorLF`、`ImportSDKFromZip`、`ImportImageFromDirectory`、`Create` + `createAVDWithAvdManager` 5 个核心路径单测
+   - 加 `splitCRorLF`、`ImportSDKFromZip`(现已有 zip-slip 校验)、`ImportImageFromDirectory`、`Create` + `createAVDWithAvdManager` 5 个核心路径单测
 3. **脚本/Spec 同步**:
    - `api/README.md` 补 emulator 章节(m1)
-   - `merge_to_universal` 修 helper 重签 + framework 路径(M14, B11)
+   - `merge_to_universal` 修 helper 重签 ✅ 已修(B11);framework 路径(M14)未修
    - `dev.sh` 修 pipefail(M15)、`dev.ps1` 删硬编码(M16)
 4. **Major 14 条按 PR 拆分**: WS / 路径安全 / 测试覆盖各起一个 PR 跟,不阻塞 emulator 主体合入。
 

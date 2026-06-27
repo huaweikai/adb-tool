@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"adb-tool/backend/internal/emulator"
@@ -152,6 +153,15 @@ func (s *Server) handleEmulatorSDKImport(w http.ResponseWriter, r *http.Request)
 func (s *Server) handleEmulatorSDKDelete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "DELETE" {
 		writeAPIError(w, http.StatusMethodNotAllowed, "DELETE required")
+		return
+	}
+
+	// Fix (code-review B2): destructive — wipes the entire managed SDK dir.
+	// Require ?confirm=true so a stray curl / accidental UI click can't
+	// blow away multi-GB downloads. Mirrors handleCacheCleanup.
+	if r.URL.Query().Get("confirm") != "true" {
+		writeAPIError(w, http.StatusBadRequest,
+			"pass ?confirm=true to acknowledge this destructive SDK deletion")
 		return
 	}
 
@@ -1535,6 +1545,15 @@ func (s *Server) handleEmulatorInstanceDelete(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	// Fix (code-review B3): destructive — recursively wipes the AVD dir
+	// and releases the instance's allocated ports. Require ?confirm=true
+	// to match the SDK delete guard (handleEmulatorSDKDelete).
+	if r.URL.Query().Get("confirm") != "true" {
+		writeAPIError(w, http.StatusBadRequest,
+			"pass ?confirm=true to acknowledge this destructive AVD deletion")
+		return
+	}
+
 	if err := s.instanceManager.Delete(id); err != nil {
 		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -1664,6 +1683,57 @@ func (s *Server) handleEmulatorStatusWS(w http.ResponseWriter, r *http.Request) 
 	s.statusMonitor.Register(conn, instanceIDs)
 	defer s.statusMonitor.Unregister(conn)
 
+	// Fix (code-review B5): half-open sockets (laptop sleep / network drop
+	// / NAT timeout) used to leak a goroutine forever because the read
+	// loop never timed out and never saw the client die. Add a read
+	// deadline refreshed by the PongHandler, and a periodic Ping from a
+	// dedicated goroutine. Also serialize writes — gorilla/websocket
+	// forbids concurrent WriteJSON on the same conn, and our previous
+	// initial-snapshot loop + later broadcast both wrote without a lock.
+	const (
+		wsWriteDeadline = 10 * time.Second
+		wsReadDeadline  = 60 * time.Second
+		wsPingInterval  = 25 * time.Second
+	)
+	_ = conn.SetReadDeadline(time.Now().Add(wsReadDeadline))
+	conn.SetPongHandler(func(string) error {
+		return conn.SetReadDeadline(time.Now().Add(wsReadDeadline))
+	})
+
+	// Per-conn write mutex; broadcasts grab it before each write.
+	var writeMu sync.Mutex
+	safeWriteJSON := func(v interface{}) error {
+		writeMu.Lock()
+		defer writeMu.Unlock()
+		_ = conn.SetWriteDeadline(time.Now().Add(wsWriteDeadline))
+		return conn.WriteJSON(v)
+	}
+
+	// Ping ticker — keeps the connection warm and detects half-close
+	// within one tick.
+	stopPing := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(wsPingInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stopPing:
+				return
+			case <-ticker.C:
+				writeMu.Lock()
+				_ = conn.SetWriteDeadline(time.Now().Add(wsWriteDeadline))
+				err := conn.WriteMessage(websocket.PingMessage, nil)
+				writeMu.Unlock()
+				if err != nil {
+					// Best effort: closing the conn will unblock the read loop.
+					_ = conn.Close()
+					return
+				}
+			}
+		}
+	}()
+	defer close(stopPing)
+
 	// Send initial status for watched instances
 	if len(instanceIDs) > 0 {
 		for _, id := range instanceIDs {
@@ -1675,7 +1745,7 @@ func (s *Server) handleEmulatorStatusWS(w http.ResponseWriter, r *http.Request) 
 					Status:     inst.Status,
 					Timestamp:  time.Now(),
 				}
-				conn.WriteJSON(update)
+				_ = safeWriteJSON(update)
 			}
 		}
 	}
@@ -1689,7 +1759,13 @@ func (s *Server) handleEmulatorStatusWS(w http.ResponseWriter, r *http.Request) 
 
 		// Handle ping/pong or commands
 		if string(msg) == "ping" {
-			conn.WriteMessage(websocket.PongMessage, nil)
+			writeMu.Lock()
+			_ = conn.SetWriteDeadline(time.Now().Add(wsWriteDeadline))
+			err := conn.WriteMessage(websocket.PongMessage, nil)
+			writeMu.Unlock()
+			if err != nil {
+				break
+			}
 		}
 	}
 }

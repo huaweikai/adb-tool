@@ -81,12 +81,21 @@ class ServerLauncher {
     env['ADB_TOOL_PARENT_PID'] = pid.toString();
 
     if (Platform.isMacOS || Platform.isLinux) {
-      // 重要：必须先从 shell 配置加载环境变量！
-      // GUI 应用（如 Flutter App）启动的子进程不会自动获取 shell 配置的环境变量
-      // 这会导致 ANDROID_HOME、JAVA_HOME 等变量丢失，影响 SDK 扫描功能
-      // 详见 _loadShellEnvironment() 的文档注释
+      // Important: a GUI app (this Flutter desktop app) does NOT inherit
+      // shell-init env vars (ANDROID_HOME / JAVA_HOME / PATH additions from
+      // ~/.zshrc etc.) when it spawns the backend. Without this the user's
+      // PATH-only tools (adb / avdmanager / java) may not be found.
+      //
+      // What we DO propagate: PATH and nothing else.
+      // What we DON'T propagate: ANDROID_HOME / ANDROID_SDK_ROOT / JAVA_HOME.
+      // AGENTS.md is explicit: ANDROID_HOME must not be back-inferred —
+      // the SDK Manager UI is the only place that controls it. If we
+      // override it from shell env we silently win over the user's
+      // in-app selection, which has caused confusion before.
       final shellEnv = await _loadShellEnvironment();
-      env.addAll(shellEnv);
+      if (shellEnv.containsKey('PATH')) {
+        env['PATH'] = _mergePath(env['PATH'], shellEnv['PATH']!);
+      }
     } else if (Platform.isWindows) {
       env['PATH'] =
           '${Platform.environment['SystemRoot'] ?? 'C:\\Windows'}\\System32;${env['PATH'] ?? ''}';
@@ -117,19 +126,26 @@ class ServerLauncher {
     return true;
   }
 
-  /// 从 shell 配置文件中加载环境变量（ANDROID_HOME 等）
+  /// Loads PATH (and only PATH) from the user's interactive shell.
   ///
-  /// 为什么需要这个：
-  /// - Flutter App 是 GUI 程序，启动子进程时不会自动继承 shell 配置的环境变量
-  /// - ANDROID_HOME、JAVA_HOME 等通常在 ~/.zshrc、~/.zprofile 中设置
-  /// - 直接启动的后端进程无法获取这些环境变量，导致 SDK 扫描失败
+  /// Why this exists:
+  /// - A GUI app (this Flutter desktop app) does NOT inherit shell-init
+  ///   env vars when it spawns the backend. Without sourcing ~/.zshrc,
+  ///   the backend's PATH won't include things like Homebrew bin or
+  ///   the user's per-shell adb / avdmanager install locations.
   ///
-  /// 注意：
-  /// - 必须使用 r''' raw string 来避免 Dart 的 $ 变量插值
-  /// - shell 命令中的 $ANDROID_HOME 应该在 zsh/bash 中展开，而不是 Dart
+  /// Why we DON'T propagate ANDROID_HOME / JAVA_HOME / ANDROID_SDK_ROOT:
+  /// - AGENTS.md says: "ANDROID_HOME 不反推（用户用 SDK manager 页面控制）".
+  ///   If we override from shell env we silently win over the user's
+  ///   in-app selection in the SDK Manager UI, which is confusing.
+  ///   Those vars are owned by the SDK Manager page in-app; if they're
+  ///   unset, the backend's tools resolve via PATH.
+  ///
+  /// Must use r''' raw string to avoid Dart `$variable` interpolation —
+  /// the `$VAR` references must be expanded by zsh / bash, not Dart.
   Future<Map<String, String>> _loadShellEnvironment() async {
     if (Platform.isMacOS) {
-      // macOS: 使用 zsh 交互模式加载配置文件
+      // macOS: zsh interactive mode loads ~/.zshrc / ~/.zprofile / ~/.zshenv.
       try {
         final result = await Process.run(
           '/bin/zsh',
@@ -137,36 +153,18 @@ class ServerLauncher {
             source ~/.zshrc 2>/dev/null
             source ~/.zprofile 2>/dev/null
             source ~/.zshenv 2>/dev/null
-            echo "ANDROID_HOME=$ANDROID_HOME"
-            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-            echo "JAVA_HOME=$JAVA_HOME"
             echo "PATH=$PATH"
           '''],
           environment: Platform.environment,
         );
 
-        final output = result.stdout.toString();
-        final shellEnv = <String, String>{};
-
-        for (final line in output.split('\n')) {
-          if (line.startsWith('ANDROID_HOME=')) {
-            shellEnv['ANDROID_HOME'] = line.substring('ANDROID_HOME='.length);
-          } else if (line.startsWith('ANDROID_SDK_ROOT=')) {
-            shellEnv['ANDROID_SDK_ROOT'] = line.substring('ANDROID_SDK_ROOT='.length);
-          } else if (line.startsWith('JAVA_HOME=')) {
-            shellEnv['JAVA_HOME'] = line.substring('JAVA_HOME='.length);
-          } else if (line.startsWith('PATH=')) {
-            shellEnv['PATH'] = line.substring('PATH='.length);
-          }
-        }
-
-        return shellEnv;
+        return _parseShellEnv(result.stdout.toString());
       } catch (e) {
         stderr.writeln('Failed to load shell environment: $e');
         return {};
       }
     } else if (Platform.isLinux) {
-      // Linux: 使用 bash
+      // Linux: bash login mode loads ~/.bashrc / ~/.bash_profile / ~/.profile.
       try {
         final shell = File('/bin/bash').existsSync() ? '/bin/bash' : '/bin/sh';
         final result = await Process.run(
@@ -175,30 +173,86 @@ class ServerLauncher {
             source ~/.bashrc 2>/dev/null
             source ~/.bash_profile 2>/dev/null
             source ~/.profile 2>/dev/null
-            echo "ANDROID_HOME=$ANDROID_HOME"
             echo "PATH=$PATH"
           '''],
           environment: Platform.environment,
         );
 
-        final output = result.stdout.toString();
-        final shellEnv = <String, String>{};
-
-        for (final line in output.split('\n')) {
-          if (line.startsWith('ANDROID_HOME=')) {
-            shellEnv['ANDROID_HOME'] = line.substring('ANDROID_HOME='.length);
-          } else if (line.startsWith('PATH=')) {
-            shellEnv['PATH'] = line.substring('PATH='.length);
-          }
-        }
-
-        return shellEnv;
+        return _parseShellEnv(result.stdout.toString());
       } catch (e) {
         stderr.writeln('Failed to load shell environment: $e');
         return {};
       }
     }
     return {};
+  }
+
+  Map<String, String> _parseShellEnv(String output) {
+    final shellEnv = <String, String>{};
+    for (final line in output.split('\n')) {
+      if (line.startsWith('PATH=')) {
+        shellEnv['PATH'] = line.substring('PATH='.length);
+      }
+    }
+    return shellEnv;
+  }
+
+  /// Merge a shell-derived PATH on top of the existing PATH while
+  /// keeping the system fallback dirs (so basic tools like
+  /// /usr/bin/env still resolve). Fix (code-review B8): the previous
+  /// `env.addAll(shellEnv)` overwrote PATH wholesale, dropping the
+  /// standard `/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin` prefix
+  /// and breaking Linux users with no zsh + oh-my-zsh users whose
+  /// shell PATH was shorter than the default.
+  ///
+  /// Strategy:
+  /// 1. Sanity-check the shell PATH — if it's suspiciously short
+  ///    (e.g. a malformed rc file), fall back to the existing PATH.
+  /// 2. Prepend the standard system dirs (only those that exist) so
+  ///    findBinary() can always fall back to /usr/bin etc.
+  /// 3. De-duplicate entries, keeping the first occurrence so the
+  ///    user's shell PATH wins over the system defaults.
+  String _mergePath(String? existingPath, String shellPath) {
+    const fallbackDirs = [
+      '/usr/bin',
+      '/bin',
+      '/usr/sbin',
+      '/sbin',
+      '/usr/local/bin',
+    ];
+
+    // Sanity check: a valid PATH on a real desktop is at least a few
+    // dozen chars (e.g. "/usr/bin:/bin:/usr/local/bin:/opt/...").
+    // A < 100 char PATH usually means the rc file failed to source.
+    if (shellPath.length < 100) {
+      return existingPath ?? '';
+    }
+
+    final merged = <String>[];
+    final seen = <String>{};
+
+    void add(String dir) {
+      if (dir.isEmpty) return;
+      if (seen.add(dir)) merged.add(dir);
+    }
+
+    // 1. System fallback first (guaranteed tools like /usr/bin/env).
+    for (final d in fallbackDirs) {
+      add(d);
+    }
+    // 2. User's existing Flutter-app PATH (Flutter ships some tools
+    //    via dart / snap / brew on macOS).
+    if (existingPath != null && existingPath.isNotEmpty) {
+      for (final d in existingPath.split(Platform.pathSeparator)) {
+        add(d);
+      }
+    }
+    // 3. Shell PATH last (highest priority — Homebrew, rbenv, etc.).
+    for (final d in shellPath.split(Platform.pathSeparator)) {
+      add(d);
+    }
+
+    return merged.join(Platform.pathSeparator);
   }
 
   Future<void> stop() {

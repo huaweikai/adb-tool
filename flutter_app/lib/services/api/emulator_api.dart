@@ -5,8 +5,12 @@ mixin EmulatorApi on ApiBase {
   /// Get current emulator engine status (paths, versions, validation state).
   Future<EmulatorEngineStatus> getEngineStatus() async {
     final response = await dio.get('/api/emulator/engine/status');
-    final data = responseMap(response);
-    return EmulatorEngineStatus.fromJson(data);
+    // Fix (code-review B10): validate the envelope before parsing. Without
+    // this, a `{ok:false, error:"…"}` body is silently parsed as a default
+    // EmulatorEngineStatus and the user sees a misleading "no SDK" state
+    // instead of the real backend error.
+    if (!isOk(response)) throw Exception(errorMessage(response));
+    return EmulatorEngineStatus.fromJson(responseMap(response));
   }
 
   /// Validate the given emulator path and return version info.
@@ -21,8 +25,8 @@ mixin EmulatorApi on ApiBase {
         if (emulatorPath != null) 'emulatorPath': emulatorPath,
       },
     );
-    final data = responseMap(response);
-    return EmulatorEngineStatus.fromJson(data);
+    if (!isOk(response)) throw Exception(errorMessage(response));
+    return EmulatorEngineStatus.fromJson(responseMap(response));
   }
 
   /// Update emulator engine configuration.
@@ -37,13 +41,14 @@ mixin EmulatorApi on ApiBase {
         if (emulatorPath != null) 'emulatorPath': emulatorPath,
       },
     );
-    final data = responseMap(response);
-    return EmulatorEngineStatus.fromJson(data);
+    if (!isOk(response)) throw Exception(errorMessage(response));
+    return EmulatorEngineStatus.fromJson(responseMap(response));
   }
 
   /// Detect SDKs on the system.
   Future<List<SDKDetectResult>> detectSDKs() async {
     final response = await dio.get('/api/emulator/sdk/detect');
+    if (!isOk(response)) throw Exception(errorMessage(response));
     final data = responseMap(response);
     final sdkList = data['sdks'] as List? ?? [];
     return sdkList
@@ -57,8 +62,8 @@ mixin EmulatorApi on ApiBase {
       '/api/emulator/sdk/use',
       data: {'sdkPath': sdkPath},
     );
-    final data = responseMap(response);
-    return EmulatorEngineStatus.fromJson(data);
+    if (!isOk(response)) throw Exception(errorMessage(response));
+    return EmulatorEngineStatus.fromJson(responseMap(response));
   }
 
   /// Download SDK from URL.
@@ -77,8 +82,8 @@ mixin EmulatorApi on ApiBase {
         if (sha256 != null) 'sha256': sha256,
       },
     );
-    final data = responseMap(response);
-    return SDKDownloadResult.fromJson(data);
+    if (!isOk(response)) throw Exception(errorMessage(response));
+    return SDKDownloadResult.fromJson(responseMap(response));
   }
 
   /// Check download progress.
@@ -87,8 +92,8 @@ mixin EmulatorApi on ApiBase {
       '/api/emulator/download/progress',
       queryParameters: {'id': id},
     );
-    final data = responseMap(response);
-    return SDKDownloadResult.fromJson(data);
+    if (!isOk(response)) throw Exception(errorMessage(response));
+    return SDKDownloadResult.fromJson(responseMap(response));
   }
 
   /// Start an sdkmanager-driven install of one or more packages (e.g.
@@ -101,6 +106,7 @@ mixin EmulatorApi on ApiBase {
       '/api/emulator/sdk/install',
       data: {'packages': packages},
     );
+    if (!isOk(response)) throw Exception(errorMessage(response));
     return SDKInstallJob.fromJson(responseMap(response));
   }
 
@@ -110,6 +116,7 @@ mixin EmulatorApi on ApiBase {
       '/api/emulator/sdk/install/status',
       queryParameters: {'id': id},
     );
+    if (!isOk(response)) throw Exception(errorMessage(response));
     return SDKInstallJob.fromJson(responseMap(response));
   }
 }

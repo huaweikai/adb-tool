@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 )
 
 // SDKManager handles Android SDK import and management.
@@ -94,6 +95,16 @@ func (s *SDKManager) extractFile(file *zip.File, stripRoot bool) error {
 	}
 
 	targetPath := filepath.Join(s.sdkPath, name)
+
+	// Fix (code-review B1): prevent zip-slip — reject entries whose resolved
+	// path escapes the SDK root. Mirrors download_manager.go's ExtractZip
+	// guard, but applied AFTER stripRoot so a single-root wrapper directory
+	// is unwrapped before the check (otherwise "../" inside the wrapper
+	// would always reject the whole archive).
+	cleanRoot := filepath.Clean(s.sdkPath) + string(filepath.Separator)
+	if !strings.HasPrefix(filepath.Clean(targetPath), cleanRoot) && filepath.Clean(targetPath) != filepath.Clean(s.sdkPath) {
+		return fmt.Errorf("illegal file path (zip-slip): %s", file.Name)
+	}
 
 	// Create parent directories
 	if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
