@@ -29,6 +29,44 @@ ADB Tool — 跨平台 Android 调试桌面工具，**Go 后端 + Flutter 桌面
 - **平台条件编译**: Go 端用 `//go:build darwin|windows`；Flutter 端用 `defaultTargetPlatform` + MethodChannel（`mac_drop` / `win_drop`）。
 - **Backend embedding**: `platform-tools-*.zip`、`scrcpy` 与 `clipboard-helper.apk` 全部 `//go:embed` 进二进制，运行时提取到 `/tmp/adb-tool-cache/`。
 
+## Architecture debt — when to act, when to leave alone
+
+> Ponytail posture: **don't refactor preemptively**. The skeleton is correct;
+> the fat files below are tolerable until a specific trigger fires. If a
+> future agent (or future me) suggests refactoring without a concrete trigger
+> matching this list, challenge the "why now" first.
+
+### Current fat files (snapshot 2026-06-27)
+
+| File | Size | Trigger to act |
+|---|---|---|
+| `lib/providers/test_session_provider.dart` | ~44K | **Before** adding the next responsibility: extract a `usecase/` layer, validate the boundary on one slice, then decide whether to split the provider. |
+| `lib/widgets/emulator_engine_card.dart` | ~54K | Leave alone unless a real feature pushes it past ~60K AND the new logic doesn't naturally belong in a separate widget. |
+| `lib/screens/file_browser_screen.dart` | ~47K | Same. |
+| `lib/screens/test_session_hub_screen.dart` | ~41K | Same. |
+| `lib/screens/home_screen.dart` | ~34K | Same. |
+| `lib/models/scrcpy_options.dart` | ~20K | Same. |
+
+### Capture mixins — copy-paste red flag
+
+- `lib/mixins/screen_capture_mixin.dart`
+- `lib/mixins/file_browser_capture_mixin.dart`
+- `lib/mixins/test_session_capture_mixin.dart`
+
+**Rule**: before adding a 4th `*_capture_mixin.dart`, merge the first three
+into one. Names are too similar — duplicated logic is the default trajectory;
+explicitly merge to break the pattern.
+
+### Why NOT refactoring now
+
+- YAGNI. The skeleton (api/services by domain, dao/tables split, i18n per
+  page, models/providers/screens/widgets layered) is correct and worth keeping.
+- Fat files are stable debt — tolerable while stable. They become a problem
+  on the *next edit*, not before. Edit the file the moment a trigger fires;
+  don't pre-empt.
+- A preemptive refactor touches every test, every import, every screen that
+  consumes these — for a problem that may not materialise.
+
 ## Testing instructions
 
 - Go 单元测试: `cd backend && go test ./...`
