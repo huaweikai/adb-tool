@@ -401,18 +401,6 @@ func (m *InstanceManager) List() []*Instance {
 
 	instances := make([]*Instance, 0, len(m.instances))
 	for _, inst := range m.instances {
-		// Update status based on actual process state
-		if inst.Status == StatusRunning {
-			if proc, ok := m.processes[inst.ID]; ok {
-				if !isProcessRunning(proc.PID) {
-					inst.Status = StatusStopped
-					inst.PID = 0
-				}
-			} else {
-				inst.Status = StatusStopped
-				inst.PID = 0
-			}
-		}
 		instances = append(instances, inst)
 	}
 
@@ -427,19 +415,6 @@ func (m *InstanceManager) Get(id string) (*Instance, error) {
 	inst, ok := m.instances[id]
 	if !ok {
 		return nil, fmt.Errorf("instance not found: %s", id)
-	}
-
-	// Check if still running
-	if inst.Status == StatusRunning {
-		if proc, ok := m.processes[inst.ID]; ok {
-			if !isProcessRunning(proc.PID) {
-				inst.Status = StatusStopped
-				inst.PID = 0
-			}
-		} else {
-			inst.Status = StatusStopped
-			inst.PID = 0
-		}
 	}
 
 	return inst, nil
@@ -687,9 +662,11 @@ path.rel=%s
 tag.id=%s
 tag.ids=%s
 disk.dataPartition.size=2G
+hw.lcd.width=%d
+hw.lcd.height=%d
+hw.lcd.density=%d
 hw.screenWidth=%d
 hw.screenHeight=%d
-hw.lcd.density=%d
 `, inst.Name,
 		inst.Name,
 		abi,
@@ -705,7 +682,9 @@ hw.lcd.density=%d
 		variant,
 		inst.Config.Width,
 		inst.Config.Height,
-		inst.Config.Density)
+		inst.Config.Density,
+		inst.Config.Width,
+		inst.Config.Height)
 
 	if err := os.WriteFile(configPath, []byte(config), 0644); err != nil {
 		return fmt.Errorf("failed to write config.ini: %w", err)
@@ -796,68 +775,124 @@ func (m *InstanceManager) startEmulator(inst *Instance) error {
 // monitorEmulatorProcess watches a freshly-launched emulator for two failure
 // modes that the previous implementation silently swallowed:
 //
-//  1. Immediate exit (within ~3s) — usually a configuration problem:
-//     bad systemPath, missing KVM/HVF, bad AVD config.ini, etc.
-//  2. Crash during the boot window — process disappears before ADB connects.
+//  1. Immediate exit (bad systemPath, missing KVM/HVF, bad AVD config.ini, ...).
+//  2. Crash during the boot window.
 //
-// In both cases we set the instance status to StatusError and surface a
-// tail of emulator.log in LastError so the user can see what went wrong.
+// IMPORTANT: we no longer use `cmd.Process.Pid` (the emulator.exe wrapper)
+// as the liveness signal. On modern Android emulator builds the wrapper is
+// short-lived — it forks the real qemu-system-x86_64-headless.exe and exits
+// within ~1s. The previous "is wrapper alive after 3s" check therefore fired
+// on every successful boot, marking a perfectly-running instance as error
+// while adb devices still showed emulator-5554 device. The user-visible
+// symptom was "backend says error, but the emulator is clearly up".
+//
+// We don't watch for "Boot completed" here either — bootProgressTracker is
+// already tailing the log every 1.5s and flips the instance to StatusRunning
+// when it sees the keyword. Doing it twice would just duplicate the
+// broadcast. This loop's job is the negative side of the boot story:
+//
+//   - adb get-state == device as a fallback if the log keyword check somehow
+//     misses (e.g. log file got rotated).
+//   - emulator.log growth stalling for 10s → wrapper died before forking qemu.
+//   - No log file 5s in → bad emulator path / missing binary.
+//   - 180s wall-clock without any readiness signal → boot really hung.
 func (m *InstanceManager) monitorEmulatorProcess(id string, cmd *exec.Cmd, logFile *os.File) {
 	defer logFile.Close()
 
-	// Phase 1: immediate-crash detection.
-	time.Sleep(3 * time.Second)
-	if !isProcessRunning(cmd.Process.Pid) {
-		m.recordEmulatorFailure(id, "emulator exited within 3s of launch", logFile.Name())
-		return
-	}
+	logPath := logFile.Name()
 
-	// Phase 2: boot window. Wait for ADB to connect, but keep watching the
-	// process so we notice if it dies mid-boot.
-	inst := m.getInstance(id)
-	if inst == nil {
-		return
-	}
+	// Give the wrapper a brief moment to fork qemu and start writing the
+	// log. This is the closest equivalent to the old "wrapper still alive
+	// at +3s" check, but tolerates the wrapper exiting as long as qemu is
+	// now running.
+	time.Sleep(2 * time.Second)
 
-	maxWait := 90 * time.Second
+	maxWait := 180 * time.Second
 	deadline := time.Now().Add(maxWait)
+	const noLogTimeout = 5 * time.Second
+
+	lastLogSize := int64(-1)
+	lastLogChange := time.Now()
+	logEverGrew := false
+
 	for time.Now().Before(deadline) {
-		if !isProcessRunning(cmd.Process.Pid) {
-			m.recordEmulatorFailure(id, "emulator process died during boot", logFile.Name())
+		inst := m.getInstance(id)
+		if inst == nil {
+			return
+		}
+		if inst.Status != StatusStarting {
+			return
+		}
+		// User clicked Stop — back off so recordEmulatorFailure doesn't
+		// overwrite StatusStopped with StatusError.
+		if m.stopping[id] {
 			return
 		}
 
+		// Fallback readiness signal: ADB sees the serial as a usable
+		// device. The primary path is bootProgressTracker detecting
+		// "Boot completed" in the log; this catches the corner case where
+		// the log file is missing or the keyword never appears.
 		if err := m.checkEmulatorReady(inst.Serial); err == nil {
-			log.Printf("[emulator] instance %s ready on %s", id, inst.Serial)
-			m.mu.Lock()
-			if inst, ok := m.instances[id]; ok {
-				inst.Status = StatusRunning
-				// Snapshot the final boot state so the WS payload sent by
-				// the immediate broadcast below (and any list/get API
-				// call afterwards) reflects "ready". bootProgressTracker
-				// also races to set this; last write wins, which is fine
-				// because both write the same terminal values.
-				inst.BootStage = "ready"
-				inst.BootProgress = 100
-				inst.BootMessage = "启动完成"
+			m.markEmulatorReady(id, inst.Serial)
+			return
+		}
+
+		// Liveness: during a normal emulator boot the log can legitimately go
+		// quiet for more than 10 seconds while ADB still reports "offline".
+		// Do not treat log stalling as fatal by itself; the 180s boot timeout is
+		// the authoritative hang detector once the process produced any log.
+		if info, err := os.Stat(logPath); err == nil {
+			if info.Size() != lastLogSize {
+				lastLogSize = info.Size()
+				lastLogChange = time.Now()
+				logEverGrew = true
 			}
-			m.mu.Unlock()
-			// Push a final "running + ready" update so any UI that
-			// missed the bootProgressTracker's terminal update sees the
-			// transition. Idempotent: stage is already "ready".
-			if m.statusMonitor != nil {
-				m.statusMonitor.BroadcastStatus(id, StatusRunning, "ready", 100, "启动完成")
+			if logEverGrew && shouldTreatBootLogStallAsFatal(time.Since(lastLogChange)) {
+				m.recordEmulatorFailure(id, "emulator log stalled — process likely dead", logPath)
+				return
 			}
+		} else if !logEverGrew && time.Since(lastLogChange) > noLogTimeout {
+			// No log file 5s in → fatal (bad emulator path, missing binary,
+			// etc). Without this we'd wait the full 180s on a broken config.
+			m.recordEmulatorFailure(id, "emulator produced no log output", logPath)
 			return
 		}
 
 		time.Sleep(2 * time.Second)
 	}
 
-	// Boot timed out but the process is still alive — don't kill it (could
-	// just be a slow machine), but mark the instance as errored so the UI
-	// doesn't sit at "Starting" forever.
-	m.recordEmulatorFailure(id, "emulator boot timed out after 90s", logFile.Name())
+	// Boot timed out. Don't kill the wrapper (could just be slow) — but
+	// mark the instance as errored so the UI doesn't sit at "Starting"
+	// forever.
+	m.recordEmulatorFailure(id, "emulator boot timed out after 180s", logPath)
+}
+
+func shouldTreatBootLogStallAsFatal(_ time.Duration) bool {
+	return false
+}
+
+// markEmulatorReady is the shared "we are now StatusRunning" path used by
+// the two readiness signals in monitorEmulatorProcess (ADB get-state and
+// "Boot completed" in the log). Writes the same terminal values both
+// signals would have written, and broadcasts once so any UI that missed
+// the tracker's push still sees the transition.
+func (m *InstanceManager) markEmulatorReady(id, serial string) {
+	log.Printf("[emulator] instance %s ready on %s", id, serial)
+	m.mu.Lock()
+	inst, ok := m.instances[id]
+	if !ok {
+		m.mu.Unlock()
+		return
+	}
+	inst.Status = StatusRunning
+	inst.BootStage = "ready"
+	inst.BootProgress = 100
+	inst.BootMessage = "启动完成"
+	m.mu.Unlock()
+	if m.statusMonitor != nil {
+		m.statusMonitor.BroadcastStatus(id, StatusRunning, "ready", 100, "启动完成")
+	}
 }
 
 // recordEmulatorFailure flips an instance to StatusError, captures the tail
@@ -878,6 +913,9 @@ func (m *InstanceManager) recordEmulatorFailure(id, reason, logPath string) {
 		return
 	}
 	if inst, ok := m.instances[id]; ok {
+		if inst.Status != StatusStarting {
+			return
+		}
 		inst.Status = StatusError
 		inst.LastError = errMsg
 		inst.LastStartedAt = nil
@@ -961,7 +999,16 @@ func (m *InstanceManager) bootProgressTracker(id, logPath string) {
 		for _, line := range lines {
 			switch {
 			case strings.Contains(line, "Boot completed"):
+				// First write the final boot fields so the WS payload we
+				// broadcast reflects "ready@100". Then promote the instance
+				// to StatusRunning — applyUpdate only writes the boot fields,
+				// it intentionally leaves Status as StatusStarting so this
+				// loop can keep tracking mid-boot transitions. Boot completed
+				// is the terminal event, so flipping Status here is correct,
+				// and it also stops monitorEmulatorProcess from re-running
+				// its own "Boot completed" detection.
 				applyUpdate("ready", 100, "启动完成")
+				m.markEmulatorReady(id, cur.Serial)
 				return
 			case strings.Contains(line, "Started GRPC server") || strings.Contains(line, "Advertising in"):
 				applyUpdate("adb_connecting", 80, "正在连接 ADB…")
@@ -1062,12 +1109,25 @@ func (m *InstanceManager) ensureAVDConfig(inst *Instance) error {
 	if err != nil {
 		return err
 	}
-	required := []string{"image.sysdir.1", "abi.type", "tag.id", "tag.ids", "hw.cpu.arch"}
+	required := []string{"image.sysdir.1", "abi.type", "tag.id", "tag.ids", "hw.cpu.arch", "hw.lcd.width", "hw.lcd.height", "hw.lcd.density"}
 	missing := false
 	for _, key := range required {
 		if !strings.Contains(string(data), key+"=") {
 			missing = true
 			break
+		}
+	}
+	if !missing {
+		expectedDisplay := []string{
+			fmt.Sprintf("hw.lcd.width=%d", inst.Config.Width),
+			fmt.Sprintf("hw.lcd.height=%d", inst.Config.Height),
+			fmt.Sprintf("hw.lcd.density=%d", inst.Config.Density),
+		}
+		for _, expected := range expectedDisplay {
+			if !strings.Contains(string(data), expected) {
+				missing = true
+				break
+			}
 		}
 	}
 	if missing {

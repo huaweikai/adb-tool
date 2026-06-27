@@ -19,7 +19,13 @@ class EmulatorInstanceProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get error => _error;
 
-  /// Fetch all instances from backend.
+  /// Fetch all instances from backend. Also (re)connects the status
+  /// WebSocket so subsequent state changes — boot progress, starting →
+  /// running, stop — arrive as live pushes instead of never showing up.
+  /// Previously the WS connection was opt-in (the screen had to call
+  /// `connectStatusUpdates` after fetch), and nothing called it, so the
+  /// status column was stuck on whatever fetch returned. Now fetch is
+  /// the canonical "subscribe to status updates" entry point.
   Future<void> fetchInstances() async {
     _isLoading = true;
     _error = null;
@@ -37,6 +43,10 @@ class EmulatorInstanceProvider extends ChangeNotifier {
     } finally {
       _isLoading = false;
       notifyListeners();
+      // Re-subscribe so newly-created or newly-started instances are
+      // watched too. connectStatusUpdates closes any existing socket
+      // before opening a new one, so this is safe to call repeatedly.
+      unawaited(connectStatusUpdates());
     }
   }
 
@@ -73,6 +83,11 @@ class EmulatorInstanceProvider extends ChangeNotifier {
       final instance = EmulatorInstance.fromJson(data);
       _instances.add(instance);
       notifyListeners();
+      // The new instance needs a WS subscription too; otherwise its
+      // boot progress / running state would never reach the UI. The
+      // re-subscribe closes the existing socket and opens a new one
+      // carrying the fresh id list.
+      unawaited(connectStatusUpdates());
       return instance;
     } catch (e) {
       _error = e.toString();
@@ -81,7 +96,14 @@ class EmulatorInstanceProvider extends ChangeNotifier {
     }
   }
 
-  /// Start an instance.
+  /// Start an instance. The backend's start endpoint only returns the
+  /// mutable fields (status, pid, ports, boot progress, lastError,
+  /// logPath) — not the immutable identity (avdName, imageId, config,
+  /// createdAt, avdPath, ...). Previously we replaced the whole local
+  /// instance with the start payload, which silently zeroed out the
+  /// name and config and made the card show an empty title. Now we
+  /// patch only the fields the backend actually sent, keeping the
+  /// identity intact.
   Future<void> startInstance(String id) async {
     _error = null;
 
@@ -91,10 +113,19 @@ class EmulatorInstanceProvider extends ChangeNotifier {
         queryParameters: {'id': id},
       );
       final data = _api.responseMap(response);
-      final instance = EmulatorInstance.fromJson(data);
+      final patch = EmulatorInstance.fromJson(data);
       final index = _instances.indexWhere((i) => i.id == id);
       if (index >= 0) {
-        _instances[index] = instance;
+        _instances[index] = _instances[index].copyWith(
+          status: patch.status,
+          pid: patch.pid,
+          serial: patch.serial,
+          consolePort: patch.consolePort,
+          adbPort: patch.adbPort,
+          bootStage: patch.bootStage,
+          bootProgress: patch.bootProgress,
+          bootMessage: patch.bootMessage,
+        );
         notifyListeners();
       }
     } catch (e) {
@@ -176,10 +207,12 @@ class EmulatorInstanceProvider extends ChangeNotifier {
     }
   }
 
-  /// Connect to WebSocket for real-time status updates.
+  /// Connect to WebSocket for real-time status updates. Always (re-)
+  /// subscribes — including when the instance list is empty — so the
+  /// socket is up before the user creates or starts an instance.
+  /// Without this, instance boot progress / starting → running pushes
+  /// silently go nowhere.
   Future<void> connectStatusUpdates() async {
-    if (_instances.isEmpty) return;
-
     final ids = _instances.map((i) => i.id).toList();
     _ws?.close();
 
@@ -207,7 +240,15 @@ class EmulatorInstanceProvider extends ChangeNotifier {
 
   String _getStatusWebSocketUrl(List<String> instanceIds) {
     final ids = instanceIds.join(',');
-    return 'ws://${_api.baseUrl}/ws/emulator/status?id=$ids';
+    // _api.baseUrl is an http(s) URL like "http://127.0.0.1:9876" — we
+    // can't just prepend "ws://", that yields "ws://http://..." and
+    // the hostname becomes the literal string "http". Swap the scheme
+    // instead so the host:port survive intact. Handles both http and
+    // https → ws / wss.
+    final wsBase = _api.baseUrl
+        .replaceFirst('https://', 'wss://')
+        .replaceFirst('http://', 'ws://');
+    return '$wsBase/ws/emulator/status?id=$ids';
   }
 
   void _handleStatusUpdate(Map<String, dynamic> update) {
@@ -233,9 +274,17 @@ class EmulatorInstanceProvider extends ChangeNotifier {
     final bootProgress = update['bootProgress'] as int?;
     final bootMessage = update['bootMessage'] as String?;
 
+    // The backend's 5s pollStatus loop sends pid/serial/lastStart
+    // inside a nested `data` object (see status_monitor.go
+    // checkAndBroadcastStatus). Pull them out so we don't overwrite
+    // a known pid with null just because this particular push
+    // didn't include one at the top level.
+    final data = update['data'] as Map<String, dynamic>?;
+    final pid = (update['pid'] as int?) ?? (data?['pid'] as int?);
+
     _instances[index] = _instances[index].copyWith(
       status: status,
-      pid: update['pid'] as int?,
+      pid: pid,
       bootStage: bootStage ?? '',
       bootProgress: bootProgress ?? 0,
       bootMessage: bootMessage ?? '',

@@ -30,6 +30,38 @@ var SDKMgr = emulator.NewSDKManager()
 // SDKInstaller handles sdkmanager-driven package installs.
 var SDKInstaller = emulator.NewSDKInstaller()
 
+// emulatorInstanceToMap converts an emulator.Instance into the canonical
+// JSON shape returned by every endpoint that exposes an instance
+// (list, get, create, start, stop). Keeping the shape in one place
+// means the Flutter client can trust that every endpoint carries the
+// full identity fields (avdName / imageId / config / createdAt / ...),
+// not just the mutable runtime fields. Previously Start and Stop
+// returned only {id, status, pid, serial, ...}, so the Flutter
+// provider's "replace whole instance" code path silently zeroed out
+// the name and config the moment the user pressed Start.
+func emulatorInstanceToMap(inst *emulator.Instance) map[string]interface{} {
+	return map[string]interface{}{
+		"id":            inst.ID,
+		"imageId":       inst.ImageID,
+		"name":          inst.Name,
+		"avdPath":       inst.AVDPath,
+		"config":        inst.Config,
+		"status":        inst.Status,
+		"consolePort":   inst.ConsolePort,
+		"adbPort":       inst.ADBPort,
+		"pid":           inst.PID,
+		"serial":        inst.Serial,
+		"snapshotId":    inst.SnapshotID,
+		"createdAt":     inst.CreatedAt,
+		"lastStartedAt": inst.LastStartedAt,
+		"lastError":     inst.LastError,
+		"logPath":       inst.LogPath,
+		"bootStage":     inst.BootStage,
+		"bootProgress":  inst.BootProgress,
+		"bootMessage":   inst.BootMessage,
+	}
+}
+
 // handleEmulatorEngineStatus returns the current emulator engine status.
 func (s *Server) handleEmulatorEngineStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" {
@@ -1174,28 +1206,7 @@ func (s *Server) handleEmulatorInstances(w http.ResponseWriter, r *http.Request)
 
 	result := make([]map[string]interface{}, len(instances))
 	for i, inst := range instances {
-		result[i] = map[string]interface{}{
-			"id":            inst.ID,
-			"imageId":       inst.ImageID,
-			"name":          inst.Name,
-			"avdPath":       inst.AVDPath,
-			"config":        inst.Config,
-			"status":        inst.Status,
-			"consolePort":   inst.ConsolePort,
-			"adbPort":       inst.ADBPort,
-			"pid":           inst.PID,
-			"serial":        inst.Serial,
-			"snapshotId":    inst.SnapshotID,
-			"createdAt":     inst.CreatedAt,
-			"lastStartedAt": inst.LastStartedAt,
-			"lastError":     inst.LastError,
-			"logPath":       inst.LogPath,
-			// Live boot progress fields; only meaningful while the
-			// instance is in StatusStarting / StatusRunning.
-			"bootStage":    inst.BootStage,
-			"bootProgress": inst.BootProgress,
-			"bootMessage":  inst.BootMessage,
-		}
+		result[i] = emulatorInstanceToMap(inst)
 	}
 
 	writeJSON(w, map[string]interface{}{
@@ -1259,17 +1270,7 @@ func (s *Server) handleEmulatorInstanceCreate(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	writeJSON(w, map[string]interface{}{
-		"id":          instance.ID,
-		"imageId":     instance.ImageID,
-		"name":        instance.Name,
-		"status":      instance.Status,
-		"consolePort": instance.ConsolePort,
-		"adbPort":     instance.ADBPort,
-		"serial":      instance.Serial,
-		"avdPath":     instance.AVDPath,
-		"createdAt":   instance.CreatedAt,
-	})
+	writeJSON(w, emulatorInstanceToMap(instance))
 }
 
 // handleEmulatorInstanceStart starts an emulator instance.
@@ -1303,25 +1304,7 @@ func (s *Server) handleEmulatorInstanceStart(w http.ResponseWriter, r *http.Requ
 		s.statusMonitor.BroadcastStatus(instance.ID, instance.Status, instance.BootStage, instance.BootProgress, instance.BootMessage)
 	}
 
-	writeJSON(w, map[string]interface{}{
-		"id":          instance.ID,
-		"status":      instance.Status,
-		"pid":         instance.PID,
-		"serial":      instance.Serial,
-		"consolePort": instance.ConsolePort,
-		"adbPort":     instance.ADBPort,
-		// LastError is empty on success but lets the UI show why a start
-		// failed (e.g. "system image not found", "exited within 3s", ...).
-		"lastError": instance.LastError,
-		// LogPath points at <AVDPath>/emulator.log so the user can read the
-		// full emulator output even when Start returns success.
-		"logPath": instance.LogPath,
-		// Initial boot-progress values; the boot tracker will overwrite
-		// these over the next few seconds via WebSocket pushes.
-		"bootStage":    instance.BootStage,
-		"bootProgress": instance.BootProgress,
-		"bootMessage":  instance.BootMessage,
-	})
+	writeJSON(w, emulatorInstanceToMap(instance))
 }
 
 // handleEmulatorInstanceStop stops an emulator instance.
@@ -1343,8 +1326,7 @@ func (s *Server) handleEmulatorInstanceStop(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	instance, err := s.instanceManager.Get(id)
-	if err != nil {
+	if _, err := s.instanceManager.Get(id); err != nil {
 		writeAPIError(w, http.StatusNotFound, err.Error())
 		return
 	}
@@ -1354,15 +1336,21 @@ func (s *Server) handleEmulatorInstanceStop(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// Re-read after Stop so the response reflects the post-stop state
+	// (StatusStopped, PID=0, boot fields cleared) instead of the
+	// pre-stop snapshot.
+	instance, err := s.instanceManager.Get(id)
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
 	// Broadcast status update (boot fields are cleared on Stop)
 	if s.statusMonitor != nil {
 		s.statusMonitor.BroadcastStatus(instance.ID, emulator.StatusStopped, "", 0, "")
 	}
 
-	writeJSON(w, map[string]interface{}{
-		"id":     instance.ID,
-		"status": emulator.StatusStopped,
-	})
+	writeJSON(w, emulatorInstanceToMap(instance))
 }
 
 // handleEmulatorInstanceDelete deletes an emulator instance.
@@ -1490,26 +1478,7 @@ func (s *Server) handleEmulatorInstanceGet(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	writeJSON(w, map[string]interface{}{
-		"id":            instance.ID,
-		"imageId":       instance.ImageID,
-		"name":          instance.Name,
-		"avdPath":       instance.AVDPath,
-		"config":        instance.Config,
-		"status":        instance.Status,
-		"consolePort":   instance.ConsolePort,
-		"adbPort":       instance.ADBPort,
-		"pid":           instance.PID,
-		"serial":        instance.Serial,
-		"snapshotId":    instance.SnapshotID,
-		"createdAt":     instance.CreatedAt,
-		"lastStartedAt": instance.LastStartedAt,
-		"lastError":     instance.LastError,
-		"logPath":       instance.LogPath,
-		"bootStage":     instance.BootStage,
-		"bootProgress":  instance.BootProgress,
-		"bootMessage":   instance.BootMessage,
-	})
+	writeJSON(w, emulatorInstanceToMap(instance))
 }
 
 // handleEmulatorStatusWS handles WebSocket connections for emulator status updates.

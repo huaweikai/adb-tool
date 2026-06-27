@@ -53,6 +53,58 @@ func TestEnsureAVDConfigRepairsPointerIniTarget(t *testing.T) {
 	}
 }
 
+func TestEnsureAVDConfigRepairsMissingLCDDimensions(t *testing.T) {
+	tmp := t.TempDir()
+	sdkDir := filepath.Join(tmp, "sdk")
+	dataDir := filepath.Join(tmp, "data")
+	avdHome := filepath.Join(dataDir, "avd")
+	avdPath := filepath.Join(avdHome, "Pixel.avd")
+	imagePath := filepath.Join(sdkDir, "system-images", "android-30-default-arm64-v8a")
+	if err := os.MkdirAll(avdPath, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(imagePath, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(imagePath, "system.img"), []byte("system"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	oldConfig := "AvdId=Pixel\n" +
+		"image.sysdir.1=system-images/android-30/default/arm64-v8a/\n" +
+		"abi.type=arm64-v8a\n" +
+		"hw.cpu.arch=arm64\n" +
+		"tag.id=default\n" +
+		"tag.ids=default\n" +
+		"hw.screenWidth=1080\n" +
+		"hw.screenHeight=1920\n" +
+		"hw.lcd.density=420\n"
+	if err := os.WriteFile(filepath.Join(avdPath, "config.ini"), []byte(oldConfig), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	manager := &InstanceManager{androidSdk: sdkDir, dataDir: dataDir}
+	inst := &Instance{
+		Name:    "Pixel",
+		ImageID: "android-30-default-arm64-v8a",
+		AVDPath: avdPath,
+		Config:  InstanceConfig{Cores: 4, MemoryMB: 4096, Width: 1080, Height: 1920, Density: 420, GPUMode: "auto"},
+	}
+
+	if err := manager.ensureAVDConfig(inst); err != nil {
+		t.Fatalf("ensureAVDConfig returned error: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(avdPath, "config.ini"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, required := range []string{"hw.lcd.width=1080\n", "hw.lcd.height=1920\n"} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("config.ini missing %q: %q", required, text)
+		}
+	}
+}
+
 func TestUpdateAVDConfigWritesFlatEmulatorKeys(t *testing.T) {
 	tmp := t.TempDir()
 	sdkDir := filepath.Join(tmp, "sdk")
@@ -97,10 +149,76 @@ func TestUpdateAVDConfigWritesFlatEmulatorKeys(t *testing.T) {
 		"tag.ids=default\n",
 		"hw.sdCard=no\n",
 		"path.rel=Pixel.avd\n",
+		"hw.lcd.width=1080\n",
+		"hw.lcd.height=1920\n",
+		"hw.lcd.density=420\n",
 	} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("config.ini missing %q: %q", required, text)
 		}
+	}
+}
+
+func TestBootLogStallAloneIsNotFatal(t *testing.T) {
+	if shouldTreatBootLogStallAsFatal(10 * time.Second) {
+		t.Fatalf("10s boot log stall must not be fatal by itself")
+	}
+	if shouldTreatBootLogStallAsFatal(2 * time.Minute) {
+		t.Fatalf("boot log stall must not be fatal by itself; boot timeout handles real hangs")
+	}
+}
+
+func TestListDoesNotUseWrapperPIDToMarkRunningInstanceStopped(t *testing.T) {
+	manager := &InstanceManager{
+		instances: map[string]*Instance{
+			"instance-1": {
+				ID:     "instance-1",
+				Status: StatusRunning,
+				PID:    -1,
+			},
+		},
+		processes: map[string]*ProcessInfo{
+			"instance-1": {PID: -1},
+		},
+	}
+
+	instances := manager.List()
+	if len(instances) != 1 {
+		t.Fatalf("len(instances) = %d, want 1", len(instances))
+	}
+	if instances[0].Status != StatusRunning {
+		t.Fatalf("status = %s, want %s", instances[0].Status, StatusRunning)
+	}
+}
+
+func TestRecordEmulatorFailureDoesNotClobberRunningInstance(t *testing.T) {
+	tmp := t.TempDir()
+	logPath := filepath.Join(tmp, "emulator.log")
+	if err := os.WriteFile(logPath, []byte("INFO         | Boot completed in 33762 ms\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	manager := &InstanceManager{
+		instances: map[string]*Instance{
+			"instance-1": {
+				ID:     "instance-1",
+				Status: StatusRunning,
+				Serial: "emulator-5554",
+			},
+		},
+		processes: map[string]*ProcessInfo{
+			"instance-1": {PID: 1234},
+		},
+	}
+
+	manager.recordEmulatorFailure("instance-1", "emulator log stalled for 10s — process likely dead", logPath)
+
+	inst := manager.instances["instance-1"]
+	if inst.Status != StatusRunning {
+		t.Fatalf("status = %s, want %s", inst.Status, StatusRunning)
+	}
+	if _, ok := manager.processes["instance-1"]; !ok {
+		t.Fatalf("process entry was removed for running instance")
 	}
 }
 
