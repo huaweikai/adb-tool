@@ -151,17 +151,21 @@ class EmulatorJavaProvider extends ChangeNotifier {
     return await select(savedPath);
   }
 
-  /// Start downloading a Java runtime
+  /// Start downloading a Java runtime. Pass either an explicit [url], or
+  /// leave it null and set [version] to let the backend pick a default
+  /// Adoptium Temurin build.
   Future<bool> download({
-    required String url,
     required String id,
+    String? url,
+    String? version,
     String? sha256,
     String? name,
   }) async {
     try {
       final result = await _api.downloadJava(
-        url: url,
         id: id,
+        url: url,
+        version: version,
         sha256: sha256,
         name: name,
       );
@@ -184,6 +188,56 @@ class EmulatorJavaProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('[EmulatorJavaProvider] download error: $e');
       _javaStatus = JavaStatus.error;
+      _errorMessage = e.toString();
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Import a Java runtime from a local `.zip` archive. The backend
+  /// streams the file, extracts it into the managed runtime dir and
+  /// validates that the resulting `bin/java` actually runs.
+  Future<bool> importJava({
+    required String id,
+    required String localPath,
+  }) async {
+    _javaStatus = JavaStatus.checking;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final result = await _api.importJava(id: id, localPath: localPath);
+      if (!result.success) {
+        _javaStatus = JavaStatus.error;
+        _errorMessage = result.error ?? 'Java import failed';
+        notifyListeners();
+        return false;
+      }
+      await refreshStatus();
+      return true;
+    } catch (e) {
+      debugPrint('[EmulatorJavaProvider] importJava error: $e');
+      _javaStatus = JavaStatus.error;
+      _errorMessage = e.toString();
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Delete a managed Java runtime by id. No-op for system / detected
+  /// runtimes — the backend only ever touches its own java-runtime dir.
+  Future<bool> deleteJava(String id) async {
+    try {
+      await _api.deleteJava(id);
+      // If the deleted runtime was the active selection, clear it locally
+      // so the next status poll doesn't keep the stale path around.
+      if (_status?.selectedPath != null && _status!.selectedPath!.contains(id)) {
+        await _db?.appStatesDao.updateAppState(clearJavaPath: true);
+      }
+      await refreshStatus();
+      return true;
+    } catch (e) {
+      debugPrint('[EmulatorJavaProvider] deleteJava error: $e');
       _errorMessage = e.toString();
       notifyListeners();
       return false;

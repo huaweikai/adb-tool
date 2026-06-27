@@ -1,4 +1,8 @@
 // Java runtime API - status, validation, and download management.
+import 'dart:io' show Platform;
+
+import 'package:dio/dio.dart' show FormData, MultipartFile, Options;
+
 import 'package:adb_tool/services/api_client.dart';
 
 mixin EmulatorJavaApi on ApiBase {
@@ -37,17 +41,24 @@ mixin EmulatorJavaApi on ApiBase {
   }
 
   /// Start downloading a Java runtime.
+  ///
+  /// If [url] is empty, the backend fills in a default Adoptium Temurin
+  /// build for the requested [version] (defaults to 17). [id] doubles as
+  /// the managed-runtime directory name on disk and must be filesystem-safe
+  /// (the backend sanitizes it).
   Future<JavaDownloadResult> downloadJava({
-    required String url,
     required String id,
+    String? url,
+    String? version,
     String? sha256,
     String? name,
   }) async {
     final response = await dio.post(
       '/api/emulator/java/download',
       data: {
-        'url': url,
         'id': id,
+        if (url != null && url.isNotEmpty) 'url': url,
+        if (version != null) 'version': version,
         if (sha256 != null) 'sha256': sha256,
         if (name != null) 'name': name,
       },
@@ -56,10 +67,55 @@ mixin EmulatorJavaApi on ApiBase {
     return JavaDownloadResult.fromJson(data);
   }
 
+  /// Import a Java runtime from a local `.zip` archive. [localPath] is
+  /// uploaded as a multipart/form-data POST (the standard contract for
+  /// Go's `r.FormFile`). The backend extracts the archive into the
+  /// managed runtime dir keyed by [id].
+  ///
+  /// Note: we deliberately do NOT use the shared `postLocalFile` octet-
+  /// stream helper here. Dio 5.9.2 + `data: file.openRead()` Stream
+  /// bodies send with `Transfer-Encoding: chunked`, which on Windows
+  /// sometimes aborts mid-upload with WSAECONNABORTED (10053) before
+  /// the body fully drains. Multipart has a deterministic Content-Length
+  /// and dodges the issue.
+  Future<JavaImportResult> importJava({
+    required String id,
+    required String localPath,
+  }) async {
+    final form = FormData.fromMap({
+      'id': id,
+      'file': await MultipartFile.fromFile(
+        localPath,
+        filename: localPath.split(Platform.pathSeparator).last,
+      ),
+    });
+    final response = await dio.post(
+      '/api/emulator/java/import',
+      data: form,
+      options: Options(contentType: 'multipart/form-data'),
+    );
+    if (!isOk(response)) {
+      throw Exception(errorMessage(response));
+    }
+    return JavaImportResult.fromJson(responseMap(response));
+  }
+
+  /// Delete a managed (downloaded / imported) Java runtime by id.
+  /// Has no effect on system Java or other detected runtimes.
+  Future<void> deleteJava(String id) async {
+    await dio.post('/api/emulator/java/delete', data: {'id': id});
+  }
+
   /// Get download progress.
+  ///
+  /// Hits the unified `/api/emulator/download/progress` endpoint. The
+  /// legacy `/api/emulator/java/download-progress` route was removed when
+  /// progress was consolidated — calling it now hits the webFS fallback
+  /// and returns "404 page not found" text, which then explodes in the
+  /// JSON decoder.
   Future<JavaDownloadProgress> getDownloadProgress(String id) async {
     final response = await dio.get(
-      '/api/emulator/java/download-progress',
+      '/api/emulator/download/progress',
       queryParameters: {'id': id},
     );
     final data = responseMap(response);
@@ -69,7 +125,7 @@ mixin EmulatorJavaApi on ApiBase {
   /// Cancel a download.
   Future<void> cancelDownload(String id) async {
     await dio.post(
-      '/api/emulator/java/download-cancel',
+      '/api/emulator/download/cancel',
       queryParameters: {'id': id},
     );
   }
@@ -85,6 +141,7 @@ class JavaRuntimeStatus {
   final bool selectedInvalid;
   final List<JavaRuntimeInfo> embedded;
   final List<DownloadInfo> downloads;
+  final List<JavaDownloadOption> defaultDownloads;
 
   const JavaRuntimeStatus({
     this.status = 'unknown',
@@ -96,6 +153,7 @@ class JavaRuntimeStatus {
     this.selectedInvalid = false,
     this.embedded = const [],
     this.downloads = const [],
+    this.defaultDownloads = const [],
   });
 
   factory JavaRuntimeStatus.fromJson(Map<String, dynamic> json) {
@@ -118,6 +176,11 @@ class JavaRuntimeStatus {
           [],
       downloads: (json['downloads'] as List<dynamic>?)
               ?.map((e) => DownloadInfo.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          [],
+      defaultDownloads: (json['defaultDownloads'] as List<dynamic>?)
+              ?.map((e) =>
+                  JavaDownloadOption.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [],
     );
@@ -235,12 +298,14 @@ class JavaDownloadResult {
   final String id;
   final String status;
   final double progress;
+  final String? url;
   final String? error;
 
   const JavaDownloadResult({
     required this.id,
     this.status = 'pending',
     this.progress = 0.0,
+    this.url,
     this.error,
   });
 
@@ -249,6 +314,7 @@ class JavaDownloadResult {
       id: json['id'] as String? ?? '',
       status: json['status'] as String? ?? 'pending',
       progress: (json['progress'] as num?)?.toDouble() ?? 0.0,
+      url: json['url'] as String?,
       error: json['error'] as String?,
     );
   }
@@ -304,6 +370,64 @@ class DownloadInfo {
       id: json['id'] as String? ?? '',
       status: json['status'] as String? ?? 'unknown',
       progress: (json['progress'] as num?)?.toDouble() ?? 0.0,
+    );
+  }
+}
+
+/// A pre-resolved default download target that the backend knows how to
+/// fetch. The status endpoint exposes one entry per supported Java major
+/// version, so the "Download Java" dialog can offer a one-click button
+/// without the user having to paste an Adoptium URL.
+class JavaDownloadOption {
+  final String version;
+  final String id;
+  final String name;
+  final String url;
+
+  const JavaDownloadOption({
+    required this.version,
+    required this.id,
+    required this.name,
+    required this.url,
+  });
+
+  factory JavaDownloadOption.fromJson(Map<String, dynamic> json) {
+    return JavaDownloadOption(
+      version: json['version'] as String? ?? '',
+      id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      url: json['url'] as String? ?? '',
+    );
+  }
+}
+
+/// Result of importing a Java runtime zip — the resolved path, version and
+/// vendor that the backend discovered during validation.
+class JavaImportResult {
+  final bool success;
+  final String id;
+  final String path;
+  final String? version;
+  final String? vendor;
+  final String? error;
+
+  const JavaImportResult({
+    this.success = false,
+    this.id = '',
+    this.path = '',
+    this.version,
+    this.vendor,
+    this.error,
+  });
+
+  factory JavaImportResult.fromJson(Map<String, dynamic> json) {
+    return JavaImportResult(
+      success: json['success'] as bool? ?? false,
+      id: json['id'] as String? ?? '',
+      path: json['path'] as String? ?? '',
+      version: json['version'] as String?,
+      vendor: json['vendor'] as String?,
+      error: json['error'] as String?,
     );
   }
 }

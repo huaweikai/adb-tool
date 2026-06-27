@@ -1,8 +1,10 @@
 // Emulator Java runtime status card widget.
 // Displays and manages Java runtime configuration.
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/emulator_java_provider.dart';
+import '../services/api/emulator_java_api.dart';
 import '../services/api_client.dart';
 
 class EmulatorJavaCard extends StatelessWidget {
@@ -287,95 +289,204 @@ class EmulatorJavaCard extends StatelessWidget {
   Widget _buildActions(BuildContext context, EmulatorJavaProvider provider) {
     final isDownloading = provider.isDownloading;
 
-    return Row(
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
       children: [
         FilledButton.icon(
           onPressed: isDownloading ? null : () => provider.refreshStatus(),
           icon: const Icon(Icons.refresh, size: 18),
           label: const Text('重新检测'),
         ),
-        const SizedBox(width: 8),
         OutlinedButton.icon(
           onPressed: isDownloading ? null : () => _showDownloadDialog(context),
           icon: const Icon(Icons.download, size: 18),
           label: const Text('下载 Java'),
         ),
+        OutlinedButton.icon(
+          onPressed: isDownloading ? null : () => _importLocalZip(context, provider),
+          icon: const Icon(Icons.archive_outlined, size: 18),
+          label: const Text('导入 Zip'),
+        ),
       ],
+    );
+  }
+
+  Future<void> _importLocalZip(
+      BuildContext context, EmulatorJavaProvider provider) async {
+    final XFile? picked = await openFile(
+      acceptedTypeGroups: const [
+        XTypeGroup(label: 'Java runtime zip', extensions: ['zip']),
+      ],
+    );
+    if (picked == null || !context.mounted) return;
+
+    // Suggest an id derived from the file name. The backend sanitizes /
+    // rejects anything weird, so a user-edited value is still safe.
+    final base = picked.name.replaceAll(RegExp(r'\.zip$', caseSensitive: false), '');
+    final idController = TextEditingController(text: 'imported-$base');
+
+    final String? id = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('导入 Java Zip'),
+        content: SizedBox(
+          width: 400,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('文件: ${picked.name}',
+                  style: const TextStyle(fontSize: 12, color: Colors.grey)),
+              const SizedBox(height: 16),
+              TextField(
+                controller: idController,
+                decoration: const InputDecoration(
+                  labelText: '运行时 ID',
+                  helperText: '仅允许字母/数字/._-',
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, idController.text.trim()),
+            child: const Text('导入'),
+          ),
+        ],
+      ),
+    );
+    if (id == null || id.isEmpty || !context.mounted) return;
+
+    final ok = await provider.importJava(id: id, localPath: picked.path);
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(ok ? '已导入 Java: $id' : '导入失败: ${provider.errorMessage ?? ''}'),
+        duration: const Duration(seconds: 3),
+      ),
     );
   }
 
   Future<void> _showDownloadDialog(BuildContext context) async {
     final urlController = TextEditingController();
     String selectedVersion = '17';
+    String? selectedId = 'temurin-17';
+
+    // Pull the backend's pre-resolved default list so the dialog can show
+    // "Download Temurin 17" one-click buttons instead of forcing the user
+    // to paste an Adoptium URL.
+    final defaults = context.read<EmulatorJavaProvider>().status?.defaultDownloads ?? const <JavaDownloadOption>[];
+    if (defaults.isNotEmpty) {
+      selectedVersion = defaults.first.version;
+      selectedId = defaults.first.id;
+    }
 
     await showDialog<void>(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setState) => AlertDialog(
-          title: const Text('下载 Java 运行环境'),
-          content: SizedBox(
-            width: 500,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  '下载 JetBrains Runtime (JBR) - 推荐用于 Android 开发',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
-                ),
-                const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
-                  value: selectedVersion,
-                  decoration: const InputDecoration(
-                    labelText: 'Java 版本',
+        builder: (ctx, setState) {
+          JavaDownloadOption? matched;
+          for (final d in defaults) {
+            if (d.version == selectedVersion) {
+              matched = d;
+              break;
+            }
+          }
+
+          return AlertDialog(
+            title: const Text('下载 Java 运行环境'),
+            content: SizedBox(
+              width: 500,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '下载 Eclipse Temurin (Adoptium) - 跨平台官方构建',
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
                   ),
-                  items: const [
-                    DropdownMenuItem(value: '17', child: Text('Java 17 (推荐)')),
-                    DropdownMenuItem(value: '21', child: Text('Java 21')),
-                    DropdownMenuItem(value: '11', child: Text('Java 11')),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    value: selectedVersion,
+                    decoration: const InputDecoration(
+                      labelText: 'Java 版本',
+                    ),
+                    items: defaults
+                        .map((d) => DropdownMenuItem(
+                              value: d.version,
+                              child: Text('Java ${d.version}'),
+                            ))
+                        .toList(),
+                    onChanged: (value) {
+                      if (value != null) {
+                        setState(() {
+                          selectedVersion = value;
+                          final m = defaults.firstWhere(
+                            (d) => d.version == value,
+                            orElse: () => defaults.first,
+                          );
+                          selectedId = m.id;
+                          urlController.text = m.url;
+                        });
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: urlController,
+                    decoration: const InputDecoration(
+                      labelText: '下载 URL',
+                      hintText: '默认使用 Temurin 镜像，可手动替换',
+                    ),
+                  ),
+                  if (matched != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      '来源: ${matched.name}',
+                      style: const TextStyle(fontSize: 11, color: Colors.grey),
+                    ),
                   ],
-                  onChanged: (value) {
-                    if (value != null) {
-                      setState(() => selectedVersion = value);
-                    }
-                  },
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: urlController,
-                  decoration: const InputDecoration(
-                    labelText: '自定义 URL (可选)',
-                    hintText: '留空使用默认下载地址',
-                  ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  '注意: 手动下载地址需要提供完整 URL 和 SHA-256 校验和',
-                  style: TextStyle(fontSize: 11, color: Colors.grey),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () async {
-                Navigator.pop(ctx);
-                // TODO: Implement download with proper URL
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('下载功能即将推出'),
-                    duration: Duration(seconds: 2),
-                  ),
-                );
-              },
-              child: const Text('开始下载'),
-            ),
-          ],
-        ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: () async {
+                  Navigator.pop(ctx);
+                  if (!context.mounted) return;
+                  final provider = context.read<EmulatorJavaProvider>();
+                  final ok = await provider.download(
+                    id: selectedId ?? 'temurin-$selectedVersion',
+                    url: urlController.text.trim().isEmpty
+                        ? null
+                        : urlController.text.trim(),
+                    version: selectedVersion,
+                  );
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(ok
+                          ? '开始下载 Java $selectedVersion...'
+                          : '启动下载失败: ${provider.errorMessage ?? ''}'),
+                      duration: const Duration(seconds: 2),
+                    ),
+                  );
+                },
+                child: const Text('开始下载'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }

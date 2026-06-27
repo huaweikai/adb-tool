@@ -441,6 +441,25 @@ func (s *Server) handleEmulatorJavaStatus(w http.ResponseWriter, r *http.Request
 		}
 	}
 
+	// Build the default download suggestion list (Adoptium Temurin) so the
+	// frontend can render a one-click "Download" dialog without the user
+	// having to paste a URL.
+	defaults := make([]map[string]interface{}, 0, len(emulator.SupportedJavaVersions))
+	for _, ver := range emulator.SupportedJavaVersions {
+		url, err := emulator.DefaultJavaDownloadURL(ver)
+		if err != nil {
+			// Skip unsupported combinations silently — handler keeps
+			// working; just no default URL for that version.
+			continue
+		}
+		defaults = append(defaults, map[string]interface{}{
+			"version": ver,
+			"id":      "temurin-" + ver,
+			"name":    "Eclipse Temurin " + ver,
+			"url":     url,
+		})
+	}
+
 	response := map[string]interface{}{
 		"systemJava":      java,
 		"runtimes":        runtimes,
@@ -448,6 +467,7 @@ func (s *Server) handleEmulatorJavaStatus(w http.ResponseWriter, r *http.Request
 		"selectedInvalid": selectedInvalid,
 		"embedded":        embedded,
 		"downloads":       downloadsResp,
+		"defaultDownloads": defaults,
 	}
 
 	if java != nil {
@@ -570,19 +590,40 @@ func (s *Server) handleEmulatorJavaDownload(w http.ResponseWriter, r *http.Reque
 	defer r.Body.Close()
 
 	var req struct {
-		URL    string `json:"url"`
-		ID     string `json:"id"`
-		SHA256 string `json:"sha256"`
-		Name   string `json:"name"`
+		URL     string `json:"url"`
+		ID      string `json:"id"`
+		SHA256  string `json:"sha256"`
+		Name    string `json:"name"`
+		Version string `json:"version"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	if req.URL == "" || req.ID == "" {
-		writeAPIError(w, http.StatusBadRequest, "url and id are required")
+	if req.ID == "" {
+		writeAPIError(w, http.StatusBadRequest, "id is required")
 		return
+	}
+
+	// If the caller didn't provide a URL, fall back to the Adoptium
+	// Temurin build for the requested Java version. Version may be empty,
+	// in which case the frontend should have pre-resolved a default — but
+	// we still try the latest 17 download as a last resort.
+	if req.URL == "" {
+		version := req.Version
+		if version == "" {
+			version = "17"
+		}
+		url, err := emulator.DefaultJavaDownloadURL(version)
+		if err != nil {
+			writeAPIError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		req.URL = url
+		if req.Name == "" {
+			req.Name = "Eclipse Temurin " + version
+		}
 	}
 
 	// Build download item
@@ -611,6 +652,128 @@ func (s *Server) handleEmulatorJavaDownload(w http.ResponseWriter, r *http.Reque
 		"id":       download.ID,
 		"status":   download.Status,
 		"progress": download.Progress,
+		"url":      req.URL,
+	})
+}
+
+// handleEmulatorJavaImport imports a Java runtime from a local .zip upload.
+// Expects a multipart/form-data POST with two fields:
+//   - `id`   : runtime id, used as the managed directory name
+//   - `file` : the .zip archive
+//
+// We originally tried to share the same `application/octet-stream` raw
+// body pattern as `/api/install-package`, but dio 5.9.2's Stream body
+// transport reliably aborts mid-upload on Windows with WSAECONNABORTED
+// (10053) before the body fully drains. Multipart has a deterministic
+// Content-Length on both ends and dodges the issue.
+func (s *Server) handleEmulatorJavaImport(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeAPIError(w, http.StatusMethodNotAllowed, "POST required")
+		return
+	}
+
+	if err := r.ParseMultipartForm(500 << 20); err != nil { // 500MB ceiling
+		writeAPIError(w, http.StatusBadRequest, "failed to parse form: "+err.Error())
+		return
+	}
+
+	runtimeID := r.FormValue("id")
+	if err := emulator.SanitizeJavaRuntimeID(runtimeID); err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "java file is required: "+err.Error())
+		return
+	}
+	defer file.Close()
+
+	tmpPath := filepath.Join(os.TempDir(), "java-import-"+uuid.New().String()+".zip")
+	tmpFile, err := os.Create(tmpPath)
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "failed to create temp file: "+err.Error())
+		return
+	}
+	if _, err := io.Copy(tmpFile, file); err != nil {
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpPath)
+		writeAPIError(w, http.StatusInternalServerError, "failed to save temp file: "+err.Error())
+		return
+	}
+	if err := tmpFile.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		writeAPIError(w, http.StatusInternalServerError, "failed to finalize temp file: "+err.Error())
+		return
+	}
+	defer os.Remove(tmpPath)
+
+	javaPath, err := emulator.ImportJavaFromZip(tmpPath, runtimeID)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "failed to import java: "+err.Error())
+		return
+	}
+
+	rt := emulator.ValidateJavaPath(javaPath)
+	if rt == nil {
+		_ = emulator.DeleteJavaRuntime(runtimeID)
+		writeAPIError(w, http.StatusBadRequest, "imported file is not a usable Java runtime")
+		return
+	}
+
+	writeJSON(w, map[string]interface{}{
+		"success":     true,
+		"id":          runtimeID,
+		"path":        rt.Path,
+		"version":     rt.Version,
+		"vendor":      rt.Vendor,
+		"originalName": header.Filename,
+	})
+}
+
+// handleEmulatorJavaDelete removes a managed (downloaded / imported) Java
+// runtime by id. Does not affect system Java or other runtimes found on PATH.
+func (s *Server) handleEmulatorJavaDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeAPIError(w, http.StatusMethodNotAllowed, "POST required")
+		return
+	}
+	defer r.Body.Close()
+
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := emulator.SanitizeJavaRuntimeID(req.ID); err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if req.ID == "" {
+		writeAPIError(w, http.StatusBadRequest, "id is required")
+		return
+	}
+
+	if err := emulator.DeleteJavaRuntime(req.ID); err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "failed to delete runtime: "+err.Error())
+		return
+	}
+
+	// If the deleted runtime was the active selection, clear it.
+	if selected := emulator.LoadSelectedJavaPath(); selected != "" {
+		rt := emulator.ValidateJavaPath(selected)
+		if rt == nil || !strings.HasPrefix(rt.Path, emulator.JavaRuntimeDir()) {
+			_ = emulator.SaveSelectedJavaPath("")
+		}
+	}
+
+	writeJSON(w, map[string]interface{}{
+		"success": true,
+		"id":      req.ID,
 	})
 }
 

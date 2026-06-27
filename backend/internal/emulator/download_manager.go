@@ -220,6 +220,27 @@ func (dm *DownloadManager) runDownload(item *DownloadItem) {
 				log.Printf("[image] download: registered %d image(s), err=%v", n, regErr)
 			}
 		}
+
+		// For Java runtimes, flatten the extracted tree into the managed
+		// java-runtime directory so it shows up in ScanJavaRuntimes() and
+		// the user can pick it as the active Java. The zip itself is
+		// already gone; we hand the *directory* (not the zip) to the
+		// register helper. ImportJavaFromZip would re-try to extract it
+		// as a zip and fail.
+		if item.Type == DownloadTypeJava {
+			log.Printf("[java] download complete: registering from %s (id=%s)", extractDir, item.ID)
+			javaPath, err := RegisterJavaFromExtractedDir(extractDir, item.ID)
+			if err != nil {
+				item.Status = "error"
+				item.Error = fmt.Sprintf("java import failed: %v", err)
+				dm.notifyUpdate(item)
+				return
+			}
+			log.Printf("[java] download: registered at %s", javaPath)
+			// Drop the original extract directory now that the java
+			// tree lives under java-runtime/<id>/.
+			_ = os.RemoveAll(extractDir)
+		}
 	}
 }
 

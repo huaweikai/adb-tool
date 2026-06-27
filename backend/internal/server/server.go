@@ -256,6 +256,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/emulator/java/select", s.handleEmulatorJavaSelect)
 	mux.HandleFunc("/api/emulator/java/validate", s.handleEmulatorJavaValidate)
 	mux.HandleFunc("/api/emulator/java/download", s.handleEmulatorJavaDownload)
+	mux.HandleFunc("/api/emulator/java/import", s.handleEmulatorJavaImport)
+	mux.HandleFunc("/api/emulator/java/delete", s.handleEmulatorJavaDelete)
 
 	// Unified download API (replaces Java-specific and image-specific download APIs)
 	mux.HandleFunc("/api/emulator/downloads", s.handleEmulatorDownloads)
