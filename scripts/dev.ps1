@@ -136,6 +136,12 @@ function Build-GoBackend {
 
   Step "[2/2] Build Go backend -> $out"
 
+  # Kill any leftover runtime.exe from a previous dev session before we
+  # overwrite the binary. On Windows an in-use binary can stay open with
+  # a file lock, and the new process would still read the *old* code in
+  # some edge cases. Killing first makes the rebuild deterministic.
+  Stop-RuntimeBackend
+
   Push-Location (Join-Path $Root 'backend')
   try {
     & go build -o $out .
@@ -147,6 +153,48 @@ function Build-GoBackend {
   }
 
   Ok 'Backend compiled'
+
+  # Sync the freshly built binary into every Flutter build-mode directory
+  # the running `flutter run` is actually launching from. Without this,
+  # Resources/runtime.exe is the only one we just updated — but `flutter
+  # run` dev mode starts a process from
+  # `flutter_app/build/windows/x64/runner/Debug/runtime.exe` (copied by
+  # CMake at the start of `flutter run`), so all our changes look like
+  # they have no effect.
+  Sync-BackendToFlutterBuild
+}
+
+function Sync-BackendToFlutterBuild {
+  $src = Join-Path $Root 'flutter_app\windows\runner\Resources\runtime.exe'
+  if (-not (Test-Path $src)) { return }
+
+  $buildRoot = Join-Path $Root 'flutter_app\build\windows\x64\runner'
+  if (-not (Test-Path $buildRoot)) { return }
+
+  foreach ($mode in @('Debug', 'Profile', 'Release')) {
+    $dst = Join-Path $buildRoot $mode
+    if (Test-Path $dst) {
+      try {
+        Copy-Item -Path $src -Destination (Join-Path $dst 'runtime.exe') -Force
+        Write-Host "  synced runtime.exe -> $dst" -ForegroundColor DarkGray
+      } catch {
+        Write-Host "  could not sync to $dst (binary may be in use): $_" -ForegroundColor Yellow
+      }
+    }
+  }
+}
+
+# Kill every lingering adb-tool backend binary (any previous `flutter run`
+# that didn't clean up its child process). Without this the next `flutter
+# run` either fails to bind 9876 or picks up the stale binary.
+function Stop-RuntimeBackend {
+  $procs = Get-Process -Name 'runtime' -ErrorAction SilentlyContinue
+  if (-not $procs) { return }
+  foreach ($p in $procs) {
+    Write-Host "  killing stale runtime.exe (pid=$($p.Id))" -ForegroundColor DarkGray
+    try { Stop-Process -Id $p.Id -Force -ErrorAction Stop } catch { }
+  }
+  Start-Sleep -Milliseconds 400
 }
 
 # Main flow
@@ -157,6 +205,10 @@ if ($BuildOnly) {
   Ok 'Build complete (-BuildOnly set, Flutter not launched).'
   exit 0
 }
+
+# Belt-and-suspenders: kill again right before launching Flutter in case
+# the previous session's child popped back up after Build-GoBackend ran.
+Stop-RuntimeBackend
 
 Step 'Launching Flutter (debug, hot reload; Ctrl+C to exit)'
 Push-Location (Join-Path $Root 'flutter_app')
