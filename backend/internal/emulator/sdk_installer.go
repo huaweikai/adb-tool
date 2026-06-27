@@ -192,7 +192,7 @@ func (s *SDKInstaller) run(job *InstallJob, sdkmanagerPath, sdkPath string) {
 		return
 	}
 
-if err := cmd.Start(); err != nil {
+	if err := cmd.Start(); err != nil {
 		s.fail(job, fmt.Errorf("start sdkmanager: %w", err))
 		return
 	}
@@ -332,9 +332,8 @@ func (s *SDKInstaller) List() []*InstallJob {
 // DefaultSDKManagerPath returns the conventional sdkmanager path under the
 // given SDK root. Used when the engine hasn't been initialized yet.
 func DefaultSDKManagerPath(sdkPath string) string {
-	p := filepath.Join(sdkPath, "cmdline-tools", "latest", "bin", "sdkmanager")
-	if _, err := os.Stat(p); err == nil {
-		return p
+	if path := findSDKTool(sdkPath, "sdkmanager"); path != "" {
+		return path
 	}
-	return filepath.Join(sdkPath, "tools", "bin", "sdkmanager")
+	return filepath.Join(sdkPath, "cmdline-tools", "latest", "bin", "sdkmanager")
 }

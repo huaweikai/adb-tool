@@ -269,9 +269,24 @@ func (m *InstanceManager) Delete(id string) error {
 		}
 	}
 
-	// Delete AVD directory
 	if inst.AVDPath != "" {
-		os.RemoveAll(inst.AVDPath)
+		info, err := os.Stat(inst.AVDPath)
+		if err != nil {
+			if !os.IsNotExist(err) {
+				return fmt.Errorf("failed to inspect AVD directory %s: %w", inst.AVDPath, err)
+			}
+		} else if !info.IsDir() {
+			return fmt.Errorf("failed to delete AVD directory %s: path is not a directory", inst.AVDPath)
+		} else if err := os.RemoveAll(inst.AVDPath); err != nil {
+			return fmt.Errorf("failed to delete AVD directory %s: %w", inst.AVDPath, err)
+		}
+	}
+
+	if inst.Name != "" && inst.AVDPath != "" {
+		pointerPath := filepath.Join(filepath.Dir(inst.AVDPath), inst.Name+".ini")
+		if err := os.Remove(pointerPath); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("failed to delete AVD pointer file %s: %w", pointerPath, err)
+		}
 	}
 
 	// Release ports

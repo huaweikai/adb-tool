@@ -278,6 +278,14 @@ func (s *Server) handleEmulatorSDKUse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// ponytail: reuse the same scan-path validator from M2 — single helper,
+	// one place to update if we ever tighten the rules (e.g. enforce a
+	// path prefix). Rejects empty / non-absolute / '..' / filesystem roots.
+	if _, err := validateScanPath(req.SDKPath); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid sdkPath: "+err.Error())
+		return
+	}
+
 	// Accept the path if it has EITHER the emulator binary already OR a
 	// usable cmdline-tools toolchain (sdkmanager + avdmanager). The latter
 	// case lets the user point us at a freshly-installed SDK that hasn't
@@ -294,7 +302,7 @@ func (s *Server) handleEmulatorSDKUse(w http.ResponseWriter, r *http.Request) {
 	hasToolchain := emulator.SdkPathHasToolchain(req.SDKPath)
 	if !hasEmulator && !hasToolchain {
 		writeAPIError(w, http.StatusBadRequest,
-			"invalid SDK path: neither <sdkPath>/emulator/emulator nor <sdkPath>/cmdline-tools/latest/bin/{sdkmanager,avdmanager} found")
+			"invalid SDK path: neither emulator nor cmdline-tools sdkmanager/avdmanager found")
 		return
 	}
 
@@ -483,12 +491,12 @@ func (s *Server) handleEmulatorJavaStatus(w http.ResponseWriter, r *http.Request
 	}
 
 	response := map[string]interface{}{
-		"systemJava":      java,
-		"runtimes":        runtimes,
-		"selectedPath":    selectedPath,
-		"selectedInvalid": selectedInvalid,
-		"embedded":        embedded,
-		"downloads":       downloadsResp,
+		"systemJava":       java,
+		"runtimes":         runtimes,
+		"selectedPath":     selectedPath,
+		"selectedInvalid":  selectedInvalid,
+		"embedded":         embedded,
+		"downloads":        downloadsResp,
 		"defaultDownloads": defaults,
 	}
 
@@ -760,11 +768,11 @@ func (s *Server) handleEmulatorJavaImport(w http.ResponseWriter, r *http.Request
 	}
 
 	writeJSON(w, map[string]interface{}{
-		"success":     true,
-		"id":          runtimeID,
-		"path":        rt.Path,
-		"version":     rt.Version,
-		"vendor":      rt.Vendor,
+		"success":      true,
+		"id":           runtimeID,
+		"path":         rt.Path,
+		"version":      rt.Version,
+		"vendor":       rt.Vendor,
 		"originalName": header.Filename,
 	})
 }
@@ -990,6 +998,44 @@ func (s *Server) handleEmulatorImageScan(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, map[string]interface{}{
 		"success": true,
 		"found":   count,
+	})
+}
+
+// handleEmulatorImageDelete removes a system image from disk and from the
+// persisted registry. Required query params: id, ?confirm=true.
+//
+// ponytail: destructive but explicit. The image id came from the registry
+// that we just showed the user; the confirm gate matches handleEmulatorSDKDelete
+// (B2) and handleEmulatorInstanceDelete (B3) — accidental curl or stray UI
+// click can't wipe a multi-GB image dir.
+func (s *Server) handleEmulatorImageDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "DELETE" {
+		writeAPIError(w, http.StatusMethodNotAllowed, "DELETE required")
+		return
+	}
+
+	if r.URL.Query().Get("confirm") != "true" {
+		writeAPIError(w, http.StatusBadRequest,
+			"pass ?confirm=true to acknowledge this destructive image deletion")
+		return
+	}
+
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		writeAPIError(w, http.StatusBadRequest, "id is required")
+		return
+	}
+
+	removed, err := emulator.DeleteRegisteredImage(id)
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, map[string]interface{}{
+		"success": true,
+		"id":      removed.ID,
+		"path":    removed.Path,
 	})
 }
 

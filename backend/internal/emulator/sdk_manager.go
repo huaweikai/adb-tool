@@ -188,26 +188,7 @@ func (s *SDKManager) GetEmulatorPath() string {
 
 // GetAvdmanagerPath returns the path to avdmanager.
 func (s *SDKManager) GetAvdmanagerPath() string {
-	// avdmanager is in cmdline-tools
-	avdPath := filepath.Join(s.sdkPath, "cmdline-tools", "latest", "bin", "avdmanager")
-	if runtime.GOOS == "windows" {
-		avdPath += ".bat"
-	}
-
-	if _, err := os.Stat(avdPath); err == nil {
-		return avdPath
-	}
-
-	// Try older location
-	oldPath := filepath.Join(s.sdkPath, "tools", "bin", "avdmanager")
-	if runtime.GOOS == "windows" {
-		oldPath += ".bat"
-	}
-	if _, err := os.Stat(oldPath); err == nil {
-		return oldPath
-	}
-
-	return ""
+	return findSDKTool(s.sdkPath, "avdmanager")
 }
 
 // GetJavaPath returns the path to Java in the SDK.

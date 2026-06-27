@@ -77,9 +77,8 @@ func sdkPathHasEmulator(sdkPath string) bool {
 	return err == nil
 }
 
-// sdkPathHasToolchain reports whether the given SDK path contains a usable
-// command-line toolchain — sdkmanager + avdmanager — under the standard
-// cmdline-tools/latest/bin (with a fallback to the older tools/bin layout).
+// SdkPathHasToolchain reports whether the given SDK path contains a usable
+// command-line toolchain — sdkmanager + avdmanager — under known SDK layouts.
 //
 // A path with a working toolchain but no emulator binary is still a *valid*
 // Android SDK: it just means the user hasn't run sdkmanager to download the
@@ -89,20 +88,24 @@ func sdkPathHasEmulator(sdkPath string) bool {
 // Exported so the HTTP handlers can run the same check before calling
 // DetectEmulatorEngine (to fail fast with a clear error).
 func SdkPathHasToolchain(sdkPath string) bool {
-	latest := filepath.Join(sdkPath, "cmdline-tools", "latest", "bin")
-	if findBinary(filepath.Join(latest, "sdkmanager")) == "" {
-		// Try the older tools/bin layout as a fallback.
-		if findBinary(filepath.Join(sdkPath, "tools", "bin", "sdkmanager")) == "" {
-			return false
+	return findSDKTool(sdkPath, "sdkmanager") != "" && findSDKTool(sdkPath, "avdmanager") != ""
+}
+
+func cmdlineToolsBinCandidates(sdkPath string) []string {
+	return []string{
+		filepath.Join(sdkPath, "cmdline-tools", "latest", "bin"),
+		filepath.Join(sdkPath, "cmdline-tools", "bin"),
+		filepath.Join(sdkPath, "tools", "bin"),
+	}
+}
+
+func findSDKTool(sdkPath, name string) string {
+	for _, binDir := range cmdlineToolsBinCandidates(sdkPath) {
+		if path := findBinary(filepath.Join(binDir, name)); path != "" {
+			return path
 		}
 	}
-	avdLatest := filepath.Join(latest, "avdmanager")
-	if findBinary(avdLatest) == "" {
-		if findBinary(filepath.Join(sdkPath, "tools", "bin", "avdmanager")) == "" {
-			return false
-		}
-	}
-	return true
+	return ""
 }
 
 // sdkPathIsAcceptable reports whether the given SDK path is something we can
@@ -327,24 +330,8 @@ func detectToolchain(engine *Engine) {
 		return
 	}
 
-	// Check cmdline-tools first
-	cmdlineToolsLatest := filepath.Join(sdkPath, "cmdline-tools", "latest", "bin")
-	engine.AvdmanagerPath = findBinary(filepath.Join(cmdlineToolsLatest, "avdmanager"))
-	engine.SdkmanagerPath = findBinary(filepath.Join(cmdlineToolsLatest, "sdkmanager"))
-
-	// Fallback to older tools/bin
-	if engine.AvdmanagerPath == "" {
-		toolsBin := filepath.Join(sdkPath, "tools", "bin")
-		if path := findBinary(filepath.Join(toolsBin, "avdmanager")); path != "" {
-			engine.AvdmanagerPath = path
-		}
-	}
-	if engine.SdkmanagerPath == "" {
-		toolsBin := filepath.Join(sdkPath, "tools", "bin")
-		if path := findBinary(filepath.Join(toolsBin, "sdkmanager")); path != "" {
-			engine.SdkmanagerPath = path
-		}
-	}
+	engine.AvdmanagerPath = findSDKTool(sdkPath, "avdmanager")
+	engine.SdkmanagerPath = findSDKTool(sdkPath, "sdkmanager")
 
 	// Check Java
 	detectJava(engine, sdkPath)
@@ -499,25 +486,7 @@ func checkSDKPath(path string) *SDKInfo {
 		}
 	}
 
-	// Check avdmanager (optional component)
-	avdPath := filepath.Join(path, "cmdline-tools", "latest", "bin", "avdmanager")
-	if runtime.GOOS == "windows" {
-		avdPath += ".bat"
-	}
-	if _, err := os.Stat(avdPath); err == nil {
-		result.HasAvdmanager = true
-	}
-
-	// Also check older cmdline-tools location
-	if !result.HasAvdmanager {
-		oldAvdPath := filepath.Join(path, "tools", "bin", "avdmanager")
-		if runtime.GOOS == "windows" {
-			oldAvdPath += ".bat"
-		}
-		if _, err := os.Stat(oldAvdPath); err == nil {
-			result.HasAvdmanager = true
-		}
-	}
+	result.HasAvdmanager = findSDKTool(path, "avdmanager") != ""
 
 	// Check Java in SDK (optional component)
 	javaPaths := []string{

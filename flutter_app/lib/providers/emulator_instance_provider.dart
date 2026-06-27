@@ -187,7 +187,7 @@ class EmulatorInstanceProvider extends ChangeNotifier {
   }
 
   /// Delete an instance. Returns true on success, false if the backend
-/// rejected the request (caller should surface an error to the user).
+  /// rejected the request (caller should surface an error to the user).
   Future<bool> deleteInstance(String id) async {
     _error = null;
     notifyListeners();
@@ -195,7 +195,7 @@ class EmulatorInstanceProvider extends ChangeNotifier {
     try {
       await _api.dio.delete(
         '/api/emulator/instance/delete',
-        queryParameters: {'id': id},
+        queryParameters: {'id': id, 'confirm': 'true'},
       );
       _instances.removeWhere((i) => i.id == id);
       notifyListeners();
@@ -217,19 +217,28 @@ class EmulatorInstanceProvider extends ChangeNotifier {
     _ws?.close();
 
     try {
-      _ws = await WebSocket.connect(_getStatusWebSocketUrl(ids));
-      _ws!.listen(
+      final newWs = await WebSocket.connect(_getStatusWebSocketUrl(ids));
+      _ws = newWs;
+      newWs.listen(
         (data) {
           final update = jsonDecode(data as String) as Map<String, dynamic>;
           _handleStatusUpdate(update);
         },
+        // ponytail: root-cause fix for the M9 reconnect race. When
+        // connectStatusUpdates is called twice in quick succession (e.g.
+        // fetch → close old → open new → add() → close new → open newer),
+        // the OLD socket's onDone/onError would fire on a socket we
+        // already abandoned, see `_ws == null`, and queue another
+        // connect that stomps on the latest one. Gate callbacks on
+        // "am I still the active socket?" — if a newer connect already
+        // took over, drop the event silently.
         onError: (e) {
           debugPrint('WebSocket error: $e');
-          // Reconnect after delay
+          if (_ws != newWs) return;
           Future.delayed(const Duration(seconds: 5), connectStatusUpdates);
         },
         onDone: () {
-          // Reconnect after delay
+          if (_ws != newWs) return;
           Future.delayed(const Duration(seconds: 5), connectStatusUpdates);
         },
       );

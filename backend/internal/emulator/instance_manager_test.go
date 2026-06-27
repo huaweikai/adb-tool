@@ -345,3 +345,87 @@ func main() {
 		t.Fatalf("-sysdir = %q, want %q; args=%v", sysdir, imagePath, lines)
 	}
 }
+
+func TestDeleteRemovesAVDDirectoryAndPointerIni(t *testing.T) {
+	tmp := t.TempDir()
+	dataDir := filepath.Join(tmp, "data")
+	avdHome := filepath.Join(dataDir, "avd")
+	avdPath := filepath.Join(avdHome, "aaa.avd")
+	pointerPath := filepath.Join(avdHome, "aaa.ini")
+	if err := os.MkdirAll(avdPath, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(avdPath, "config.ini"), []byte("AvdId=aaa\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(pointerPath, []byte("path="+avdPath+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	manager := &InstanceManager{
+		dataDir:   dataDir,
+		portAlloc: NewPortAllocator(),
+		instances: map[string]*Instance{
+			"instance-1": {
+				ID:          "instance-1",
+				Name:        "aaa",
+				AVDPath:     avdPath,
+				Status:      StatusStopped,
+				ConsolePort: 5554,
+				ADBPort:     5555,
+			},
+		},
+	}
+
+	if err := manager.Delete("instance-1"); err != nil {
+		t.Fatalf("Delete returned error: %v", err)
+	}
+	if _, err := os.Stat(avdPath); !os.IsNotExist(err) {
+		t.Fatalf("AVD directory still exists or stat failed unexpectedly: %v", err)
+	}
+	if _, err := os.Stat(pointerPath); !os.IsNotExist(err) {
+		t.Fatalf("pointer ini still exists or stat failed unexpectedly: %v", err)
+	}
+}
+
+func TestDeleteReturnsErrorAndKeepsInstanceWhenAVDPathIsAFile(t *testing.T) {
+	tmp := t.TempDir()
+	dataDir := filepath.Join(tmp, "data")
+	avdHome := filepath.Join(dataDir, "avd")
+	avdPath := filepath.Join(avdHome, "aaa.avd")
+	if err := os.MkdirAll(avdHome, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(avdPath, []byte("not a directory"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	manager := &InstanceManager{
+		dataDir:   dataDir,
+		portAlloc: NewPortAllocator(),
+		instances: map[string]*Instance{
+			"instance-1": {
+				ID:          "instance-1",
+				Name:        "aaa",
+				AVDPath:     avdPath,
+				Status:      StatusStopped,
+				ConsolePort: 5554,
+				ADBPort:     5555,
+			},
+		},
+	}
+
+	err := manager.Delete("instance-1")
+	if err == nil {
+		t.Fatal("Delete returned nil error")
+	}
+	if !strings.Contains(err.Error(), "failed to delete AVD directory") {
+		t.Fatalf("Delete error = %q, want AVD deletion failure", err.Error())
+	}
+	if _, ok := manager.instances["instance-1"]; !ok {
+		t.Fatal("instance was removed after failed AVD deletion")
+	}
+	if _, err := os.Stat(avdPath); err != nil {
+		t.Fatalf("AVD path should remain after failed delete: %v", err)
+	}
+}
