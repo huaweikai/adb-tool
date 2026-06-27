@@ -110,8 +110,38 @@ class EmulatorImage {
     );
   }
 
-  String get displayName =>
-      'Android ${apiLevel > 0 ? (apiLevel - 23 + 5) : "?"} (API $apiLevel, $variant, $arch)';
+  // Fix (code-review M12): the old `(apiLevel - 23 + 5)` formula was a
+  // linear mapping that produced nonsense for any API level >= 24:
+  //   API 35 (Android 15) → 17
+  //   API 36 (Android 16) → 18
+  // Android versions don't map 1:1 to API levels (e.g. Android 7 split
+  // into 24 + 25, Android 12 into 31 + 32), so use an explicit table.
+  // Source: developer.android.com/guide/topics/versions
+  static const Map<int, String> _androidVersionName = {
+    21: '5.0',
+    22: '5.1',
+    23: '6.0',
+    24: '7.0',
+    25: '7.1',
+    26: '8.0',
+    27: '8.1',
+    28: '9.0',
+    29: '10',
+    30: '11',
+    31: '12',
+    32: '12L',
+    33: '13',
+    34: '14',
+    35: '15',
+    36: '16',
+  };
+
+  String get displayName {
+    final version = apiLevel > 0
+        ? (_androidVersionName[apiLevel] ?? '?')
+        : '?';
+    return 'Android $version (API $apiLevel, $variant, $arch)';
+  }
 
   String get fileSizeFormatted {
     if (fileSize < 1024) return '$fileSize B';

@@ -736,10 +736,20 @@ func (m *InstanceManager) startEmulator(inst *Instance) error {
 	// `<androidSdk>/avd` which is the SDK root, but our AVDs live alongside
 	// the emulator cache, not the SDK — that mismatch caused
 	// "ANDROID_AVD_HOME is defined but there is no file <name>.ini" at boot.
-	cmd.Env = append(os.Environ(),
-		"ANDROID_SDK_ROOT="+m.androidSdk,
-		"ANDROID_AVD_HOME="+filepath.Join(m.dataDir, "avd"),
-	)
+	cmdEnv := []string{
+		"ANDROID_SDK_ROOT=" + m.androidSdk,
+		"ANDROID_AVD_HOME=" + filepath.Join(m.dataDir, "avd"),
+	}
+	// Fix (code-review M5): previously we only set JAVA_HOME when
+	// invoking avdmanager (~line 443) but not when launching the
+	// emulator binary itself. The two processes therefore loaded
+	// different JREs (whatever the OS resolved vs. our selected Java),
+	// causing subtle divergence (locale, crypto providers, modules).
+	// Pass JAVA_HOME to the emulator child when we have one configured.
+	if m.javaPath != "" {
+		cmdEnv = append(cmdEnv, "JAVA_HOME="+filepath.Dir(m.javaPath))
+	}
+	cmd.Env = append(os.Environ(), cmdEnv...)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 
@@ -750,6 +760,16 @@ func (m *InstanceManager) startEmulator(inst *Instance) error {
 		_ = os.Remove(logPath)
 		return fmt.Errorf("failed to start emulator: %w", err)
 	}
+	// Close the parent's copy of the log file now that the child has
+	// inherited its own FD. Without this:
+	//   - the parent leaks an OS file handle for the entire emulator
+	//     lifetime (hours, in practice).
+	//   - on Windows the file cannot be deleted while the parent's
+	//     handle is open, which breaks tests that use a temp AVD dir
+	//     (TestStartEmulatorPassesSystemImagePathToSysdir cleanup).
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	logFile.Close()
 
 	inst.LogPath = logPath
 

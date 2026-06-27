@@ -202,12 +202,23 @@ merge_to_universal() {
   for fw in "$arm64_app/Contents/Frameworks"/*.framework; do
     [[ -e "$fw" ]] || continue
     local fw_name="$(basename "$fw")"
+    # Skip the Flutter engine framework — it was handled above with its
+    # own $uni_fw path.
+    [[ "$fw_name" == "FlutterMacOS.framework" ]] && continue
     local arm64_bin="$fw/Contents/MacOS/$fw_name"
     local amd64_bin="$amd64_app/Contents/Frameworks/$fw_name/Contents/MacOS/$fw_name"
 
     if [[ -f "$arm64_bin" && -f "$amd64_bin" ]]; then
       echo "  合并 $fw_name..."
-      lipo -create "$arm64_bin" "$amd64_bin" -output "$uni_fw/Contents/MacOS/$fw_name"
+      # Fix (code-review M14): each non-Flutter framework needs its OWN
+      # output dir under Contents/Frameworks/<fw_name>/Contents/MacOS/<fw_name>.
+      # The previous code wrote all merged binaries into
+      # FlutterMacOS.framework/Contents/MacOS/<fw_name>, so they ended up
+      # in the wrong framework and dlopen() at runtime failed to find
+      # the architecture-specific binary.
+      local dst_bin="$universal_app/Contents/Frameworks/$fw_name/Contents/MacOS/$fw_name"
+      mkdir -p "$(dirname "$dst_bin")"
+      lipo -create "$arm64_bin" "$amd64_bin" -output "$dst_bin"
     fi
   done
 

@@ -217,6 +217,18 @@ func (s *Server) handleEmulatorSDKDownload(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// Fix (code-review M3 + M7): validate the URL scheme/host and the
+	// ID-derived path segment before building the destPath.
+	if err := validateDownloadURL(req.URL); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid url: "+err.Error())
+		return
+	}
+	safeID, err := sanitizeDownloadIDComponent(req.ID)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid id: "+err.Error())
+		return
+	}
+
 	home, err := os.UserHomeDir()
 	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, "failed to get home directory")
@@ -224,7 +236,7 @@ func (s *Server) handleEmulatorSDKDownload(w http.ResponseWriter, r *http.Reques
 	}
 
 	platform := runtime.GOOS + "-" + runtime.GOARCH
-	downloadID := req.ID + "-" + platform
+	downloadID := safeID + "-" + platform
 	destPath := filepath.Join(home, ".adb-tool", "sdk", "downloads", downloadID, "cmdline-tools.zip")
 
 	item := &emulator.DownloadItem{
@@ -616,6 +628,14 @@ func (s *Server) handleEmulatorJavaDownload(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// Fix (code-review M7): the ID flows into a filepath.Join'd destPath;
+	// reject anything with path separators or '..'.
+	safeID, err := sanitizeDownloadIDComponent(req.ID)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid id: "+err.Error())
+		return
+	}
+
 	// If the caller didn't provide a URL, fall back to the Adoptium
 	// Temurin build for the requested Java version. Version may be empty,
 	// in which case the frontend should have pre-resolved a default — but
@@ -636,6 +656,13 @@ func (s *Server) handleEmulatorJavaDownload(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
+	// Fix (code-review M3): after the default-URL fallback, validate the
+	// resolved URL the same way the caller-supplied one is validated.
+	if err := validateDownloadURL(req.URL); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid url: "+err.Error())
+		return
+	}
+
 	// Build download item
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -644,7 +671,7 @@ func (s *Server) handleEmulatorJavaDownload(w http.ResponseWriter, r *http.Reque
 	}
 
 	platform := runtime.GOOS + "-" + runtime.GOARCH
-	downloadID := req.ID + "-" + platform
+	downloadID := safeID + "-" + platform
 	destPath := filepath.Join(home, ".adb-tool", "emulator", "java-runtime", downloadID, "download.zip")
 
 	item := &emulator.DownloadItem{
@@ -942,18 +969,19 @@ func (s *Server) handleEmulatorImageScan(w http.ResponseWriter, r *http.Request)
 		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	req.Path = strings.TrimSpace(req.Path)
-	if req.Path == "" {
-		writeAPIError(w, http.StatusBadRequest, "path is required")
+	// Fix (code-review M2): reject "/" / "C:\" / ".." before handing to Walk.
+	scanPath, err := validateScanPath(req.Path)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid path: "+err.Error())
 		return
 	}
-	if _, err := os.Stat(req.Path); err != nil {
+	if _, err := os.Stat(scanPath); err != nil {
 		writeAPIError(w, http.StatusBadRequest, "path not accessible: "+err.Error())
 		return
 	}
 
 	imageMgr := emulator.NewImageManager(EmulatorEngine.AndroidHome)
-	count, err := imageMgr.ScanAndRegister(req.Path)
+	count, err := imageMgr.ScanAndRegister(scanPath)
 	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -1091,6 +1119,29 @@ func (s *Server) handleEmulatorImageAdd(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Fix (code-review M3 + M7): validate URL + sanitize every component
+	// that flows into downloadID. A malicious "id" or "variant" containing
+	// "../etc" would have escaped the managed download root before this.
+	if err := validateDownloadURL(req.URL); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid url: "+err.Error())
+		return
+	}
+	safeID, err := sanitizeDownloadIDComponent(req.ID)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid id: "+err.Error())
+		return
+	}
+	safeArch, err := sanitizeDownloadIDComponent(req.Arch)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid arch: "+err.Error())
+		return
+	}
+	safeVariant, err := sanitizeDownloadIDComponent(req.Variant)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid variant: "+err.Error())
+		return
+	}
+
 	home, err := os.UserHomeDir()
 	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, "failed to get home directory")
@@ -1098,7 +1149,7 @@ func (s *Server) handleEmulatorImageAdd(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Build download ID
-	downloadID := fmt.Sprintf("image-%s-%s-%s", req.ID, req.Arch, req.Variant)
+	downloadID := fmt.Sprintf("image-%s-%s-%s", safeID, safeArch, safeVariant)
 	destPath := filepath.Join(home, ".adb-tool", "emulator", "system-images", downloadID, "download.zip")
 
 	item := &emulator.DownloadItem{
@@ -1296,12 +1347,16 @@ func (s *Server) handleEmulatorImageImportPath(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	if req.Path == "" {
-		writeAPIError(w, http.StatusBadRequest, "path is required")
+	// Fix (code-review M2): reject "/" / "C:\" / ".." before invoking the
+	// walker. Without this, a user passing "/" pins the goroutine for
+	// minutes walking every file on disk.
+	scanPath, err := validateScanPath(req.Path)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid path: "+err.Error())
 		return
 	}
 
-	info, err := os.Stat(req.Path)
+	info, err := os.Stat(scanPath)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, "path not accessible: "+err.Error())
 		return
@@ -1311,15 +1366,15 @@ func (s *Server) handleEmulatorImageImportPath(w http.ResponseWriter, r *http.Re
 
 	var images []*emulator.SystemImage
 	if info.IsDir() {
-		log.Printf("[image] import-path: directory import path=%s", req.Path)
-		images, err = imageMgr.ImportImageFromDirectory(req.Path)
+		log.Printf("[image] import-path: directory import path=%s", scanPath)
+		images, err = imageMgr.ImportImageFromDirectory(scanPath)
 	} else {
-		if !strings.HasSuffix(strings.ToLower(req.Path), ".zip") {
+		if !strings.HasSuffix(strings.ToLower(scanPath), ".zip") {
 			writeAPIError(w, http.StatusBadRequest, "file is not a .zip archive")
 			return
 		}
-		log.Printf("[image] import-path: zip import path=%s", req.Path)
-		images, err = imageMgr.ImportImageFromZip(req.Path)
+		log.Printf("[image] import-path: zip import path=%s", scanPath)
+		images, err = imageMgr.ImportImageFromZip(scanPath)
 	}
 	if err != nil {
 		log.Printf("[image] import-path: failed: %v", err)

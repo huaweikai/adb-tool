@@ -66,8 +66,13 @@ function Die([string]$Msg) {
 #   1. -AndroidHome param
 #   2. $env:ANDROID_HOME
 #   3. sdk.dir from adb_tool_app\local.properties
-#   4. D:\Documents\SDK (project default)
 # Gradle priority: ANDROID_HOME env > local.properties sdk.dir
+#
+# Fix (code-review M16): the previous fallback to the developer-specific
+# 'D:\Documents\SDK' hard-coded in this repo made the script fail for
+# every other contributor and CI. Don't silently default to a host-
+# specific path; fail fast and tell the caller to pass -AndroidHome
+# or set $env:ANDROID_HOME.
 function Resolve-AndroidHome {
   if ($AndroidHome -ne '') { return $AndroidHome }
   if ($env:ANDROID_HOME) { return $env:ANDROID_HOME }
@@ -83,7 +88,7 @@ function Resolve-AndroidHome {
     }
   }
 
-  return 'D:\Documents\SDK'
+  Die 'No ANDROID_HOME found. Pass -AndroidHome <path>, set $env:ANDROID_HOME, or write sdk.dir in adb_tool_app\local.properties.'
 }
 
 $ResolvedAndroidHome = Resolve-AndroidHome

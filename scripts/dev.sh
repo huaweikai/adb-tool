@@ -81,15 +81,24 @@ build_android_apk() {
 
   # local.properties 里 sdk.dir 指向外部驱动器（被沙盒阻止），用 ANDROID_HOME 覆盖
   # Gradle 优先级：ANDROID_HOME env > local.properties sdk.dir
-  if ! (cd "$ROOT/adb_tool_app" && ./gradlew assembleDebug \
+  #
+  # Fix (code-review M15): `set -o pipefail` interacts badly with a bare
+  # `2>&1 | tail -50` — in some shells gradle's non-zero exit gets
+  # masked. Pipe through `tee` so we keep the full log on disk AND
+  # surface the tail to the user, then check gradle's own exit code
+  # explicitly via ${PIPESTATUS[0]}.
+  local gradle_log="/tmp/adb-tool-gradle-$$.log"
+  local gradle_exit=0
+  (cd "$ROOT/adb_tool_app" && ./gradlew assembleDebug \
         -x lintVitalAnalyzeRelease -x lintVitalReportRelease \
         -x lintAnalyzeRelease -x lintVitalRelease -x lintReportRelease \
-        --console=plain 2>&1 | tail -50); then
+        --console=plain 2>&1 | tee "$gradle_log" | tail -50) || gradle_exit=${PIPESTATUS[0]}
+  if [[ "$gradle_exit" -ne 0 ]]; then
     if [[ -f "$apk_dst" ]]; then
       warn "Android 编译失败，沿用已有的 $apk_dst"
       return 0
     fi
-    die "Android 编译失败，且 backend/clipboard-helper.apk 不存在；先修 Android 构建"
+    die "Android 编译失败，且 backend/clipboard-helper.apk 不存在；先修 Android 构建（log: $gradle_log）"
   fi
 
   if [[ ! -f "$apk_src" ]]; then

@@ -6,9 +6,11 @@
 
 ---
 
-## Fix 进度 (2026-06-27 第二轮)
+## Fix 进度 (2026-06-27 第二轮 + 第三轮)
 
-按"挑重点"原则先修 Blocker 10 个(B9 i18n 体量太大独立 PR):
+按"挑重点"原则分两批:
+
+### 第二轮 — Blocker 10/11
 
 | # | 状态 | 修复点 |
 |---|---|---|
@@ -24,7 +26,33 @@
 | **B10** API mixin 缺 isOk 校验 | ✅ Fixed | `emulator_api.dart` / `emulator_image_api.dart` / `emulator_java_api.dart` 每个 dio 调用前加 `if (!isOk(response)) throw Exception(errorMessage(response));` |
 | **B11** merge_to_universal 没重签 helper | ✅ Fixed | `scripts/build.sh:merge_to_universal` 末尾 lipo 后对 helper 二进制 + .app 整体跑 `codesign --force --sign - --deep` |
 
-`go build ./...` / `go vet ./...` 通过。`go test` 需授权跑(本机 Windows 上 `TestStartEmulatorPassesSystemImagePathToSysdir` 已知 FAIL,与本次改动无关 — 详见 M17)。
+### 第三轮 — Major 9/18(安全/构建/脚本/测试)
+
+| # | 状态 | 修复点 |
+|---|---|---|
+| **M2** scan/importPath 接受任意路径 | ✅ Fixed | `backend/internal/server/security.go` 新加 `validateScanPath` 助手;handlers 在 scan/import-path 调用前先过校验(拒 `/`/`C:\`/`..`,要求绝对路径) |
+| **M3** 下载 URL 无 scheme 校验 | ✅ Fixed | `backend/internal/server/security.go` 新加 `validateDownloadURL` 助手;SDK / Java / Image 三个下载端点全部先过 scheme + host(拒 loopback/link-local) |
+| **M5** JAVA_HOME 不一致 | ✅ Fixed | `backend/internal/emulator/instance_manager.go:startEmulator` 给 emulator 子进程也传 `JAVA_HOME`,与 avdmanager 行为一致 |
+| **M7** downloadID 拼接用户输入未 sanitize | ✅ Fixed | `security.go` 新加 `sanitizeDownloadIDComponent` 助手;三个下载端点每个会进 `downloadID` 的字段(SDK ID / Image ID+Arch+Variant / Java ID)都先 sanitize |
+| **M12** displayName 算 Android 版本号错误 | ✅ Fixed | `flutter_app/lib/models/emulator_image.dart` 改用 `Map<int,String>` 映射表(API 21→5.0 到 API 36→16) |
+| **M14** universal merge framework 路径错 | ✅ Fixed | `scripts/build.sh:merge_to_universal` 每个非 Flutter framework 输出到自己的 `Contents/Frameworks/<fw_name>/Contents/MacOS/<fw_name>` |
+| **M15** dev.sh pipefail + tail | ✅ Fixed | `scripts/dev.sh` 加 `tee` + `${PIPESTATUS[0]}` 判 gradle 退出码;失败日志落 `/tmp/adb-tool-gradle-$$.log` |
+| **M16** dev.ps1 硬编码 `D:\Documents\SDK` | ✅ Fixed | `scripts/dev.ps1:Resolve-AndroidHome` 找不到就 `Die`,不再 silent fallback 到开发者本机路径 |
+| **M17** Windows 测试 fix | ✅ Fixed | `instance_manager_test.go:TestStartEmulatorPassesSystemImagePathToSysdir` 改用 `go build` 在 tmp 编译跨平台 fake-emulator 二进制(不再依赖 .sh shebang);`instance_manager.go:startEmulator` `cmd.Start()` 后 close 父进程 logFile handle(Windows 上不让删临时 AVD dir) |
+
+### 跳过的 Major(已说明在 review doc)
+
+- M1 useSDK 任意路径(与 B2 部分重叠,M7 已防路径遍历)
+- M4 Start sleep 3.5s(性能优化,非 blocker)
+- M6 log 端点 OOM(稳定性,留给性能 PR)
+- M8 deleteImage stub(需先实现后端 endpoint,独立 PR)
+- M9 WS 重连竞态(需专门竞态测试覆盖)
+- M10 restoreFromDB 失败静默(UX)
+- M11 pop+push UX
+- M13 widget 绕过 envelope(独立扫一遍)
+- M18 handlers 1592 行 0 单测(巨大工作量,独立测试 PR)
+
+`go build ./...` / `go vet ./...` 通过;`go test ./internal/emulator/...` 全部通过(包括 M17 在 Windows 上)。
 
 ---
 
@@ -35,11 +63,11 @@
 | 新增生产代码 | ~4700 行后端 + ~3700 行 Flutter | emulator Phase 1-4 |
 | 单测 | 267 行后端 + **0 行 Flutter** | 覆盖率 ~5.7% (后端) / 0% (前端) |
 | Blocker | 11 (10 已修, 1 i18n 独立 PR) | 5 个安全/正确性 + 2 个规范违反 + 1 个 WS 死锁 + 1 个 path 兜底 + 2 个 i18n/envelope |
-| Major | 18 | SSRF/路径遍历/状态机/重连竞态/构建脚本 |
+| Major | 18 (9 已修, 9 延后独立 PR) | SSRF/路径遍历/状态机/重连竞态/构建脚本 |
 | Minor | 11 | envelope 不统一 / spec 缺失 / 平台条件编译散落 |
 | Nit | 8 | 死代码 / 命名 / 注释风格 |
 
-**结论**: 11 个 Blocker 中有 5 个影响安全或正确性(zip-slip、WS 死锁、双重 Unlock、env 注入反推规范、销毁性端点无确认),**不修不应合 main** — 上述 5 项 + B5 WS 泄漏 + B10 envelope 校验共 7 项已在第二轮修复;B9 i18n 留作独立 PR。
+**结论**: 11 个 Blocker 中有 5 个影响安全或正确性(zip-slip、WS 死锁、双重 Unlock、env 注入反推规范、销毁性端点无确认),**不修不应合 main** — 上述 5 项 + B5 WS 泄漏 + B10 envelope 校验共 7 项已在第二轮修复;B9 i18n 留作独立 PR。第三轮顺手修了 9 个 Major(SSRF/路径遍历/构建脚本/测试)。
 
 ---
 
@@ -63,26 +91,26 @@
 
 ## Major — 强烈建议合前修
 
-| # | 文件:行 | 问题 | 修复 |
-|---|---|---|---|
-| **M1** | `backend/internal/server/handlers_emulator.go:264-277` | **`useSDK` 接受任意用户路径**: 只 `Stat` 检查,无 `..` 拒绝或 symlink 解析,可能被注册到非自己拥有的目录。 | 复用 `security.go:60-78` 的 `validateSessionDir` 模式,加 `..` 拒绝。 |
-| **M2** | `handlers_emulator.go:758-793, 1111-1181` | **`scan` / `importPath` 接受任意路径**:`/`, `C:\` 都会触发 `filepath.Walk` 全盘扫描,DoS 风险。 | 拒 `..`、拒根目录、加深度上限。 |
-| **M3** | `handlers_emulator.go:187-236, 565-615, 895-957` | **下载 URL 无 scheme 校验**:`req.URL` 直接进 `http.NewRequest`,接受 `file://`/loopback 等。 | 拒非 `http(s)://`,拒 loopback/link-local。 |
-| **M4** | `backend/internal/emulator/instance_manager.go:298-360` | **`Start` 同步 sleep 3.5s**: 每次启动把 HTTP handler 线程阻塞 3.5s,易成 DoS。 | 直接返回 `StatusStarting`,让 `monitorEmulatorProcess` + WS 推给前端。 |
-| **M5** | `backend/internal/emulator/instance_manager.go:739-742` | **`JAVA_HOME` 只传给 avdmanager 不传给 emulator**: 同一 SDK 用两个不同 Java,行为不一致。 | 二者都传,或都不传。 |
-| **M6** | `backend/internal/server/handlers_emulator.go:1432-1447` | **log 端点 `os.ReadFile` 整文件读入内存** 后再 tail 500 行,emulator 日志动辄 50MB+ → OOM。 | 用 ring buffer 或 seek-from-EOF 增量读。 |
-| **M7** | `backend/internal/server/handlers_emulator.go:928` | **`downloadID` 拼接用户输入未 sanitize**:`fmt.Sprintf("image-%s-%s-%s", req.ID, req.Arch, req.Variant)`,`req.Variant="../etc"` 拼到 `filepath.Join` → 路径遍历。 | 用 `filepath.Base` + reject 改,或 hash 三个字段。 |
-| **M8** | `flutter_app/lib/widgets/emulator_image_card.dart:153` + `emulator_image_provider.dart:328-332` | **`deleteImage` 是 stub**:`TODO: Implement backend API for deleting images`,只删本地列表,文件没动,下次 `refreshImages()` 又回来 → 数据损坏。 | 先后端实现 endpoint,前端再调;要么 UI 显式标"仅从列表隐藏"。 |
-| **M9** | `flutter_app/lib/providers/emulator_instance_provider.dart:29-51, 215-220` | **`fetchInstances` + `createNewInstance` 的 WS 重连竞态**: 空列表时连 WS,再 `add` 后 reconnect 时旧 socket close 引用错位,可能丢 boot 推送。 | 加 reentrancy guard;或先 add 到本地列表再 connect。 |
-| **M10** | `flutter_app/lib/providers/emulator_engine_provider.dart:103-122`、`emulator_java_provider.dart:144-152` | **`restoreFromDB` 失败静默**: catch 块只 `debugPrint`,DB 中存的失效 SDK/Java 路径不会通知 UI。 | Provider 加 `isRestoreFailed` 字段,UI 显式 banner。 |
-| **M11** | `flutter_app/lib/screens/emulator_settings_screen.dart:339-352` | **`_showAddImageDialog` 内 `pop()` 后立刻又 push dialog**,macOS 上动画重叠 + 报错(`context.mounted` 已 false)。 | `pop` 后用 `addPostFrameCallback` 异步开新 dialog,或检查 mounted。 |
-| **M12** | `flutter_app/lib/models/emulator_image.dart:114` | **`displayName` 算 Android 版本号用 `(apiLevel - 23 + 5)`**,API 35(Android 15)算出来 17 — **错误**。 | 用映射表或直接 `Android (API 35)`。 |
-| **M13** | `flutter_app/lib/widgets/emulator_engine_card.dart:1259-1261, 1450-1465` | **widget 内绕过 envelope 自己用 `dio.post` / `http`**: 不走 `provider.useSDK()`,手工检查 `data['ok']` 失败不抛错,用户看不到原因。 | 改调 `provider.useSDK(path)`;上传改用 `api.postLocalFile`。 |
-| **M14** | `scripts/build.sh:194-212` | **universal merge framework 路径错**:`lipo -create` 输出都写进 `FlutterMacOS.framework/Contents/MOS/<other_name>`,而不是各自 framework 目录。 | `dst_bin="$universal_app/Contents/Frameworks/$fw_name/Contents/MOS/$fw_name"`,`mkdir -p $(dirname)`,再 lipo。 |
-| **M15** | `scripts/dev.sh:87` | **`pipefail` + `2>&1 | tail -50` 冲突**:`tail` 永远 exit 0,gradle 失败被吞。 | 改成 `... | tee /tmp/gradle.log | tail -50`,用 `${PIPESTATUS[0]}` 判退出码。 |
-| **M16** | `scripts/dev.ps1:86` | **硬编码 `D:\Documents\SDK`** : 用户本机路径进仓库,其他开发者 / CI 直接挂。 | fallback 改为 `$null` 或 `Join-Path $Root '.adb-tool\sdk'`,或 throw 要求传 `-AndroidHome`。 |
-| **M17** | `backend/internal/emulator/instance_manager_test.go:264` | **`TestStartEmulatorPassesSystemImagePathToSysdir` 在 Windows 上 100% fail**: fake emulator 是 `#!/bin/sh` 脚本非 Win32 可执行。**已确认 `go test` 在 Windows FAIL**。 | 按 `runtime.GOOS` 分流,Windows 写 `.cmd` 批处理;或注入 `exec.Command` factory 解耦。 |
-| **M18** | `backend/internal/server/handlers_emulator.go` 全文 | **1592 行 REST handler 0 单测**。23 个新端点 + WS 协议,所有 happy path / error path 裸跑。 | 至少用 `httptest.NewRecorder` 跑 happy path,关键 endpoint 补 error case。 |
+| # | 状态 | 文件:行 | 问题 | 修复 |
+|---|---|---|---|---|
+| **M1** | ⏸ Deferred | `handlers_emulator.go:264-277` | **`useSDK` 接受任意用户路径**: 只 `Stat` 检查,无 `..` 拒绝或 symlink 解析,可能被注册到非自己拥有的目录。 | 复用 `security.go:60-78` 的 `validateSessionDir` 模式,加 `..` 拒绝。**延后**:与 B2 部分重叠,M7 已防路径遍历。 |
+| **M2** | ✅ Fixed | `handlers_emulator.go:758-793, 1111-1181` | **`scan` / `importPath` 接受任意路径**:`/`, `C:\` 都会触发 `filepath.Walk` 全盘扫描,DoS 风险。 | 拒 `..`、拒根目录、加深度上限。**已实现**:`security.go` 加 `validateScanPath` 助手,scan/import-path 端点先过校验。 |
+| **M3** | ✅ Fixed | `handlers_emulator.go:187-236, 565-615, 895-957` | **下载 URL 无 scheme 校验**:`req.URL` 直接进 `http.NewRequest`,接受 `file://`/loopback 等。 | 拒非 `http(s)://`,拒 loopback/link-local。**已实现**:`security.go` 加 `validateDownloadURL`,SDK/Java/Image 三个下载端点全过 scheme + host 校验。 |
+| **M4** | ⏸ Deferred | `backend/internal/emulator/instance_manager.go:298-360` | **`Start` 同步 sleep 3.5s**: 每次启动把 HTTP handler 线程阻塞 3.5s,易成 DoS。 | 直接返回 `StatusStarting`,让 `monitorEmulatorProcess` + WS 推给前端。**延后**:性能优化,非 blocker。 |
+| **M5** | ✅ Fixed | `backend/internal/emulator/instance_manager.go:739-742` | **`JAVA_HOME` 只传给 avdmanager 不传给 emulator**: 同一 SDK 用两个不同 Java,行为不一致。 | 二者都传,或都不传。**已实现**:`startEmulator` 给 emulator 子进程也传 `JAVA_HOME`(与 avdmanager 一致)。 |
+| **M6** | ⏸ Deferred | `backend/internal/server/handlers_emulator.go:1432-1447` | **log 端点 `os.ReadFile` 整文件读入内存** 后再 tail 500 行,emulator 日志动辄 50MB+ → OOM。 | 用 ring buffer 或 seek-from-EOF 增量读。**延后**:稳定性问题,留给性能 PR。 |
+| **M7** | ✅ Fixed | `backend/internal/server/handlers_emulator.go:928` | **`downloadID` 拼接用户输入未 sanitize**:`fmt.Sprintf("image-%s-%s-%s", req.ID, req.Arch, req.Variant)`,`req.Variant="../etc"` 拼到 `filepath.Join` → 路径遍历。 | 用 `filepath.Base` + reject 改,或 hash 三个字段。**已实现**:`security.go` 加 `sanitizeDownloadIDComponent`,SDK/Java/Image 三个端点的每个会进 downloadID 的字段都先 sanitize。 |
+| **M8** | ⏸ Deferred | `flutter_app/lib/widgets/emulator_image_card.dart:153` + `emulator_image_provider.dart:328-332` | **`deleteImage` 是 stub**:`TODO: Implement backend API for deleting images`,只删本地列表,文件没动,下次 `refreshImages()` 又回来 → 数据损坏。 | 先后端实现 endpoint,前端再调;要么 UI 显式标"仅从列表隐藏"。**延后**:需后端 endpoint,独立 PR。 |
+| **M9** | ⏸ Deferred | `flutter_app/lib/providers/emulator_instance_provider.dart:29-51, 215-220` | **`fetchInstances` + `createNewInstance` 的 WS 重连竞态**: 空列表时连 WS,再 `add` 后 reconnect 时旧 socket close 引用错位,可能丢 boot 推送。 | 加 reentrancy guard;或先 add 到本地列表再 connect。**延后**:需专门竞态测试覆盖。 |
+| **M10** | ⏸ Deferred | `flutter_app/lib/providers/emulator_engine_provider.dart:103-122`、`emulator_java_provider.dart:144-152` | **`restoreFromDB` 失败静默**: catch 块只 `debugPrint`,DB 中存的失效 SDK/Java 路径不会通知 UI。 | Provider 加 `isRestoreFailed` 字段,UI 显式 banner。**延后**:UX 改进。 |
+| **M11** | ⏸ Deferred | `flutter_app/lib/screens/emulator_settings_screen.dart:339-352` | **`_showAddImageDialog` 内 `pop()` 后立刻又 push dialog**,macOS 上动画重叠 + 报错(`context.mounted` 已 false)。 | `pop` 后用 `addPostFrameCallback` 异步开新 dialog,或检查 mounted。**延后**:UX 改进。 |
+| **M12** | ✅ Fixed | `flutter_app/lib/models/emulator_image.dart:114` | **`displayName` 算 Android 版本号用 `(apiLevel - 23 + 5)`**,API 35(Android 15)算出来 17 — **错误**。 | 用映射表或直接 `Android (API 35)`。**已实现**:用 `Map<int,String>` 映射表覆盖 API 21-36。 |
+| **M13** | ⏸ Deferred | `flutter_app/lib/widgets/emulator_engine_card.dart:1259-1261, 1450-1465` | **widget 内绕过 envelope 自己用 `dio.post` / `http`**: 不走 `provider.useSDK()`,手工检查 `data['ok']` 失败不抛错,用户看不到原因。 | 改调 `provider.useSDK(path)`;上传改用 `api.postLocalFile`。**延后**:独立扫一遍。 |
+| **M14** | ✅ Fixed | `scripts/build.sh:194-212` | **universal merge framework 路径错**:`lipo -create` 输出都写进 `FlutterMacOS.framework/Contents/MOS/<other_name>`,而不是各自 framework 目录。 | `dst_bin="$universal_app/Contents/Frameworks/$fw_name/Contents/MOS/$fw_name"`,`mkdir -p $(dirname)`,再 lipo。**已实现**:每个非 Flutter framework 输出到自己的 `Contents/Frameworks/<fw_name>/Contents/MacOS/<fw_name>`(跳过 FlutterMacOS.framework 因为它已单独处理过)。 |
+| **M15** | ✅ Fixed | `scripts/dev.sh:87` | **`pipefail` + `2>&1 | tail -50` 冲突**:`tail` 永远 exit 0,gradle 失败被吞。 | 改成 `... | tee /tmp/gradle.log | tail -50`,用 `${PIPESTATUS[0]}` 判退出码。**已实现**:`tee` + `${PIPESTATUS[0]}` 显式判 gradle 退出码,失败日志落 `/tmp/adb-tool-gradle-$$.log`。 |
+| **M16** | ✅ Fixed | `scripts/dev.ps1:86` | **硬编码 `D:\Documents\SDK`** : 用户本机路径进仓库,其他开发者 / CI 直接挂。 | fallback 改为 `$null` 或 `Join-Path $Root '.adb-tool\sdk'`,或 throw 要求传 `-AndroidHome`。**已实现**:`Resolve-AndroidHome` 找不到就 `Die`,提示用户传 `-AndroidHome` 或设 `$env:ANDROID_HOME`。 |
+| **M17** | ✅ Fixed | `backend/internal/emulator/instance_manager_test.go:264` | **`TestStartEmulatorPassesSystemImagePathToSysdir` 在 Windows 上 100% fail**: fake emulator 是 `#!/bin/sh` 脚本非 Win32 可执行。**已确认 `go test` 在 Windows FAIL**。 | 按 `runtime.GOOS` 分流,Windows 写 `.cmd` 批处理;或注入 `exec.Command` factory 解耦。**已实现**:改用 `go build` 在 tmp 编译跨平台 Go 二进制 fake-emulator(更可靠,避免 cmd.exe shift loop 的怪问题);同时修 `startEmulator` 在 `cmd.Start()` 后 close 父进程 logFile handle(Windows 不让删临时 AVD dir)。 |
+| **M18** | ⏸ Deferred | `backend/internal/server/handlers_emulator.go` 全文 | **1592 行 REST handler 0 单测**。23 个新端点 + WS 协议,所有 happy path / error path 裸跑。 | 至少用 `httptest.NewRecorder` 跑 happy path,关键 endpoint 补 error case。**延后**:巨大工作量,独立测试 PR。 |
 
 ---
 
@@ -165,9 +193,9 @@
 
 ### 已运行的测试结果
 
-- `go test ./internal/emulator/...` (Windows, go1.26.3) → **FAIL**
-  - `TestStartEmulatorPassesSystemImagePathToSysdir` 100% 失败,fake emulator 是 shell 脚本
-- `go test ./...` → 未跑(权限超时,且已知 emulator 包 FAIL)
+- `go test ./internal/emulator/...` (Windows, go1.26.3) → **PASS**(第二轮 + 第三轮修完后,所有测试通过,包括 M17)
+- `go build ./...` / `go vet ./...` → clean
+- `go test ./...` → 未跑(权限超时)
 - `python scripts/check_i18n_tr_keys.py` → 未跑(python 未获授权)
 - `flutter analyze` → 未跑(flutter 未获授权)
 

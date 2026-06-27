@@ -2,7 +2,9 @@ package emulator
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -229,7 +231,6 @@ func TestStartEmulatorPassesSystemImagePathToSysdir(t *testing.T) {
 	avdPath := filepath.Join(dataDir, "avd", "Pixel.avd")
 	imagePath := filepath.Join(sdkDir, "system-images", "android-30-default-arm64-v8a")
 	argsPath := filepath.Join(tmp, "args.txt")
-	emulatorPath := filepath.Join(tmp, "fake-emulator.sh")
 
 	if err := os.MkdirAll(avdPath, 0755); err != nil {
 		t.Fatal(err)
@@ -240,9 +241,55 @@ func TestStartEmulatorPassesSystemImagePathToSysdir(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(imagePath, "system.img"), []byte("system"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"" + argsPath + "\"\nsleep 5\n"
-	if err := os.WriteFile(emulatorPath, []byte(script), 0755); err != nil {
+
+	// Fix (code-review M17): the previous version wrote a .sh shebang
+	// script. On Windows a .sh is not a Win32 PE so `exec.Command` returned
+	// "%1 is not a valid Win32 application" and the test failed 100% on
+	// Windows.
+	//
+	// The reliable cross-platform replacement is a tiny Go binary
+	// (`fake-emulator` on POSIX, `fake-emulator.exe` on Windows) compiled
+	// in-test from a single source file via `go build`. `go build
+	// <file.go>` doesn't require a go.mod in the destination dir and is
+	// always available in `go test` environments. The binary writes each
+	// argv onto its own line in `args.txt` in its working directory and
+	// sleeps so the parent can read the file before the process exits.
+	emulatorPath := filepath.Join(tmp, "fake-emulator")
+	if runtime.GOOS == "windows" {
+		emulatorPath += ".exe"
+	}
+	const fakeSrc = `package main
+
+import (
+	"fmt"
+	"os"
+	"time"
+)
+
+func main() {
+	f, err := os.Create("args.txt")
+	if err != nil {
+		os.Exit(1)
+	}
+	// Write args first, close, THEN sleep. We need the file flushed and
+	// closed before the parent reads it. A 200ms sleep keeps the test
+	// snappy and is short enough that t.TempDir cleanup (which races
+	// against the still-running process) doesn't trip on Windows file
+	// locks held by the child via cmd.Stdout/Stderr.
+	for _, arg := range os.Args[1:] {
+		fmt.Fprintln(f, arg)
+	}
+	f.Close()
+	time.Sleep(200 * time.Millisecond)
+}
+`
+	srcPath := filepath.Join(tmp, "fake-emulator-main.go")
+	if err := os.WriteFile(srcPath, []byte(fakeSrc), 0644); err != nil {
 		t.Fatal(err)
+	}
+	build := exec.Command("go", "build", "-o", emulatorPath, srcPath)
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("go build fake-emulator failed: %v\n%s", err, out)
 	}
 
 	manager := &InstanceManager{
@@ -260,6 +307,12 @@ func TestStartEmulatorPassesSystemImagePathToSysdir(t *testing.T) {
 		Config:      InstanceConfig{Cores: 2, MemoryMB: 2048, GPUMode: "auto"},
 	}
 
+	// startEmulator runs the emulator binary without setting cmd.Dir, so
+	// the child inherits this test's cwd. Chdir into tmp/ so the fake
+	// binary's "create args.txt in cwd" lands somewhere predictable.
+	// t.Chdir auto-restores when the test ends.
+	t.Chdir(tmp)
+
 	if err := manager.startEmulator(inst); err != nil {
 		t.Fatalf("startEmulator returned error: %v", err)
 	}
@@ -269,7 +322,7 @@ func TestStartEmulatorPassesSystemImagePathToSysdir(t *testing.T) {
 
 	var argsData []byte
 	var err error
-	for i := 0; i < 120; i++ {
+	for i := 0; i < 240; i++ {
 		argsData, err = os.ReadFile(argsPath)
 		if err == nil {
 			break
