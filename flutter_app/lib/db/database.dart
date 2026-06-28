@@ -109,7 +109,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(QueryExecutor executor) : super(executor);
 
   @override
-  int get schemaVersion => 7;
+  int get schemaVersion => 8;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -160,6 +160,11 @@ class AppDatabase extends _$AppDatabase {
             // v6 → v7: add emulator toolchain selections (SDK and Java paths)
             await m.addColumn(appStates, appStates.selectedSDKPath);
             await m.addColumn(appStates, appStates.selectedJavaPath);
+          }
+          if (from < 8) {
+            // v7 → v8: add sidebar UI preferences (width and collapsed state)
+            await m.addColumn(appStates, appStates.sidebarWidth);
+            await m.addColumn(appStates, appStates.sidebarCollapsed);
           }
         },
         beforeOpen: (details) async {

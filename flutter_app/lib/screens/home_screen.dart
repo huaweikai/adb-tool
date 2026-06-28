@@ -101,6 +101,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   String? _activeKey;
   bool _restoredFromState = false;
 
+  // Sidebar resize state. _sidebarWidth lives in a ValueNotifier so per-frame
+  // drag updates don't setState() the whole HomeScreen (which would also rebuild
+  // every keep-mounted screen inside IndexedStack — commit 18b0ca5). The sidebar
+  // rebuilds itself via ValueListenableBuilder + RepaintBoundary.
+  final ValueNotifier<double> _sidebarWidth = ValueNotifier(240);
+  bool _sidebarCollapsed = false;
+  bool _isDragging = false;
+  static const double _defaultSidebarWidth = 240;
+  static const double _minSidebarWidth = 200;
+  static const double _maxSidebarWidth = 400;
+  static const double _collapsedSidebarWidth = 56;
+  static const Duration _sidebarAnimDuration = Duration(milliseconds: 150);
+
   @override
   void initState() {
     super.initState();
@@ -115,6 +128,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     final activeKey = await db.appStatesDao.getActiveKey();
     final expandedSerials = await db.appStatesDao.getExpandedSerials();
+    final sidebarWidth = await db.appStatesDao.getSidebarWidth();
+    final sidebarCollapsed = await db.appStatesDao.getSidebarCollapsed();
 
     if (!mounted) return;
 
@@ -125,6 +140,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _expandedSerials
         ..clear()
         ..addAll(expandedSerials);
+      _sidebarWidth.value =
+          sidebarWidth.toDouble().clamp(_minSidebarWidth, _maxSidebarWidth);
+      _sidebarCollapsed = sidebarCollapsed;
     });
 
     // Restore emulator toolchain selections from DB
@@ -156,6 +174,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _refreshTimer?.cancel();
+    _sidebarWidth.dispose();
     super.dispose();
   }
 
@@ -349,7 +368,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           Expanded(
             child: Row(
               children: [
-                _buildSidebar(context, savedDevices, backendOnline),
+                _buildResizableSidebar(context, savedDevices, backendOnline),
                 Expanded(child: _buildContent()),
               ],
             ),
@@ -466,6 +485,257 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     await dp.db.appStatesDao.updateAppState(
       activeKey: _activeKey,
       expandedSerials: _expandedSerials.toList(),
+      sidebarWidth: _sidebarWidth.value.round(),
+      sidebarCollapsed: _sidebarCollapsed,
+    );
+  }
+
+  void _toggleSidebarCollapsed() {
+    setState(() {
+      _sidebarCollapsed = !_sidebarCollapsed;
+    });
+    _persistState();
+  }
+
+  void _onDragStart(DragStartDetails details) {
+    setState(() => _isDragging = true);
+  }
+
+  void _onDragUpdate(DragUpdateDetails details) {
+    // No setState: updates ValueNotifier directly so only the sidebar
+    // subtree rebuilds (via ValueListenableBuilder below).
+    _sidebarWidth.value = (_sidebarWidth.value + details.delta.dx)
+        .clamp(_minSidebarWidth, _maxSidebarWidth);
+  }
+
+  void _onDragEnd(DragEndDetails details) {
+    setState(() => _isDragging = false);
+    _persistState();
+  }
+
+  void _resetSidebarWidth() {
+    _sidebarWidth.value = _defaultSidebarWidth;
+    if (_sidebarCollapsed) {
+      setState(() => _sidebarCollapsed = false);
+    }
+    _persistState();
+  }
+
+  Widget _buildResizableSidebar(
+      BuildContext context, List<SavedDevice> devices, bool online) {
+    final theme = Theme.of(context);
+    return RepaintBoundary(
+      child: ValueListenableBuilder<double>(
+        valueListenable: _sidebarWidth,
+        builder: (context, width, _) {
+          final currentWidth =
+              _sidebarCollapsed ? _collapsedSidebarWidth : width;
+          // Duration: 0 during drag (instant feedback), 150ms on collapse toggle
+          // so the width animates smoothly without per-frame lag while dragging.
+          return AnimatedContainer(
+            duration: _isDragging ? Duration.zero : _sidebarAnimDuration,
+            curve: Curves.easeOutCubic,
+            width: currentWidth,
+            child: Stack(
+              children: [
+                _sidebarCollapsed
+                    ? _buildCollapsedSidebar(theme, devices)
+                    : _buildSidebar(context, devices, online),
+                if (!_sidebarCollapsed)
+                  Positioned(
+                    right: 0,
+                    top: 0,
+                    bottom: 0,
+                    child: _buildDragHandle(theme),
+                  ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildDragHandle(ThemeData theme) {
+    return Tooltip(
+      message: tr('resizeSidebarHint'),
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onHorizontalDragStart: _onDragStart,
+        onHorizontalDragUpdate: _onDragUpdate,
+        onHorizontalDragEnd: _onDragEnd,
+        onDoubleTap: _resetSidebarWidth,
+        child: MouseRegion(
+          cursor: SystemMouseCursors.resizeLeftRight,
+          child: Container(
+            width: 6,
+            color: _isDragging
+                ? theme.colorScheme.primary.withAlpha(60)
+                : Colors.transparent,
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Theme-aware connection status dot color. Green is kept hardcoded (universal
+  // "online" semantic) but uses a slightly desaturated shade; red falls back to
+  // theme.error so it respects dark/light mode.
+  Color _statusDotColor(ThemeData theme, bool isConnected) =>
+      isConnected ? Colors.green.shade400 : theme.colorScheme.error;
+
+  Widget _buildCollapsedSidebar(ThemeData theme, List<SavedDevice> devices) {
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerLow,
+        border: Border(right: BorderSide(color: theme.dividerColor)),
+      ),
+      child: Column(
+        children: [
+          // Expand button
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Tooltip(
+              message: tr('expandSidebar'),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: _toggleSidebarCollapsed,
+                child: Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Icon(Icons.chevron_right,
+                      size: 20, color: theme.colorScheme.primary),
+                ),
+              ),
+            ),
+          ),
+          const Divider(height: 1),
+          // Device icons
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              children: devices.map((d) {
+                final isConnected =
+                    context.read<DeviceProvider>().isDeviceConnected(d.serial);
+                final isActiveDevice = _screens[_activeKey]?.serial == d.serial;
+                return Tooltip(
+                  message: d.displayName,
+                  preferBelow: false,
+                  child: InkWell(
+                    onTap: () => _collapsedDeviceTap(d.serial),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      color: isActiveDevice
+                          ? theme.colorScheme.primaryContainer
+                          : null,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.phone_android,
+                              size: 20,
+                              color: isActiveDevice
+                                  ? theme.colorScheme.primary
+                                  : theme.colorScheme.onSurfaceVariant),
+                          const SizedBox(height: 2),
+                          Container(
+                            width: 6,
+                            height: 6,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: _statusDotColor(theme, isConnected),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          const Divider(height: 1),
+          // Global entries as icon-only
+          _buildCollapsedGlobalEntry(
+            theme,
+            icon: Icons.tune,
+            tooltip: tr('testConfigCenter'),
+            isActive: _activeKey == _testConfigKey,
+            onTap: () => _expandAndOpen(_openTestConfig),
+          ),
+          _buildCollapsedGlobalEntry(
+            theme,
+            icon: Icons.smartphone,
+            tooltip: tr('emulatorSettings.title'),
+            isActive: _activeKey == _emulatorKey,
+            onTap: () => _expandAndOpen(_openEmulatorSettings),
+          ),
+          _buildCollapsedGlobalEntry(
+            theme,
+            icon: Icons.terminal,
+            tooltip: tr('backendLogs'),
+            isActive: _activeKey == _backendLogKey,
+            onTap: () => _expandAndOpen(_openBackendLogs),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Click a device icon while sidebar is collapsed: expand sidebar and ensure
+  // the device is in the expanded set, in a single setState + single
+  // _persistState (previously each helper triggered its own — two DB writes
+  // per tap, plus a brief inconsistent intermediate frame).
+  void _collapsedDeviceTap(String serial) {
+    if (_expandedSerials.isEmpty) {
+      // First device ever: expand + auto-navigate to status so the user
+      // immediately has something on screen (matches old _toggleExpand).
+      setState(() => _sidebarCollapsed = false);
+      _navigateTo(serial, NavItem.status);
+      return;
+    }
+    setState(() {
+      _sidebarCollapsed = false;
+      _expandedSerials.add(serial); // Set.add is no-op if already present.
+    });
+    _persistState();
+  }
+
+  // Click a global entry while sidebar is collapsed: expand sidebar and open
+  // the target page in a single persist (collapsed=false + activeKey together).
+  VoidCallback _expandAndOpen(VoidCallback openFn) {
+    return () {
+      if (_sidebarCollapsed) {
+        setState(() => _sidebarCollapsed = false);
+      }
+      openFn(); // openFn does its own setState(_activeKey); Flutter coalesces
+      _persistState();
+    };
+  }
+
+  Widget _buildCollapsedGlobalEntry(
+    ThemeData theme, {
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onTap,
+    bool isActive = false,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      preferBelow: false,
+      child: Material(
+        color:
+            isActive ? theme.colorScheme.primaryContainer : Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Icon(icon,
+                size: 20,
+                color: isActive
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.onSurfaceVariant),
+          ),
+        ),
+      ),
     );
   }
 
@@ -473,7 +743,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       BuildContext context, List<SavedDevice> devices, bool online) {
     final theme = Theme.of(context);
     return Container(
-      width: 240,
+      width: _sidebarWidth.value,
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceContainerLow,
         border: Border(right: BorderSide(color: theme.dividerColor)),
@@ -532,10 +802,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             children: [
               Icon(Icons.adb, size: 20, color: theme.colorScheme.primary),
               const SizedBox(width: 8),
-              Text('ADB Tool',
+              // Expanded (not Spacer + loose Text): the title must shrink first
+              // when sidebar is narrow (during drag toward min=200px), otherwise
+              // the right-side language toggle + collapse chevron overflow the row.
+              Expanded(
+                child: Text(
+                  'ADB Tool',
                   style: theme.textTheme.titleSmall
-                      ?.copyWith(fontWeight: FontWeight.w600)),
-              const Spacer(),
+                      ?.copyWith(fontWeight: FontWeight.w600),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+              ),
               GestureDetector(
                 onTap: () => context.read<LocaleProvider>().toggle(),
                 child: Container(
@@ -550,6 +828,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           ? 'EN'
                           : '文',
                       style: const TextStyle(fontSize: 10)),
+                ),
+              ),
+              const SizedBox(width: 4),
+              Tooltip(
+                message: tr('collapseSidebar'),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(6),
+                  onTap: _toggleSidebarCollapsed,
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: Icon(Icons.chevron_left,
+                        size: 18, color: theme.colorScheme.onSurfaceVariant),
+                  ),
                 ),
               ),
             ],
@@ -905,7 +1196,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     height: 8,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: isConnected ? Colors.green : Colors.red,
+                      color: _statusDotColor(theme, isConnected),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -917,12 +1208,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  Text(
-                    d.serial.length > 12
-                        ? '...${d.serial.substring(d.serial.length - 8)}'
-                        : d.serial,
-                    style: TextStyle(
-                        fontSize: 9, color: theme.colorScheme.onSurfaceVariant),
+                  // ConstrainedBox caps the serial so it can't push the row
+                  // past available width when the sidebar is at its min (200px)
+                  // and the row has sync_problem/remove/disconnect icons attached.
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 80),
+                    child: Text(
+                      d.serial.length > 12
+                          ? '...${d.serial.substring(d.serial.length - 8)}'
+                          : d.serial,
+                      style: TextStyle(
+                          fontSize: 9,
+                          color: theme.colorScheme.onSurfaceVariant),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
                   ),
                   if (!isConnected)
                     Padding(
@@ -1043,14 +1343,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       ? theme.colorScheme.primary
                       : theme.colorScheme.onSurfaceVariant),
               const SizedBox(width: 10),
-              Text(
-                navLabel(item),
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
-                  color: isActive
-                      ? theme.colorScheme.primary
-                      : theme.colorScheme.onSurface,
+              // Expanded with ellipsis: at min sidebar width (200px) the
+              // available width is ~146px; long labels like "Test Session Hub"
+              // / "Screen Mirror" would otherwise overflow the row.
+              Expanded(
+                child: Text(
+                  navLabel(item),
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
+                    color: isActive
+                        ? theme.colorScheme.primary
+                        : theme.colorScheme.onSurface,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
                 ),
               ),
             ],

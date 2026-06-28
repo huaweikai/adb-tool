@@ -42,6 +42,8 @@ class AppStatesDao extends DatabaseAccessor<AppDatabase>
     String? selectedJavaPath,
     bool clearSDKPath = false,
     bool clearJavaPath = false,
+    int? sidebarWidth,
+    bool? sidebarCollapsed,
   }) async {
     final state = await getAppState();
     await (update(appStates)..where((t) => t.id.equals(state.id))).write(
@@ -64,6 +66,12 @@ class AppStatesDao extends DatabaseAccessor<AppDatabase>
             : selectedJavaPath != null
                 ? Value(selectedJavaPath)
                 : const Value.absent(),
+        sidebarWidth: sidebarWidth != null
+            ? Value(sidebarWidth)
+            : const Value.absent(),
+        sidebarCollapsed: sidebarCollapsed != null
+            ? Value(sidebarCollapsed)
+            : const Value.absent(),
       ),
     );
   }
@@ -96,6 +104,18 @@ class AppStatesDao extends DatabaseAccessor<AppDatabase>
   Future<String?> getSelectedJavaPath() async {
     final state = await getAppState();
     return state.selectedJavaPath;
+  }
+
+  /// Read the sidebar width preference.
+  Future<int> getSidebarWidth() async {
+    final state = await getAppState();
+    return state.sidebarWidth;
+  }
+
+  /// Read the sidebar collapsed state.
+  Future<bool> getSidebarCollapsed() async {
+    final state = await getAppState();
+    return state.sidebarCollapsed;
   }
 
   // --- JSON helpers --------------------------------------------------------

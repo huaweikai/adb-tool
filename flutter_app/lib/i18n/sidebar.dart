@@ -114,6 +114,9 @@ const _locSidebarZh = <String, String>{
   'dismiss': '忽略',
   'confirmShutdown': '确认关闭',
   'shutdownHint': '关闭后端服务后，需要手动重启应用或点击重启按钮',
+  'collapseSidebar': '收起侧边栏',
+  'expandSidebar': '展开侧边栏',
+  'resizeSidebarHint': '拖拽调整宽度 · 双击重置',
 };
 
 const _locSidebarEn = <String, String>{
@@ -235,11 +238,13 @@ const _locSidebarEn = <String, String>{
   'backendOffline': 'Backend disconnected. Check if Go server is running',
   'backendOnline': 'Backend reconnected',
   'dbErrorTitle': 'Database write failed (features may be limited)',
-  'dbErrorBody':
-      'Backend is healthy, but saving device state failed: {error}',
+  'dbErrorBody': 'Backend is healthy, but saving device state failed: {error}',
   'copyError': 'Copy error',
   'dismiss': 'Dismiss',
   'confirmShutdown': 'Confirm Shutdown',
   'shutdownHint':
       'After shutdown, you need to manually restart the app or click restart button',
+  'collapseSidebar': 'Collapse sidebar',
+  'expandSidebar': 'Expand sidebar',
+  'resizeSidebarHint': 'Drag to resize · Double-click to reset',
 };

@@ -604,7 +604,7 @@ class $AppStatesTable extends AppStates
       const VerificationMeta('selectedSDKPath');
   @override
   late final GeneratedColumn<String> selectedSDKPath = GeneratedColumn<String>(
-      'selected_sdk_path', aliasedName, true,
+      'selected_s_d_k_path', aliasedName, true,
       type: DriftSqlType.string, requiredDuringInsert: false);
   static const VerificationMeta _selectedJavaPathMeta =
       const VerificationMeta('selectedJavaPath');
@@ -612,9 +612,36 @@ class $AppStatesTable extends AppStates
   late final GeneratedColumn<String> selectedJavaPath = GeneratedColumn<String>(
       'selected_java_path', aliasedName, true,
       type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _sidebarWidthMeta =
+      const VerificationMeta('sidebarWidth');
   @override
-  List<GeneratedColumn> get $columns =>
-      [id, activeSerial, activeKey, expandedSerials, lastSuccessfulRefresh, selectedSDKPath, selectedJavaPath];
+  late final GeneratedColumn<int> sidebarWidth = GeneratedColumn<int>(
+      'sidebar_width', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(240));
+  static const VerificationMeta _sidebarCollapsedMeta =
+      const VerificationMeta('sidebarCollapsed');
+  @override
+  late final GeneratedColumn<bool> sidebarCollapsed = GeneratedColumn<bool>(
+      'sidebar_collapsed', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: false,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'CHECK ("sidebar_collapsed" IN (0, 1))'),
+      defaultValue: const Constant(false));
+  @override
+  List<GeneratedColumn> get $columns => [
+        id,
+        activeSerial,
+        activeKey,
+        expandedSerials,
+        lastSuccessfulRefresh,
+        selectedSDKPath,
+        selectedJavaPath,
+        sidebarWidth,
+        sidebarCollapsed
+      ];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -652,17 +679,29 @@ class $AppStatesTable extends AppStates
           lastSuccessfulRefresh.isAcceptableOrUnknown(
               data['last_successful_refresh']!, _lastSuccessfulRefreshMeta));
     }
-    if (data.containsKey('selected_sdk_path')) {
+    if (data.containsKey('selected_s_d_k_path')) {
       context.handle(
           _selectedSDKPathMeta,
           selectedSDKPath.isAcceptableOrUnknown(
-              data['selected_sdk_path']!, _selectedSDKPathMeta));
+              data['selected_s_d_k_path']!, _selectedSDKPathMeta));
     }
     if (data.containsKey('selected_java_path')) {
       context.handle(
           _selectedJavaPathMeta,
           selectedJavaPath.isAcceptableOrUnknown(
               data['selected_java_path']!, _selectedJavaPathMeta));
+    }
+    if (data.containsKey('sidebar_width')) {
+      context.handle(
+          _sidebarWidthMeta,
+          sidebarWidth.isAcceptableOrUnknown(
+              data['sidebar_width']!, _sidebarWidthMeta));
+    }
+    if (data.containsKey('sidebar_collapsed')) {
+      context.handle(
+          _sidebarCollapsedMeta,
+          sidebarCollapsed.isAcceptableOrUnknown(
+              data['sidebar_collapsed']!, _sidebarCollapsedMeta));
     }
     return context;
   }
@@ -684,10 +723,14 @@ class $AppStatesTable extends AppStates
       lastSuccessfulRefresh: attachedDatabase.typeMapping.read(
           DriftSqlType.dateTime,
           data['${effectivePrefix}last_successful_refresh']),
-      selectedSDKPath: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}selected_sdk_path']),
-      selectedJavaPath: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}selected_java_path']),
+      selectedSDKPath: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}selected_s_d_k_path']),
+      selectedJavaPath: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}selected_java_path']),
+      sidebarWidth: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}sidebar_width'])!,
+      sidebarCollapsed: attachedDatabase.typeMapping.read(
+          DriftSqlType.bool, data['${effectivePrefix}sidebar_collapsed'])!,
     );
   }
 
@@ -705,6 +748,8 @@ class AppState extends DataClass implements Insertable<AppState> {
   final DateTime? lastSuccessfulRefresh;
   final String? selectedSDKPath;
   final String? selectedJavaPath;
+  final int sidebarWidth;
+  final bool sidebarCollapsed;
   const AppState(
       {required this.id,
       this.activeSerial,
@@ -712,7 +757,9 @@ class AppState extends DataClass implements Insertable<AppState> {
       required this.expandedSerials,
       this.lastSuccessfulRefresh,
       this.selectedSDKPath,
-      this.selectedJavaPath});
+      this.selectedJavaPath,
+      required this.sidebarWidth,
+      required this.sidebarCollapsed});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -729,11 +776,13 @@ class AppState extends DataClass implements Insertable<AppState> {
           Variable<DateTime>(lastSuccessfulRefresh);
     }
     if (!nullToAbsent || selectedSDKPath != null) {
-      map['selected_sdk_path'] = Variable<String>(selectedSDKPath);
+      map['selected_s_d_k_path'] = Variable<String>(selectedSDKPath);
     }
     if (!nullToAbsent || selectedJavaPath != null) {
       map['selected_java_path'] = Variable<String>(selectedJavaPath);
     }
+    map['sidebar_width'] = Variable<int>(sidebarWidth);
+    map['sidebar_collapsed'] = Variable<bool>(sidebarCollapsed);
     return map;
   }
 
@@ -756,6 +805,8 @@ class AppState extends DataClass implements Insertable<AppState> {
       selectedJavaPath: selectedJavaPath == null && nullToAbsent
           ? const Value.absent()
           : Value(selectedJavaPath),
+      sidebarWidth: Value(sidebarWidth),
+      sidebarCollapsed: Value(sidebarCollapsed),
     );
   }
 
@@ -771,6 +822,8 @@ class AppState extends DataClass implements Insertable<AppState> {
           serializer.fromJson<DateTime?>(json['lastSuccessfulRefresh']),
       selectedSDKPath: serializer.fromJson<String?>(json['selectedSDKPath']),
       selectedJavaPath: serializer.fromJson<String?>(json['selectedJavaPath']),
+      sidebarWidth: serializer.fromJson<int>(json['sidebarWidth']),
+      sidebarCollapsed: serializer.fromJson<bool>(json['sidebarCollapsed']),
     );
   }
   @override
@@ -785,6 +838,8 @@ class AppState extends DataClass implements Insertable<AppState> {
           serializer.toJson<DateTime?>(lastSuccessfulRefresh),
       'selectedSDKPath': serializer.toJson<String?>(selectedSDKPath),
       'selectedJavaPath': serializer.toJson<String?>(selectedJavaPath),
+      'sidebarWidth': serializer.toJson<int>(sidebarWidth),
+      'sidebarCollapsed': serializer.toJson<bool>(sidebarCollapsed),
     };
   }
 
@@ -795,7 +850,9 @@ class AppState extends DataClass implements Insertable<AppState> {
           String? expandedSerials,
           Value<DateTime?> lastSuccessfulRefresh = const Value.absent(),
           Value<String?> selectedSDKPath = const Value.absent(),
-          Value<String?> selectedJavaPath = const Value.absent()}) =>
+          Value<String?> selectedJavaPath = const Value.absent(),
+          int? sidebarWidth,
+          bool? sidebarCollapsed}) =>
       AppState(
         id: id ?? this.id,
         activeSerial:
@@ -805,10 +862,14 @@ class AppState extends DataClass implements Insertable<AppState> {
         lastSuccessfulRefresh: lastSuccessfulRefresh.present
             ? lastSuccessfulRefresh.value
             : this.lastSuccessfulRefresh,
-        selectedSDKPath:
-            selectedSDKPath.present ? selectedSDKPath.value : this.selectedSDKPath,
-        selectedJavaPath:
-            selectedJavaPath.present ? selectedJavaPath.value : this.selectedJavaPath,
+        selectedSDKPath: selectedSDKPath.present
+            ? selectedSDKPath.value
+            : this.selectedSDKPath,
+        selectedJavaPath: selectedJavaPath.present
+            ? selectedJavaPath.value
+            : this.selectedJavaPath,
+        sidebarWidth: sidebarWidth ?? this.sidebarWidth,
+        sidebarCollapsed: sidebarCollapsed ?? this.sidebarCollapsed,
       );
   AppState copyWithCompanion(AppStatesCompanion data) {
     return AppState(
@@ -829,6 +890,12 @@ class AppState extends DataClass implements Insertable<AppState> {
       selectedJavaPath: data.selectedJavaPath.present
           ? data.selectedJavaPath.value
           : this.selectedJavaPath,
+      sidebarWidth: data.sidebarWidth.present
+          ? data.sidebarWidth.value
+          : this.sidebarWidth,
+      sidebarCollapsed: data.sidebarCollapsed.present
+          ? data.sidebarCollapsed.value
+          : this.sidebarCollapsed,
     );
   }
 
@@ -841,15 +908,24 @@ class AppState extends DataClass implements Insertable<AppState> {
           ..write('expandedSerials: $expandedSerials, ')
           ..write('lastSuccessfulRefresh: $lastSuccessfulRefresh, ')
           ..write('selectedSDKPath: $selectedSDKPath, ')
-          ..write('selectedJavaPath: $selectedJavaPath')
+          ..write('selectedJavaPath: $selectedJavaPath, ')
+          ..write('sidebarWidth: $sidebarWidth, ')
+          ..write('sidebarCollapsed: $sidebarCollapsed')
           ..write(')'))
         .toString();
   }
 
   @override
   int get hashCode => Object.hash(
-      id, activeSerial, activeKey, expandedSerials, lastSuccessfulRefresh,
-      selectedSDKPath, selectedJavaPath);
+      id,
+      activeSerial,
+      activeKey,
+      expandedSerials,
+      lastSuccessfulRefresh,
+      selectedSDKPath,
+      selectedJavaPath,
+      sidebarWidth,
+      sidebarCollapsed);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -860,7 +936,9 @@ class AppState extends DataClass implements Insertable<AppState> {
           other.expandedSerials == this.expandedSerials &&
           other.lastSuccessfulRefresh == this.lastSuccessfulRefresh &&
           other.selectedSDKPath == this.selectedSDKPath &&
-          other.selectedJavaPath == this.selectedJavaPath);
+          other.selectedJavaPath == this.selectedJavaPath &&
+          other.sidebarWidth == this.sidebarWidth &&
+          other.sidebarCollapsed == this.sidebarCollapsed);
 }
 
 class AppStatesCompanion extends UpdateCompanion<AppState> {
@@ -871,6 +949,8 @@ class AppStatesCompanion extends UpdateCompanion<AppState> {
   final Value<DateTime?> lastSuccessfulRefresh;
   final Value<String?> selectedSDKPath;
   final Value<String?> selectedJavaPath;
+  final Value<int> sidebarWidth;
+  final Value<bool> sidebarCollapsed;
   const AppStatesCompanion({
     this.id = const Value.absent(),
     this.activeSerial = const Value.absent(),
@@ -879,6 +959,8 @@ class AppStatesCompanion extends UpdateCompanion<AppState> {
     this.lastSuccessfulRefresh = const Value.absent(),
     this.selectedSDKPath = const Value.absent(),
     this.selectedJavaPath = const Value.absent(),
+    this.sidebarWidth = const Value.absent(),
+    this.sidebarCollapsed = const Value.absent(),
   });
   AppStatesCompanion.insert({
     this.id = const Value.absent(),
@@ -888,6 +970,8 @@ class AppStatesCompanion extends UpdateCompanion<AppState> {
     this.lastSuccessfulRefresh = const Value.absent(),
     this.selectedSDKPath = const Value.absent(),
     this.selectedJavaPath = const Value.absent(),
+    this.sidebarWidth = const Value.absent(),
+    this.sidebarCollapsed = const Value.absent(),
   }) : expandedSerials = Value(expandedSerials);
   static Insertable<AppState> custom({
     Expression<int>? id,
@@ -897,6 +981,8 @@ class AppStatesCompanion extends UpdateCompanion<AppState> {
     Expression<DateTime>? lastSuccessfulRefresh,
     Expression<String>? selectedSDKPath,
     Expression<String>? selectedJavaPath,
+    Expression<int>? sidebarWidth,
+    Expression<bool>? sidebarCollapsed,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -905,8 +991,10 @@ class AppStatesCompanion extends UpdateCompanion<AppState> {
       if (expandedSerials != null) 'expanded_serials': expandedSerials,
       if (lastSuccessfulRefresh != null)
         'last_successful_refresh': lastSuccessfulRefresh,
-      if (selectedSDKPath != null) 'selected_sdk_path': selectedSDKPath,
+      if (selectedSDKPath != null) 'selected_s_d_k_path': selectedSDKPath,
       if (selectedJavaPath != null) 'selected_java_path': selectedJavaPath,
+      if (sidebarWidth != null) 'sidebar_width': sidebarWidth,
+      if (sidebarCollapsed != null) 'sidebar_collapsed': sidebarCollapsed,
     });
   }
 
@@ -917,7 +1005,9 @@ class AppStatesCompanion extends UpdateCompanion<AppState> {
       Value<String>? expandedSerials,
       Value<DateTime?>? lastSuccessfulRefresh,
       Value<String?>? selectedSDKPath,
-      Value<String?>? selectedJavaPath}) {
+      Value<String?>? selectedJavaPath,
+      Value<int>? sidebarWidth,
+      Value<bool>? sidebarCollapsed}) {
     return AppStatesCompanion(
       id: id ?? this.id,
       activeSerial: activeSerial ?? this.activeSerial,
@@ -927,6 +1017,8 @@ class AppStatesCompanion extends UpdateCompanion<AppState> {
           lastSuccessfulRefresh ?? this.lastSuccessfulRefresh,
       selectedSDKPath: selectedSDKPath ?? this.selectedSDKPath,
       selectedJavaPath: selectedJavaPath ?? this.selectedJavaPath,
+      sidebarWidth: sidebarWidth ?? this.sidebarWidth,
+      sidebarCollapsed: sidebarCollapsed ?? this.sidebarCollapsed,
     );
   }
 
@@ -950,10 +1042,16 @@ class AppStatesCompanion extends UpdateCompanion<AppState> {
           Variable<DateTime>(lastSuccessfulRefresh.value);
     }
     if (selectedSDKPath.present) {
-      map['selected_sdk_path'] = Variable<String>(selectedSDKPath.value);
+      map['selected_s_d_k_path'] = Variable<String>(selectedSDKPath.value);
     }
     if (selectedJavaPath.present) {
       map['selected_java_path'] = Variable<String>(selectedJavaPath.value);
+    }
+    if (sidebarWidth.present) {
+      map['sidebar_width'] = Variable<int>(sidebarWidth.value);
+    }
+    if (sidebarCollapsed.present) {
+      map['sidebar_collapsed'] = Variable<bool>(sidebarCollapsed.value);
     }
     return map;
   }
@@ -967,7 +1065,9 @@ class AppStatesCompanion extends UpdateCompanion<AppState> {
           ..write('expandedSerials: $expandedSerials, ')
           ..write('lastSuccessfulRefresh: $lastSuccessfulRefresh, ')
           ..write('selectedSDKPath: $selectedSDKPath, ')
-          ..write('selectedJavaPath: $selectedJavaPath')
+          ..write('selectedJavaPath: $selectedJavaPath, ')
+          ..write('sidebarWidth: $sidebarWidth, ')
+          ..write('sidebarCollapsed: $sidebarCollapsed')
           ..write(')'))
         .toString();
   }
@@ -8597,6 +8697,10 @@ typedef $$AppStatesTableCreateCompanionBuilder = AppStatesCompanion Function({
   Value<String?> activeKey,
   required String expandedSerials,
   Value<DateTime?> lastSuccessfulRefresh,
+  Value<String?> selectedSDKPath,
+  Value<String?> selectedJavaPath,
+  Value<int> sidebarWidth,
+  Value<bool> sidebarCollapsed,
 });
 typedef $$AppStatesTableUpdateCompanionBuilder = AppStatesCompanion Function({
   Value<int> id,
@@ -8604,6 +8708,10 @@ typedef $$AppStatesTableUpdateCompanionBuilder = AppStatesCompanion Function({
   Value<String?> activeKey,
   Value<String> expandedSerials,
   Value<DateTime?> lastSuccessfulRefresh,
+  Value<String?> selectedSDKPath,
+  Value<String?> selectedJavaPath,
+  Value<int> sidebarWidth,
+  Value<bool> sidebarCollapsed,
 });
 
 class $$AppStatesTableFilterComposer
@@ -8630,6 +8738,21 @@ class $$AppStatesTableFilterComposer
 
   ColumnFilters<DateTime> get lastSuccessfulRefresh => $composableBuilder(
       column: $table.lastSuccessfulRefresh,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get selectedSDKPath => $composableBuilder(
+      column: $table.selectedSDKPath,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get selectedJavaPath => $composableBuilder(
+      column: $table.selectedJavaPath,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get sidebarWidth => $composableBuilder(
+      column: $table.sidebarWidth, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get sidebarCollapsed => $composableBuilder(
+      column: $table.sidebarCollapsed,
       builder: (column) => ColumnFilters(column));
 }
 
@@ -8659,6 +8782,22 @@ class $$AppStatesTableOrderingComposer
   ColumnOrderings<DateTime> get lastSuccessfulRefresh => $composableBuilder(
       column: $table.lastSuccessfulRefresh,
       builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get selectedSDKPath => $composableBuilder(
+      column: $table.selectedSDKPath,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get selectedJavaPath => $composableBuilder(
+      column: $table.selectedJavaPath,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get sidebarWidth => $composableBuilder(
+      column: $table.sidebarWidth,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get sidebarCollapsed => $composableBuilder(
+      column: $table.sidebarCollapsed,
+      builder: (column) => ColumnOrderings(column));
 }
 
 class $$AppStatesTableAnnotationComposer
@@ -8684,6 +8823,18 @@ class $$AppStatesTableAnnotationComposer
 
   GeneratedColumn<DateTime> get lastSuccessfulRefresh => $composableBuilder(
       column: $table.lastSuccessfulRefresh, builder: (column) => column);
+
+  GeneratedColumn<String> get selectedSDKPath => $composableBuilder(
+      column: $table.selectedSDKPath, builder: (column) => column);
+
+  GeneratedColumn<String> get selectedJavaPath => $composableBuilder(
+      column: $table.selectedJavaPath, builder: (column) => column);
+
+  GeneratedColumn<int> get sidebarWidth => $composableBuilder(
+      column: $table.sidebarWidth, builder: (column) => column);
+
+  GeneratedColumn<bool> get sidebarCollapsed => $composableBuilder(
+      column: $table.sidebarCollapsed, builder: (column) => column);
 }
 
 class $$AppStatesTableTableManager extends RootTableManager<
@@ -8714,6 +8865,10 @@ class $$AppStatesTableTableManager extends RootTableManager<
             Value<String?> activeKey = const Value.absent(),
             Value<String> expandedSerials = const Value.absent(),
             Value<DateTime?> lastSuccessfulRefresh = const Value.absent(),
+            Value<String?> selectedSDKPath = const Value.absent(),
+            Value<String?> selectedJavaPath = const Value.absent(),
+            Value<int> sidebarWidth = const Value.absent(),
+            Value<bool> sidebarCollapsed = const Value.absent(),
           }) =>
               AppStatesCompanion(
             id: id,
@@ -8721,6 +8876,10 @@ class $$AppStatesTableTableManager extends RootTableManager<
             activeKey: activeKey,
             expandedSerials: expandedSerials,
             lastSuccessfulRefresh: lastSuccessfulRefresh,
+            selectedSDKPath: selectedSDKPath,
+            selectedJavaPath: selectedJavaPath,
+            sidebarWidth: sidebarWidth,
+            sidebarCollapsed: sidebarCollapsed,
           ),
           createCompanionCallback: ({
             Value<int> id = const Value.absent(),
@@ -8728,6 +8887,10 @@ class $$AppStatesTableTableManager extends RootTableManager<
             Value<String?> activeKey = const Value.absent(),
             required String expandedSerials,
             Value<DateTime?> lastSuccessfulRefresh = const Value.absent(),
+            Value<String?> selectedSDKPath = const Value.absent(),
+            Value<String?> selectedJavaPath = const Value.absent(),
+            Value<int> sidebarWidth = const Value.absent(),
+            Value<bool> sidebarCollapsed = const Value.absent(),
           }) =>
               AppStatesCompanion.insert(
             id: id,
@@ -8735,6 +8898,10 @@ class $$AppStatesTableTableManager extends RootTableManager<
             activeKey: activeKey,
             expandedSerials: expandedSerials,
             lastSuccessfulRefresh: lastSuccessfulRefresh,
+            selectedSDKPath: selectedSDKPath,
+            selectedJavaPath: selectedJavaPath,
+            sidebarWidth: sidebarWidth,
+            sidebarCollapsed: sidebarCollapsed,
           ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))

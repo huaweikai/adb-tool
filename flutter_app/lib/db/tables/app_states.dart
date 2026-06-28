@@ -16,4 +16,8 @@ class AppStates extends Table {
   // Emulator toolchain selections (SDK and Java paths)
   TextColumn get selectedSDKPath => text().nullable()();
   TextColumn get selectedJavaPath => text().nullable()();
+
+  // Sidebar UI preferences
+  IntColumn get sidebarWidth => integer().withDefault(const Constant(240))();
+  BoolColumn get sidebarCollapsed => boolean().withDefault(const Constant(false))();
 }
