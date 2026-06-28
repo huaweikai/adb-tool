@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"embed"
 	"io/fs"
 	"log"
@@ -32,6 +33,16 @@ type Server struct {
 	// save-to-local-file UI flow (vs. the test-session singleton above).
 	localRecorder *LocalRecorder
 
+	// logcatMgr owns one persistent logcat subprocess per device.
+	// Driven by eventStream below via Ensure/Close.
+	logcatMgr *LogcatStreamManager
+
+	// eventStream subscribes to adb server's host:track-devices and
+	// drives logcatMgr.Ensure/Close on device add/remove. streamCancel
+	// terminates eventStream.Run on shutdown.
+	eventStream  *AdbEventStream
+	streamCancel context.CancelFunc
+
 	// Emulator components
 	instanceManager *emulator.InstanceManager
 	statusMonitor   *emulator.StatusMonitor
@@ -45,17 +56,41 @@ type Server struct {
 func New(adbPath string, webFS fs.FS, clipboardApk []byte, scrcpyFS embed.FS) *Server {
 	adb := NewAdbManager(adbPath, scrcpyFS)
 	adb.DiagnoseStartup()
-	return &Server{
+
+	logcatMgr := NewLogcatStreamManager(adb)
+
+	// Wire device add/remove → logcat watcher start/stop. The
+	// callback runs on the event-stream's read-loop goroutine;
+	// Ensure/Close are non-blocking (acquire a mutex, return), so
+	// a slow consumer here can't stall the stream.
+	eventStream := NewAdbEventStream(0, func(change trackDeviceChange) {
+		for _, serial := range change.Added {
+			logcatMgr.Ensure(serial)
+		}
+		for _, serial := range change.Removed {
+			logcatMgr.Close(serial)
+		}
+	})
+
+	streamCtx, streamCancel := context.WithCancel(context.Background())
+
+	s := &Server{
 		adb:           adb,
 		webFS:         webFS,
 		clipboardApk:  clipboardApk,
 		sessionLogcat: &SessionLogcat{},
 		localRecorder: NewLocalRecorder(),
+		logcatMgr:     logcatMgr,
+		eventStream:   eventStream,
+		streamCancel:  streamCancel,
 		startedAt:     time.Now(),
 		upgrader: websocket.Upgrader{
 			CheckOrigin: isAllowedWebSocketOrigin,
 		},
 	}
+
+	go eventStream.Run(streamCtx)
+	return s
 }
 
 // InitEmulator initializes the emulator components.
@@ -157,6 +192,22 @@ func (s *Server) Close() {
 		s.recordMu.Lock()
 		s.recordingSerial = ""
 		s.recordMu.Unlock()
+
+		// Tear down device-driven logcat: cancel the stream ctx so
+		// Run exits on its next check, Stop the stream (belt &
+		// suspenders if Run is mid-reconnect), then drain every
+		// per-device watcher. Must happen BEFORE adb.Close() —
+		// logcatMgr uses adb internally for spawn/seed.
+		if s.streamCancel != nil {
+			s.streamCancel()
+		}
+		if s.eventStream != nil {
+			s.eventStream.Stop()
+		}
+		if s.logcatMgr != nil {
+			s.logcatMgr.CloseAll()
+		}
+
 		s.adb.Close()
 		if s.statusMonitor != nil {
 			s.statusMonitor.Stop()
