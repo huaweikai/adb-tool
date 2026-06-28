@@ -110,9 +110,13 @@ Future<void> setupDependencies() async {
     EmulatorInstanceProvider(api: getIt<ApiClient>()),
   );
 
-  // LogcatStateProvider needs LogStreamService (must be registered first).
+  // LogcatStateProvider needs LogStreamService + ApiClient (for the
+  // save-to-local recording endpoint).
   getIt.registerSingleton<LogcatStateProvider>(
-    LogcatStateProvider(getIt<LogStreamService>()),
+    LogcatStateProvider(
+      getIt<LogStreamService>(),
+      getIt<ApiClient>(),
+    ),
   );
 }
 

@@ -28,6 +28,10 @@ type Server struct {
 
 	sessionLogcat *SessionLogcat
 
+	// localRecorder owns the per-device recordings used by the
+	// save-to-local-file UI flow (vs. the test-session singleton above).
+	localRecorder *LocalRecorder
+
 	// Emulator components
 	instanceManager *emulator.InstanceManager
 	statusMonitor   *emulator.StatusMonitor
@@ -46,6 +50,7 @@ func New(adbPath string, webFS fs.FS, clipboardApk []byte, scrcpyFS embed.FS) *S
 		webFS:         webFS,
 		clipboardApk:  clipboardApk,
 		sessionLogcat: &SessionLogcat{},
+		localRecorder: NewLocalRecorder(),
 		startedAt:     time.Now(),
 		upgrader: websocket.Upgrader{
 			CheckOrigin: isAllowedWebSocketOrigin,
@@ -213,6 +218,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/ws/logs", s.handleLogStream)
 	mux.HandleFunc("/api/logcat-recent", s.handleRecentLogcat)
 	mux.HandleFunc("/api/session-logcat", s.handleSessionLogcat)
+	mux.HandleFunc("/api/local-recording", s.handleLocalRecording)
 
 	// Screen capture & record
 	mux.HandleFunc("/api/screenshot", s.handleScreenshot)

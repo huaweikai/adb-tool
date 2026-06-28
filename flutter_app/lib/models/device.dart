@@ -33,27 +33,55 @@ class Device {
 }
 
 class LogFilter {
-  String tag;
+  String _tag;
+  String _keyword;
+
+  // Pre-lowercased snapshots of [tag] and [keyword]. matchesFilter is
+  // called once per incoming LogEntry — with a 12.5 Hz stream flush
+  // pushing 5000-entry evictions, that's a lot of `.toLowerCase()` work
+  // on raw 200-char strings. Caching the lowercase form on the writer
+  // side (setter) keeps the hot path allocation-free as long as the
+  // filter text doesn't change.
+  String _tagLower;
+  String _keywordLower;
+
   String priority;
-  String keyword;
   String packageName;
   String packagePid;
 
   LogFilter({
-    this.tag = '',
+    String tag = '',
     this.priority = 'W',
-    this.keyword = '',
+    String keyword = '',
     this.packageName = '',
     this.packagePid = '',
-  });
+  })  : _tag = tag,
+        _keyword = keyword,
+        _tagLower = tag.toLowerCase(),
+        _keywordLower = keyword.toLowerCase();
+
+  String get tag => _tag;
+  String get keyword => _keyword;
+
+  set tag(String v) {
+    if (_tag == v) return;
+    _tag = v;
+    _tagLower = v.toLowerCase();
+  }
+
+  set keyword(String v) {
+    if (_keyword == v) return;
+    _keyword = v;
+    _keywordLower = v.toLowerCase();
+  }
 
   Map<String, dynamic> toJson() => {
-    'tag': tag,
-    'priority': priority,
-    'keyword': keyword,
-    'packageName': packageName,
-    'packagePid': packagePid,
-  };
+        'tag': _tag,
+        'priority': priority,
+        'keyword': _keyword,
+        'packageName': packageName,
+        'packagePid': packagePid,
+      };
 }
 
 class LogEntry {
@@ -115,15 +143,28 @@ class LogEntry {
   }
 
   bool matchesFilter(LogFilter filter) {
+    // Filter tag / keyword come pre-lowercased by LogFilter setters.
+    // raw and tag are per-entry, but matched against the cached lower
+    // form, so each call only allocates 1-2 lowercase strings instead
+    // of 3.
     if (filter.keyword.isNotEmpty &&
-        !raw.toLowerCase().contains(filter.keyword.toLowerCase())) {
+        !raw.toLowerCase().contains(filter._keywordLower)) {
       return false;
     }
     if (filter.tag.isNotEmpty) {
       if (tag.isEmpty) return true;
-      if (!tag.toLowerCase().contains(filter.tag.toLowerCase())) {
+      if (!tag.toLowerCase().contains(filter._tagLower)) {
         return false;
       }
+    }
+    // Package filter: when a PID is resolved (state.packagePid / filter
+    // .packagePid), drop any entry that doesn't match it. Without this,
+    // changing the package filter on a stopped/slow stream would leave
+    // the old non-matching entries visible in the buffer — the backend
+    // stops sending new non-matching lines but never re-prunes the
+    // already-buffered ones.
+    if (filter.packagePid.isNotEmpty && pid != filter.packagePid) {
+      return false;
     }
     return true;
   }

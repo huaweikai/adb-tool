@@ -32,4 +32,42 @@ mixin LogcatApi on ApiBase {
     throwIfNotOk(resp);
     return responseMap(resp);
   }
+
+  /// Start a per-device logcat recording that writes to a backend-owned
+  /// temp file (NOT a test session dir). Returns the file path being
+  /// written — keep it around so [stopLocalRecording] can report it back
+  /// to the user via a file_selector save dialog.
+  Future<Map<String, dynamic>> startLocalRecording(
+    String serial, {
+    String packageName = '',
+  }) async {
+    final resp = await dio.post(
+      '/api/local-recording',
+      data: {
+        'action': 'start',
+        'serial': serial,
+        'packageName': packageName,
+      },
+      options: Options(contentType: Headers.jsonContentType),
+    );
+    throwIfNotOk(resp);
+    return responseMap(resp);
+  }
+
+  /// Stop the per-device recording started by [startLocalRecording].
+  /// Returns a map with `path` (the temp file, ready to be copied to a
+  /// user-chosen location) and `bytes` (final size). If no recording is
+  /// active for the serial the backend still returns ok with empty path.
+  Future<Map<String, dynamic>> stopLocalRecording(String serial) async {
+    final resp = await dio.post(
+      '/api/local-recording',
+      data: {
+        'action': 'stop',
+        'serial': serial,
+      },
+      options: Options(contentType: Headers.jsonContentType),
+    );
+    throwIfNotOk(resp);
+    return responseMap(resp);
+  }
 }

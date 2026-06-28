@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../models/device.dart';
+import '../services/api_client.dart';
 import '../services/log_stream.dart';
 
 /// Per-device UI state for the logcat screen.
@@ -23,7 +24,21 @@ class LogcatDeviceState {
   final List<LogEntry> entries = [];
 
   /// Filtered view of [entries] — what the ListView actually renders.
-  final List<LogEntry> displayed = [];
+  ///
+  /// Backed by two structures:
+  ///   * [_displayedList] — preserves insertion order, fed to ListView.
+  ///   * [_displayedSet]  — identity Set for O(1) presence checks during
+  ///     FIFO eviction. With List-only, evicting K entries used to cost
+  ///     O(K*N) (indexOf + removeAt for each); with the Set it's O(K) +
+  ///     a single O(N) rebuild of the list when anything actually moved.
+  ///
+  /// [displayed] returns a fresh List snapshot on every access so that
+  /// Selector consumers (the log list widget) see a new identity on
+  /// every flush and rebuild — without this they'd compare identical
+  /// lists and skip the rebuild entirely.
+  final List<LogEntry> _displayedList = [];
+  final Set<LogEntry> _displayedSet = Set<LogEntry>.identity();
+  List<LogEntry> get displayed => List<LogEntry>.of(_displayedList);
 
   /// Entries received from the stream but not yet merged into [entries].
   /// Batched flush keeps the rebuild rate bounded.
@@ -34,6 +49,11 @@ class LogcatDeviceState {
   bool paused = false;
   bool wsConnected = false;
   String? packagePid;
+
+  /// Backend-owned recording in progress for this device. null = not
+  /// recording. Set/cleared by [LogcatStateProvider.startRecording] /
+  /// [LogcatStateProvider.stopRecording].
+  RecordingState? recording;
 
   /// True iff the user explicitly pressed Stop on this device's stream.
   /// Drives the screen's auto-start-on-mount: don't auto-restart a
@@ -53,34 +73,51 @@ class LogcatDeviceState {
     final batch = List<LogEntry>.from(pending);
     pending.clear();
     entries.addAll(batch);
-    displayed.addAll(batch.where((e) => e.matchesFilter(filter)));
+    for (final e in batch) {
+      if (e.matchesFilter(filter) && _displayedSet.add(e)) {
+        _displayedList.add(e);
+      }
+    }
     if (entries.length > _maxEntries) {
       final extra = entries.length - _maxEntries;
       final removed = entries.sublist(0, extra);
       entries.removeRange(0, extra);
+      var dirty = false;
       for (final entry in removed) {
-        final idx = displayed.indexOf(entry);
-        if (idx >= 0) displayed.removeAt(idx);
+        if (_displayedSet.remove(entry)) dirty = true;
+      }
+      if (dirty) {
+        // Single O(n) rebuild of the ordered list from the Set. Only
+        // pays this cost when at least one evicted entry was visible.
+        _displayedList
+          ..clear()
+          ..addAll(_displayedSet);
       }
     }
   }
 
   /// Re-filter the displayed view against the current filter.
   void refreshDisplayed() {
-    displayed
+    _displayedSet.clear();
+    for (final e in entries) {
+      if (e.matchesFilter(filter)) _displayedSet.add(e);
+    }
+    _displayedList
       ..clear()
-      ..addAll(entries.where((e) => e.matchesFilter(filter)));
+      ..addAll(_displayedSet);
   }
 
   /// Wipe both the raw and displayed buffers (e.g. user clicked "clear").
   void clearBuffers() {
     entries.clear();
-    displayed.clear();
+    _displayedList.clear();
+    _displayedSet.clear();
     pending.clear();
   }
 
   /// True if there is anything to render or display in the status bar.
-  bool get hasLogs => entries.isNotEmpty || displayed.isNotEmpty || pending.isNotEmpty;
+  bool get hasLogs =>
+      entries.isNotEmpty || _displayedList.isNotEmpty || pending.isNotEmpty;
 }
 
 /// App-wide logcat state. Holds a per-device [LogcatDeviceState] so
@@ -90,9 +127,10 @@ class LogcatDeviceState {
 /// most one [notifyListeners] per frame, so a flood of log lines doesn't
 /// thrash the widget tree.
 class LogcatStateProvider extends ChangeNotifier {
-  LogcatStateProvider(this._svc);
+  LogcatStateProvider(this._svc, this._api);
 
   final LogStreamService _svc;
+  final ApiClient _api;
   final Map<String, LogcatDeviceState> _states = {};
   final Map<String, StreamSubscription<List<LogEntry>>> _logSubs = {};
   final Map<String, StreamSubscription<bool>> _connSubs = {};
@@ -229,11 +267,87 @@ class LogcatStateProvider extends ChangeNotifier {
   }
 
   /// Update the resolved PID for a package filter; forces a notify so
-  /// the status bar refreshes.
+  /// the status bar refreshes, and ALSO propagates the new pid to the
+  /// filter + backend + displayed view.
+  ///
+  /// Without this, setting the pid after [updateField] would only
+  /// update the status-bar cosmetic state — the LogFilter's packagePid
+  /// would stay empty so [LogEntry.matchesFilter] would still let every
+  /// buffered entry through (the backend wouldn't re-filter the
+  /// already-buffered batch either).
   void setPackagePid(String serial, String? pid) {
     final state = stateFor(serial);
     state.packagePid = pid;
+    state.filter.packagePid = pid ?? '';
+    state.refreshDisplayed();
+    if (state.streaming) {
+      _svc.updateFilter(serial, state.filter);
+    }
     _notify();
+  }
+
+  /// Start a per-device "save-to-local" recording. The backend launches
+  /// `adb logcat -T now` as a subprocess writing to a temp file; this
+  /// method returns once that subprocess is alive and the file is open.
+  ///
+  /// Idempotent: a no-op if the device is already recording.
+  /// Errors are surfaced via rethrow — the caller (toolbar) decides how
+  /// to display them.
+  Future<void> startRecording(String serial) async {
+    final state = stateFor(serial);
+    if (state.recording != null) return; // already recording
+    final pkg = state.filter.packageName;
+    final resp = await _api.startLocalRecording(serial, packageName: pkg);
+    final path = resp['path']?.toString() ?? '';
+    if (path.isEmpty) {
+      throw Exception('backend returned empty recording path');
+    }
+    state.recording = RecordingState(
+      serial: serial,
+      startedAt: DateTime.now(),
+      tempPath: path,
+      onTick: _notify,
+    );
+    _notify();
+  }
+
+  /// Stop the recording for `serial` and return the temp file path so
+  /// the caller can hand it to the save dialog. Returns null if no
+  /// recording was active.
+  ///
+  /// Backend errors are rethrown. Always clears the local recording
+  /// state, even on error, so the UI doesn't get stuck in "stopping"
+  /// limbo.
+  Future<RecordingResult?> stopRecording(String serial) async {
+    final state = stateFor(serial);
+    final rec = state.recording;
+    if (rec == null) return null;
+    try {
+      final resp = await _api.stopLocalRecording(serial);
+      final path = resp['path']?.toString() ?? '';
+      final bytes = (resp['bytes'] as num?)?.toInt() ?? 0;
+      return RecordingResult(path: path, bytes: bytes);
+    } finally {
+      rec.dispose();
+      state.recording = null;
+      _notify();
+    }
+  }
+
+  /// True iff this device currently has an active recording.
+  bool isRecording(String serial) => stateFor(serial).recording != null;
+
+  /// Best-effort cleanup of a recording on dispose / device-gone. We
+  /// fire-and-forget the backend call — no point in awaiting at
+  /// shutdown, the OS will reap the subprocess.
+  void stopRecordingIfActive(String serial) {
+    final state = stateFor(serial);
+    if (state.recording == null) return;
+    state.recording!.dispose();
+    state.recording = null;
+    // unawaited — see comment above.
+    // ignore: discarded_futures
+    _api.stopLocalRecording(serial);
   }
 
   void _flush(String serial) {
@@ -257,9 +371,60 @@ class LogcatStateProvider extends ChangeNotifier {
     for (final s in _connSubs.values) {
       s.cancel();
     }
+    for (final state in _states.values) {
+      state.recording?.dispose();
+    }
     _logSubs.clear();
     _connSubs.clear();
     _states.clear();
     super.dispose();
   }
+}
+
+/// Per-device recording state. Owns a 1-second ticker that nudges the
+/// provider so the toolbar's elapsed-time pill updates without needing
+/// the rest of the widget tree to subscribe to anything else.
+class RecordingState {
+  RecordingState({
+    required this.serial,
+    required this.startedAt,
+    required this.tempPath,
+    required this.onTick,
+  }) {
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) => onTick());
+  }
+
+  final String serial;
+  final DateTime startedAt;
+  final String tempPath;
+  final VoidCallback onTick;
+  Timer? _ticker;
+
+  /// Elapsed wall-clock time, second-precision (UI doesn't need finer).
+  Duration get elapsed {
+    final now = DateTime.now();
+    return now.difference(startedAt);
+  }
+
+  /// MM:SS formatter for the toolbar pill. Caps at 99:59 to keep the
+  /// button width stable for long recordings.
+  String get formattedElapsed {
+    final total = elapsed.inSeconds;
+    final m = (total ~/ 60).clamp(0, 99);
+    final s = total % 60;
+    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+  }
+
+  void dispose() {
+    _ticker?.cancel();
+    _ticker = null;
+  }
+}
+
+/// Returned by [LogcatStateProvider.stopRecording]. Carries everything
+/// the toolbar needs to prompt the user for a save location.
+class RecordingResult {
+  const RecordingResult({required this.path, required this.bytes});
+  final String path;
+  final int bytes;
 }

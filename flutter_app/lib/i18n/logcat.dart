@@ -29,8 +29,16 @@ const _locLogcatZh = <String, String>{
   'addRule': '添加规则',
   'logRuleCrash': '崩溃',
   'logRuleNetwork': '网络',
+  // Legacy keys still used by test_session's auto-attached logcat capture.
+  // Don't reuse for the local-recording flow — see logcatSavedToLocal.
   'saveToSession': '保存到会话',
   'logcatSavedToSession': '日志已保存到会话：{path}',
+  'startRecording': '开始录制',
+  'recording': '录制中',
+  'logcatRecordFailed': '录制失败：{error}',
+  'logcatRecordStopFailed': '停止录制失败：{error}',
+  'logcatSaveDialogTitle': '保存录制的日志',
+  'logcatSavedToLocal': '已保存到 {path}',
 };
 
 const _locLogcatEn = <String, String>{
@@ -61,6 +69,14 @@ const _locLogcatEn = <String, String>{
   'addRule': 'Add Rule',
   'logRuleCrash': 'Crash',
   'logRuleNetwork': 'Network',
+  // Legacy keys still used by test_session's auto-attached logcat capture.
+  // Don't reuse for the local-recording flow — see logcatSavedToLocal.
   'saveToSession': 'Save to Session',
   'logcatSavedToSession': 'Logcat saved to session: {path}',
+  'startRecording': 'Start Recording',
+  'recording': 'Recording',
+  'logcatRecordFailed': 'Recording failed: {error}',
+  'logcatRecordStopFailed': 'Stop recording failed: {error}',
+  'logcatSaveDialogTitle': 'Save recorded log',
+  'logcatSavedToLocal': 'Saved to {path}',
 };

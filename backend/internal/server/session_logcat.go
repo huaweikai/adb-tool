@@ -12,11 +12,30 @@ import (
 )
 
 type SessionLogcat struct {
-	mu     sync.Mutex
-	cmd    *exec.Cmd
-	cancel context.CancelFunc
-	done   chan struct{}
-	path   string
+	mu        sync.Mutex
+	cmd       *exec.Cmd
+	cancel    context.CancelFunc
+	done      chan struct{}
+	path      string
+	startedAt time.Time
+}
+
+// Path returns the absolute path of the file currently (or last) being
+// written. Safe to call before Start (returns "") and after Stop (returns
+// the last-known path).
+func (s *SessionLogcat) Path() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.path
+}
+
+// StartedAt returns when the current recording was started, or zero if
+// no recording is active. Used by [LocalRecorder.Status] to report
+// elapsed time without keeping a second clock.
+func (s *SessionLogcat) StartedAt() time.Time {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.startedAt
 }
 
 func (s *SessionLogcat) Start(adbPath, serial, sessionDir, packageName string) error {
@@ -24,6 +43,10 @@ func (s *SessionLogcat) Start(adbPath, serial, sessionDir, packageName string) e
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// Record the start time so callers (e.g. LocalRecorder.Status) can
+	// report an elapsed duration. Cleared by Stop.
+	s.startedAt = time.Now()
 
 	logsDir := filepath.Join(sessionDir, "logs")
 	if err := os.MkdirAll(logsDir, 0755); err != nil {
@@ -134,6 +157,7 @@ func (s *SessionLogcat) Stop() string {
 	s.cancel = nil
 	s.done = nil
 	s.path = ""
+	s.startedAt = time.Time{}
 	s.mu.Unlock()
 
 	if done != nil {
