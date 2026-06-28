@@ -33,6 +33,7 @@ const _locCommonZh = <String, String>{
   'waitForReconnect': '等待重连',
   'waitingReconnect': '等待设备重新连接...',
   'removeDevice': '移除设备',
+  'removeDeviceFailed': '移除失败：设备仍有未清理的数据，请重试或重启应用',
   'giveUp': '放弃',
 
   // ServerBootScreen
@@ -95,6 +96,7 @@ const _locCommonEn = <String, String>{
   'waitForReconnect': 'Wait for Reconnect',
   'waitingReconnect': 'Waiting for device to reconnect...',
   'removeDevice': 'Remove device',
+  'removeDeviceFailed': 'Could not remove device. Please retry or restart the app.',
   'giveUp': 'Give up',
 
   'starting': 'Starting ...',

@@ -89,17 +89,32 @@ class DeviceProvider extends ChangeNotifier {
     );
   }
 
-  /// Remove a device from saved list
-  Future<void> removeDevice(String serial) async {
-    await db.savedDevicesDao.deleteSavedDevice(serial);
+  /// Remove a device from saved list. Returns true on success, false if
+  /// the underlying DAO threw (e.g. unexpected FK constraint). Callers
+  /// should show an error UI on false.
+  Future<bool> removeDevice(String serial) async {
+    try {
+      await db.savedDevicesDao.deleteSavedDevice(serial);
+    } catch (e, st) {
+      debugPrint('[DeviceProvider] removeDevice($serial) failed: $e');
+      debugPrint('[DeviceProvider] STACK: $st');
+      return false;
+    }
 
     // Clear selection if this was the active device
     if (_activeSerial == serial) {
       _activeSerial = null;
-      await db.appStatesDao.updateAppState(activeSerial: null);
+      try {
+        await db.appStatesDao.updateAppState(activeSerial: null);
+      } catch (e) {
+        // Active-serial reset failing shouldn't block the device
+        // removal — log and move on.
+        debugPrint('[DeviceProvider] updateAppState failed after remove: $e');
+      }
     }
 
     notifyListeners();
+    return true;
   }
 
   Future<void> refresh(ApiClient api) {

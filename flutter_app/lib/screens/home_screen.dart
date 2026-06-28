@@ -448,8 +448,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         await sessionProvider.finishSession();
       }
     } catch (_) {}
-    await deviceProvider.removeDevice(serial);
+    final ok = await deviceProvider.removeDevice(serial);
     if (!mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(tr('removeDeviceFailed')),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
     setState(() {
       _screens.removeWhere((_, screen) => screen.serial == serial);
       _expandedSerials.remove(serial);
