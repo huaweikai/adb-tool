@@ -1202,13 +1202,18 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
           child:
               Text(tr('emptyDir'), style: const TextStyle(color: Colors.grey)));
     }
+    // 7 columns + slightly-tall tiles. Compromise between density
+    // (more items per screen) and legibility (folder icons and names
+    // remain readable on a 1920px-wide window without becoming
+    // postage-stamp sized). aspectRatio 0.9 leaves headroom for the
+    // 2-line filename + size line without cropping.
     return GridView.builder(
       padding: const EdgeInsets.all(8),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 5,
-        childAspectRatio: 0.8,
-        crossAxisSpacing: 8,
-        mainAxisSpacing: 8,
+        crossAxisCount: 7,
+        childAspectRatio: 0.9,
+        crossAxisSpacing: 6,
+        mainAxisSpacing: 6,
       ),
       itemCount: _files.length,
       itemBuilder: (ctx, i) => _buildFileGridItem(context, _files[i]),
@@ -1227,7 +1232,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
         elevation: 0,
         color: theme.colorScheme.surfaceContainer,
         child: InkWell(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(10),
           onTap: isTransferring
               ? null
               : () {
@@ -1240,7 +1245,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
           onLongPress:
               isTransferring ? null : () => _showFileMenu(context, file),
           child: Padding(
-            padding: const EdgeInsets.all(8),
+            padding: const EdgeInsets.all(6),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -1248,15 +1253,15 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
                   file.isDir
                       ? Icons.folder
                       : (isText ? Icons.description : Icons.insert_drive_file),
-                  size: 28,
+                  size: 30,
                   color: file.isDir
                       ? Colors.amber.shade400
                       : theme.colorScheme.primary,
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 4),
                 Text(
                   file.name,
-                  style: const TextStyle(fontSize: 10, fontFamily: 'Menlo'),
+                  style: const TextStyle(fontSize: 11, fontFamily: 'Menlo'),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center,
