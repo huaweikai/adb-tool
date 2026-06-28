@@ -69,13 +69,25 @@ var crashPackageExtractors = []*regexp.Regexp{
 	regexp.MustCompile(`Process: ([a-zA-Z0-9_.]+)`),
 }
 
-// logcatTagPattern extracts the tag from a standard logcat line:
+// logcatHeaderPattern parses the leading `MM-DD HH:MM:SS.mmm PID TID
+// PRIO TAG:` prefix of a threadtime logcat line. Capture groups:
 //
-//	MM-DD HH:MM:SS.mmm  PID TID PRIO TAG: message
+//	1 = PID     (digits)
+//	2 = TID     (digits, not captured but available in source)
+//	3 = PRIO    (single word char: V/D/I/W/E/F)
+//	4 = TAG     (identifier, no trailing colon)
 //
-// Returns the tag without the trailing colon, or "" if the line
-// doesn't look like logcat.
-var logcatTagPattern = regexp.MustCompile(`^\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d{3}\s+\d+\s+\d+\s+\w\s+(\S+?):`)
+// Returns no match if the line doesn't look like standard logcat.
+// Used by both crash matching and the per-session filter; client-side
+// filtering against the PID/PRIO/TAG fields replaces the old
+// per-session `adb logcat --pid=` and `*:PRIO` command-line filters,
+// since the subprocess is now shared.
+var logcatHeaderPattern = regexp.MustCompile(`^\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d{3}\s+(\d+)\s+\d+\s+(\w)\s+(\S+?):`)
+
+// logcatTagPattern is the legacy alias kept for the crash-matcher
+// hot path, which only needs the tag. New code should prefer
+// logcatHeaderPattern + the helpers below.
+var logcatTagPattern = logcatHeaderPattern
 
 // classKind maps a crash pattern index to its CrashKind. Index matches
 // the order in crashPatterns.
@@ -898,11 +910,37 @@ func extractCrashPackage(line string) string {
 }
 
 func extractLogcatTag(line string) string {
-	m := logcatTagPattern.FindStringSubmatch(line)
+	m := logcatHeaderPattern.FindStringSubmatch(line)
+	if len(m) < 4 {
+		return ""
+	}
+	return m[3] // group 4 in regex = TAG (already without trailing colon due to `:` outside capture)
+}
+
+// extractLogcatPID returns the PID field from a logcat header, or "" if
+// the line doesn't have the standard prefix. Used by the recording
+// PID filter so we match the PID column exactly (not TID or
+// incidental substring matches).
+func extractLogcatPID(line string) string {
+	m := logcatHeaderPattern.FindStringSubmatch(line)
 	if len(m) < 2 {
 		return ""
 	}
-	return strings.TrimSuffix(m[1], ":")
+	return m[1]
+}
+
+// extractLogcatPriority returns the priority byte (V/D/I/W/E/F) from a
+// logcat header, or 0 if the line doesn't have the standard prefix.
+// 0 is NOT a valid priority, so callers can use it as "not found".
+func extractLogcatPriority(line string) byte {
+	m := logcatHeaderPattern.FindStringSubmatch(line)
+	if len(m) < 3 {
+		return 0
+	}
+	if len(m[2]) != 1 {
+		return 0
+	}
+	return m[2][0]
 }
 
 func totalLen(s []string) int {

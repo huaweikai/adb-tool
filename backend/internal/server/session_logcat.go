@@ -5,7 +5,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 )
@@ -141,10 +140,12 @@ func (s *SessionLogcat) pump(sub LineSubscription, ctx context.Context, done cha
 			pidFilter := s.pidFilter
 			s.mu.Unlock()
 
-			// PID filter: match " <pid> " against the PID field in
-			// the logcat header (3rd whitespace-separated token).
-			// Space-padded to avoid "12" matching "1234".
-			if pidFilter != "" && !strings.Contains(line, " "+pidFilter+" ") {
+			// PID filter: match the PID column exactly. Using
+			// substring " <pid> " would also catch lines where the
+			// TID column happens to equal the filter PID — and
+			// could match incidental " <pid> " elsewhere in the
+			// line. extractLogcatPID returns the PID column only.
+			if pidFilter != "" && extractLogcatPID(line) != pidFilter {
 				continue
 			}
 

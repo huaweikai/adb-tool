@@ -379,9 +379,11 @@ func matchFiltersLine(line string, f LogFilter) bool {
 		return false
 	}
 	if f.PackagePid != "" {
-		// Match against the PID token in the logcat header. Use
-		// space-padded match to avoid "12" matching "1234".
-		if !strings.Contains(line, " "+f.PackagePid+" ") {
+		// Exact PID-column match, not substring. Substring " 1234 "
+		// would also match when TID == filter PID (and could match
+		// incidental " 1234 " elsewhere in the line). The PID column
+		// is what the old `adb logcat --pid=` filter checked.
+		if extractLogcatPID(line) != f.PackagePid {
 			return false
 		}
 	}
@@ -396,29 +398,3 @@ func matchFiltersLine(line string, f LogFilter) bool {
 // Implemented as a regex in logcat_stream_manager.go (used by both
 // crash matching and filter matching). Re-declared here was a bug;
 // just call the package-level one.
-
-// extractLogcatPriority returns the priority byte from a logcat
-// line (the char immediately before the tag, after a space).
-// Returns 0 if no priority could be parsed.
-func extractLogcatPriority(line string) byte {
-	if len(line) < 30 {
-		return 0
-	}
-	// Walk forward to find the tag's leading uppercase letter.
-	for i := 0; i < len(line) && i < 40; i++ {
-		ch := line[i]
-		if ch < 'A' || ch > 'Z' {
-			continue
-		}
-		// Walk backward from i, skipping spaces.
-		j := i - 1
-		for j >= 0 && line[j] == ' ' {
-			j--
-		}
-		if j < 0 {
-			return 0
-		}
-		return line[j]
-	}
-	return 0
-}
