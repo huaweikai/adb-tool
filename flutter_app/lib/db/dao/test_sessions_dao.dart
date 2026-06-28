@@ -156,6 +156,19 @@ class TestSessionsDao extends DatabaseAccessor<AppDatabase>
     return (delete(testSessions)..where((t) => t.id.equals(id))).go();
   }
 
+  /// Delete every session for a given device and (via cascade) all
+  /// their children rows. Called from SavedDevicesDao.deleteSavedDevice
+  /// to satisfy the saved_devices.serial FK — devices with associated
+  /// sessions can't be removed from the saved list otherwise. Sessions
+  /// are intrinsically tied to the device that ran them, so cascading
+  /// them out when the device goes is the right semantics (and matches
+  /// what the test-session_hub already does on a manual delete).
+  Future<int> deleteSessionsForDevice(String deviceSerial) {
+    return (delete(testSessions)
+          ..where((t) => t.deviceSerial.equals(deviceSerial)))
+        .go();
+  }
+
   /// Stamp the session as the "owner" of a screen recording that's
   /// currently in flight on the session's device. Only the file_browser
   /// and test_session values are meaningful; anything else is treated

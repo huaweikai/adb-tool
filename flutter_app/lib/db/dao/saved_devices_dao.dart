@@ -85,16 +85,21 @@ class SavedDevicesDao extends DatabaseAccessor<AppDatabase>
     }
   }
 
-  /// Delete a saved device. Also drops the device's scrcpy config so we
-  /// don't leave orphans in `scrcpy_options_`. Cascade is enforced at
-  /// the app layer because drift_dev 2.34's parser can't express
-  /// cross-table `references(...)` in the schema — see
-  /// `tables/scrcpy_options.dart`. Wrapped in a transaction so a
-  /// failure in the second delete can't leave scrcpy_options_ with a
-  /// dangling row.
+  /// Delete a saved device. Also drops:
+  ///   - the device's scrcpy config (so we don't leave orphans in
+  ///     `scrcpy_options_`)
+  ///   - every test session for this device (so the saved_devices.serial
+  ///     FK from test_sessions is satisfied)
+  ///
+  /// Both cascades are enforced at the app layer because drift_dev
+  /// 2.34's parser can't express cross-table `references(...)` in the
+  /// schema — see `tables/scrcpy_options.dart` and the comment on
+  /// `TestSessions.deviceSerial`. Wrapped in a transaction so a
+  /// failure in any step rolls everything back.
   Future<void> deleteSavedDevice(String serial) async {
     await transaction(() async {
       await db.scrcpyOptionsDao.deleteBySerial(serial);
+      await db.testSessionsDao.deleteSessionsForDevice(serial);
       await (delete(savedDevices)..where((t) => t.serial.equals(serial))).go();
     });
   }
