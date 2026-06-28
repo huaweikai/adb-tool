@@ -15,6 +15,73 @@ const adbCommandQuickGroups = [
           Icons.battery_full),
     ],
   ),
+  // Device-control cluster — volume / brightness / rotation / airplane /
+  // dark mode. All are toggle-style commands that testers hit over and
+  // over; bundling them in one group keeps them one tap away instead of
+  // buried in the Storage / Maintenance groups.
+  //
+  // Placed second (right after Device Info) because testers want these
+  // toggles one scroll away, not at the bottom of the list.
+  //
+  // Why two-stage commands (e.g., settings put + am broadcast): some
+  // toggles (airplane mode, dark mode) need both a settings write and a
+  // config-change broadcast for the system to actually re-render. We
+  // run them via `sh -c "..."` so the shell composes both calls.
+  AdbCommandActionGroup(
+    titleKey: 'quickGroupDeviceControl',
+    icon: Icons.tune,
+    actions: [
+      // Volume — keyevents route through AudioManager; works on all
+      // Android versions and doesn't need a media-session running.
+      AdbCommandQuickAction(
+          'quickActionVolumeUp', 'shell input keyevent 24', Icons.volume_up),
+      AdbCommandQuickAction('quickActionVolumeDown', 'shell input keyevent 25',
+          Icons.volume_down),
+
+      // Brightness — 0..255, but we step to 30 / 200 (not extremes) so
+      // testers don't think the screen died.
+      AdbCommandQuickAction(
+          'quickActionBrightnessUp',
+          'shell settings put system screen_brightness 200',
+          Icons.brightness_high),
+      AdbCommandQuickAction(
+          'quickActionBrightnessDown',
+          'shell settings put system screen_brightness 30',
+          Icons.brightness_low),
+
+      // Rotation lock — accelerometer_rotation 0 stops the auto-rotate
+      // sensor, user_rotation isn't pinned so the current angle stays.
+      // Toggling back to 1 re-enables auto-rotate.
+      AdbCommandQuickAction(
+          'quickActionRotationLock',
+          'shell settings put system accelerometer_rotation 0',
+          Icons.screen_lock_rotation),
+      AdbCommandQuickAction(
+          'quickActionRotationUnlock',
+          'shell settings put system accelerometer_rotation 1',
+          Icons.screen_lock_rotation_outlined),
+
+      // Airplane mode — settings write alone doesn't refresh the
+      // connectivity stack; we also broadcast the action so the system
+      // re-evaluates WiFi / cell state immediately.
+      AdbCommandQuickAction(
+          'quickActionAirplaneModeOn',
+          'shell sh -c "settings put global airplane_mode_on 1 && am broadcast -a android.intent.action.AIRPLANE_MODE --ez state true"',
+          Icons.airplanemode_active),
+      AdbCommandQuickAction(
+          'quickActionAirplaneModeOff',
+          'shell sh -c "settings put global airplane_mode_on 0 && am broadcast -a android.intent.action.AIRPLANE_MODE --ez state false"',
+          Icons.airplanemode_inactive),
+
+      // Dark mode — `cmd uimode night yes/no` is the only Android API
+      // way to flip uiMode without an Activity context. Works on API
+      // 29+; older devices silently ignore.
+      AdbCommandQuickAction('quickActionDarkModeOn',
+          'shell cmd uimode night yes', Icons.dark_mode),
+      AdbCommandQuickAction('quickActionDarkModeOff',
+          'shell cmd uimode night no', Icons.light_mode),
+    ],
+  ),
   AdbCommandActionGroup(
     titleKey: 'quickGroupScreenControl',
     icon: Icons.screenshot_monitor,
@@ -130,6 +197,12 @@ const adbCommandQuickGroups = [
           customIntent: true),
     ],
   ),
+  // Device-control cluster — volume / brightness / rotation / airplane /
+  // dark mode. All are toggle-style commands that testers hit over and
+  // over; bundling them in one group keeps them one tap away instead of
+  // buried in the Storage / Maintenance groups.
+  //
+  // (Device Control group moved to position 2 — see top of list.)
 ];
 
 class AdbCommandActionGroup {
