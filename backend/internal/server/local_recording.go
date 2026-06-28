@@ -17,8 +17,10 @@ import (
 // tears the existing recording down first (same semantics as
 // [SessionLogcat.Start] for the test-session singleton).
 //
-// This type is intentionally thin: the heavy lifting (subprocess, pump,
-// 500ms flush) is all in [SessionLogcat]. We just multiplex.
+// All recordings share the LogcatStreamManager subprocess (one per
+// device), so two recordings on the same device are TWO file writers
+// over the SAME line stream — perfectly fine, just means the file
+// contents are identical.
 type LocalRecorder struct {
 	mu        sync.Mutex
 	instances map[string]*SessionLogcat
@@ -28,15 +30,15 @@ func NewLocalRecorder() *LocalRecorder {
 	return &LocalRecorder{instances: make(map[string]*SessionLogcat)}
 }
 
-// Start begins a new adb logcat subprocess for the given device, writing
-// to <saveDir>/<YYYYMMDD_HHMMSS>.log. If a recording is already running
+// Start begins a new recording for the given device, writing to
+// <saveDir>/<YYYYMMDD_HHMMSS>.log. If a recording is already running
 // for this serial it is replaced.
 //
 // saveDir is NOT validated as a session dir — the caller (typically the
 // handler) controls where the file lands. Use os.TempDir() / a per-process
 // scratch dir for the save-to-local flow; use [validateSessionDir] for
 // the test-session flow.
-func (l *LocalRecorder) Start(adbPath, serial, saveDir, packageName string) (string, error) {
+func (l *LocalRecorder) Start(mgr *LogcatStreamManager, adb *AdbManager, serial, saveDir, packageName string) (string, error) {
 	if serial == "" {
 		return "", fmt.Errorf("serial required")
 	}
@@ -61,7 +63,7 @@ func (l *LocalRecorder) Start(adbPath, serial, saveDir, packageName string) (str
 	l.instances[serial] = rec
 	l.mu.Unlock()
 
-	if err := rec.Start(adbPath, serial, saveDir, packageName); err != nil {
+	if err := rec.Start(mgr, adb, serial, saveDir, packageName); err != nil {
 		l.mu.Lock()
 		// Only drop the map entry if it's still ours (avoid racing a
 		// concurrent Start for a different session dir).

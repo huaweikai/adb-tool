@@ -59,7 +59,13 @@ type AdbEventStream struct {
 	stopCh   chan struct{}
 	stopOnce sync.Once
 
-	// last snapshot, mutated only inside Run.
+	// snapshotMu protects snapshot for concurrent reads from
+	// Snapshot() while Run() updates it on each track-devices event.
+	snapshotMu sync.RWMutex
+	snapshot   []Device // current device list, in adb-server order
+
+	// last is the snapshot keyed by serial, used for diffing. Mutated
+	// only inside Run under snapshotMu.
 	last map[string]Device
 }
 
@@ -89,6 +95,27 @@ func (s *AdbEventStream) SetLogger(l *log.Logger) {
 // Port returns the port this stream will dial. Useful for tests that
 // want to point a fake adb server at the same value.
 func (s *AdbEventStream) Port() int { return s.port }
+
+// Snapshot returns a copy of the current device list. Safe to call
+// from any goroutine. Returns an empty slice (not nil) when the
+// stream hasn't seen its first event yet, so callers can range over
+// it without nil checks.
+func (s *AdbEventStream) Snapshot() []Device {
+	s.snapshotMu.RLock()
+	defer s.snapshotMu.RUnlock()
+	out := make([]Device, len(s.snapshot))
+	copy(out, s.snapshot)
+	return out
+}
+
+// publishSnapshot replaces both `snapshot` and `last` atomically.
+// Caller must hold snapshotMu for writing.
+func (s *AdbEventStream) publishSnapshot(currentOrder []Device, current map[string]Device) {
+	s.snapshotMu.Lock()
+	s.snapshot = currentOrder
+	s.last = current
+	s.snapshotMu.Unlock()
+}
 
 // Stop signals Run to exit and tear down the connection. Safe from any
 // goroutine, multiple times.
@@ -269,34 +296,31 @@ func (s *AdbEventStream) handlePayload(payload []byte) error {
 		currentOrder = append(currentOrder, d)
 	}
 
-	if s.last == nil {
+	// Snapshot the previous state under the read lock so Snapshot()
+	// callers (HTTP handler, etc.) see a consistent view while we
+	// compute the diff.
+	s.snapshotMu.RLock()
+	prev := s.last
+	s.snapshotMu.RUnlock()
+
+	var added, removed []string
+	if prev == nil {
 		// First event after (re)connect: treat the whole snapshot as
 		// "added" so consumers don't miss connects that happened
 		// during the disconnect window.
-		added := make([]string, 0, len(current))
 		for serial := range current {
 			added = append(added, serial)
 		}
-		sort.Strings(added)
-		if len(added) > 0 {
-			s.invokeChange(trackDeviceChange{
-				Current: currentOrder,
-				Added:   added,
-			})
+	} else {
+		for serial := range current {
+			if _, ok := prev[serial]; !ok {
+				added = append(added, serial)
+			}
 		}
-		s.last = current
-		return nil
-	}
-
-	var added, removed []string
-	for serial := range current {
-		if _, ok := s.last[serial]; !ok {
-			added = append(added, serial)
-		}
-	}
-	for serial := range s.last {
-		if _, ok := current[serial]; !ok {
-			removed = append(removed, serial)
+		for serial := range prev {
+			if _, ok := current[serial]; !ok {
+				removed = append(removed, serial)
+			}
 		}
 	}
 
@@ -309,7 +333,7 @@ func (s *AdbEventStream) handlePayload(payload []byte) error {
 			Removed: removed,
 		})
 	}
-	s.last = current
+	s.publishSnapshot(currentOrder, current)
 	return nil
 }
 

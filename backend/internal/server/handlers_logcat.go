@@ -79,7 +79,7 @@ func (s *Server) handleSessionLogcat(w http.ResponseWriter, r *http.Request) {
 			writeAPIError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		if err := s.sessionLogcat.Start(s.adb.AdbPath(), req.Serial, sessionDir, req.PackageName); err != nil {
+		if err := s.sessionLogcat.Start(s.logcatMgr, s.adb, req.Serial, sessionDir, req.PackageName); err != nil {
 			writeAPIError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
@@ -130,7 +130,7 @@ func (s *Server) handleLocalRecording(w http.ResponseWriter, r *http.Request) {
 	switch req.Action {
 	case "start":
 		saveDir := localRecordingSaveDir(req.Serial)
-		path, err := s.localRecorder.Start(s.adb.AdbPath(), req.Serial, saveDir, req.PackageName)
+		path, err := s.localRecorder.Start(s.logcatMgr, s.adb, req.Serial, saveDir, req.PackageName)
 		if err != nil {
 			writeAPIError(w, http.StatusInternalServerError, err.Error())
 			return

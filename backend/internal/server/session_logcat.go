@@ -4,20 +4,28 @@ import (
 	"bufio"
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 )
 
+// SessionLogcat captures logcat output to a file. Used by the
+// test-session flow (single instance per Server) AND by LocalRecorder
+// (one per active recording). Either way it now SUBSCRIBES to the
+// shared LogcatStreamManager instead of spawning its own adb logcat
+// subprocess — so multiple recordings on the same device share one
+// subprocess and capture an identical line stream.
 type SessionLogcat struct {
-	mu        sync.Mutex
-	cmd       *exec.Cmd
-	cancel    context.CancelFunc
-	done      chan struct{}
-	path      string
+	mu       sync.Mutex
+	mgr      *LogcatStreamManager
+	adb      *AdbManager
+	sub      *LineSubscription
+	cancel   context.CancelFunc
+	done     chan struct{}
+	path     string
 	startedAt time.Time
+	pidFilter string // empty = no filter; otherwise match " <pid> " in the line header
 }
 
 // Path returns the absolute path of the file currently (or last) being
@@ -38,15 +46,27 @@ func (s *SessionLogcat) StartedAt() time.Time {
 	return s.startedAt
 }
 
-func (s *SessionLogcat) Start(adbPath, serial, sessionDir, packageName string) error {
+// Start begins a new recording. If a recording is already running,
+// it is stopped first (same semantics as before).
+//
+// packageName, if non-empty, is resolved to a PID via AdbManager and
+// used as a line-header filter (" <pid> "). This replaces the old
+// per-recording `adb logcat --pid=<pid>` filter — now applied
+// client-side because the subprocess is shared.
+func (s *SessionLogcat) Start(mgr *LogcatStreamManager, adb *AdbManager, serial, sessionDir, packageName string) error {
 	s.Stop()
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	if mgr == nil {
+		return nil // nothing to do; tests can construct without a manager
+	}
 
-	// Record the start time so callers (e.g. LocalRecorder.Status) can
-	// report an elapsed duration. Cleared by Stop.
-	s.startedAt = time.Now()
+	// Resolve package → PID BEFORE we open the file / subscribe, so a
+	// PID-lookup failure aborts cleanly with no partial state.
+	var pidFilter string
+	if packageName != "" && adb != nil {
+		pid, _ := adb.GetPackagePID(serial, packageName)
+		pidFilter = pid
+	}
 
 	logsDir := filepath.Join(sessionDir, "logs")
 	if err := os.MkdirAll(logsDir, 0755); err != nil {
@@ -61,64 +81,45 @@ func (s *SessionLogcat) Start(adbPath, serial, sessionDir, packageName string) e
 		return err
 	}
 
-	args := []string{"-s", serial, "logcat", "-v", "threadtime", "-T", now.Format("01-02 15:04:05.000")}
+	// Ensure watcher is running (idempotent — event stream usually
+	// already did this on device-add).
+	mgr.Ensure(serial)
 
-	if packageName != "" {
-		if pid := getPackagePID(adbPath, serial, packageName); pid != "" {
-			args = append(args, "--pid="+pid)
-		}
+	// Replay 0: recordings start fresh. Old code passed -T to adb
+	// logcat to skip pre-start lines; with a shared subprocess we
+	// can't filter by start time at the source, so we just drop
+	// pre-existing ring-buffer entries.
+	sub, err := mgr.Subscribe(serial, 0)
+	if err != nil {
+		file.Close()
+		os.Remove(filePath)
+		return err
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	cmd := exec.CommandContext(ctx, adbPath, args...)
+	done := make(chan struct{})
 
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		cancel()
-		file.Close()
-		os.Remove(filePath)
-		return err
-	}
-	cmd.Stderr = cmd.Stdout
-
-	if err := cmd.Start(); err != nil {
-		cancel()
-		file.Close()
-		os.Remove(filePath)
-		return err
-	}
-
-	s.cmd = cmd
+	s.mu.Lock()
+	s.mgr = mgr
+	s.adb = adb
+	s.sub = &sub
 	s.cancel = cancel
-	s.done = make(chan struct{})
+	s.done = done
 	s.path = filePath
+	s.startedAt = now
+	s.pidFilter = pidFilter
+	s.mu.Unlock()
 
-	go s.pump(bufio.NewReader(stdout), file, ctx, s.done)
+	go s.pump(sub, ctx, done, file)
 	return nil
 }
 
-func (s *SessionLogcat) pump(reader *bufio.Reader, file *os.File, ctx context.Context, done chan struct{}) {
+func (s *SessionLogcat) pump(sub LineSubscription, ctx context.Context, done chan struct{}, file *os.File) {
 	writer := bufio.NewWriterSize(file, 128*1024)
 	defer func() {
 		writer.Flush()
 		file.Close()
 		close(done)
-	}()
-
-	lineCh := make(chan []byte, 256)
-	errCh := make(chan error, 1)
-
-	go func() {
-		for {
-			line, err := reader.ReadBytes('\n')
-			if len(line) > 0 {
-				lineCh <- line
-			}
-			if err != nil {
-				errCh <- err
-				return
-			}
-		}
 	}()
 
 	ticker := time.NewTicker(500 * time.Millisecond)
@@ -130,11 +131,25 @@ func (s *SessionLogcat) pump(reader *bufio.Reader, file *os.File, ctx context.Co
 			return
 		case <-ticker.C:
 			writer.Flush()
-		case <-errCh:
-			writer.Flush()
-			return
-		case line := <-lineCh:
-			writer.Write(line)
+		case line, ok := <-sub.Lines:
+			if !ok {
+				writer.Flush()
+				return
+			}
+
+			s.mu.Lock()
+			pidFilter := s.pidFilter
+			s.mu.Unlock()
+
+			// PID filter: match " <pid> " against the PID field in
+			// the logcat header (3rd whitespace-separated token).
+			// Space-padded to avoid "12" matching "1234".
+			if pidFilter != "" && !strings.Contains(line, " "+pidFilter+" ") {
+				continue
+			}
+
+			writer.WriteString(line)
+			writer.WriteByte('\n')
 			if writer.Buffered() >= 100*1024 {
 				writer.Flush()
 			}
@@ -142,37 +157,30 @@ func (s *SessionLogcat) pump(reader *bufio.Reader, file *os.File, ctx context.Co
 	}
 }
 
+// Stop ends the recording, flushes the file, and returns the file path.
+// Safe to call when nothing is running (returns "").
 func (s *SessionLogcat) Stop() string {
 	s.mu.Lock()
-	if s.cancel != nil {
-		s.cancel()
-	}
-	if s.cmd != nil && s.cmd.Process != nil {
-		s.cmd.Process.Kill()
-		s.cmd.Wait()
-	}
+	cancel := s.cancel
 	done := s.done
-	path := s.path
-	s.cmd = nil
+	sub := s.sub
 	s.cancel = nil
 	s.done = nil
+	s.sub = nil
+	path := s.path
 	s.path = ""
 	s.startedAt = time.Time{}
+	s.pidFilter = ""
 	s.mu.Unlock()
 
+	if cancel != nil {
+		cancel()
+	}
 	if done != nil {
 		<-done
 	}
-	return path
-}
-
-func getPackagePID(adbPath, serial, packageName string) string {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, adbPath, "-s", serial, "shell", "pidof", packageName)
-	out, err := cmd.Output()
-	if err != nil {
-		return ""
+	if sub != nil {
+		sub.Cancel()
 	}
-	return strings.TrimSpace(string(out))
+	return path
 }

@@ -7,19 +7,18 @@ import (
 )
 
 // handleDevices returns the list of currently connected devices.
+//
+// Backed by the AdbEventStream's snapshot (one persistent track-devices
+// connection feeds the snapshot in near-realtime), so this no longer
+// spawns `adb devices -l` per request. If the stream isn't connected
+// yet the snapshot is an empty slice — the client treats that as
+// "no devices", not as a backend failure. Backend liveness should be
+// detected via /api/identify or similar.
 func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	Log.Add("handle devices start", "", nil, 0)
 
-	devices, err := s.adb.DevicesContext(r.Context())
-	if err != nil {
-		Log.Add("handle devices error", err.Error(), err, time.Since(start))
-		writeAPIError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if devices == nil {
-		devices = []Device{}
-	}
+	devices := s.eventStream.Snapshot()
 	onlineCount := 0
 	for _, d := range devices {
 		if d.State == "device" {
