@@ -95,8 +95,10 @@ func (s *fakeAdbServer) serve() {
 		return
 	}
 
-	// OKAY handshake
-	if _, err := conn.Write([]byte("0004OKAY")); err != nil {
+	// OKAY handshake. The handshake response is a raw 4-byte token
+	// ("OKAY" or "FAIL"), NOT length-prefixed �?unlike the payloads
+	// that follow. See readOkayOrFail.
+	if _, err := conn.Write([]byte("OKAY")); err != nil {
 		return
 	}
 
@@ -133,6 +135,10 @@ func (s *fakeAdbServer) push(payload []byte) {
 
 // trackJSON builds a JSON payload for host:track-devices with the given
 // serials marked online ("device" state). Stable order for assertions.
+//
+// Kept for the defensive JSON-format path in handlePayload �?newer
+// adb versions don't actually emit this format (they emit text), but
+// we still parse it if it shows up.
 func trackJSON(serials ...string) []byte {
 	arr := make([]trackDevice, 0, len(serials))
 	for _, s := range serials {
@@ -144,6 +150,20 @@ func trackJSON(serials ...string) []byte {
 	}
 	b, _ := json.Marshal(arr)
 	return b
+}
+
+// trackText builds a TEXT payload for host:track-devices. This is what
+// real adb (recent versions) actually emits �?one `<serial>\t<state>`
+// line per device, terminated with `\n`. State defaults to "device".
+func trackText(serials ...string) []byte {
+	var b strings.Builder
+	for _, s := range serials {
+		b.WriteString(s)
+		b.WriteByte('\t')
+		b.WriteString("device")
+		b.WriteByte('\n')
+	}
+	return []byte(b.String())
 }
 
 // waitFor polls until cond returns true or timeout. Returns whether cond
@@ -221,7 +241,7 @@ func TestAdbEventStream_FirstEventTreatedAsFullSnapshot(t *testing.T) {
 		t.Fatal("fake server didn't accept connection")
 	}
 
-	srv.push(trackJSON("alpha", "bravo"))
+	srv.push(trackText("alpha", "bravo"))
 
 	if !waitFor(2*time.Second, func() bool {
 		return len(cap.snapshot()) == 1
@@ -262,13 +282,13 @@ func TestAdbEventStream_DiffAddAndRemove(t *testing.T) {
 	<-srv.accepted
 
 	// Snapshot 1: alpha, bravo
-	srv.push(trackJSON("alpha", "bravo"))
+	srv.push(trackText("alpha", "bravo"))
 	if !waitFor(time.Second, func() bool { return len(cap.snapshot()) == 1 }) {
 		t.Fatal("did not receive first event")
 	}
 
 	// Snapshot 2: bravo gone, charlie added
-	srv.push(trackJSON("bravo", "charlie"))
+	srv.push(trackText("bravo", "charlie"))
 	if !waitFor(time.Second, func() bool { return len(cap.snapshot()) == 2 }) {
 		t.Fatalf("did not receive second event; got %d events", len(cap.snapshot()))
 	}
@@ -302,13 +322,13 @@ func TestAdbEventStream_NoDiffNoCallback(t *testing.T) {
 
 	<-srv.accepted
 
-	srv.push(trackJSON("alpha", "bravo"))
+	srv.push(trackText("alpha", "bravo"))
 	if !waitFor(time.Second, func() bool { return len(cap.snapshot()) == 1 }) {
 		t.Fatal("did not receive first event")
 	}
 
 	// Same snapshot again
-	srv.push(trackJSON("alpha", "bravo"))
+	srv.push(trackText("alpha", "bravo"))
 
 	// Give it time; we want exactly 1 callback
 	time.Sleep(150 * time.Millisecond)
@@ -338,7 +358,7 @@ func TestAdbEventStream_BadJSONDoesNotKillStream(t *testing.T) {
 	<-srv.accepted
 
 	srv.push([]byte("this is not json"))
-	srv.push(trackJSON("alpha"))
+	srv.push(trackText("alpha"))
 
 	if !waitFor(time.Second, func() bool {
 		return len(cap.snapshot()) == 1
@@ -385,7 +405,7 @@ func TestAdbEventStream_ConnectFailureExitsAfterContextCancel(t *testing.T) {
 		t.Fatalf("listen: %v", err)
 	}
 	defer ln.Close()
-	// Accept and immediately close — port still bound for a moment but
+	// Accept and immediately close �?port still bound for a moment but
 	// dial will fail. Easier: use a port that's almost certainly closed.
 	// Simplest: just take the port and close the listener immediately
 	// so the port is free but nothing accepts.
@@ -441,9 +461,10 @@ func TestAdbEventStream_FailResponseReturnsError(t *testing.T) {
 		n, _ := decodeHexLength(hdr[:])
 		req := make([]byte, n)
 		io.ReadFull(conn, req)
-		// respond FAIL with reason
+		// respond FAIL with reason. OKAY/FAIL is a raw 4-byte token
+		// (not length-prefixed); only the trailing reason is.
 		reason := "device not found"
-		conn.Write([]byte("0004FAIL"))
+		conn.Write([]byte("FAIL"))
 		conn.Write([]byte(fmt.Sprintf("%04x%s", len(reason), reason)))
 	}()
 

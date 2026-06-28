@@ -14,11 +14,16 @@ import (
 // yet the snapshot is an empty slice — the client treats that as
 // "no devices", not as a backend failure. Backend liveness should be
 // detected via /api/identify or similar.
+//
+// Model/Brand/SDK are filled in by enrichDevicesProps (parallel
+// getprop with caching) so the response shape matches what the
+// previous `adb devices -l` implementation produced.
 func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	Log.Add("handle devices start", "", nil, 0)
 
 	devices := s.eventStream.Snapshot()
+	s.adb.enrichDevicesProps(devices)
 	onlineCount := 0
 	for _, d := range devices {
 		if d.State == "device" {

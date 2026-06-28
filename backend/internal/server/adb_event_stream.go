@@ -2,6 +2,7 @@ package server
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -10,6 +11,7 @@ import (
 	"log"
 	"net"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -223,15 +225,23 @@ func (s *AdbEventStream) connectAndStream(ctx context.Context) error {
 	}
 }
 
-// readOkayOrFail reads the 4-byte hex length + OKAY / FAIL response.
-// On FAIL, it also reads the trailing reason payload so the stream is
-// left in a clean state for the caller to decide what to do.
+// readOkayOrFail reads the host-command handshake response.
+//
+// Adb wire protocol quirk: the OKAY/FAIL response to a host command
+// like `host:track-devices` is a RAW 4-byte token with no length
+// prefix (unlike every payload that follows, which IS length-prefixed).
+// On FAIL, the reason is then sent as a length-prefixed payload.
+//
+// The previous version of this function called readLengthPrefixed,
+// which expected a 4-hex-digit length prefix — that matched a
+// well-formed fake server but never worked against real adb, which
+// sends bare "OKAY" / "FAIL".
 func readOkayOrFail(r io.Reader) error {
-	body, err := readLengthPrefixed(r)
-	if err != nil {
-		return fmt.Errorf("read response: %w", err)
+	var hdr [4]byte
+	if _, err := io.ReadFull(r, hdr[:]); err != nil {
+		return fmt.Errorf("read handshake: %w", err)
 	}
-	switch string(body) {
+	switch string(hdr[:]) {
 	case "OKAY":
 		return nil
 	case "FAIL":
@@ -241,7 +251,7 @@ func readOkayOrFail(r io.Reader) error {
 		}
 		return fmt.Errorf("adb server returned FAIL: %s", string(reason))
 	default:
-		return fmt.Errorf("unexpected response: %q", string(body))
+		return fmt.Errorf("unexpected handshake response: %q", string(hdr[:]))
 	}
 }
 
@@ -276,23 +286,38 @@ func decodeHexLength(b []byte) (int, error) {
 	return int(n[0])<<8 | int(n[1]), nil
 }
 
-// handlePayload decodes one JSON device list, diffs against the last
-// known snapshot, and invokes onChange when there's a diff.
+// handlePayload decodes one device list (text or JSON format), diffs
+// against the last known snapshot, and invokes onChange when there's
+// a diff.
+//
+// Format note: real adb's `host:track-devices` emits one event per
+// device-list change, in a TEXT format that's the same shape as
+// `adb devices` (without the `-l` extras):
+//
+//	<serial>\t<state>\n
+//	<serial>\t<state>\n
+//	...
+//
+// The earlier JSON assumption came from a misread of the adb source —
+// the actual response is text. We still accept JSON if the payload
+// starts with `[` (defensive: older adb versions or future changes).
 func (s *AdbEventStream) handlePayload(payload []byte) error {
-	var raw []trackDevice
-	if err := json.Unmarshal(payload, &raw); err != nil {
-		return fmt.Errorf("decode json: %w", err)
+	trimmed := bytes.TrimSpace(payload)
+	if len(trimmed) == 0 {
+		return nil
 	}
 
-	current := make(map[string]Device, len(raw))
-	currentOrder := make([]Device, 0, len(raw))
-	for _, td := range raw {
-		d := Device{
-			Serial: td.Serial,
-			State:  td.State,
-			Model:  td.Model,
-		}
-		current[td.Serial] = d
+	var devices []Device
+	if trimmed[0] == '[' {
+		devices = parseTrackJSON(trimmed)
+	} else {
+		devices = parseTrackText(trimmed)
+	}
+
+	current := make(map[string]Device, len(devices))
+	currentOrder := make([]Device, 0, len(devices))
+	for _, d := range devices {
+		current[d.Serial] = d
 		currentOrder = append(currentOrder, d)
 	}
 
@@ -335,6 +360,56 @@ func (s *AdbEventStream) handlePayload(payload []byte) error {
 	}
 	s.publishSnapshot(currentOrder, current)
 	return nil
+}
+
+// parseTrackJSON parses the legacy JSON-array format
+// (e.g. [{"serial":"...","state":"device",...}]). Kept for defensive
+// compatibility with older adb versions / forks.
+func parseTrackJSON(payload []byte) []Device {
+	var raw []trackDevice
+	if err := json.Unmarshal(payload, &raw); err != nil {
+		return nil
+	}
+	out := make([]Device, 0, len(raw))
+	for _, td := range raw {
+		out = append(out, Device{
+			Serial: td.Serial,
+			State:  td.State,
+			Model:  td.Model,
+		})
+	}
+	return out
+}
+
+// parseTrackText parses the modern adb text format:
+//
+//	<serial>\t<state>\n
+//	<serial>\t<state>\n
+//
+// Each line is tab-separated. State is one of: device, offline,
+// unauthorized, recovery, sideload, bootloader. Lines starting with
+// `*` (header marker) are skipped. Unlike `adb devices -l`, this
+// stream does NOT include product:/model:/device:/transport_id:
+// columns — those need to be fetched separately if needed.
+func parseTrackText(payload []byte) []Device {
+	out := make([]Device, 0, 4)
+	for _, line := range strings.Split(string(payload), "\n") {
+		line = strings.TrimRight(line, "\r")
+		if line == "" || strings.HasPrefix(line, "*") {
+			continue
+		}
+		fields := strings.SplitN(line, "\t", 3)
+		if len(fields) < 2 {
+			continue
+		}
+		serial := strings.TrimSpace(fields[0])
+		state := strings.TrimSpace(fields[1])
+		if serial == "" {
+			continue
+		}
+		out = append(out, Device{Serial: serial, State: state})
+	}
+	return out
 }
 
 // invokeChange guards against nil callback and panics in user code, so
