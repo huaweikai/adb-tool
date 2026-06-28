@@ -6,6 +6,7 @@ import '../i18n.dart';
 import '../providers/locale_provider.dart';
 import '../providers/device_provider.dart';
 import '../providers/clipboard_history_provider.dart';
+import '../widgets/offline_guard.dart';
 
 class ClipboardScreen extends StatefulWidget {
   const ClipboardScreen({super.key});
@@ -196,10 +197,20 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
       );
     }
 
+    // Watch device connection so the input card / buttons reflect the
+    // disabled state when the device goes offline mid-edit.
+    final isOnline =
+        context.watch<DeviceProvider>().isDeviceConnected(_selectedSerial!);
+
     return CustomScrollView(
       slivers: [
+        // Banner spans the full screen width — no horizontal padding
+        // here, unlike the rest of the slivers below which use 20px.
+        SliverToBoxAdapter(
+          child: OfflineBanner(serial: _selectedSerial!),
+        ),
         SliverPadding(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
           sliver: SliverToBoxAdapter(
             child: _buildHeader(theme),
           ),
@@ -207,13 +218,13 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
           sliver: SliverToBoxAdapter(
-            child: _buildInputCard(theme),
+            child: _buildInputCard(theme, isOnline: isOnline),
           ),
         ),
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
           sliver: SliverToBoxAdapter(
-            child: _buildButtonsAndStatus(theme),
+            child: _buildButtonsAndStatus(theme, isOnline: isOnline),
           ),
         ),
         if (entries.isNotEmpty)
@@ -288,7 +299,7 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
     );
   }
 
-  Widget _buildInputCard(ThemeData theme) {
+  Widget _buildInputCard(ThemeData theme, {required bool isOnline}) {
     final busy = _sending || _installing;
     return Card(
       margin: EdgeInsets.zero,
@@ -307,7 +318,7 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
                 if (_textCtrl.text.isNotEmpty)
                   InkWell(
                     borderRadius: BorderRadius.circular(4),
-                    onTap: busy ? null : _clearInput,
+                    onTap: (busy || !isOnline) ? null : _clearInput,
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 6, vertical: 2),
@@ -325,7 +336,7 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
                 controller: _textCtrl,
                 focusNode: _focusNode,
                 maxLines: null,
-                readOnly: busy,
+                readOnly: busy || !isOnline,
                 textAlignVertical: TextAlignVertical.top,
                 decoration: InputDecoration(
                   hintText: tr('clipboardInputHint'),
@@ -354,13 +365,15 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
     );
   }
 
-  Widget _buildButtonsAndStatus(ThemeData theme) {
+  Widget _buildButtonsAndStatus(ThemeData theme, {required bool isOnline}) {
     return Padding(
       padding: const EdgeInsets.only(top: 12),
       child: Row(
         children: [
           FilledButton.icon(
-            onPressed: (_sending || _installing) ? null : _sendToClipboard,
+            onPressed: (_sending || _installing || !isOnline)
+                ? null
+                : _sendToClipboard,
             icon: (_sending || _installing)
                 ? const SizedBox(
                     width: 14,
@@ -380,7 +393,7 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
           const SizedBox(width: 8),
           if (_helperInstalled)
             OutlinedButton.icon(
-              onPressed: _uninstalling ? null : _uninstallHelper,
+              onPressed: (_uninstalling || !isOnline) ? null : _uninstallHelper,
               icon: _uninstalling
                   ? const SizedBox(
                       width: 14,
@@ -432,7 +445,8 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
     );
   }
 
-  Widget _buildSentHistory(ThemeData theme, List<SentClipboardEntryData> entries) {
+  Widget _buildSentHistory(
+      ThemeData theme, List<SentClipboardEntryData> entries) {
     return Card(
       margin: EdgeInsets.zero,
       child: Padding(
@@ -459,9 +473,7 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
               ],
             ),
             const SizedBox(height: 8),
-            ...entries
-                .take(10)
-                .map((item) => _buildHistoryItem(theme, item)),
+            ...entries.take(10).map((item) => _buildHistoryItem(theme, item)),
           ],
         ),
       ),

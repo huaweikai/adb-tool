@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import '../models/device.dart';
 import '../services/api_client.dart';
 import '../services/log_stream.dart';
+import 'device_provider.dart';
 
 /// Per-device UI state for the logcat screen.
 ///
@@ -127,13 +128,39 @@ class LogcatDeviceState {
 /// most one [notifyListeners] per frame, so a flood of log lines doesn't
 /// thrash the widget tree.
 class LogcatStateProvider extends ChangeNotifier {
-  LogcatStateProvider(this._svc, this._api);
+  LogcatStateProvider(this._svc, this._api, this._deviceProvider) {
+    // When a device goes offline, any in-flight local recording is dead —
+    // the adb logcat subprocess on the host lost its upstream pipe. Best-
+    // effort stop so the UI state doesn't get stuck in "recording" limbo
+    // until the user manually presses Stop. The backend's stopLocalRecording
+    // call is fire-and-forget here (we're already past the point of caring
+    // about the result); the OS will reap the subprocess anyway.
+    _offlineSub = _deviceProvider.onDeviceOffline.listen((event) {
+      debugPrint(
+          '[LogcatStateProvider] device offline: ${event.serial} — stopping recording');
+      final wasRecording = stateFor(event.serial).recording != null;
+      stopRecordingIfActive(event.serial);
+      if (wasRecording && !_recordingInterrupted.isClosed) {
+        _recordingInterrupted.add(event.serial);
+      }
+    });
+  }
 
   final LogStreamService _svc;
   final ApiClient _api;
+  final DeviceProvider _deviceProvider;
   final Map<String, LogcatDeviceState> _states = {};
   final Map<String, StreamSubscription<List<LogEntry>>> _logSubs = {};
   final Map<String, StreamSubscription<bool>> _connSubs = {};
+  StreamSubscription<DeviceOfflineEvent>? _offlineSub;
+
+  /// Emits the serial whose local logcat recording was force-stopped
+  /// because its target device went offline. UI subscribes to show
+  /// "录制已结束（设备离线）" instead of the normal "save to file" flow
+  /// — there's no point prompting the user to save an incomplete log
+  /// pulled from a dead subprocess.
+  final _recordingInterrupted = StreamController<String>.broadcast();
+  Stream<String> get onRecordingInterrupted => _recordingInterrupted.stream;
 
   bool _disposed = false;
 
@@ -365,6 +392,8 @@ class LogcatStateProvider extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _offlineSub?.cancel();
+    _recordingInterrupted.close();
     for (final s in _logSubs.values) {
       s.cancel();
     }

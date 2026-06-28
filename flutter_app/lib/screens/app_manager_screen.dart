@@ -6,6 +6,7 @@ import '../i18n.dart';
 import '../widgets/loading_view.dart';
 import '../widgets/error_view.dart';
 import '../widgets/file_transfer.dart';
+import '../widgets/offline_guard.dart';
 import '../providers/locale_provider.dart';
 import '../providers/device_provider.dart';
 import 'package:provider/provider.dart';
@@ -363,39 +364,42 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
         setState(() => _dragOver = false);
       },
       onDragDone: _onDropApk,
-      child: Stack(
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _buildToolbar(context),
-              if (_loading)
-                const Expanded(child: LoadingView())
-              else if (_error != null)
-                Expanded(
-                  child: ErrorView(
-                    message: _error!,
-                    onRetry: _loadPackages,
-                    retryLabel: tr('retry'),
-                  ),
-                )
-              else
-                Expanded(child: _buildPackageList(context)),
-              _buildStatusBar(context),
-            ],
-          ),
-          Positioned.fill(
-            child: IgnorePointer(
-              ignoring: !_dragOver,
-              child: AnimatedOpacity(
-                opacity: _dragOver ? 1.0 : 0.0,
-                duration: const Duration(milliseconds: 200),
-                child: _buildDragOverlay(),
+      child: OfflineGuard(
+        serial: _selectedSerial!,
+        child: Stack(
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildToolbar(context),
+                if (_loading)
+                  const Expanded(child: LoadingView())
+                else if (_error != null)
+                  Expanded(
+                    child: ErrorView(
+                      message: _error!,
+                      onRetry: _loadPackages,
+                      retryLabel: tr('retry'),
+                    ),
+                  )
+                else
+                  Expanded(child: _buildPackageList(context)),
+                _buildStatusBar(context),
+              ],
+            ),
+            Positioned.fill(
+              child: IgnorePointer(
+                ignoring: !_dragOver,
+                child: AnimatedOpacity(
+                  opacity: _dragOver ? 1.0 : 0.0,
+                  duration: const Duration(milliseconds: 200),
+                  child: _buildDragOverlay(),
+                ),
               ),
             ),
-          ),
-          if (_installState != null) _buildInstallingOverlay(_installState!),
-        ],
+            if (_installState != null) _buildInstallingOverlay(_installState!),
+          ],
+        ),
       ),
     );
   }

@@ -34,6 +34,7 @@ import 'providers/emulator_java_provider.dart';
 import 'providers/emulator_image_provider.dart';
 import 'providers/emulator_instance_provider.dart';
 import 'providers/logcat_state_provider.dart';
+import 'providers/mirror_state_provider.dart';
 import 'services/api_client.dart';
 import 'services/log_stream.dart';
 
@@ -111,11 +112,22 @@ Future<void> setupDependencies() async {
   );
 
   // LogcatStateProvider needs LogStreamService + ApiClient (for the
-  // save-to-local recording endpoint).
+  // save-to-local recording endpoint) + DeviceProvider (to auto-stop
+  // in-flight recordings when their target device goes offline).
   getIt.registerSingleton<LogcatStateProvider>(
     LogcatStateProvider(
       getIt<LogStreamService>(),
       getIt<ApiClient>(),
+      getIt<DeviceProvider>(),
+    ),
+  );
+
+  // MirrorStateProvider needs ApiClient + DeviceProvider; listens to
+  // onDeviceOffline to auto-stop scrcpy when its target serial drops.
+  getIt.registerSingleton<MirrorStateProvider>(
+    MirrorStateProvider(
+      getIt<ApiClient>(),
+      getIt<DeviceProvider>(),
     ),
   );
 }
@@ -129,18 +141,32 @@ List<SingleChildWidget> get dependencyProviders => [
       Provider<LogStreamService>.value(value: getIt<LogStreamService>()),
 
       // ChangeNotifier providers
-      ChangeNotifierProvider<ThemeProvider>.value(value: getIt<ThemeProvider>()),
-      ChangeNotifierProvider<LocaleProvider>.value(value: getIt<LocaleProvider>()),
-      ChangeNotifierProvider<DeviceProvider>.value(value: getIt<DeviceProvider>()),
-      ChangeNotifierProvider<TestConfigProvider>.value(value: getIt<TestConfigProvider>()),
-      ChangeNotifierProvider<ScrcpySettingsProvider>.value(value: getIt<ScrcpySettingsProvider>()),
-      ChangeNotifierProvider<ClipboardHistoryProvider>.value(value: getIt<ClipboardHistoryProvider>()),
-      ChangeNotifierProvider<TestSessionProvider>.value(value: getIt<TestSessionProvider>()),
-      ChangeNotifierProvider<EmulatorEngineProvider>.value(value: getIt<EmulatorEngineProvider>()),
-      ChangeNotifierProvider<EmulatorJavaProvider>.value(value: getIt<EmulatorJavaProvider>()),
-      ChangeNotifierProvider<EmulatorImageProvider>.value(value: getIt<EmulatorImageProvider>()),
-      ChangeNotifierProvider<EmulatorInstanceProvider>.value(value: getIt<EmulatorInstanceProvider>()),
-      ChangeNotifierProvider<LogcatStateProvider>.value(value: getIt<LogcatStateProvider>()),
+      ChangeNotifierProvider<ThemeProvider>.value(
+          value: getIt<ThemeProvider>()),
+      ChangeNotifierProvider<LocaleProvider>.value(
+          value: getIt<LocaleProvider>()),
+      ChangeNotifierProvider<DeviceProvider>.value(
+          value: getIt<DeviceProvider>()),
+      ChangeNotifierProvider<TestConfigProvider>.value(
+          value: getIt<TestConfigProvider>()),
+      ChangeNotifierProvider<ScrcpySettingsProvider>.value(
+          value: getIt<ScrcpySettingsProvider>()),
+      ChangeNotifierProvider<ClipboardHistoryProvider>.value(
+          value: getIt<ClipboardHistoryProvider>()),
+      ChangeNotifierProvider<TestSessionProvider>.value(
+          value: getIt<TestSessionProvider>()),
+      ChangeNotifierProvider<EmulatorEngineProvider>.value(
+          value: getIt<EmulatorEngineProvider>()),
+      ChangeNotifierProvider<EmulatorJavaProvider>.value(
+          value: getIt<EmulatorJavaProvider>()),
+      ChangeNotifierProvider<EmulatorImageProvider>.value(
+          value: getIt<EmulatorImageProvider>()),
+      ChangeNotifierProvider<EmulatorInstanceProvider>.value(
+          value: getIt<EmulatorInstanceProvider>()),
+      ChangeNotifierProvider<LogcatStateProvider>.value(
+          value: getIt<LogcatStateProvider>()),
+      ChangeNotifierProvider<MirrorStateProvider>.value(
+          value: getIt<MirrorStateProvider>()),
     ];
 
 /// Dispose all singletons. Call only in integration tests.

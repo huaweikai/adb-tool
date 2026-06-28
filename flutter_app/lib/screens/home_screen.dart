@@ -13,7 +13,6 @@ import '../providers/test_session_provider.dart';
 import '../providers/emulator_engine_provider.dart';
 import '../providers/emulator_java_provider.dart';
 import '../i18n.dart';
-import '../widgets/disconnected_banner.dart';
 import '../widgets/recording_fab.dart';
 import 'device_status_screen.dart';
 import 'logcat_screen.dart';
@@ -389,11 +388,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       return _buildWelcome();
     }
 
-    final screen = _screens[_activeKey]!;
-    final serial = screen.serial;
-    final dp = context.read<DeviceProvider>();
-    final isDisconnected = serial != null && !dp.isDeviceConnected(serial);
-
     return Stack(
       children: [
         IndexedStack(
@@ -415,20 +409,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             );
           }).toList(),
         ),
-        if (isDisconnected)
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: DisconnectedBanner(
-              serial: serial,
-              onRefresh: () {
-                final api = context.read<ApiClient>();
-                context.read<DeviceProvider>().refresh(api);
-              },
-              onRemove: () => _removeDevice(serial),
-            ),
-          ),
         RecordingOverlay(
           db: context.read<AppDatabase>(),
           sessionProvider: context.read<TestSessionProvider>(),

@@ -4,8 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../i18n.dart';
 import '../providers/device_provider.dart';
+import '../providers/mirror_state_provider.dart';
 import '../providers/scrcpy_settings_provider.dart';
-import '../services/api_client.dart';
+import '../widgets/offline_guard.dart';
 import '../widgets/scrcpy_settings_panel.dart';
 import '../widgets/scrcpy_shortcut_reference.dart';
 
@@ -36,23 +37,25 @@ class ScreenMirrorScreen extends StatefulWidget {
 class _ScreenMirrorScreenState extends State<ScreenMirrorScreen> {
   String? get _serial => context.read<DeviceSerialScope>().serial;
 
-  // polled status — what the backend reports about the running subprocess.
-  ScrcpyStatus _status = ScrcpyStatus.stopped;
+  // Scrcpy subprocess state lives in MirrorStateProvider so the offline-
+  // listener hook can mutate it from anywhere. This screen just watches
+  // it for rebuilds and calls into it for start/stop.
   Timer? _pollTimer;
-  bool _busy = false; // start/stop in flight, prevents double-clicks
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      _refreshStatus();
+      final mirror = context.read<MirrorStateProvider>();
+      final s = _serial;
+      if (s != null) {
+        mirror.refreshForSerial(s);
+      }
       _startPoll();
       // Tell the settings provider which device's options to surface
       // now that we have a build context.
-      context
-          .read<ScrcpySettingsProvider>()
-          .setActiveSerial(_serial);
+      context.read<ScrcpySettingsProvider>().setActiveSerial(s);
     });
   }
 
@@ -82,27 +85,15 @@ class _ScreenMirrorScreenState extends State<ScreenMirrorScreen> {
   void _startPoll() {
     _pollTimer?.cancel();
     _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) {
-      if (mounted) _refreshStatus();
+      if (mounted) context.read<MirrorStateProvider>().refresh();
     });
-  }
-
-  Future<void> _refreshStatus() async {
-    final s = _serial;
-    if (s == null) {
-      setState(() => _status = ScrcpyStatus.stopped);
-      return;
-    }
-    try {
-      final next = await context.read<ApiClient>().scrcpyStatus(serial: s);
-      if (mounted) setState(() => _status = next);
-    } catch (_) {
-      // network blip — keep last known status, don't flicker the UI
-    }
   }
 
   Future<void> _onStart() async {
     final s = _serial;
-    if (s == null || _busy) return;
+    if (s == null) return;
+    final mirror = context.read<MirrorStateProvider>();
+    if (mirror.busy) return;
     final opts = context.read<ScrcpySettingsProvider>().current;
     if (opts == null) {
       return;
@@ -122,14 +113,8 @@ class _ScreenMirrorScreenState extends State<ScreenMirrorScreen> {
         return;
       }
     }
-    setState(() => _busy = true);
     try {
-      // Pull the current per-device settings and ship them to the
-      // backend along with the start request. The backend applies
-      // defaults if the user hasn't touched anything yet.
-      if (!mounted) return;
-      await context.read<ApiClient>().startScrcpy(s, options: opts);
-      await _refreshStatus();
+      await mirror.start(s, opts);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -147,13 +132,12 @@ class _ScreenMirrorScreenState extends State<ScreenMirrorScreen> {
           ),
         );
       }
-    } finally {
-      if (mounted) setState(() => _busy = false);
     }
   }
 
   Future<void> _onStop() async {
-    if (_busy) return;
+    final mirror = context.read<MirrorStateProvider>();
+    if (mirror.busy) return;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -173,10 +157,8 @@ class _ScreenMirrorScreenState extends State<ScreenMirrorScreen> {
     );
     if (ok != true || !mounted) return;
 
-    setState(() => _busy = true);
     try {
-      await context.read<ApiClient>().stopScrcpy();
-      await _refreshStatus();
+      await mirror.stop();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -186,8 +168,6 @@ class _ScreenMirrorScreenState extends State<ScreenMirrorScreen> {
           ),
         );
       }
-    } finally {
-      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -207,97 +187,104 @@ class _ScreenMirrorScreenState extends State<ScreenMirrorScreen> {
       );
     }
 
-    final isRunning = _status.running && _status.serial == serial;
+    // Watch the provider so offline-stop / refresh transitions rebuild
+    // the right pane without a setState call in this widget.
+    final mirror = context.watch<MirrorStateProvider>();
+    final status = mirror.status;
+    final isRunning = status.running && status.serial == serial;
 
     // Responsive: side-by-side on wide windows, stacked on narrow ones.
     // scrcpy itself renders in its own SDL window, so the tab content
     // can afford to be more verbose than a typical mobile layout.
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        const breakpoint = 720.0;
-        final rightPane = _RightPane(
-          serial: serial,
-          isRunning: isRunning,
-          elapsed: _status.elapsedSeconds,
-          busy: _busy,
-          onStart: _onStart,
-          onStop: _onStop,
-        );
-        if (constraints.maxWidth >= breakpoint) {
-          // Wide layout:
-          //   Column(
-          //     Expanded(Row(
-          //       Expanded(4): Card(ScrcpySettingsPanel)         // left, scrolls
-          //       Expanded(3): SingleChildScrollView(_RightPane)  // right, scrolls
-          //     ))
-          //   )
-          //
-          // Column + Expanded(Row) gives the Row a definite height. Each
-          // side scrolls independently. The right pane is wrapped in
-          // SingleChildScrollView so the status + button + hint +
-          // shortcut reference table can all be reached by scrolling
-          // the right column when the window is short.
-          //
-          // We deliberately avoid IntrinsicHeight + Row combos: passing
-          // a loose unbounded cross-axis constraint into a Row that
-          // contains a scroll child makes Stack-based children (e.g.
-          // SegmentedButton inside ScrcpySettingsPanel) hit-test with
-          // size=MISSING.
-          return Column(
-            children: [
-              Expanded(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const Expanded(
-                      flex: 4,
-                      child: Padding(
-                        padding: EdgeInsets.fromLTRB(12, 12, 6, 12),
-                        child: Card(
-                          margin: EdgeInsets.zero,
-                          child: ScrcpySettingsPanel(),
+    return OfflineGuard(
+      serial: serial,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          const breakpoint = 720.0;
+          final rightPane = _RightPane(
+            serial: serial,
+            isRunning: isRunning,
+            elapsed: status.elapsedSeconds,
+            busy: mirror.busy,
+            onStart: _onStart,
+            onStop: _onStop,
+          );
+          if (constraints.maxWidth >= breakpoint) {
+            // Wide layout:
+            //   Column(
+            //     Expanded(Row(
+            //       Expanded(4): Card(ScrcpySettingsPanel)         // left, scrolls
+            //       Expanded(3): SingleChildScrollView(_RightPane)  // right, scrolls
+            //     ))
+            //   )
+            //
+            // Column + Expanded(Row) gives the Row a definite height. Each
+            // side scrolls independently. The right pane is wrapped in
+            // SingleChildScrollView so the status + button + hint +
+            // shortcut reference table can all be reached by scrolling
+            // the right column when the window is short.
+            //
+            // We deliberately avoid IntrinsicHeight + Row combos: passing
+            // a loose unbounded cross-axis constraint into a Row that
+            // contains a scroll child makes Stack-based children (e.g.
+            // SegmentedButton inside ScrcpySettingsPanel) hit-test with
+            // size=MISSING.
+            return Column(
+              children: [
+                Expanded(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Expanded(
+                        flex: 4,
+                        child: Padding(
+                          padding: EdgeInsets.fromLTRB(12, 12, 6, 12),
+                          child: Card(
+                            margin: EdgeInsets.zero,
+                            child: ScrcpySettingsPanel(),
+                          ),
                         ),
                       ),
-                    ),
-                    Expanded(
-                      flex: 3,
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(6, 12, 12, 12),
-                        // _RightPane uses an internal LayoutBuilder:
-                        // when it sees a bounded height (this case), it
-                        // pins status/button/hint and lets
-                        // ScrcpyShortcutReference fill the rest with its
-                        // own internal scroll. No outer SingleChildScrollView
-                        // here — that would conflict with the
-                        // ListView in ScrcpyShortcutReference.
-                        child: rightPane,
+                      Expanded(
+                        flex: 3,
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(6, 12, 12, 12),
+                          // _RightPane uses an internal LayoutBuilder:
+                          // when it sees a bounded height (this case), it
+                          // pins status/button/hint and lets
+                          // ScrcpyShortcutReference fill the rest with its
+                          // own internal scroll. No outer SingleChildScrollView
+                          // here — that would conflict with the
+                          // ListView in ScrcpyShortcutReference.
+                          child: rightPane,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
+                ),
+              ],
+            );
+          }
+          // Narrow: outer ListView scrolls; rightPane is rendered as-is
+          // (no inner SingleChildScrollView — that would nest a scroll
+          // view inside another and blow up with "vertical viewport was
+          // given unbounded height"). The ScrcpyShortcutReference is
+          // already part of the rightPane, so no extra entry here.
+          return ListView(
+            padding: const EdgeInsets.all(12),
+            children: [
+              const Card(
+                margin: EdgeInsets.only(bottom: 12),
+                child: SizedBox(
+                  height: 360,
+                  child: ScrcpySettingsPanel(),
                 ),
               ),
+              rightPane,
             ],
           );
-        }
-        // Narrow: outer ListView scrolls; rightPane is rendered as-is
-        // (no inner SingleChildScrollView — that would nest a scroll
-        // view inside another and blow up with "vertical viewport was
-        // given unbounded height"). The ScrcpyShortcutReference is
-        // already part of the rightPane, so no extra entry here.
-        return ListView(
-          padding: const EdgeInsets.all(12),
-          children: [
-            const Card(
-              margin: EdgeInsets.only(bottom: 12),
-              child: SizedBox(
-                height: 360,
-                child: ScrcpySettingsPanel(),
-              ),
-            ),
-            rightPane,
-          ],
-        );
-      },
+        },
+      ),
     );
   }
 }
@@ -335,21 +322,20 @@ class _RightPane extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: LayoutBuilder(builder: (context, constraints) {
-          final statusCard = _buildStatusCard(theme, serial, isRunning, elapsed);
+          final statusCard =
+              _buildStatusCard(theme, serial, isRunning, elapsed);
           final startButton = Row(
             children: [
               Expanded(
                 child: FilledButton.icon(
-                  onPressed:
-                      busy ? null : (isRunning ? onStop : onStart),
+                  onPressed: busy ? null : (isRunning ? onStop : onStart),
                   icon: Icon(isRunning ? Icons.stop : Icons.play_arrow),
                   label: Text(
                     isRunning ? tr('scrcpyStop') : tr('scrcpyStart'),
                   ),
                   style: FilledButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 14),
-                    backgroundColor:
-                        isRunning ? theme.colorScheme.error : null,
+                    backgroundColor: isRunning ? theme.colorScheme.error : null,
                   ),
                 ),
               ),
@@ -366,21 +352,19 @@ class _RightPane extends StatelessWidget {
           final windowHint = Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: theme.colorScheme.surfaceContainerHighest
-                  .withAlpha(120),
+              color: theme.colorScheme.surfaceContainerHighest.withAlpha(120),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Row(
               children: [
                 Icon(Icons.info_outline,
-                    size: 16,
-                    color: theme.colorScheme.onSurfaceVariant),
+                    size: 16, color: theme.colorScheme.onSurfaceVariant),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     tr('scrcpyWindowHint'),
-                    style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant),
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                   ),
                 ),
               ],

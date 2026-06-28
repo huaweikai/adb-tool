@@ -5,6 +5,7 @@ import '../i18n.dart';
 import '../providers/locale_provider.dart';
 import '../providers/device_provider.dart';
 import '../providers/test_config_provider.dart';
+import '../widgets/offline_guard.dart';
 import 'adb_command_quick_actions.dart';
 
 class AdbCommandScreen extends StatefulWidget {
@@ -349,97 +350,118 @@ class _AdbCommandScreenState extends State<AdbCommandScreen> {
       );
     }
 
-    return Padding(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Text(tr('adbCommand'),
-                  style: theme.textTheme.titleMedium
-                      ?.copyWith(fontWeight: FontWeight.w600)),
-              const SizedBox(width: 10),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(_selectedSerial!,
-                    style: const TextStyle(fontSize: 11)),
-              ),
-              const Spacer(),
-              OutlinedButton.icon(
-                onPressed: _records.isEmpty ? null : _clearRecords,
-                icon: const Icon(Icons.delete_outline, size: 16),
-                label: Text(tr('clearOutput')),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(tr('commandHint'),
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-          const SizedBox(height: 14),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _commandCtrl,
-                  minLines: 1,
-                  maxLines: 3,
-                  onSubmitted: (_) => _runCommand(),
-                  decoration: InputDecoration(
-                    hintText: tr('adbInputHint'),
-                    prefixText: 'adb -s $_selectedSerial ',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 12),
-                  ),
-                  style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-                ),
-              ),
-              const SizedBox(width: 10),
-              FilledButton.icon(
-                onPressed: _running ? null : _runCommand,
-                icon: _running
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white),
-                      )
-                    : const Icon(Icons.play_arrow, size: 18),
-                label: Text(_running ? tr('executing') : tr('execute')),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          if (_error != null) ...[
-            const SizedBox(height: 10),
-            Text(_error!,
-                style: TextStyle(color: theme.colorScheme.error, fontSize: 12)),
-          ],
-          const SizedBox(height: 14),
-          Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+    // Watch device connection so the input field, Execute, and quick-
+    // action buttons reflect the disabled state when the device drops.
+    final isOnline =
+        context.watch<DeviceProvider>().isDeviceConnected(_selectedSerial!);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Offline banner spans full width (no horizontal padding here,
+        // unlike the body below).
+        OfflineBanner(serial: _selectedSerial!),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                SizedBox(
-                  width: 390,
-                  child: _buildQuickPanel(theme),
+                Row(
+                  children: [
+                    Text(tr('adbCommand'),
+                        style: theme.textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w600)),
+                    const SizedBox(width: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(_selectedSerial!,
+                          style: const TextStyle(fontSize: 11)),
+                    ),
+                    const Spacer(),
+                    OutlinedButton.icon(
+                      onPressed: (_records.isEmpty || !isOnline)
+                          ? null
+                          : _clearRecords,
+                      icon: const Icon(Icons.delete_outline, size: 16),
+                      label: Text(tr('clearOutput')),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 14),
-                Expanded(child: _buildOutputPanel(theme)),
+                const SizedBox(height: 6),
+                Text(tr('commandHint'),
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                const SizedBox(height: 14),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _commandCtrl,
+                        minLines: 1,
+                        maxLines: 3,
+                        onSubmitted: (_) => _runCommand(),
+                        enabled: !_running && isOnline,
+                        decoration: InputDecoration(
+                          hintText: tr('adbInputHint'),
+                          prefixText: 'adb -s $_selectedSerial ',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 12),
+                        ),
+                        style: const TextStyle(
+                            fontFamily: 'monospace', fontSize: 13),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    FilledButton.icon(
+                      onPressed: (_running || !isOnline) ? null : _runCommand,
+                      icon: _running
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Icon(Icons.play_arrow, size: 18),
+                      label: Text(_running ? tr('executing') : tr('execute')),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                if (_error != null) ...[
+                  const SizedBox(height: 10),
+                  Text(_error!,
+                      style: TextStyle(
+                          color: theme.colorScheme.error, fontSize: 12)),
+                ],
+                const SizedBox(height: 14),
+                Expanded(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SizedBox(
+                        width: 390,
+                        child: _buildQuickPanel(theme),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(child: _buildOutputPanel(theme)),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -536,8 +558,13 @@ class _AdbCommandScreenState extends State<AdbCommandScreen> {
     final color = action.destructive
         ? theme.colorScheme.error
         : theme.colorScheme.primary;
+    // Quick actions all shell out to adb — they need a live device.
+    // Read connection state at build time (this widget is rebuilt by
+    // the parent Column which watches DeviceProvider).
+    final isOnline = _selectedSerial != null &&
+        context.watch<DeviceProvider>().isDeviceConnected(_selectedSerial!);
     return OutlinedButton.icon(
-      onPressed: _running ? null : () => _runQuickAction(action),
+      onPressed: (_running || !isOnline) ? null : () => _runQuickAction(action),
       icon:
           Icon(action.icon, size: 15, color: action.destructive ? color : null),
       label: Text(tr(action.labelKey)),

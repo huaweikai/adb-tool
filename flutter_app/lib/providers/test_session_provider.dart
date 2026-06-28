@@ -36,7 +36,8 @@ import 'package:path_provider/path_provider.dart';
 import '../db/database.dart';
 import '../db/dao/test_sessions_dao.dart';
 import '../models/test_session.dart';
-import '../services/screen_record_owner.dart' show ScreenRecordOwner, ScreenRecordOwnerX;
+import '../services/screen_record_owner.dart'
+    show ScreenRecordOwner, ScreenRecordOwnerX;
 import 'device_provider.dart';
 import 'test_session/attachment_store.dart';
 import 'test_session/exporter.dart';
@@ -56,6 +57,16 @@ class TestSessionProvider extends ChangeNotifier {
 
   // ── Device-offline → recording cleanup bridge ─────────────────────
   StreamSubscription<DeviceOfflineEvent>? _deviceOfflineSub;
+
+  /// Emits the serial whose active test-session screen recording was
+  /// torn down because the device went offline mid-recording. UI
+  /// subscribes to this to show "录制中断，附件缺失" instead of the
+  /// normal "录制已结束" snackbar — the file was on the now-unreachable
+  /// device storage, so no attachment was pulled. Distinct from the
+  /// logcat provider's same-named stream so listeners can route
+  /// messages correctly.
+  final _recordingInterrupted = StreamController<String>.broadcast();
+  Stream<String> get onRecordingInterrupted => _recordingInterrupted.stream;
 
   /// The session the provider currently considers "active" — the one that
   /// was started most recently and not yet finished. Mutations without
@@ -80,22 +91,34 @@ class TestSessionProvider extends ChangeNotifier {
     // The actual dialog is shown by the UI layer (HomeScreen) which
     // listens to onDeviceOfflineDialog; this provider owns the logic.
     if (deviceProvider != null) {
-      _deviceOfflineSub = deviceProvider.onDeviceOffline.listen(_onDeviceOffline);
+      _deviceOfflineSub =
+          deviceProvider.onDeviceOffline.listen(_onDeviceOffline);
     }
   }
 
   void _onDeviceOffline(DeviceOfflineEvent event) {
     debugPrint('[TestSessionProvider] device offline: ${event.serial}');
-    // Auto-stop any in-flight recording on this device. The adb process
-    // is dead; there's nothing we can do with it.
-    _stopRecordingIfNeeded(event.serial);
+    // Was a recording owned by anyone running on this device? The DB
+    // row tracks recording_owner (testSession / fileBrowser / null).
+    // We don't await — the snackbar UX fires from the stream callback
+    // regardless of when the DB write actually lands.
+    unawaited(_stopRecordingIfNeeded(event.serial));
   }
 
   Future<void> _stopRecordingIfNeeded(String serial) async {
     try {
+      // Peek the row first so we can decide whether to fire the
+      // "interrupted" signal. Reading then writing is two trips to
+      // SQLite but they're indexed by primary key, both fast.
+      final row = await _db.savedDevicesDao.getSavedDeviceBySerial(serial);
+      final wasRecording = row?.recordingOwner != null;
       await _db.savedDevicesDao.clearScreenRecord(serial);
+      if (wasRecording && !_recordingInterrupted.isClosed) {
+        _recordingInterrupted.add(serial);
+      }
     } catch (e) {
-      debugPrint('[TestSessionProvider] failed to clear recording on offline: $e');
+      debugPrint(
+          '[TestSessionProvider] failed to clear recording on offline: $e');
     }
   }
 
@@ -335,9 +358,8 @@ class TestSessionProvider extends ChangeNotifier {
         title: _t('eventSessionCreated'),
         detail: Value(_t('eventSessionCreatedDetail', {
           'device': deviceDisplayName,
-          'package': packageName.trim().isEmpty
-              ? _t('notFilled')
-              : packageName.trim(),
+          'package':
+              packageName.trim().isEmpty ? _t('notFilled') : packageName.trim(),
         })),
       ));
 
@@ -567,15 +589,14 @@ class TestSessionProvider extends ChangeNotifier {
       ));
     });
     await _refreshCurrentHydrated();
-    return _currentHydrated!.issues
-        .firstWhere((i) => i.id == issueId);
+    return _currentHydrated!.issues.firstWhere((i) => i.id == issueId);
   }
 
   String buildIssueClipboardText(TestSessionIssue issue) {
     final s = _currentHydrated;
     if (s == null) return '';
-    final issueRow = s.issues.firstWhere((i) => i.id == issue.id,
-        orElse: () => issue);
+    final issueRow =
+        s.issues.firstWhere((i) => i.id == issue.id, orElse: () => issue);
     final linkedArtifacts = <TestSessionArtifact>[];
     for (final a in s.artifacts) {
       if (issue.relatedArtifactIds.contains(a.id)) linkedArtifacts.add(a);
@@ -583,8 +604,7 @@ class TestSessionProvider extends ChangeNotifier {
     return _exporter.buildIssueClipboardText(
       session: _sessionToRow(s),
       issue: _issueToRow(issueRow),
-      linkedArtifacts:
-          linkedArtifacts.map(_artifactToRow).toList(),
+      linkedArtifacts: linkedArtifacts.map(_artifactToRow).toList(),
     );
   }
 
@@ -796,9 +816,8 @@ class TestSessionProvider extends ChangeNotifier {
           e.type == TestSessionEventType.logcatStarted ||
           e.type == TestSessionEventType.logcatStopped ||
           e.type == TestSessionEventType.logcatSaved,
-      orElse: () => events.isEmpty
-          ? throw StateError('no events')
-          : events.first,
+      orElse: () =>
+          events.isEmpty ? throw StateError('no events') : events.first,
     );
     if (lastLogcat.type == TestSessionEventType.logcatStopped) return;
     final now = DateTime.now();
@@ -1204,6 +1223,7 @@ class TestSessionProvider extends ChangeNotifier {
   @override
   void dispose() {
     _deviceOfflineSub?.cancel();
+    _recordingInterrupted.close();
     super.dispose();
   }
 }

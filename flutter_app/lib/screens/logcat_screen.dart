@@ -13,6 +13,7 @@ import '../providers/device_provider.dart';
 import '../providers/logcat_state_provider.dart';
 import '../providers/test_config_provider.dart';
 import '../widgets/logcat/highlight_rule.dart';
+import '../widgets/offline_guard.dart';
 
 /// Logcat screen — entries / filter / streaming state live in
 /// [LogcatStateProvider] (keyed by device serial). This widget owns only
@@ -69,6 +70,11 @@ class _LogcatScreenState extends State<LogcatScreen> {
   // has typed since the last notifyListeners().
   String? _hydratedSerial;
 
+  // Subscription for "recording was force-stopped because device went
+  // offline" — surface a different snackbar than the normal
+  // "saved to file" flow. Null until initState wires it up.
+  StreamSubscription<String>? _recordingInterruptedSub;
+
   @override
   void initState() {
     super.initState();
@@ -78,6 +84,25 @@ class _LogcatScreenState extends State<LogcatScreen> {
     _ruleCtrl = TextEditingController();
     _scrollCtrl.addListener(_onScrollPositionChanged);
     _startFlushTimer();
+    // Subscribe via post-frame so we have a context to read providers
+    // and ScaffoldMessenger from. The provider itself was already
+    // wired in di.dart; this just hooks the UI-side snackbar.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _recordingInterruptedSub = context
+          .read<LogcatStateProvider>()
+          .onRecordingInterrupted
+          .listen((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(tr('logcatRecordingInterruptedOffline')),
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      });
+    });
   }
 
   /// Owns the periodic flush loop for the currently-active device's
@@ -130,6 +155,7 @@ class _LogcatScreenState extends State<LogcatScreen> {
     _autoScrollTimer?.cancel();
     _flushTimer?.cancel();
     _scrollCtrl.removeListener(_onScrollPositionChanged);
+    _recordingInterruptedSub?.cancel();
     _tagCtrl.dispose();
     _kwCtrl.dispose();
     _pkgCtrl.dispose();
@@ -144,7 +170,9 @@ class _LogcatScreenState extends State<LogcatScreen> {
     if (pkg.isEmpty || serial == null) {
       context.read<LogcatStateProvider>().setPackagePid(serial ?? '', null);
       if (serial != null) {
-        context.read<LogcatStateProvider>().updateField(serial, packageName: '');
+        context
+            .read<LogcatStateProvider>()
+            .updateField(serial, packageName: '');
       }
       return;
     }
@@ -368,8 +396,15 @@ class _LogcatScreenState extends State<LogcatScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        OfflineBanner(serial: serial),
         _LogcatToolbar(
           serial: serial,
+          // Pass the live device state so the toolbar can disable
+          // buttons that need a working adb connection (start stream,
+          // start/stop recording). Filter inputs and Clear Logs stay
+          // enabled — they're local-only operations that don't touch
+          // the device.
+          isOnline: context.watch<DeviceProvider>().isDeviceConnected(serial),
           tagCtrl: _tagCtrl,
           kwCtrl: _kwCtrl,
           pkgCtrl: _pkgCtrl,
@@ -432,6 +467,7 @@ class _LogcatScreenState extends State<LogcatScreen> {
 class _LogcatToolbar extends StatelessWidget {
   const _LogcatToolbar({
     required this.serial,
+    required this.isOnline,
     required this.tagCtrl,
     required this.kwCtrl,
     required this.pkgCtrl,
@@ -452,6 +488,7 @@ class _LogcatToolbar extends StatelessWidget {
   });
 
   final String serial;
+  final bool isOnline;
   final TextEditingController tagCtrl;
   final TextEditingController kwCtrl;
   final TextEditingController pkgCtrl;
@@ -498,13 +535,25 @@ class _LogcatToolbar extends StatelessWidget {
             runSpacing: 8,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              _btn(ctx, tr('start'), Icons.play_arrow, !snap.streaming,
-                  onStartStream, true),
-              _btn(ctx, tr('stop'), Icons.stop, snap.streaming, onStopStream, false),
-              _btn(ctx, tr('pause'), Icons.pause,
-                  snap.streaming && !snap.paused, onPauseStream, false),
-              _btn(ctx, tr('resume'), Icons.play_arrow, snap.paused,
+              // Start/stop/pause/resume stream all hit the live adb
+              // socket — gate on isOnline so the user can't queue up
+              // requests against a dead device.
+              _btn(ctx, tr('start'), Icons.play_arrow,
+                  !snap.streaming && isOnline, onStartStream, true),
+              _btn(ctx, tr('stop'), Icons.stop, snap.streaming && isOnline,
+                  onStopStream, false),
+              _btn(
+                  ctx,
+                  tr('pause'),
+                  Icons.pause,
+                  snap.streaming && !snap.paused && isOnline,
+                  onPauseStream,
+                  false),
+              _btn(ctx, tr('resume'), Icons.play_arrow, snap.paused && isOnline,
                   onResumeStream, false),
+              // Clear is local-only (clears the in-memory ring buffer),
+              // so it stays enabled even when the device is gone —
+              // lets the user wipe the stale entries on the way back.
               _btn(ctx, tr('clear'), Icons.delete_outline,
                   snap.streaming || snap.hasLogs, onClearLogs, false),
               _buildRecordingButton(ctx, snap),
@@ -537,22 +586,31 @@ class _LogcatToolbar extends StatelessWidget {
   Widget _buildRecordingButton(BuildContext ctx, _ToolbarSnapshot snap) {
     final rec = snap.recording;
     if (rec == null) {
-      // Idle.
+      // Idle. Recording a new file requires a live adb logcat
+      // subprocess — gate on isOnline. Note: in normal operation
+      // LogcatStateProvider auto-stops an in-flight recording when
+      // its device drops offline, so by the time the toolbar rebuilds
+      // here the recording will usually already be null. The isOnline
+      // gate is the belt-and-braces guard for the brief race between
+      // offline event → provider.stopRecordingIfActive → rebuild.
       return _btn(
         ctx,
         tr('startRecording'),
         Icons.fiber_manual_record,
-        true, // always enabled; user must be able to start at any time
+        isOnline,
         onStartRecording,
         true, // primary
       );
     }
     // Recording — show the live elapsed pill. Disabled tap would be a
     // double-click guard; we just route through onStopRecording.
+    // isOnline here is for the same race window as above; once the
+    // provider has processed the offline event the rec will be null
+    // and we'll be back in the idle branch.
     return SizedBox(
       height: 32,
       child: FilledButton(
-        onPressed: () => onStopRecording(),
+        onPressed: isOnline ? () => onStopRecording() : null,
         style: FilledButton.styleFrom(
           backgroundColor: Colors.red.shade700,
           foregroundColor: Colors.white,
@@ -572,8 +630,8 @@ class _LogcatToolbar extends StatelessWidget {
     );
   }
 
-  Widget _sep(BuildContext ctx) => Container(
-      width: 1, height: 20, color: Theme.of(ctx).dividerColor);
+  Widget _sep(BuildContext ctx) =>
+      Container(width: 1, height: 20, color: Theme.of(ctx).dividerColor);
 
   Widget _btn(BuildContext ctx, String label, IconData icon, bool enabled,
       VoidCallback? onTap, bool primary) {
@@ -607,9 +665,8 @@ class _LogcatToolbar extends StatelessWidget {
       width: 120,
       child: TextField(
         controller: tagCtrl,
-        onChanged: (v) => ctx
-            .read<LogcatStateProvider>()
-            .updateField(serial, tag: v),
+        onChanged: (v) =>
+            ctx.read<LogcatStateProvider>().updateField(serial, tag: v),
         decoration: InputDecoration(
           labelText: tr('tag'),
           labelStyle: const TextStyle(fontSize: 11),
@@ -637,8 +694,8 @@ class _LogcatToolbar extends StatelessWidget {
           border: const OutlineInputBorder(
               borderRadius: BorderRadius.all(Radius.circular(6))),
         ),
-        style: TextStyle(
-            fontSize: 12, color: Theme.of(ctx).colorScheme.onSurface),
+        style:
+            TextStyle(fontSize: 12, color: Theme.of(ctx).colorScheme.onSurface),
         dropdownColor: Theme.of(ctx).colorScheme.surface,
         items: levels
             .map((l) => DropdownMenuItem(
@@ -664,9 +721,8 @@ class _LogcatToolbar extends StatelessWidget {
       width: 130,
       child: TextField(
         controller: kwCtrl,
-        onChanged: (v) => ctx
-            .read<LogcatStateProvider>()
-            .updateField(serial, keyword: v),
+        onChanged: (v) =>
+            ctx.read<LogcatStateProvider>().updateField(serial, keyword: v),
         decoration: InputDecoration(
           labelText: tr('keyword'),
           labelStyle: const TextStyle(fontSize: 11),
@@ -984,8 +1040,8 @@ class _LogList extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(tr('logsHint'),
                     style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant
-                            .withAlpha(150))),
+                        color:
+                            theme.colorScheme.onSurfaceVariant.withAlpha(150))),
               ],
             ),
           );
@@ -1102,8 +1158,7 @@ class _LogList extends StatelessWidget {
           width: 100,
           child: Text(
             pidTid,
-            style:
-                mono.copyWith(fontSize: 11, color: Colors.green.shade300),
+            style: mono.copyWith(fontSize: 11, color: Colors.green.shade300),
             softWrap: false,
             overflow: TextOverflow.visible,
           ),
@@ -1117,9 +1172,7 @@ class _LogList extends StatelessWidget {
               borderRadius: BorderRadius.circular(3)),
           child: Text(entry.priority,
               style: mono.copyWith(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: prioColor)),
+                  fontSize: 11, fontWeight: FontWeight.w700, color: prioColor)),
         ),
         const SizedBox(width: 8),
         Expanded(

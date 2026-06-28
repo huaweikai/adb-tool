@@ -111,6 +111,9 @@ const _locSidebarZh = <String, String>{
   'dbErrorTitle': '数据库写入失败（功能可能受限）',
   'dbErrorBody': '后端正常，但保存设备状态时出错：{error}',
   'copyError': '复制错误',
+  'deviceOfflineBanner': '设备已离线 — 所有操作已禁用，等待设备重新连接',
+  'recordingInterruptedOffline': '录制已中断：设备离线，附件无法获取',
+  'logcatRecordingInterruptedOffline': '录制已结束：设备离线，日志已自动停止',
   'dismiss': '忽略',
   'confirmShutdown': '确认关闭',
   'shutdownHint': '关闭后端服务后，需要手动重启应用或点击重启按钮',
@@ -240,6 +243,12 @@ const _locSidebarEn = <String, String>{
   'dbErrorTitle': 'Database write failed (features may be limited)',
   'dbErrorBody': 'Backend is healthy, but saving device state failed: {error}',
   'copyError': 'Copy error',
+  'deviceOfflineBanner':
+      'Device offline — operations disabled, waiting for reconnect',
+  'recordingInterruptedOffline':
+      'Recording interrupted: device offline, attachment unavailable',
+  'logcatRecordingInterruptedOffline':
+      'Recording ended: device offline, log capture stopped automatically',
   'dismiss': 'Dismiss',
   'confirmShutdown': 'Confirm Shutdown',
   'shutdownHint':

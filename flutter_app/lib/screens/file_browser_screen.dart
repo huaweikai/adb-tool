@@ -19,6 +19,7 @@ import '../widgets/safe_dialog.dart';
 import '../widgets/transfer_progress_overlay.dart';
 import '../widgets/file_sheet_actions.dart';
 import '../widgets/info_row.dart';
+import '../widgets/offline_guard.dart';
 import '../mixins/file_browser_capture_mixin.dart';
 import '../providers/test_session_provider.dart';
 import '../providers/locale_provider.dart';
@@ -328,7 +329,10 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
       );
       if (!mounted) return;
       _transferCancelToken = null;
-      setState(() { _transfer = null; isTransferring = false; });
+      setState(() {
+        _transfer = null;
+        isTransferring = false;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
             content: Text(tr('savedTo', {'path': location.path})),
@@ -345,7 +349,10 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
         } catch (_) {}
         if (!mounted) return;
         _transferCancelToken = null;
-        setState(() { _transfer = null; isTransferring = false; });
+        setState(() {
+          _transfer = null;
+          isTransferring = false;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
               content: Text(tr('downloadCancelled')),
@@ -354,7 +361,10 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
         return;
       }
       _transferCancelToken = null;
-      setState(() { _transfer = null; isTransferring = false; });
+      setState(() {
+        _transfer = null;
+        isTransferring = false;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
             content: Text('${tr('downloadFailed')}: $e'),
@@ -407,7 +417,10 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
       );
       if (!mounted) return;
       _transferCancelToken = null;
-      setState(() { _transfer = null; isTransferring = false; });
+      setState(() {
+        _transfer = null;
+        isTransferring = false;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
             content: Text(tr('uploadedTo', {'path': remotePath})),
@@ -419,7 +432,10 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
       if (e is TransferCanceledException || cancelToken.canceled) {
         if (!mounted) return;
         _transferCancelToken = null;
-        setState(() { _transfer = null; isTransferring = false; });
+        setState(() {
+          _transfer = null;
+          isTransferring = false;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
               content: Text(tr('uploadCancelled')),
@@ -428,7 +444,10 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
         return;
       }
       _transferCancelToken = null;
-      setState(() { _transfer = null; isTransferring = false; });
+      setState(() {
+        _transfer = null;
+        isTransferring = false;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
             content: Text('${tr('uploadFailed')}: $e'),
@@ -701,7 +720,10 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
         );
         if (!mounted) return;
         _transferCancelToken = null;
-        setState(() { _transfer = null; isTransferring = false; });
+        setState(() {
+          _transfer = null;
+          isTransferring = false;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(tr('uploadedTo', {'path': remotePath})),
@@ -712,7 +734,10 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
         if (!mounted) return;
         if (e is TransferCanceledException || cancelToken.canceled) {
           _transferCancelToken = null;
-          setState(() { _transfer = null; isTransferring = false; });
+          setState(() {
+            _transfer = null;
+            isTransferring = false;
+          });
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(tr('uploadCancelled')),
@@ -723,7 +748,10 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
         }
         if (!mounted) return;
         _transferCancelToken = null;
-        setState(() { _transfer = null; isTransferring = false; });
+        setState(() {
+          _transfer = null;
+          isTransferring = false;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('${tr('uploadFailed')}: $e'),
@@ -772,46 +800,49 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
         setState(() => _dragOver = false);
       },
       onDragDone: _onDropFile,
-      child: Stack(
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _buildPathBar(),
-              if (_loading)
-                const Expanded(child: LoadingView())
-              else if (_error != null)
-                Expanded(
-                  child: ErrorView(
-                    message: _error!,
-                    onRetry: _loadFiles,
-                    retryLabel: tr('retry'),
-                  ),
-                )
-              else
-                Expanded(
-                    child: _gridMode ? _buildGridView() : _buildFileList()),
-            ],
-          ),
-          Positioned.fill(
-            child: IgnorePointer(
-              ignoring: !_dragOver,
-              child: AnimatedOpacity(
-                opacity: _dragOver ? 1.0 : 0.0,
-                duration: const Duration(milliseconds: 200),
-                child: _buildDragOverlay(),
-              ),
+      child: OfflineGuard(
+        serial: _selectedSerial!,
+        child: Stack(
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildPathBar(),
+                if (_loading)
+                  const Expanded(child: LoadingView())
+                else if (_error != null)
+                  Expanded(
+                    child: ErrorView(
+                      message: _error!,
+                      onRetry: _loadFiles,
+                      retryLabel: tr('retry'),
+                    ),
+                  )
+                else
+                  Expanded(
+                      child: _gridMode ? _buildGridView() : _buildFileList()),
+              ],
             ),
-          ),
-          if (_transfer != null)
             Positioned.fill(
-              child: TransferProgressOverlay(
-                transfer: _transfer!,
-                trPhase: trPhase,
-                onCancel: _cancelTransfer,
+              child: IgnorePointer(
+                ignoring: !_dragOver,
+                child: AnimatedOpacity(
+                  opacity: _dragOver ? 1.0 : 0.0,
+                  duration: const Duration(milliseconds: 200),
+                  child: _buildDragOverlay(),
+                ),
               ),
             ),
-        ],
+            if (_transfer != null)
+              Positioned.fill(
+                child: TransferProgressOverlay(
+                  transfer: _transfer!,
+                  trPhase: trPhase,
+                  onCancel: _cancelTransfer,
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -924,8 +955,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
           isTransferring ? const SizedBox(width: 80) : buildRecordingButton(),
           const SizedBox(width: 4),
           FilledButton.tonal(
-            onPressed:
-                screenshotting || isTransferring ? null : takeScreenshot,
+            onPressed: screenshotting || isTransferring ? null : takeScreenshot,
             style: FilledButton.styleFrom(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               textStyle: const TextStyle(fontSize: 12),
@@ -1086,8 +1116,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
                   _viewFile(file);
                 }
               },
-        onLongPress:
-            isTransferring ? null : () => _showFileMenu(context, file),
+        onLongPress: isTransferring ? null : () => _showFileMenu(context, file),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
           child: Row(
@@ -1340,8 +1369,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
               file: file,
               tr: tr,
               onOpen: file.isDir ? () => _enterDir(file) : null,
-              onDownload:
-                  !file.isDir ? () => _downloadFile(file) : null,
+              onDownload: !file.isDir ? () => _downloadFile(file) : null,
               onUploadToDir:
                   file.isDir ? () => _uploadFile(targetDir: file.path) : null,
               onCopyPath: () => _copyPath(file),
@@ -1352,8 +1380,8 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
                       directory: false, targetDir: file.path)
                   : null,
               onNewFolder: file.isDir
-                  ? () => _createFileOrFolder(
-                      directory: true, targetDir: file.path)
+                  ? () =>
+                      _createFileOrFolder(directory: true, targetDir: file.path)
                   : null,
               onDetails: () => _showFileInfoWithStat(file),
             ),
@@ -1415,8 +1443,6 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
       ),
     );
   }
-
-
 
   Widget _buildFileViewer() {
     final theme = Theme.of(context);
