@@ -32,3 +32,4 @@ dist/
 flutter_app/ADBToolData/
 /ADBToolData/
 /compose_app
+/*.exe
