@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -18,11 +19,12 @@ func (s *Server) handleLogStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session := NewLogSession(conn, s.adb)
+	session := NewLogSession(conn, s.logcatMgr, s.adb)
 	session.Run()
 }
 
 // handleRecentLogcat returns the last N lines of logcat for a device.
+// Backed by the manager's ring buffer (no per-request adb spawn).
 func (s *Server) handleRecentLogcat(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" {
 		writeAPIError(w, http.StatusMethodNotAllowed, "GET required")
@@ -42,12 +44,11 @@ func (s *Server) handleRecentLogcat(w http.ResponseWriter, r *http.Request) {
 		}
 		lines = parsed
 	}
-	content, err := s.adb.GetRecentLogcat(serial, lines)
-	if err != nil {
-		writeAPIError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeJSON(w, map[string]any{"content": content, "lines": lines})
+	// Manager stores lines as []string (no trailing \n); join to
+	// match the old GetRecentLogcat string format that the frontend
+	// already consumes.
+	ring := s.logcatMgr.Recent(serial, lines)
+	writeJSON(w, map[string]any{"content": strings.Join(ring, "\n"), "lines": lines})
 }
 
 // handleSessionLogcat starts/stops a logcat recording session bound to a test session dir.
