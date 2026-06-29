@@ -68,13 +68,10 @@ jobs:
       - name: Build macOS .app (arm64)
         run: bash scripts/build.sh --platform macos --mode release --arch arm64
 
-      - name: Zip macOS arm64 artifact
-        run: ditto -c -k --keepParent dist/macos/arm64/adb_tool.app adb-tool-macos-arm64.zip
-
       - uses: actions/upload-artifact@v4
         with:
           name: adb-tool-macos-arm64
-          path: adb-tool-macos-arm64.zip
+          path: dist/macos/*.dmg
 
   build-macos-amd64:
     # Intel x86_64 runner,原生 amd64 —— 这是打 amd64 包唯一稳的路
@@ -102,13 +99,10 @@ jobs:
       - name: Build macOS .app (amd64)
         run: bash scripts/build.sh --platform macos --mode release --arch amd64
 
-      - name: Zip macOS amd64 artifact
-        run: ditto -c -k --keepParent dist/macos/amd64/adb_tool.app adb-tool-macos-amd64.zip
-
       - uses: actions/upload-artifact@v4
         with:
           name: adb-tool-macos-amd64
-          path: adb-tool-macos-amd64.zip
+          path: dist/macos/*.dmg
 
   create-release:
     needs: [build-windows, build-macos-arm64, build-macos-amd64]
@@ -123,6 +117,6 @@ jobs:
         with:
           files: |
             adb-tool-windows/*.msi
-            adb-tool-macos-arm64/adb-tool-macos-arm64.zip
-            adb-tool-macos-amd64/adb-tool-macos-amd64.zip
+            adb-tool-macos-arm64/*.dmg
+            adb-tool-macos-amd64/*.dmg
           generate_release_notes: true

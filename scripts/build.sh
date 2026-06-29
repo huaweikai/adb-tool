@@ -318,12 +318,41 @@ if [[ "$PLATFORM" == "macos" ]]; then
     merge_to_universal
   fi
 
+  # 为每个构建产物生成 DMG
+  if [[ "${QUIET_FINAL:-0}" != "1" ]]; then
+    for d in "$DIST_MACOS_DIR"/*/; do
+      [[ -d "$d" ]] || continue
+      app="$d/adb_tool.app"
+      [[ -d "$app" ]] || continue
+      arch_name="$(basename "$d")"
+      dmg_name="ADBTool-${MODE}-${arch_name}.dmg"
+      dmg_path="$DIST_MACOS_DIR/$dmg_name"
+      echo ""
+      echo "==> 生成 DMG ($arch_name)..."
+      # 创建临时目录，放入 .app + Applications 快捷方式
+      tmp_dmg="$(mktemp -d)"
+      ln -sf /Applications "$tmp_dmg/Applications"
+      cp -R "$app" "$tmp_dmg/ADB Tool.app"
+      # 生成 DMG
+      hdiutil create -volname "ADB Tool" \
+        -srcfolder "$tmp_dmg" \
+        -ov -format UDZO \
+        "$dmg_path" >/dev/null 2>&1
+      rm -rf "$tmp_dmg"
+      echo "    DMG: $dmg_path"
+    done
+  fi
+
   if [[ "${QUIET_FINAL:-0}" != "1" ]]; then
     echo ""
     echo "==> 所有 macOS 构建完成："
     for d in "$DIST_MACOS_DIR"/*/; do
       [[ -d "$d" ]] || continue
       echo "    $d"
+    done
+    for f in "$DIST_MACOS_DIR"/*.dmg; do
+      [[ -f "$f" ]] || continue
+      echo "    $f"
     done
   fi
 
