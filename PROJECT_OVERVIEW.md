@@ -87,7 +87,21 @@
 │       ├── handlers_clipboard.go       # 剪贴板路由
 │       ├── handlers_wireless.go        # 无线 ADB 路由
 │       ├── handlers_meta.go            # identify / shutdown / adb-exec / backend-logs
+│       ├── handlers_emulator.go        # 模拟器引擎/镜像/实例管理路由
 │       └── *_test.go                   # 单元测试 (adb_*, backend_logger, recovery, security)
+├── backend/internal/emulator/          # 模拟器核心逻辑
+│   ├── engine.go                       # 模拟器引擎路径发现与版本检测
+│   ├── image_registry.go              # 已安装镜像索引与元数据查询
+│   ├── image_manager.go               # 镜像下载、解压、删除
+│   ├── image_sources.go               # Google 官方镜像源解析
+│   ├── instance_manager.go            # AVD 实例创建、启动、停止、删除
+│   ├── sdk_manager.go                 # Android SDK 路径管理与组件发现
+│   ├── sdk_installer.go               # sdkmanager 包安装（驱动/平台/镜像）
+│   ├── download_manager.go            # 断点续传下载器
+│   ├── java_runtime.go                # Java 运行时发现与版本检测
+│   ├── status_monitor.go              # 模拟器进程状态监控
+│   ├── port_allocator.go              # 串口/控制台端口分配
+│   └── paths_{darwin,windows,unix}.go # 平台特定路径
 └── flutter_app/                        # Flutter 桌面应用
     ├── pubspec.yaml                    # drift, provider, shared_preferences, dio, video_player, ...
     ├── lib/
@@ -98,12 +112,16 @@
     │   │   ├── logcat.dart / file_browser.dart / app_manager.dart
     │   │   ├── device_info.dart / clipboard.dart / adb_command.dart
     │   │   ├── backend_log.dart / test_session.dart / session_history.dart
+    │   │   └── emulator.dart          # 模拟器设置页面字典
     │   ├── models/                     # 纯数据模型
     │   │   ├── device.dart             # Device, LogFilter, LogEntry
     │   │   ├── device_status.dart      # 实时设备状态指标
     │   │   ├── scrcpy_options.dart     # 投屏参数模型，与 Go ScrcpyOptions JSON 字段对齐
     │   │   ├── file_item.dart
     │   │   ├── app_package.dart
+    │   │   ├── emulator_engine.dart    # 模拟器引擎状态模型
+    │   │   ├── emulator_image.dart     # 模拟器镜像模型
+    │   │   ├── emulator_instance.dart  # 模拟器实例模型
     │   │   ├── test_session.dart       # TestSession + events/artifacts/issues/notes/plan
     │   │   └── test_config.dart        # App 配置 + 测试流程/步骤
     │   ├── db/                         # 本地 SQLite (drift) 持久化
@@ -135,11 +153,15 @@
     │   │   ├── clipboard_history_provider.dart # 数据库驱动的剪贴板历史
     │   │   ├── test_config_provider.dart
     │   │   ├── test_session_provider.dart  # Session CRUD + 附件归档 + 导出
-    │   │   └── test_session/           # test_session_provider 的辅助模块
-    │   │       ├── attachment_store.dart   # 截图/录屏/logcat 落盘
-    │   │       ├── exporter.dart           # 导出 ZIP
-    │   │       ├── formatter.dart          # report.md / 测试报告生成
-    │   │       └── session_translate.dart  # 中英文翻译注入
+    │   │   ├── test_session/           # test_session_provider 的辅助模块
+    │   │   │   ├── attachment_store.dart   # 截图/录屏/logcat 落盘
+    │   │   │   ├── exporter.dart           # 导出 ZIP
+    │   │   │   ├── formatter.dart          # report.md / 测试报告生成
+    │   │   │   └── session_translate.dart  # 中英文翻译注入
+    │   │   ├── emulator_engine_provider.dart   # 模拟器引擎状态
+    │   │   ├── emulator_image_provider.dart    # 模拟器镜像管理
+    │   │   ├── emulator_instance_provider.dart # 模拟器实例管理
+    │   │   └── emulator_java_provider.dart     # Java 运行时检测
     │   ├── services/
     │   │   ├── api_client.dart         # 拼装所有 REST 调用 (facade)
     │   │   ├── api/                    # 按域拆分的 API 客户端
@@ -147,6 +169,7 @@
     │   │   │   ├── packages_api.dart / screen_api.dart / wireless_api.dart
     │   │   │   ├── scrcpy_api.dart / clipboard_api.dart / backend_log_api.dart
     │   │   │   ├── adb_command_api.dart
+    │   │   │   ├── emulator_api.dart / emulator_image_api.dart / emulator_java_api.dart
     │   │   ├── log_stream.dart         # WebSocket logcat, Stream<LogEntry>
     │   │   ├── server_launcher.dart    # 后端进程管理 (mac/win 端口清理)
     │   │   ├── mac_drop.dart / win_drop.dart / drop_target.dart  # 平台拖放统一封装
@@ -156,9 +179,13 @@
     │   │   ├── screen_capture_mixin.dart
     │   │   ├── file_browser_capture_mixin.dart
     │   │   └── test_session_capture_mixin.dart
-    │   ├── widgets/                    # 跨页面复用组件 (17 个)
-    │   │   ├── widgets/                # 顶层: 截图水印 / 录制 FAB / 文件传输 / 投屏设置 ...
-    │   │   └── logcat/                 # 子目录: 高亮规则等 logcat 专用组件
+│   ├── widgets/                    # 跨页面复用组件 (17 个)
+│   │   ├── widgets/                # 顶层: 截图水印 / 录制 FAB / 文件传输 / 投屏设置 ...
+│   │   ├── logcat/                 # 子目录: 高亮规则等 logcat 专用组件
+│   │   ├── emulator_engine_card.dart    # 模拟器引擎配置卡片
+│   │   ├── emulator_java_card.dart      # Java 运行时检测卡片
+│   │   ├── emulator_image_card.dart     # 模拟器镜像管理卡片
+│   │   └── emulator_instance_card.dart  # 模拟器实例管理卡片
     │   ├── utils/
     │   │   ├── test_flow_text.dart     # 测试流程/步骤文本解析与格式化
     │   │   ├── time_formatters.dart
@@ -174,8 +201,9 @@
     │       ├── clipboard_screen.dart
     │       ├── adb_command_screen.dart     # ADB 指令面板
     │       ├── test_config_screen.dart     # 测试配置编辑
-    │       ├── backend_log_screen.dart
-    │       └── test_session/           # 测试会话 (hub + active + 预览组件)
+│       ├── backend_log_screen.dart
+│       ├── emulator_settings_screen.dart   # 模拟器设置（引擎/Java/镜像/实例）
+│       └── test_session/           # 测试会话 (hub + active + 预览组件)
     │           ├── test_session_hub_screen.dart    # 会话列表 / 历史浏览 / 创建入口
     │           ├── test_session_active_screen.dart  # 进行中会话 (步骤标记/附件归档)
     │           └── session_preview_widgets.dart     # 截图/视频/日志预览
@@ -348,6 +376,30 @@ export ANDROID_HOME="$HOME/Library/Android/sdk"
 | `/api/adb-wireless-disconnect` | POST | 断开 | `?serial=` |
 | `/api/adb-wireless-scan` | GET | 扫描局域网端口 | `?host=` |
 
+#### 模拟器
+
+| 路由 | 方法 | 功能 | 参数 |
+|---|---|---|---|
+| `/api/emulator/engine` | GET | 获取模拟器引擎状态（路径/版本） | 无 |
+| `/api/emulator/engine/detect` | POST | 自动检测引擎路径 | 无 |
+| `/api/emulator/engine/path` | POST | 手动设置引擎路径 | `?path=` |
+| `/api/emulator/java` | GET | 获取 Java 运行时信息 | 无 |
+| `/api/emulator/java/detect` | POST | 自动检测 Java 路径 | 无 |
+| `/api/emulator/java/path` | POST | 手动设置 Java 路径 | `?path=` |
+| `/api/emulator/images` | GET | 获取已安装镜像列表 | 无 |
+| `/api/emulator/images/available` | GET | 获取可下载镜像列表 | 无 |
+| `/api/emulator/images/download` | POST | 下载镜像 | JSON body: `apiLevel`, `tag`, `abi` |
+| `/api/emulator/images/download-status` | GET | 查询下载进度 | `?jobId=` |
+| `/api/emulator/images/:id` | DELETE | 删除镜像 | 路径参数 `id` |
+| `/api/emulator/instances` | GET | 获取模拟器实例列表 | 无 |
+| `/api/emulator/instances` | POST | 创建模拟器实例 | JSON body: `name`, `imageId`, `config` |
+| `/api/emulator/instances/:id/start` | POST | 启动实例 | 路径参数 `id` |
+| `/api/emulator/instances/:id/stop` | POST | 停止实例 | 路径参数 `id` |
+| `/api/emulator/instances/:id` | DELETE | 删除实例 | 路径参数 `id` |
+| `/api/emulator/sdk/install` | POST | 安装 SDK 组件 | JSON body: `package`, `jobId` |
+| `/api/emulator/sdk/install-status` | GET | 查询安装进度 | `?jobId=` |
+| `/api/emulator/ws` | WebSocket | 实例状态实时推送 | JSON: status/started/stopped/error |
+
 #### 通用 / 系统
 
 | 路由 | 方法 | 功能 | 参数 |
@@ -431,6 +483,7 @@ JSON 命令格式：
 | ADB Command | `adb_command_screen.dart` | ADB 指令面板：参数/命令输入 + 快捷指令分类 |
 | Test Config | `test_config_screen.dart` | 测试 App 配置、流程/步骤编辑，复制配置 |
 | Backend Logs | `backend_log_screen.dart` | 2 秒轮询日志，错误高亮，命令过滤 |
+| Emulator Settings | `emulator_settings_screen.dart` | 模拟器引擎配置、Java 运行时、系统镜像下载管理、AVD 实例创建/启停 |
 | Test Session (Hub) | `screens/test_session/test_session_hub_screen.dart` | 会话列表、历史浏览、创建入口、设备切换 |
 | Test Session (Active) | `screens/test_session/test_session_active_screen.dart` | 进行中会话：步骤标记、附件归档、问题/备注 |
 | Test Session (Preview) | `screens/test_session/session_preview_widgets.dart` | 截图/视频/日志预览组件 |
