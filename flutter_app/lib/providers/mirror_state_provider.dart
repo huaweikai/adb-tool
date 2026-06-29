@@ -41,21 +41,37 @@ class MirrorStateProvider extends ChangeNotifier {
   ScrcpyStatus _status = ScrcpyStatus.stopped;
   ScrcpyStatus get status => _status;
 
+  /// Stable identity (ro.serialno) of the device we last asked the
+  /// backend to start scrcpy against. Drives [isOurs] — the
+  /// screen-mirror UI uses this to decide whether a running scrcpy
+  /// "belongs" to the active device. Survives wireless reconnects
+  /// because stable identity is independent of the transient adb
+  /// address.
+  String? _activeStable;
+
   /// True while a start/stop round-trip is in flight. Disables both
   /// buttons so a panicky double-click can't fire two requests.
   bool _busy = false;
   bool get busy => _busy;
 
-  /// When device that was running scrcpy goes offline. Fires a single
-  /// stop request to the backend (idempotent if scrcpy already died on
-  /// its own) and immediately flips local state to stopped so the UI
-  /// doesn't have to wait for the next poll cycle to catch up.
+  /// True iff the running scrcpy was started against the given
+  /// [stable] identity. The screen asks "is this ours?" with the
+  /// active device's stable identity and the provider hides the
+  /// backend's adb-serial bookkeeping.
+  bool isOurs(String stable) => _activeStable == stable;
+
+  /// When the device scrcpy was running against goes offline, fire a
+  /// single stop request to the backend (idempotent if scrcpy
+  /// already died on its own) and immediately flip local state to
+  /// stopped so the UI doesn't have to wait for the next poll cycle.
   void _onDeviceOffline(DeviceOfflineEvent event) {
     final running = _status.running;
     if (!running) return;
-    if (_status.serial != event.serial) return;
+    final offline = event.hardwareSerial;
+    if (offline == null || offline.isEmpty) return;
+    if (_activeStable != offline) return;
     debugPrint(
-        '[MirrorStateProvider] device offline: ${event.serial} — stopping scrcpy');
+        '[MirrorStateProvider] device offline: $offline — stopping scrcpy');
     // No await — fire and forget. The backend stop is idempotent and
     // any error is logged by the underlying dio call. We MUST update
     // local state synchronously so the UI repaints now.
@@ -64,6 +80,7 @@ class MirrorStateProvider extends ChangeNotifier {
       return <String, dynamic>{'status': 'error'};
     }));
     _status = ScrcpyStatus.stopped;
+    _activeStable = null;
     notifyListeners();
   }
 
@@ -88,13 +105,15 @@ class MirrorStateProvider extends ChangeNotifier {
     }
   }
 
-  /// Refresh with a specific serial filter — used on screen mount so
-  /// a fresh tab doesn't show "running" from a previous device's
-  /// session. Equivalent to calling refresh() right after
-  /// `scrcpyStatus(serial: serial)` once.
-  Future<void> refreshForSerial(String serial) async {
+  /// Refresh with a specific stable identity filter — used on screen
+  /// mount so a fresh tab doesn't show "running" from a previous
+  /// device's session. The serial is the device's ro.serialno
+  /// (stable identity); ApiClient resolves it to the current adb
+  /// address internally.
+  Future<void> refreshForSerial(String stable) async {
+    _activeStable = stable;
     try {
-      final next = await _api.scrcpyStatus(serial: serial);
+      final next = await _api.scrcpyStatus(serial: stable);
       _status = next;
       notifyListeners();
     } catch (e) {
@@ -102,16 +121,18 @@ class MirrorStateProvider extends ChangeNotifier {
     }
   }
 
-  /// Start scrcpy against [serial] with the given options. Surfaces
-  /// backend errors via rethrow so the screen can show a snackbar with
-  /// the actual adb failure message. Always clears `_busy` in finally
-  /// so the buttons don't get stuck disabled.
-  Future<void> start(String serial, ScrcpyOptions options) async {
+  /// Start scrcpy against the device identified by [stable]
+  /// (ro.serialno) with the given options. Surfaces backend errors
+  /// via rethrow so the screen can show a snackbar with the actual
+  /// adb failure message. Always clears `_busy` in finally so the
+  /// buttons don't get stuck disabled.
+  Future<void> start(String stable, ScrcpyOptions options) async {
     if (_busy) return;
     _busy = true;
+    _activeStable = stable;
     notifyListeners();
     try {
-      await _api.startScrcpy(serial, options: options);
+      await _api.startScrcpy(stable, options: options);
       await refresh();
     } finally {
       _busy = false;
@@ -128,6 +149,7 @@ class MirrorStateProvider extends ChangeNotifier {
     try {
       await _api.stopScrcpy();
       _status = ScrcpyStatus.stopped;
+      _activeStable = null;
     } finally {
       _busy = false;
       notifyListeners();

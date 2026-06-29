@@ -9,7 +9,7 @@ mixin AdbCommandApi on ApiBase {
       String serial, List<String> args) async {
     final resp = await dio.post(
       '/api/adb-exec',
-      queryParameters: {'serial': serial},
+      queryParameters: deviceQueryParameters(serial),
       data: {'args': args},
       options: Options(contentType: Headers.jsonContentType),
     );

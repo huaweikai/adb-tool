@@ -11,9 +11,21 @@ import (
 )
 
 const (
-	devicesListTimeout  = 20 * time.Second
-	devicePropsTimeout  = 10 * time.Second
-	devicePropsShellCmd = "getprop ro.product.model; getprop ro.product.brand; getprop ro.build.version.sdk"
+	devicesListTimeout = 20 * time.Second
+	devicePropsTimeout = 10 * time.Second
+	// devicePropsShellCmd is run once per online device. The four
+	// values populate the Device fields the Flutter side needs to
+	// reconcile "is this the same device as last time?":
+	//   - ro.product.model / brand / sdk — display info
+	//   - ro.serialno                   — the STABLE identity, used
+	//                                     by the frontend as the
+	//                                     saved_devices PK. The adb
+	//                                     serial (ip:port for wireless,
+	//                                     transport-id for USB) is
+	//                                     transient; ro.serialno is
+	//                                     what survives across
+	//                                     reconnects.
+	devicePropsShellCmd = "getprop ro.product.model; getprop ro.product.brand; getprop ro.build.version.sdk; getprop ro.serialno"
 )
 
 func (m *AdbManager) Devices() ([]Device, error) {
@@ -104,6 +116,13 @@ func (m *AdbManager) enrichDevicesProps(devices []Device) {
 			devices[idx].Model = props["ro.product.model"]
 			devices[idx].Brand = props["ro.product.brand"]
 			devices[idx].SDK = props["ro.build.version.sdk"]
+			// ro.serialno is the device's stable hardware identity.
+			// Frontend uses it (not the adb serial) as the
+			// saved_devices PK so the same physical device keeps
+			// one row across wireless reconnects. Empty string is
+			// acceptable: the frontend treats it as "no match" and
+			// falls back to adb-serial matching.
+			devices[idx].HardwareSerial = props["ro.serialno"]
 			mu.Unlock()
 		})
 	}
@@ -157,13 +176,14 @@ func (m *AdbManager) devicePropsForList(serial string) map[string]string {
 
 func parseDevicePropsOutput(out string) map[string]string {
 	lines := strings.Split(strings.TrimSpace(out), "\n")
-	if len(lines) < 3 {
+	if len(lines) < 4 {
 		return nil
 	}
 	return map[string]string{
-		"ro.product.model":       strings.TrimSpace(lines[0]),
-		"ro.product.brand":       strings.TrimSpace(lines[1]),
-		"ro.build.version.sdk":   strings.TrimSpace(lines[2]),
+		"ro.product.model":     strings.TrimSpace(lines[0]),
+		"ro.product.brand":     strings.TrimSpace(lines[1]),
+		"ro.build.version.sdk": strings.TrimSpace(lines[2]),
+		"ro.serialno":          strings.TrimSpace(lines[3]),
 	}
 }
 

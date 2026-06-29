@@ -98,11 +98,17 @@ class TestSessionProvider extends ChangeNotifier {
 
   void _onDeviceOffline(DeviceOfflineEvent event) {
     debugPrint('[TestSessionProvider] device offline: ${event.serial}');
+    // The DB lookup needs the stable identity (saved_devices.serial =
+    // ro.serialno post-v8→v9), not the transient adb-serial in
+    // event.serial. Fall back to event.serial if hardwareSerial is
+    // empty (e.g. unauthorized device — its DB row is keyed by
+    // adb-serial under that case).
+    final lookup = event.hardwareSerial ?? event.serial;
     // Was a recording owned by anyone running on this device? The DB
     // row tracks recording_owner (testSession / fileBrowser / null).
     // We don't await — the snackbar UX fires from the stream callback
     // regardless of when the DB write actually lands.
-    unawaited(_stopRecordingIfNeeded(event.serial));
+    unawaited(_stopRecordingIfNeeded(lookup));
   }
 
   Future<void> _stopRecordingIfNeeded(String serial) async {

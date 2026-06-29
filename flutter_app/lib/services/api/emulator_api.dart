@@ -51,9 +51,7 @@ mixin EmulatorApi on ApiBase {
     if (!isOk(response)) throw Exception(errorMessage(response));
     final data = responseMap(response);
     final sdkList = data['sdks'] as List? ?? [];
-    return sdkList
-        .map((e) => SDKDetectResult.fromJson(asMap(e)))
-        .toList();
+    return sdkList.map((e) => SDKDetectResult.fromJson(asMap(e))).toList();
   }
 
   /// Use a detected SDK path.

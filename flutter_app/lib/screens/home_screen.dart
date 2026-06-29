@@ -1289,7 +1289,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       ),
     );
     if (ok != true) return;
-    final result = await api.disconnectWirelessAdb(d.serial);
+    // adb-wireless-disconnect takes the live adb address (ip:port),
+    // not the saved device's PK (= ro.serialno). Resolve the current
+    // preferred transport; bail out cleanly if the device isn't
+    // online / we don't know its address.
+    final adbAddress =
+        context.read<DeviceProvider>().onlineAddressFor(d.serial);
+    if (adbAddress == null || adbAddress.isEmpty) {
+      if (!mounted || !context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(tr('disconnectFailed', {'name': d.displayName})),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+    final result = await api.disconnectWirelessAdb(adbAddress);
     if (!mounted || !context.mounted) return;
     if (result.ok) {
       ScaffoldMessenger.of(context).showSnackBar(

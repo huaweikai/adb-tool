@@ -7,7 +7,7 @@ mixin ScreenApi on ApiBase {
       String serial, String action) async {
     final resp = await dio.get(
       '/api/screen-record',
-      queryParameters: {'serial': serial, 'action': action},
+      queryParameters: deviceQueryParameters(serial, {'action': action}),
     );
     throwIfNotOk(resp);
     return responseMap(resp);
@@ -25,7 +25,7 @@ mixin ScreenApi on ApiBase {
   Future<List<int>> pullRecordedVideo(String serial) async {
     final resp = await dio.get<List<int>>(
       '/api/screen-record-video',
-      queryParameters: {'serial': serial},
+      queryParameters: deviceQueryParameters(serial),
       options: Options(responseType: ResponseType.bytes),
     );
     if (!isOk(resp)) {
@@ -40,7 +40,7 @@ mixin ScreenApi on ApiBase {
   Future<bool> setShowTouches(String serial, bool enabled) async {
     final resp = await dio.post(
       '/api/adb-exec',
-      queryParameters: {'serial': serial},
+      queryParameters: deviceQueryParameters(serial),
       data: {
         'args': [
           'shell',

@@ -46,10 +46,18 @@ class _TestSessionActiveContentState extends State<TestSessionActiveContent>
   @override
   late bool screenshotting;
 
+  /// Stable device identity (ro.serialno). Survives reconnects.
+  /// Handed to `ApiClient` directly; the API boundary resolves
+  /// it to the current adb address on demand.
+  @override
   String? get serial => context.read<DeviceSerialScope>().serial;
+
+  @override
   ApiClient get apiClient => context.read<ApiClient>();
+  @override
   TestSessionProvider get sessionProvider =>
       context.read<TestSessionProvider>();
+  @override
   SavedDevicesDao get savedDevicesDao =>
       context.read<AppDatabase>().savedDevicesDao;
 
@@ -419,8 +427,8 @@ class _TestSessionActiveContentState extends State<TestSessionActiveContent>
   }
 
   Future<void> _startLogcat() async {
-    final s = serial;
-    if (s == null || _logcatRunning) return;
+    final deviceSerial = serial;
+    if (deviceSerial == null || _logcatRunning) return;
     final session = sessionProvider.currentSession;
     if (session == null) return;
     final sessionDir = await sessionProvider.currentSessionLogcatDir();
@@ -437,7 +445,7 @@ class _TestSessionActiveContentState extends State<TestSessionActiveContent>
     try {
       await apiClient.sessionLogcatAction(
         'start',
-        serial: s,
+        serial: deviceSerial,
         sessionDir: sessionDir,
         packageName: session.packageName,
       );
@@ -586,10 +594,10 @@ class _TestSessionActiveContentState extends State<TestSessionActiveContent>
   }
 
   Future<({String content, bool captured})> _loadRecentLogcatSnapshot() async {
-    final s = serial;
-    if (s == null) return (content: '', captured: false);
+    final deviceSerial = serial;
+    if (deviceSerial == null) return (content: '', captured: false);
     try {
-      final content = await apiClient.getRecentLogcat(s, lines: 500);
+      final content = await apiClient.getRecentLogcat(deviceSerial, lines: 500);
       return (content: content, captured: content.isNotEmpty);
     } catch (_) {
       return (content: '', captured: false);

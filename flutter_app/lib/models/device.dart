@@ -1,12 +1,31 @@
+/// One row from `GET /api/devices`. Carries two distinct identifiers
+/// because adb identifies devices by transient address (ip:port for
+/// wireless, transport-id for USB) while the rest of the app —
+/// `saved_devices` PK, `test_sessions.deviceSerial` FK, the sidebar
+/// list — needs a stable identity that survives reconnects.
+///
+///   - [serial]          — adb-level address. Used directly in
+///                         `?serial=...` adb-command URLs. Empty for
+///                         offline / non-state="device" entries.
+///   - [hardwareSerial]  — ro.serialno. The stable identity. Used
+///                         to match against `saved_devices.serial`
+///                         so a wireless reconnect on a different
+///                         port doesn't create a new device row.
+///                         May be empty when the backend can't read
+///                         props (e.g. unauthorized devices); the
+///                         reconcile logic treats that as "no match
+///                         by hardware" and falls back to adb-serial.
 class Device {
   final String serial;
+  final String hardwareSerial;
   final String state;
   final String model;
   final String brand;
   final String sdk;
 
-  Device({
+  const Device({
     required this.serial,
+    this.hardwareSerial = '',
     required this.state,
     this.model = '',
     this.brand = '',
@@ -16,6 +35,7 @@ class Device {
   factory Device.fromJson(Map<String, dynamic> json) {
     return Device(
       serial: json['serial'] ?? '',
+      hardwareSerial: json['hardwareSerial'] ?? '',
       state: json['state'] ?? '',
       model: json['model'] ?? '',
       brand: json['brand'] ?? '',
@@ -30,6 +50,18 @@ class Device {
   }
 
   bool get isOnline => state == 'device';
+
+  /// True iff [stableSerial] (typically the DeviceSerialScope value, =
+  /// ro.serialno) matches either the adb-level [serial] (ip:port for
+  /// wireless, equal to ro.serialno for USB) or the [hardwareSerial]
+  /// (ro.serialno for wireless). UI code that needs to look up a
+  /// Device from a scope must use this — the old `d.serial ==
+  /// scopeSerial` check no longer works after the v8→v9 identity
+  /// split because the two fields now carry different identifiers.
+  bool matchesIdentity(String? stableSerial) {
+    if (stableSerial == null || stableSerial.isEmpty) return false;
+    return serial == stableSerial || hardwareSerial == stableSerial;
+  }
 }
 
 class LogFilter {

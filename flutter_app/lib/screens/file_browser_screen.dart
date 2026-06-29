@@ -51,6 +51,9 @@ class FileBrowserScreen extends StatefulWidget {
 
 class _FileBrowserScreenState extends State<FileBrowserScreen>
     with FileBrowserCaptureMixin<FileBrowserScreen> {
+  /// Stable device identity (ro.serialno). Survives reconnects —
+  /// handed to `ApiClient` directly; the API boundary resolves
+  /// it to the current adb address on demand.
   String? get _selectedSerial => context.read<DeviceSerialScope>().serial;
 
   String trPhase(String phaseKey) =>
@@ -85,11 +88,15 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
   }
 
   // ── FileBrowserCaptureMixin 实现 ─────────────────────────────
+  @override
   ApiClient get apiClient => context.read<ApiClient>();
+  @override
   TestSessionProvider get sessionProvider =>
       context.read<TestSessionProvider>();
+  @override
   SavedDevicesDao get savedDevicesDao =>
       context.read<AppDatabase>().savedDevicesDao;
+  @override
   String? get serial => _selectedSerial;
 
   @override
@@ -189,7 +196,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
     try {
       final files = await context
           .read<ApiClient>()
-          .listFiles(_selectedSerial!, _currentPath);
+          .listFiles(_selectedSerial ?? '', _currentPath);
       if (!mounted) return;
       setState(() {
         _files = _sorted(files);
@@ -216,7 +223,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
     try {
       final files = await context
           .read<ApiClient>()
-          .listFiles(_selectedSerial!, _currentPath);
+          .listFiles(_selectedSerial ?? '', _currentPath);
       if (!mounted) return;
       setState(() {
         _files = _sorted(files);
@@ -264,7 +271,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
     });
     try {
       final content =
-          await context.read<ApiClient>().readFile(_selectedSerial!, file.path);
+          await context.read<ApiClient>().readFile(_selectedSerial ?? '', file.path);
       if (!mounted) return;
       setState(() {
         _fileContent = content;
@@ -282,8 +289,8 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
 
   Future<void> _downloadFile(FileItem file) async {
     if (isTransferring) return;
-    final serial = _selectedSerial;
-    if (serial == null) return;
+    final deviceSerial = _selectedSerial;
+    if (deviceSerial == null) return;
     final api = context.read<ApiClient>();
     TransferCancelToken? cancelToken;
     String? localPath;
@@ -307,7 +314,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
         isTransferring = true;
       });
       await api.downloadFileToPath(
-        serial,
+        deviceSerial,
         file.path,
         location.path,
         totalBytes: file.size,
@@ -375,8 +382,8 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
 
   Future<void> _uploadFile({String? targetDir}) async {
     if (isTransferring) return;
-    final serial = _selectedSerial;
-    if (serial == null) return;
+    final deviceSerial = _selectedSerial;
+    if (deviceSerial == null) return;
     final api = context.read<ApiClient>();
     final result = await openFile(confirmButtonText: tr('upload'));
     if (result == null) return;
@@ -396,7 +403,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
         isTransferring = true;
       });
       await api.pushLocalFile(
-        serial,
+        deviceSerial,
         remotePath,
         result.path,
         cancelToken: cancelToken,
@@ -546,8 +553,8 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
 
   Future<void> _renameFile(FileItem file) async {
     if (isTransferring) return;
-    final serial = _selectedSerial;
-    if (serial == null) return;
+    final deviceSerial = _selectedSerial;
+    if (deviceSerial == null) return;
     final api = context.read<ApiClient>();
     final newName = await _askName(
       title: tr('rename'),
@@ -557,7 +564,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
     if (newName == null || newName == file.name) return;
     final targetPath = _joinRemotePath(_currentPath, newName);
     try {
-      await api.renameFile(serial, file.path, targetPath);
+      await api.renameFile(deviceSerial, file.path, targetPath);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -579,8 +586,8 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
 
   Future<void> _deleteFile(FileItem file) async {
     if (isTransferring) return;
-    final serial = _selectedSerial;
-    if (serial == null) return;
+    final deviceSerial = _selectedSerial;
+    if (deviceSerial == null) return;
     final api = context.read<ApiClient>();
     final ok = await _confirm(
       title: tr('delete'),
@@ -592,7 +599,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
     if (!ok) return;
     try {
       await api.deleteFile(
-        serial,
+        deviceSerial,
         file.path,
         recursive: file.isDir,
       );
@@ -620,8 +627,8 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
     String? targetDir,
   }) async {
     if (isTransferring) return;
-    final serial = _selectedSerial;
-    if (serial == null) return;
+    final deviceSerial = _selectedSerial;
+    if (deviceSerial == null) return;
     final api = context.read<ApiClient>();
     final name = await _askName(
       title: directory ? tr('newFolder') : tr('newFile'),
@@ -631,9 +638,9 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
     final path = _joinRemotePath(targetDir ?? _currentPath, name);
     try {
       if (directory) {
-        await api.createDirectory(serial, path);
+        await api.createDirectory(deviceSerial, path);
       } else {
-        await api.createFile(serial, path);
+        await api.createFile(deviceSerial, path);
       }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -665,7 +672,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
     }
     try {
       final stat =
-          await context.read<ApiClient>().statFile(_selectedSerial!, file.path);
+          await context.read<ApiClient>().statFile(_selectedSerial ?? '', file.path);
       if (!mounted) return;
       _showFileInfo(context, file, stat: stat);
     } catch (_) {
@@ -676,8 +683,8 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
 
   Future<void> _onDropFile(DropDoneDetails details) async {
     if (isTransferring) return;
-    final serial = _selectedSerial;
-    if (serial == null) return;
+    final deviceSerial = _selectedSerial;
+    if (deviceSerial == null) return;
     final api = context.read<ApiClient>();
     if (mounted) setState(() => _dragOver = false);
     for (final file in details.files) {
@@ -699,7 +706,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
           isTransferring = true;
         });
         await api.pushLocalFile(
-          serial,
+          deviceSerial,
           remotePath,
           file.path,
           cancelToken: cancelToken,

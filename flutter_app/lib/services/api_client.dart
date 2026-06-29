@@ -21,6 +21,7 @@ import 'dart:io';
 
 import 'package:dio/dio.dart';
 
+import '../providers/device_provider.dart';
 import 'api/device_api.dart';
 import 'api/file_api.dart';
 import 'api/packages_api.dart';
@@ -46,26 +47,28 @@ export 'api/wireless_api.dart' show WirelessApi;
 export 'api/clipboard_api.dart' show ClipboardApi;
 export 'api/adb_command_api.dart' show AdbCommandApi;
 export 'api/backend_log_api.dart' show BackendLogApi;
-export 'api/emulator_api.dart' show EmulatorApi, EmulatorEngineStatus, SDKDetectResult, SDKDownloadResult, SDKInstallJob;
-export 'api/emulator_java_api.dart' show
-    EmulatorJavaApi,
-    JavaRuntimeStatus,
-    JavaRuntimeInfo,
-    JavaRuntimeList,
-    JavaSelectionResult,
-    JavaValidationResult,
-    JavaDownloadResult,
-    JavaDownloadProgress,
-    DownloadInfo;
-export 'api/emulator_image_api.dart' show
-    EmulatorImageApi,
-    SystemImage,
-    SystemImageStatus,
-    ImageDownloadResult;
-export 'api/cleanup_api.dart' show
-    CleanupApi,
-    CacheCleanupResult,
-    CacheCleanupEntry;
+export 'api/emulator_api.dart'
+    show
+        EmulatorApi,
+        EmulatorEngineStatus,
+        SDKDetectResult,
+        SDKDownloadResult,
+        SDKInstallJob;
+export 'api/emulator_java_api.dart'
+    show
+        EmulatorJavaApi,
+        JavaRuntimeStatus,
+        JavaRuntimeInfo,
+        JavaRuntimeList,
+        JavaSelectionResult,
+        JavaValidationResult,
+        JavaDownloadResult,
+        JavaDownloadProgress,
+        DownloadInfo;
+export 'api/emulator_image_api.dart'
+    show EmulatorImageApi, SystemImage, SystemImageStatus, ImageDownloadResult;
+export 'api/cleanup_api.dart'
+    show CleanupApi, CacheCleanupResult, CacheCleanupEntry;
 
 // ===== Public value types shared across domains =====
 
@@ -151,6 +154,15 @@ class TransferCancelToken {
   }
 }
 
+class DeviceOfflineException implements Exception {
+  final String stableSerial;
+
+  const DeviceOfflineException(this.stableSerial);
+
+  @override
+  String toString() => 'DeviceOfflineException: $stableSerial is not online';
+}
+
 // ===== Shared base class for all API mixins =====
 
 /// ApiBase owns the Dio instance plus the response-envelope helpers
@@ -161,8 +173,9 @@ class TransferCancelToken {
 abstract class ApiBase {
   final String baseUrl;
   final Dio dio;
+  final DeviceProvider? deviceProvider;
 
-  ApiBase(this.baseUrl, {Dio? dio})
+  ApiBase(this.baseUrl, {Dio? dio, this.deviceProvider})
       : dio = dio ??
             Dio(
               BaseOptions(
@@ -172,6 +185,29 @@ abstract class ApiBase {
                 validateStatus: (_) => true,
               ),
             );
+
+  String resolveAdbSerial(String stableSerial) {
+    final resolved = deviceProvider?.onlineAddressFor(stableSerial) ??
+        (deviceProvider == null ? stableSerial : null);
+    if (resolved == null || resolved.isEmpty) {
+      throw DeviceOfflineException(stableSerial);
+    }
+    return resolved;
+  }
+
+  Map<String, dynamic> deviceQueryParameters(
+    String stableSerial, [
+    Map<String, dynamic> extra = const {},
+  ]) {
+    return {'serial': resolveAdbSerial(stableSerial), ...extra};
+  }
+
+  Map<String, dynamic> deviceBodyParameters(
+    String stableSerial, [
+    Map<String, dynamic> extra = const {},
+  ]) {
+    return {'serial': resolveAdbSerial(stableSerial), ...extra};
+  }
 
   AdbCommandResult adbCommandResult(Map<String, dynamic> data) {
     return AdbCommandResult(

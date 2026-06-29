@@ -18,6 +18,9 @@ class DeviceStatusScreen extends StatefulWidget {
 }
 
 class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
+  /// Stable device identity (ro.serialno). Survives reconnects —
+  /// handed to `ApiClient` directly; the API boundary resolves
+  /// it to the current adb address on demand.
   String? get _selectedSerial => context.read<DeviceSerialScope>().serial;
   bool _isActive({bool listen = false}) {
     try {
@@ -90,8 +93,8 @@ class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
 
   Future<void> _loadStatus({bool silent = false}) async {
     if (_loading || (silent && !_isActive())) return;
-    final serial = _selectedSerial;
-    if (serial == null) {
+    final stable = _selectedSerial;
+    if (stable == null) {
       setState(() => _error = tr('selectDevice'));
       return;
     }
@@ -103,7 +106,7 @@ class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
       }
     });
     try {
-      final status = await api.getDeviceStatus(serial);
+      final status = await api.getDeviceStatus(stable);
       if (!mounted) return;
       _consecutiveErrors = 0;
       setState(() {

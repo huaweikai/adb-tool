@@ -18,6 +18,9 @@ class AdbCommandScreen extends StatefulWidget {
 }
 
 class _AdbCommandScreenState extends State<AdbCommandScreen> {
+  /// Stable device identity (ro.serialno). Survives reconnects —
+  /// handed to `ApiClient` directly; the API boundary resolves
+  /// it to the current adb address on demand.
   String? get _selectedSerial => context.read<DeviceSerialScope>().serial;
 
   final TextEditingController _commandCtrl = TextEditingController();
@@ -90,7 +93,9 @@ class _AdbCommandScreenState extends State<AdbCommandScreen> {
   }
 
   Future<void> _executeCommand(String raw, {bool fillInput = true}) async {
-    if (_running || _selectedSerial == null) return;
+    if (_running) return;
+    final stable = _selectedSerial;
+    if (stable == null) return;
     final command = raw.trim();
     final args = _parseCommand(command);
     if (args.isEmpty) {
@@ -113,7 +118,7 @@ class _AdbCommandScreenState extends State<AdbCommandScreen> {
     try {
       final result = await context
           .read<ApiClient>()
-          .executeAdbCommand(_selectedSerial!, args);
+          .executeAdbCommand(stable, args);
       if (!mounted) return;
       setState(() {
         _records.add(_CommandRecord(
@@ -157,7 +162,7 @@ class _AdbCommandScreenState extends State<AdbCommandScreen> {
           title:
               Text(action.destructive ? tr('dangerousOp') : tr('confirmExec')),
           content: Text(
-              '${tr('confirmBody')}\n\nadb -s $_selectedSerial ${action.command}'),
+              '${tr('confirmBody')}\n\nadb -s ${_selectedSerial ?? "?"} ${action.command}'),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -380,8 +385,15 @@ class _AdbCommandScreenState extends State<AdbCommandScreen> {
                         color: theme.colorScheme.primaryContainer,
                         borderRadius: BorderRadius.circular(999),
                       ),
-                      child: Text(_selectedSerial!,
-                          style: const TextStyle(fontSize: 11)),
+                      // Badge shows the device's stable identity
+                      // (ro.serialno). The actual adb-serial is
+                      // resolved internally by ApiClient and isn't
+                      // surfaced here — keeping the screen
+                      // address-agnostic.
+                      child: Text(
+                        _selectedSerial ?? '',
+                        style: const TextStyle(fontSize: 11),
+                      ),
                     ),
                     const Spacer(),
                     OutlinedButton.icon(
@@ -410,7 +422,7 @@ class _AdbCommandScreenState extends State<AdbCommandScreen> {
                         enabled: !_running && isOnline,
                         decoration: InputDecoration(
                           hintText: tr('adbInputHint'),
-                          prefixText: 'adb -s $_selectedSerial ',
+                          prefixText: 'adb -s ${_selectedSerial ?? "?"} ',
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(8),
                           ),
@@ -620,7 +632,7 @@ class _AdbCommandScreenState extends State<AdbCommandScreen> {
                 size: 16, color: color),
             const SizedBox(width: 6),
             Expanded(
-              child: Text('adb -s $_selectedSerial ${record.command}',
+              child: Text('adb -s ${_selectedSerial ?? "?"} ${record.command}',
                   style:
                       const TextStyle(fontFamily: 'monospace', fontSize: 12)),
             ),

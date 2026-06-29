@@ -121,6 +121,7 @@ if [ "$3" = "shell" ] && echo "$4" | grep -q "getprop"; then
   printf 'Ready\n'
   printf 'TestBrand\n'
   printf '35\n'
+  printf 'ROSN-12345\n'
   exit 0
 fi
 exit 1
@@ -140,6 +141,9 @@ exit 1
 	}
 	if devices[2].Model != "Ready" {
 		t.Fatalf("connected device should load props: %+v", devices[2])
+	}
+	if devices[2].HardwareSerial != "ROSN-12345" {
+		t.Fatalf("connected device should populate hardwareSerial: %+v", devices[2])
 	}
 
 	logBytes, err := os.ReadFile(logPath)
@@ -178,7 +182,7 @@ func writeFakeAdb(t *testing.T, script string) string {
 			"if \"%1\"==\"version\" echo Android Debug Bridge version 1.0.41& exit /b 0",
 			"if \"%1\"==\"start-server\" echo * daemon started successfully *& exit /b 0",
 			"if \"%1\"==\"devices\" echo List of devices attached& echo offline-serial	offline product:test model:Offline device:test& echo unauth-serial	unauthorized product:test model:Unauthorized device:test& echo ready-serial	device product:test model:Ready device:test& exit /b 0",
-			"if \"%3\"==\"shell\" echo %4 | findstr getprop >nul && echo Ready& echo TestBrand& echo 35& exit /b 0",
+			"if \"%3\"==\"shell\" echo %4 | findstr getprop >nul && echo Ready& echo TestBrand& echo 35& echo ROSN-12345& exit /b 0",
 			"exit /b 1",
 		}, "\r\n")
 		if err := os.WriteFile(path, []byte(batch), 0o755); err != nil {

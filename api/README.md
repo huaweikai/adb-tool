@@ -59,7 +59,8 @@ HTTP 状态码含义：
 
 `data` 是设备数组：
 
-- `serial`：设备序列号或无线连接地址。
+- `serial`：ADB 设备序列号或无线连接地址（`ip:port`），传给后端做 `adb -s <serial>` 用。
+- `hardwareSerial`：设备稳定的硬件序列号（`ro.serialno`）。前端用这个做 `saved_devices` 的主键——同一个物理设备在无线重连时虽然 `ip:port` 变了，`hardwareSerial` 不变。USB 设备两个字段通常相同。无法读取时省略。
 - `state`：ADB 设备状态，例如 `device`、`offline`、`unauthorized`。
 - `model`：设备型号。
 - `brand`：设备品牌。

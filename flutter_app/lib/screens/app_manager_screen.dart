@@ -21,6 +21,9 @@ class AppManagerScreen extends StatefulWidget {
 }
 
 class _AppManagerScreenState extends State<AppManagerScreen> {
+  /// Stable device identity (ro.serialno). Survives reconnects —
+  /// handed to `ApiClient` directly; the API boundary resolves
+  /// it to the current adb address on demand.
   String? get _selectedSerial => context.read<DeviceSerialScope>().serial;
 
   List<AppPackage> _allPackages = [];
@@ -57,7 +60,7 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
     try {
       final pkgs = await context
           .read<ApiClient>()
-          .getInstalledPackages(_selectedSerial!);
+          .getInstalledPackages(_selectedSerial ?? '');
       if (!mounted) return;
       setState(() {
         _allPackages = pkgs;
@@ -91,8 +94,8 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
 
   Future<void> _clearAppData(AppPackage pkg) async {
     if (_installing) return;
-    final serial = _selectedSerial;
-    if (serial == null) return;
+    final deviceSerial = _selectedSerial;
+    if (deviceSerial == null) return;
     final api = context.read<ApiClient>();
     final confirm = await showDialog<bool>(
       context: context,
@@ -113,7 +116,7 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
     if (confirm != true) return;
     try {
       final result = await api
-          .executeAdbCommand(serial, ['shell', 'pm', 'clear', pkg.packageName]);
+          .executeAdbCommand(deviceSerial, ['shell', 'pm', 'clear', pkg.packageName]);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -131,8 +134,8 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
 
   Future<void> _forceStopApp(AppPackage pkg) async {
     if (_installing) return;
-    final serial = _selectedSerial;
-    if (serial == null) return;
+    final deviceSerial = _selectedSerial;
+    if (deviceSerial == null) return;
     final api = context.read<ApiClient>();
     final confirm = await showDialog<bool>(
       context: context,
@@ -153,7 +156,7 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
     if (confirm != true) return;
     try {
       final result = await api.executeAdbCommand(
-          serial, ['shell', 'am', 'force-stop', pkg.packageName]);
+          deviceSerial, ['shell', 'am', 'force-stop', pkg.packageName]);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -171,8 +174,8 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
 
   Future<void> _uninstallPackage(AppPackage pkg) async {
     if (_installing) return;
-    final serial = _selectedSerial;
-    if (serial == null) return;
+    final deviceSerial = _selectedSerial;
+    if (deviceSerial == null) return;
     final api = context.read<ApiClient>();
     final confirm = await showDialog<bool>(
       context: context,
@@ -193,7 +196,7 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
     if (confirm != true) return;
 
     try {
-      final ok = await api.uninstallPackage(serial, pkg.packageName);
+      final ok = await api.uninstallPackage(deviceSerial, pkg.packageName);
       if (!mounted) return;
       if (ok) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -217,8 +220,8 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
 
   Future<void> _onDropApk(DropDoneDetails details) async {
     if (_installing) return;
-    final serial = _selectedSerial;
-    if (serial == null) return;
+    final deviceSerial = _selectedSerial;
+    if (deviceSerial == null) return;
     final api = context.read<ApiClient>();
     if (mounted) setState(() => _dragOver = false);
     for (final file in details.files) {
@@ -237,7 +240,7 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
           );
         });
         final result = await api.installLocalPackage(
-          serial,
+          deviceSerial,
           file.path,
           cancelToken: cancelToken,
           onProgress: (progress) {

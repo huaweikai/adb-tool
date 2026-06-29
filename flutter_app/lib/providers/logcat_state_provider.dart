@@ -124,6 +124,12 @@ class LogcatDeviceState {
 /// App-wide logcat state. Holds a per-device [LogcatDeviceState] so
 /// switching devices preserves entries, filter, scroll, and pause state.
 ///
+/// The `serial` argument on every public method is the device's **stable
+/// identity** (ro.serialno) — the same value carried in `DeviceSerialScope`.
+/// Keys states by stable identity so a wireless reconnect (which churns
+/// the adb address) doesn't lose the user's filter / pause / scroll
+/// state.
+///
 /// Notifications are debounced: a stream batch of N entries triggers at
 /// most one [notifyListeners] per frame, so a flood of log lines doesn't
 /// thrash the widget tree.
@@ -136,12 +142,23 @@ class LogcatStateProvider extends ChangeNotifier {
     // call is fire-and-forget here (we're already past the point of caring
     // about the result); the OS will reap the subprocess anyway.
     _offlineSub = _deviceProvider.onDeviceOffline.listen((event) {
+      // The state map is keyed by stable identity; the offline event
+      // carries both the disappearing adb-serial AND the device's
+      // ro.serialno, so we use the latter for the lookup.
+      final stable = event.hardwareSerial;
+      if (stable == null || stable.isEmpty) {
+        // No stable identity (e.g. backend couldn't read props). We
+        // can't map the event back to a state key, so skip the
+        // best-effort cleanup. The user can still stop the recording
+        // manually.
+        return;
+      }
       debugPrint(
-          '[LogcatStateProvider] device offline: ${event.serial} — stopping recording');
-      final wasRecording = stateFor(event.serial).recording != null;
-      stopRecordingIfActive(event.serial);
+          '[LogcatStateProvider] device offline: $stable — stopping recording');
+      final wasRecording = stateFor(stable).recording != null;
+      stopRecordingIfActive(stable);
       if (wasRecording && !_recordingInterrupted.isClosed) {
-        _recordingInterrupted.add(event.serial);
+        _recordingInterrupted.add(stable);
       }
     });
   }
@@ -165,6 +182,8 @@ class LogcatStateProvider extends ChangeNotifier {
   bool _disposed = false;
 
   /// Get-or-create the state for a device. Safe to call repeatedly.
+  /// The [serial] is the device's stable identity (ro.serialno) so
+  /// state survives wireless reconnects.
   LogcatDeviceState stateFor(String serial) =>
       _states.putIfAbsent(serial, () => LogcatDeviceState(serial: serial));
 
