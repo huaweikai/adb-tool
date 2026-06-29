@@ -225,8 +225,15 @@ class DeviceProvider extends ChangeNotifier {
   /// Whether [stableSerial] currently has a live Wi-Fi transport.
   /// Cheap alternative to `wifiTransportFor(stable) != null` for UI
   /// gating (e.g. show / hide the "disconnect wireless" button).
+  ///
+  /// Intentionally bypasses [transportsFor] (which sorts by transport
+  /// rank and copies the list) — gating is called once per device
+  /// node per build, and the only thing we need is a boolean.
   bool hasWifiTransport(String stableSerial) {
-    return wifiTransportFor(stableSerial) != null;
+    return _onlineDevices.any((d) =>
+        d.isOnline &&
+        d.matchesIdentity(stableSerial) &&
+        transportTypeForSerial(d.serial) == DeviceTransportType.wifi);
   }
 
   String? modelFor(String stableSerial) {
