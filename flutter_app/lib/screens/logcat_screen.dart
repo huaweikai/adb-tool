@@ -402,34 +402,32 @@ class _LogcatScreenState extends State<LogcatScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         OfflineBanner(serial: deviceSerial),
-        _LogcatToolbar(
-          deviceSerial: deviceSerial,
-          // Pass the live device state so the toolbar can disable
-          // buttons that need a working adb connection (start stream,
-          // start/stop recording). Filter inputs and Clear Logs stay
-          // enabled — they're local-only operations that don't touch
-          // the device.
-          isOnline: context.watch<DeviceProvider>().isDeviceConnected(deviceSerial),
-          tagCtrl: _tagCtrl,
-          kwCtrl: _kwCtrl,
-          pkgCtrl: _pkgCtrl,
-          ruleCtrl: _ruleCtrl,
-          highlightRules: _highlightRules,
-          customRuleColors: _customRuleColors,
-          autoScroll: _autoScroll,
-          onAutoScrollChanged: (v) {
-            setState(() => _autoScroll = v);
-            if (v) _animateToBottomAfterFrame();
-          },
-          onStartStream: _startStream,
-          onStopStream: _stopStream,
-          onPauseStream: _pauseStream,
-          onResumeStream: _resumeStream,
-          onClearLogs: _clearLogs,
-          onStartRecording: _startRecording,
-          onStopRecording: _stopAndPromptSave,
-          onResolvePackage: _resolvePackage,
-          onHighlightRulesChanged: () => setState(() {}),
+        Selector<DeviceProvider, bool>(
+          selector: (_, p) => p.isDeviceConnected(deviceSerial),
+          builder: (ctx, isOnline, _) => _LogcatToolbar(
+            deviceSerial: deviceSerial,
+            isOnline: isOnline,
+            tagCtrl: _tagCtrl,
+            kwCtrl: _kwCtrl,
+            pkgCtrl: _pkgCtrl,
+            ruleCtrl: _ruleCtrl,
+            highlightRules: _highlightRules,
+            customRuleColors: _customRuleColors,
+            autoScroll: _autoScroll,
+            onAutoScrollChanged: (v) {
+              setState(() => _autoScroll = v);
+              if (v) _animateToBottomAfterFrame();
+            },
+            onStartStream: _startStream,
+            onStopStream: _stopStream,
+            onPauseStream: _pauseStream,
+            onResumeStream: _resumeStream,
+            onClearLogs: _clearLogs,
+            onStartRecording: _startRecording,
+            onStopRecording: _stopAndPromptSave,
+            onResolvePackage: _resolvePackage,
+            onHighlightRulesChanged: () => setState(() {}),
+          ),
         ),
         Expanded(
           child: _LogList(

@@ -33,13 +33,30 @@ class LogcatDeviceState {
   ///     O(K*N) (indexOf + removeAt for each); with the Set it's O(K) +
   ///     a single O(N) rebuild of the list when anything actually moved.
   ///
-  /// [displayed] returns a fresh List snapshot on every access so that
-  /// Selector consumers (the log list widget) see a new identity on
-  /// every flush and rebuild — without this they'd compare identical
-  /// lists and skip the rebuild entirely.
+  /// [_displayedVersion] tracks mutations; [displayed] returns a cached
+  /// snapshot that only creates a new List when the content changed.
+  ///
+  /// IMPORTANT: any new mutator that changes [_displayedList] MUST
+  /// bump [_displayedVersion] (so the [Selector] in
+  /// `logcat_screen.dart` sees a new list identity and triggers a
+  /// rebuild). Current mutators that bump the version:
+  ///   * [flushPending]  — when a new batch is merged
+  ///   * [refilter]      — when the filter changes
+  ///   * [clear]         — when the user clicks "Clear Logs"
+  /// If you add a fourth mutator, add the bump there too or the
+  /// log list will silently stop updating.
   final List<LogEntry> _displayedList = [];
   final Set<LogEntry> _displayedSet = Set<LogEntry>.identity();
-  List<LogEntry> get displayed => List<LogEntry>.of(_displayedList);
+  int _displayedVersion = 0;
+  int _cachedVersion = -1;
+  List<LogEntry>? _cachedDisplayed;
+  List<LogEntry> get displayed {
+    if (_cachedVersion != _displayedVersion) {
+      _cachedVersion = _displayedVersion;
+      _cachedDisplayed = List<LogEntry>.of(_displayedList);
+    }
+    return _cachedDisplayed!;
+  }
 
   /// Entries received from the stream but not yet merged into [entries].
   /// Batched flush keeps the rebuild rate bounded.
@@ -74,9 +91,11 @@ class LogcatDeviceState {
     final batch = List<LogEntry>.from(pending);
     pending.clear();
     entries.addAll(batch);
+    var changed = false;
     for (final e in batch) {
       if (e.matchesFilter(filter) && _displayedSet.add(e)) {
         _displayedList.add(e);
+        changed = true;
       }
     }
     if (entries.length > _maxEntries) {
@@ -93,8 +112,10 @@ class LogcatDeviceState {
         _displayedList
           ..clear()
           ..addAll(_displayedSet);
+        changed = true;
       }
     }
+    if (changed) _displayedVersion++;
   }
 
   /// Re-filter the displayed view against the current filter.
@@ -106,6 +127,7 @@ class LogcatDeviceState {
     _displayedList
       ..clear()
       ..addAll(_displayedSet);
+    _displayedVersion++;
   }
 
   /// Wipe both the raw and displayed buffers (e.g. user clicked "clear").
@@ -114,6 +136,7 @@ class LogcatDeviceState {
     _displayedList.clear();
     _displayedSet.clear();
     pending.clear();
+    _displayedVersion++;
   }
 
   /// True if there is anything to render or display in the status bar.

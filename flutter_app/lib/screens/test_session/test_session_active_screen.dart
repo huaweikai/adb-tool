@@ -40,7 +40,6 @@ class _TestSessionActiveContentState extends State<TestSessionActiveContent>
   bool _logcatRunning = false;
   int _logcatSeconds = 0;
   Timer? _logcatTimer;
-  int _tick = 0; // incremented every second to force elapsed-time rebuilds
   StreamSubscription<String>? _recordingInterruptedSub;
 
   @override
@@ -88,10 +87,6 @@ class _TestSessionActiveContentState extends State<TestSessionActiveContent>
     super.initState();
     screenshotting = false;
     initScreenRecordState();
-    // Tick timer to keep elapsed time updated every second
-    Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() => _tick++);
-    });
     // Load the session so the provider's currentSession is set
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -178,8 +173,8 @@ class _TestSessionActiveContentState extends State<TestSessionActiveContent>
                 ),
               ),
               const SizedBox(width: 8),
-              Text(
-                fmtElapsed(DateTime.now().difference(session.startedAt)),
+              _ElapsedLabel(
+                startedAt: session.startedAt,
                 style: theme.textTheme.bodySmall,
               ),
               const SizedBox(width: 8),
@@ -833,6 +828,44 @@ class _PlanStatusDialogState extends State<_PlanStatusDialog> {
           child: Text(tr('confirm')),
         ),
       ],
+    );
+  }
+}
+
+/// Self-ticking elapsed-time label. Owns its own 1-second timer so the
+/// parent widget tree doesn't rebuild just to update this one label.
+class _ElapsedLabel extends StatefulWidget {
+  final DateTime startedAt;
+  final TextStyle? style;
+
+  const _ElapsedLabel({required this.startedAt, this.style});
+
+  @override
+  State<_ElapsedLabel> createState() => _ElapsedLabelState();
+}
+
+class _ElapsedLabelState extends State<_ElapsedLabel> {
+  late final Timer _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      fmtElapsed(DateTime.now().difference(widget.startedAt)),
+      style: widget.style,
     );
   }
 }

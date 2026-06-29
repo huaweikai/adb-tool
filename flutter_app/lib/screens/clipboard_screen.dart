@@ -35,20 +35,14 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
   @override
   void initState() {
     super.initState();
-    _textCtrl.addListener(_onTextChanged);
     _checkInstalled();
   }
 
   @override
   void dispose() {
-    _textCtrl.removeListener(_onTextChanged);
     _textCtrl.dispose();
     _focusNode.dispose();
     super.dispose();
-  }
-
-  void _onTextChanged() {
-    setState(() {});
   }
 
   Future<void> _checkInstalled() async {
@@ -323,18 +317,23 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
                         fontSize: 11,
                         color: theme.colorScheme.onSurfaceVariant)),
                 const Spacer(),
-                if (_textCtrl.text.isNotEmpty)
-                  InkWell(
-                    borderRadius: BorderRadius.circular(4),
-                    onTap: (busy || !isOnline) ? null : _clearInput,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
-                      child: Text(tr('clearInput'),
-                          style: TextStyle(
-                              fontSize: 11, color: theme.colorScheme.primary)),
-                    ),
-                  ),
+                ValueListenableBuilder(
+                  valueListenable: _textCtrl,
+                  builder: (context, TextEditingValue value, _) {
+                    if (value.text.isEmpty) return const SizedBox.shrink();
+                    return InkWell(
+                      borderRadius: BorderRadius.circular(4),
+                      onTap: (busy || !isOnline) ? null : _clearInput,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        child: Text(tr('clearInput'),
+                            style: TextStyle(
+                                fontSize: 11, color: theme.colorScheme.primary)),
+                      ),
+                    );
+                  },
+                ),
               ],
             ),
             const SizedBox(height: 8),
