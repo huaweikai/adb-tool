@@ -174,17 +174,39 @@ class _LogcatScreenState extends State<LogcatScreen> {
     final pkg = _pkgCtrl.text.trim();
     if (pkg.isEmpty || deviceSerial == null) {
       context.read<LogcatStateProvider>().setPackagePid(deviceSerial ?? '', null);
-      if (deviceSerial != null) {
-        context
-            .read<LogcatStateProvider>()
-            .updateField(deviceSerial, packageName: '');
-      }
       return;
     }
     context.read<LogcatStateProvider>().updateField(deviceSerial, packageName: pkg);
-    final pid = await context.read<ApiClient>().getPackagePid(deviceSerial, pkg);
-    if (!mounted) return;
-    context.read<LogcatStateProvider>().setPackagePid(deviceSerial, pid);
+    try {
+      final pid = await context.read<ApiClient>().getPackagePid(deviceSerial, pkg);
+      if (!mounted) return;
+      if (pid == null) {
+        _showPidNotFound(pkg);
+        context.read<LogcatStateProvider>().updateField(
+          deviceSerial,
+          packagePid: '',
+        );
+        return;
+      }
+      context.read<LogcatStateProvider>().setPackagePid(deviceSerial, pid);
+    } catch (_) {
+      if (!mounted) return;
+      _showPidNotFound(pkg);
+      context.read<LogcatStateProvider>().updateField(
+        deviceSerial,
+        packagePid: '',
+      );
+    }
+  }
+
+  void _showPidNotFound(String pkg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(tr('logcatPackagePidNotFound', {'pkg': pkg})),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 3),
+      ),
+    );
   }
 
   void _tryAutoScroll() {
@@ -1409,11 +1431,10 @@ class _PackageAutocompleteField extends StatefulWidget {
 }
 
 class _PackageAutocompleteFieldState extends State<_PackageAutocompleteField> {
-  // Per-device cached package list. Static so it survives toolbar
-  // rebuilds and tab switches; a focus event on the same deviceSerial within
-  // TTL is a pure in-memory lookup with no IO.
   static final Map<String, _PackageCacheEntry> _cache = {};
   static const Duration _ttl = Duration(seconds: 30);
+  // Sentinel entry rendered as "清除筛选" at the top of the suggestion list.
+  static final AppPackage _clearPackage = AppPackage(packageName: '', sourceDir: '');
 
   List<AppPackage> _packages = const [];
   bool _loading = false;
@@ -1421,8 +1442,6 @@ class _PackageAutocompleteFieldState extends State<_PackageAutocompleteField> {
   @override
   void initState() {
     super.initState();
-    // Adopt cached list synchronously so the first focus shows results
-    // without a network round-trip.
     final cached = _cache[widget.deviceSerial];
     if (cached != null && DateTime.now().difference(cached.fetchedAt) < _ttl) {
       _packages = cached.packages;
@@ -1432,8 +1451,6 @@ class _PackageAutocompleteFieldState extends State<_PackageAutocompleteField> {
   @override
   void didUpdateWidget(_PackageAutocompleteField old) {
     super.didUpdateWidget(old);
-    // Device switch — drop the in-memory list so the popup can't show
-    // options from device A under device B's toolbar.
     if (old.deviceSerial != widget.deviceSerial) {
       _packages = const [];
     }
@@ -1467,30 +1484,19 @@ class _PackageAutocompleteFieldState extends State<_PackageAutocompleteField> {
     }
   }
 
-  /// Compute the suggestion list shown in the TypeAheadField popup.
-  /// Returns an empty list (not null) when the popup should be empty
-  /// — the widget renders a "no items found" state for null which we
-  /// don't want for the exact-match / no-packages cases.
   Future<List<AppPackage>> _computeSuggestions(String pattern) async {
-    // Lazy fetch on first use; subsequent calls within the field's
-    // lifetime are pure in-memory filter.
     if (_packages.isEmpty) {
       await _ensureLoaded();
     }
     final typed = pattern.trim();
-    // Empty text → dump the full cached list (user can browse / scroll).
-    if (typed.isEmpty) return List.of(_packages);
-    // Exact match against any installed package — hide the popup so
-    // pressing Enter resolves the PID without forcing the user to
-    // "select" the already-correct match.
-    final hasExact = _packages.any((p) => p.packageName == typed);
-    if (hasExact) return const <AppPackage>[];
+    if (typed.isEmpty) return [_clearPackage, ..._packages];
     final q = typed.toLowerCase();
-    return _packages
+    final filtered = _packages
         .where((p) =>
             p.packageName.toLowerCase().contains(q) ||
             p.shortName.toLowerCase().contains(q))
         .toList(growable: false);
+    return [_clearPackage, ...filtered];
   }
 
   @override
@@ -1500,26 +1506,17 @@ class _PackageAutocompleteFieldState extends State<_PackageAutocompleteField> {
       width: 180,
       child: TypeAheadField<AppPackage>(
         controller: widget.controller,
-        // textInputAction.search keeps Enter semantics local — it
-        // fires onSubmitted without telling the IME to advance focus.
-        // Combined with the explicit focus request below, focus stays
-        // in the field after Enter.
+        constraints: const BoxConstraints(maxHeight: 200),
         builder: (context, textController, focusNode) => TextField(
           controller: textController,
           focusNode: focusNode,
           textInputAction: TextInputAction.search,
           onSubmitted: (_) {
-            widget.onResolve();
-            // Re-request focus so Enter doesn't leave the field
-            // empty / focused-out (Flutter's TypeAheadField keeps
-            // focus after suggestion selection; this is the "no
-            // suggestion highlighted" path).
-            FocusScope.of(context).requestFocus(FocusNode());
+            FocusScope.of(context).requestFocus(focusNode);
           },
           decoration: InputDecoration(
             labelText: tr('package'),
             labelStyle: const TextStyle(fontSize: 11),
-            isDense: true,
             contentPadding:
                 const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
             border: const OutlineInputBorder(
@@ -1535,29 +1532,36 @@ class _PackageAutocompleteFieldState extends State<_PackageAutocompleteField> {
                   )
                 : (pid != null
                     ? Padding(
-                        padding: const EdgeInsets.only(top: 12, right: 4),
+                        padding: const EdgeInsets.only(right: 4),
                         child: Text('PID:$pid',
                             style: TextStyle(
-                                fontSize: 9, color: Colors.green.shade300)),
+                                fontSize: 10,
+                                color: Colors.green.shade300,
+                                fontFamily: 'Menlo')),
                       )
                     : null),
           ),
-          style: const TextStyle(fontSize: 11, fontFamily: 'Menlo'),
-          // Trigger cache load on tap, not just on text change — the
-          // user may focus the field and scroll the popup without ever
-          // typing a character.
+          style: const TextStyle(fontSize: 12, fontFamily: 'Menlo'),
           onTap: _ensureLoaded,
         ),
         suggestionsCallback: _computeSuggestions,
-        // Show suggestions even when the user hasn't typed anything —
-        // tap focus → see full app list, then narrow by typing.
         hideOnEmpty: false,
-        // Keep suggestions visible across the (potentially long)
-        // cache refetch — better to see a slightly stale list than a
-        // flashing empty box.
         hideOnLoading: false,
         itemBuilder: (context, AppPackage pkg) {
           final theme = Theme.of(context);
+          if (pkg.packageName.isEmpty) {
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              child: Text(
+                tr('clearFilter'),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: theme.colorScheme.onSurfaceVariant,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            );
+          }
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             child: Column(
@@ -1587,14 +1591,8 @@ class _PackageAutocompleteFieldState extends State<_PackageAutocompleteField> {
             offset: widget.controller.text.length,
           );
           widget.onResolve();
-          // Re-request focus so the user can immediately refine the
-          // value or hit Enter again without first clicking back into
-          // the field.
           FocusScope.of(context).requestFocus(FocusNode());
         },
-        // Empty when exact match or no typed query but also no
-        // packages yet — show nothing rather than a misleading
-        // "no items found" toast.
         emptyBuilder: (_) => const SizedBox.shrink(),
       ),
     );

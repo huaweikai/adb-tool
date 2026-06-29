@@ -114,6 +114,7 @@ const _locSidebarZh = <String, String>{
   'deviceOfflineBanner': '设备已离线 — 所有操作已禁用，等待设备重新连接',
   'recordingInterruptedOffline': '录制已中断：设备离线，附件无法获取',
   'logcatRecordingInterruptedOffline': '录制已结束：设备离线，日志已自动停止',
+  'logcatPackagePidNotFound': '未找到运行中的 {pkg}（应用未运行或 adb shell pidof 不可用）',
   'dismiss': '忽略',
   'confirmShutdown': '确认关闭',
   'shutdownHint': '关闭后端服务后，需要手动重启应用或点击重启按钮',
@@ -249,6 +250,8 @@ const _locSidebarEn = <String, String>{
       'Recording interrupted: device offline, attachment unavailable',
   'logcatRecordingInterruptedOffline':
       'Recording ended: device offline, log capture stopped automatically',
+  'logcatPackagePidNotFound':
+      'No running PID for {pkg} (app not running, or `adb shell pidof` unavailable on device)',
   'dismiss': 'Dismiss',
   'confirmShutdown': 'Confirm Shutdown',
   'shutdownHint':

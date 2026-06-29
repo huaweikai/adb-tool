@@ -222,24 +222,7 @@ class LogcatStateProvider extends ChangeNotifier {
     state.userStopped = false;
     _svc.connect(serial, state.filter);
     state.streaming = true;
-
-    _logSubs[serial]?.cancel();
-    _logSubs[serial] = _svc.streamFor(serial).listen((batch) {
-      if (batch.isEmpty) return;
-      state.pending.addAll(batch);
-      // Coalesce: flush immediately if we hit the burst threshold,
-      // otherwise the periodic flush timer in the screen handles it.
-      if (state.pending.length >= 300) {
-        _flush(serial);
-      }
-    });
-
-    _connSubs[serial]?.cancel();
-    _connSubs[serial] = _svc.connectionStateFor(serial).listen((connected) {
-      state.wsConnected = connected;
-      _notify();
-    });
-
+    _wireSubscriptions(serial);
     _notify();
   }
 
@@ -286,6 +269,8 @@ class LogcatStateProvider extends ChangeNotifier {
     String? packagePid,
   }) {
     final state = stateFor(serial);
+    final needsRestart = (priority != null && priority != state.filter.priority) ||
+        (packagePid != null && packagePid != state.filter.packagePid);
     if (tag != null) state.filter.tag = tag;
     if (keyword != null) state.filter.keyword = keyword;
     if (packageName != null) state.filter.packageName = packageName;
@@ -293,7 +278,11 @@ class LogcatStateProvider extends ChangeNotifier {
     if (packagePid != null) state.filter.packagePid = packagePid;
     state.refreshDisplayed();
     if (state.streaming) {
-      _svc.updateFilter(serial, state.filter);
+      if (needsRestart) {
+        _restartStream(serial);
+      } else {
+        _svc.updateFilter(serial, state.filter);
+      }
     }
     _notify();
   }
@@ -348,9 +337,12 @@ class LogcatStateProvider extends ChangeNotifier {
     final state = stateFor(serial);
     state.packagePid = pid;
     state.filter.packagePid = pid ?? '';
+    if (pid == null) {
+      state.filter.packageName = '';
+    }
     state.refreshDisplayed();
     if (state.streaming) {
-      _svc.updateFilter(serial, state.filter);
+      _restartStream(serial);
     }
     _notify();
   }
@@ -429,6 +421,40 @@ class LogcatStateProvider extends ChangeNotifier {
   void _notify() {
     if (_disposed) return;
     notifyListeners();
+  }
+
+  /// Wire up stream and connection-state subscriptions for [serial].
+  /// Shared by [startStream] and [_restartStream] to avoid duplicating
+  /// the listener setup.
+  void _wireSubscriptions(String serial) {
+    final state = stateFor(serial);
+    _logSubs[serial]?.cancel();
+    _logSubs[serial] = _svc.streamFor(serial).listen((batch) {
+      if (batch.isEmpty) return;
+      state.pending.addAll(batch);
+      if (state.pending.length >= 300) {
+        _flush(serial);
+      }
+    });
+    _connSubs[serial]?.cancel();
+    _connSubs[serial] = _svc.connectionStateFor(serial).listen((connected) {
+      state.wsConnected = connected;
+      _notify();
+    });
+  }
+
+  /// Restart the backend logcat process with the current filter.
+  /// Properly tears down the old channel and re-subscribes to the new
+  /// one's stream so logs keep flowing. Used by [updateField] and
+  /// [setPackagePid] when a priority / --pid change requires a process
+  /// restart.
+  void _restartStream(String serial) {
+    final state = stateFor(serial);
+    _logSubs.remove(serial)?.cancel();
+    _connSubs.remove(serial)?.cancel();
+    _svc.stop(serial);
+    _svc.connect(serial, state.filter);
+    _wireSubscriptions(serial);
   }
 
   @override

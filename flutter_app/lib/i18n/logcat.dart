@@ -39,6 +39,7 @@ const _locLogcatZh = <String, String>{
   'logcatRecordStopFailed': '停止录制失败：{error}',
   'logcatSaveDialogTitle': '保存录制的日志',
   'logcatSavedToLocal': '已保存到 {path}',
+  'clearFilter': '清除筛选',
 };
 
 const _locLogcatEn = <String, String>{
@@ -79,4 +80,5 @@ const _locLogcatEn = <String, String>{
   'logcatRecordStopFailed': 'Stop recording failed: {error}',
   'logcatSaveDialogTitle': 'Save recorded log',
   'logcatSavedToLocal': 'Saved to {path}',
+  'clearFilter': 'Clear filter',
 };
