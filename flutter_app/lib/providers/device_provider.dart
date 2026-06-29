@@ -23,6 +23,15 @@ class DeviceTransportSummary {
 DeviceTransportType transportTypeForSerial(String serial) {
   if (serial.isEmpty) return DeviceTransportType.unknown;
   if (serial.contains(':')) return DeviceTransportType.wifi;
+  // Android 14+ wireless debugging uses mDNS-resolved TLS-paired
+  // transports named like `adb-<serial>.<fingerprint>._adb-tls-connect._tcp`.
+  // The adb daemon connects to them automatically once the user enables
+  // wireless debugging on the device. They don't contain `:` so we have
+  // to detect them by suffix — otherwise they'd be mis-classified as USB
+  // and the wireless disconnect button would route to the wrong transport.
+  if (serial.endsWith('._tcp') || serial.contains('._tcp.')) {
+    return DeviceTransportType.wifi;
+  }
   return DeviceTransportType.usb;
 }
 
@@ -181,6 +190,43 @@ class DeviceProvider extends ChangeNotifier {
     final transports = transportsFor(stableSerial);
     if (transports.isEmpty) return null;
     return transports.first.serial;
+  }
+
+  /// The current Wi-Fi transport of [stableSerial], or `null` if the
+  /// device is only reachable over USB / offline / unknown.
+  ///
+  /// Use this for **Wi-Fi-specific** operations (e.g. wireless
+  /// disconnect, which must target the `ip:port` transport — calling
+  /// `adb disconnect <usb-serial>` fails with "no such device").
+  /// For ordinary adb command routing keep using `onlineAddressFor`
+  /// (USB preferred).
+  ///
+  /// When the device exposes multiple Wi-Fi transports (e.g. the
+  /// user manually `adb connect <ip:port>` on top of the auto-created
+  /// mDNS `adb-<serial>._adb-tls-connect._tcp` one) the **legacy
+  /// `ip:port` transport is preferred** — that's the one the user
+  /// actually created with `adb connect`, so disconnecting it is the
+  /// expected behavior. Disconnecting the mDNS one would just have
+  /// the device re-create it a moment later. If only the mDNS one
+  /// exists, that one is returned (best effort — disconnecting it
+  /// may be transient).
+  Device? wifiTransportFor(String stableSerial) {
+    final wifiTransports = transportsFor(stableSerial)
+        .where((d) => transportTypeForSerial(d.serial) == DeviceTransportType.wifi)
+        .toList();
+    // Prefer the legacy `ip:port` form (user-initiated) over the
+    // mDNS `_tcp` form (system-initiated, re-created on disconnect).
+    return wifiTransports
+        .where((d) => d.serial.contains(':'))
+        .followedBy(wifiTransports.where((d) => !d.serial.contains(':')))
+        .firstOrNull;
+  }
+
+  /// Whether [stableSerial] currently has a live Wi-Fi transport.
+  /// Cheap alternative to `wifiTransportFor(stable) != null` for UI
+  /// gating (e.g. show / hide the "disconnect wireless" button).
+  bool hasWifiTransport(String stableSerial) {
+    return wifiTransportFor(stableSerial) != null;
   }
 
   String? modelFor(String stableSerial) {
@@ -404,11 +450,22 @@ class DeviceProvider extends ChangeNotifier {
       _onlineDevices = devices;
       _online = true;
       _lastSuccessfulRefresh = DateTime.now();
-      notifyListeners();
 
       // Persistence is best-effort: a DB hiccup must never make the
       // backend look disconnected to the user. Capture the failure into
       // _lastDbError so the UI can show a separate, non-fatal warning.
+      //
+      // notifyListeners is called ONCE at the end (instead of twice —
+      // once before persistence and once after), so the UI rebuilds
+      // a single time per refresh. Two rebuilds back-to-back were
+      // observed to trip the Windows a11y bridge into
+      // UNREACHABLE and crash the app when the savedDevices list
+      // changed shape (e.g. first device plugged in → empty list
+      // becomes a 1-item list, plus 3 transports reconciling in
+      // quick succession). The "DB failure must not roll the UI
+      // back to offline" contract is preserved because _online and
+      // _onlineDevices are set before the persistence try-block
+      // runs and stay set even if persistence throws.
       String? dbError;
       try {
         for (final device in devices) {
@@ -433,11 +490,12 @@ class DeviceProvider extends ChangeNotifier {
 
       _savedDevices = await db.savedDevicesDao.getAllSavedDevices();
 
-      // Update the DB error indicator (clear it on success, set on failure).
+      // Update the DB error indicator (clear it on success, set on failure)
+      // and emit a single rebuild for the whole refresh.
       if (_lastDbError != dbError) {
         _lastDbError = dbError;
-        notifyListeners();
       }
+      notifyListeners();
     } catch (e, st) {
       debugPrint('[DeviceProvider] _refresh EXCEPTION: $e');
       debugPrint('[DeviceProvider] STACK: $st');

@@ -5,10 +5,8 @@
 //
 // Reproduces the original bug (assertion-style) and verifies the fix
 // cascades sessions out before deleting the device.
-import 'package:adb_tool/db/dao/saved_devices_dao.dart';
 import 'package:adb_tool/db/database.dart';
 import 'package:adb_tool/models/test_session.dart';
-import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 

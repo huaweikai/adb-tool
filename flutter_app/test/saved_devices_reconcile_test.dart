@@ -9,12 +9,20 @@
 // offline when the migration ran) gets its PK renamed to
 // `ro.serialno` on first reconnect, with the test_sessions /
 // scrcpy_options FKs updated atomically.
-import 'package:adb_tool/db/dao/saved_devices_dao.dart';
+//
+// Known limitation: a wireless device that was offline at migration
+// time AND whose next reconnect lands on a brand-new `ip:port`
+// (router reboot, ADB port pool rotation, ...) has no signature left
+// in the DB to match it back to its old row — the old row only
+// carries the previous `ip:port` and a now-stale address. In that
+// case the system creates a fresh stable row, and the old legacy
+// row is left behind for the user to remove. Acceptable for now;
+// a stronger match (model/brand/sdk fingerprint) would risk
+// merging unrelated same-model devices.
 import 'package:adb_tool/db/database.dart';
 import 'package:adb_tool/models/device.dart';
 import 'package:adb_tool/models/scrcpy_options.dart';
 import 'package:adb_tool/models/test_session.dart';
-import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -205,8 +213,8 @@ void main() {
       expect(all.first.serial, _hw);
     });
 
-    test('wireless device reconnects on a port we have NEVER seen: '
-        'legacy row upgraded via PK rename', () async {
+    test('legacy wireless row is upgraded when the device reconnects '
+        'on the same ip:port it had before (PK rename)', () async {
       // Offline wireless device from before the migration: PK is
       // the old adb-serial, no ro.serialno known yet.
       const oldAdbSerial = '192.168.31.141:55555';

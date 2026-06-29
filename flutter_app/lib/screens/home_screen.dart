@@ -742,7 +742,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         children: [
           _buildHeader(theme),
           const Divider(height: 1),
-          Expanded(child: _buildDeviceTree(theme, devices)),
+          Expanded(
+            child: _DeviceTreeArea(
+              expandedSerials: _expandedSerials,
+              activeDeviceSerials: {
+                for (final entry in _screens.entries)
+                  if (entry.value.serial != null) entry.value.serial!,
+              },
+              activeKey: _activeKey,
+              onToggleExpand: _toggleExpand,
+              onRemoveDevice: _removeDevice,
+              onNavigateTo: _navigateTo,
+            ),
+          ),
           const Divider(height: 1),
           _buildGlobalEntry(
             theme,
@@ -1119,47 +1131,125 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       ),
     );
   }
+}
 
-  Widget _buildDeviceTree(ThemeData theme, List<SavedDevice> devices) {
-    if (devices.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.phone_android,
-                  size: 40,
-                  color: theme.colorScheme.onSurfaceVariant.withAlpha(100)),
-              const SizedBox(height: 8),
-              Text(tr('noDevices'),
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-              const SizedBox(height: 4),
-              Text(tr('noDevicesHint'),
-                  style: TextStyle(
-                      fontSize: 10,
-                      color:
-                          theme.colorScheme.onSurfaceVariant.withAlpha(150))),
-            ],
-          ),
-        ),
-      );
-    }
+/// Sidebar list of saved devices. Split out from [_HomeScreenState] so
+/// `DeviceProvider.notifyListeners()` only rebuilds *this* subtree
+/// instead of the whole `HomeScreen` (which would also rebuild the
+/// `IndexedStack` of per-device screens, the top toolbar, the
+/// backend-log/test-config entries, etc.). On Windows the previous
+/// "rebuild everything" pattern combined with rapid list-shape changes
+/// (e.g. first device plugged in flipping the empty-state branch into
+/// a non-empty `ListView` mid-rebuild) tripped the a11y bridge into
+/// `UNREACHABLE` and crashed the app.
+///
+/// State owned by [_HomeScreenState] (parent) is passed in as
+/// immutable inputs + callbacks; the widget itself does not hold any
+/// mutable state — the consumer-driven rebuild path is enough for
+/// what this widget needs to do.
+class _DeviceTreeArea extends StatelessWidget {
+  const _DeviceTreeArea({
+    required this.expandedSerials,
+    required this.activeDeviceSerials,
+    required this.activeKey,
+    required this.onToggleExpand,
+    required this.onRemoveDevice,
+    required this.onNavigateTo,
+  });
 
-    return ListView(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      children:
-          devices.map((d) => _buildDeviceNode(context, d, theme)).toList(),
+  /// Stable identities (SavedDevice.serial = ro.serialno) whose
+  /// function-item list is currently expanded.
+  final Set<String> expandedSerials;
+
+  /// Stable identities that own a cached screen in the right-hand
+  /// `IndexedStack` — used to highlight the active device row.
+  /// Derived from the parent's `_screens` map.
+  final Set<String> activeDeviceSerials;
+
+  /// The currently focused screen key (`${serial}_${item.name}`).
+  /// Used to render the per-row active highlight for function items.
+  final String? activeKey;
+
+  final void Function(String serial) onToggleExpand;
+  final void Function(String serial) onRemoveDevice;
+  final void Function(String serial, NavItem item) onNavigateTo;
+
+  // Static dot color helper — kept here to avoid leaking theme
+  // coloring into the parent. Mirrors the original
+  // _HomeScreenState._statusDotColor.
+  static Color _statusDotColor(ThemeData theme, bool isConnected) =>
+      isConnected ? Colors.green.shade400 : theme.colorScheme.error;
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<DeviceProvider>(
+      builder: (context, deviceProvider, _) {
+        final devices = deviceProvider.savedDevices;
+        final theme = Theme.of(context);
+
+        if (devices.isEmpty) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.phone_android,
+                      size: 40,
+                      color: theme.colorScheme.onSurfaceVariant
+                          .withAlpha(100)),
+                  const SizedBox(height: 8),
+                  Text(tr('noDevices'),
+                      style: theme.textTheme.bodySmall
+                          ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                  const SizedBox(height: 4),
+                  Text(tr('noDevicesHint'),
+                      style: TextStyle(
+                          fontSize: 10,
+                          color: theme.colorScheme.onSurfaceVariant
+                              .withAlpha(150))),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return ListView(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          // KeyedSubtree around each child: without an explicit Key,
+          // Flutter falls back to position-based matching for
+          // ListView's direct children. When the savedDevices list
+          // changes shape (insert / remove / reorder) the lack of a
+          // stable key causes the per-row element/state to drift to
+          // the wrong row — on Windows that combination with rapid
+          // rebuilds can trip the a11y tree into UNREACHABLE and
+          // crash the app. Stable keys tie each row to its
+          // SavedDevice.serial (= stable identity) so expanded /
+          // active / cached-screen state stays correct.
+          children: devices
+              .map((d) => KeyedSubtree(
+                    key: ValueKey('device-node:${d.serial}'),
+                    child: _buildDeviceNode(context, d, theme),
+                  ))
+              .toList(),
+        );
+      },
     );
   }
 
   Widget _buildDeviceNode(
       BuildContext context, SavedDevice d, ThemeData theme) {
-    final isExpanded = _expandedSerials.contains(d.serial);
-    final hasActiveScreen =
-        _screens.keys.any((k) => k.startsWith('${d.serial}_'));
+    final isExpanded = expandedSerials.contains(d.serial);
+    final hasActiveScreen = activeDeviceSerials.contains(d.serial);
     final isConnected = d.isConnected;
+    // SavedDevice.serial is the stable identity (ro.serialno, e.g.
+    // 'R5CT70AHPDR'); its current Wi-Fi transport (if any) lives on
+    // the DeviceProvider's online list. We must NOT gate the
+    // disconnect button on the serial string itself (e.g. `contains(':')`)
+    // — the stable identity never contains ':' once the row is
+    // upgraded past v9 migration, so the button would vanish.
+    final hasWifi =
+        context.read<DeviceProvider>().hasWifiTransport(d.serial);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1169,7 +1259,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ? theme.colorScheme.primaryContainer.withAlpha(80)
               : Colors.transparent,
           child: InkWell(
-            onTap: () => _toggleExpand(d.serial),
+            onTap: () => onToggleExpand(d.serial),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               child: Row(
@@ -1197,9 +1287,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  // ConstrainedBox caps the serial so it can't push the row
-                  // past available width when the sidebar is at its min (200px)
-                  // and the row has sync_problem/remove/disconnect icons attached.
+                  // ConstrainedBox caps the serial so it can't push
+                  // the row past available width when the sidebar is
+                  // at its min (200px) and the row has
+                  // sync_problem/remove/disconnect icons attached.
                   ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 80),
                     child: Text(
@@ -1228,16 +1319,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       message: tr('removeDevice'),
                       child: InkWell(
                         borderRadius: BorderRadius.circular(4),
-                        onTap: () => _removeDevice(d.serial),
+                        onTap: () => onRemoveDevice(d.serial),
                         child: const Padding(
                           padding: EdgeInsets.only(left: 4),
                           child: Icon(Icons.close, size: 14),
                         ),
                       ),
                     ),
-                  // Disconnect wireless button (only for wireless devices)
-                  if (isConnected &&
-                      (d.serial.contains(':') || d.serial.contains('_tcp')))
+                  // Disconnect wireless button — show only when the
+                  // device currently has a live Wi-Fi transport to
+                  // disconnect from. The disconnect target is the
+                  // `ip:port` of that transport, not the saved PK.
+                  if (isConnected && hasWifi)
                     _disconnectButton(context, d),
                 ],
               ),
@@ -1289,14 +1382,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       ),
     );
     if (ok != true) return;
-    // adb-wireless-disconnect takes the live adb address (ip:port),
-    // not the saved device's PK (= ro.serialno). Resolve the current
-    // preferred transport; bail out cleanly if the device isn't
-    // online / we don't know its address.
-    final adbAddress =
-        context.read<DeviceProvider>().onlineAddressFor(d.serial);
-    if (adbAddress == null || adbAddress.isEmpty) {
-      if (!mounted || !context.mounted) return;
+    // adb-wireless-disconnect takes the **Wi-Fi transport address**
+    // (ip:port), not the saved device's PK (ro.serialno) and not
+    // `onlineAddressFor` (which is USB-preferred and would hand back
+    // a USB serial — `adb disconnect <usb-serial>` is a no-op or an
+    // error). Resolve the current Wi-Fi transport explicitly.
+    if (!context.mounted) return;
+    final wifiTransport =
+        context.read<DeviceProvider>().wifiTransportFor(d.serial);
+    if (wifiTransport == null) {
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(tr('disconnectFailed', {'name': d.displayName})),
@@ -1305,8 +1400,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       );
       return;
     }
-    final result = await api.disconnectWirelessAdb(adbAddress);
-    if (!mounted || !context.mounted) return;
+    final result = await api.disconnectWirelessAdb(wifiTransport.serial);
+    if (!context.mounted) return;
     if (result.ok) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -1331,12 +1426,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       BuildContext context, SavedDevice d, NavItem item, ThemeData theme) {
     final key = '${d.serial}_${item.name}';
     final c = _navConfig[item]!;
-    final isActive = _activeKey == key;
+    final isActive = activeKey == key;
 
     return Material(
       color: isActive ? theme.colorScheme.primaryContainer : Colors.transparent,
       child: InkWell(
-        onTap: () => _navigateTo(d.serial, item),
+        onTap: () => onNavigateTo(d.serial, item),
         child: Padding(
           padding:
               const EdgeInsets.only(left: 42, right: 12, top: 6, bottom: 6),
@@ -1348,12 +1443,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       ? theme.colorScheme.primary
                       : theme.colorScheme.onSurfaceVariant),
               const SizedBox(width: 10),
-              // Expanded with ellipsis: at min sidebar width (200px) the
-              // available width is ~146px; long labels like "Test Session Hub"
-              // / "Screen Mirror" would otherwise overflow the row.
+              // Expanded with ellipsis: at min sidebar width (200px)
+              // the available width is ~146px; long labels like
+              // "Test Session Hub" / "Screen Mirror" would otherwise
+              // overflow the row.
               Expanded(
                 child: Text(
-                  navLabel(item),
+                  tr(_navConfig[item]!.label),
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
