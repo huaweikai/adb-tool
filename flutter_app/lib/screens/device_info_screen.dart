@@ -100,6 +100,7 @@ class _DeviceInfoScreenState extends State<DeviceInfoScreen> {
           }
         } else {
           if (!mounted) return;
+          final editorCtx = context;
           await Navigator.push(
             context,
             MaterialPageRoute(
@@ -108,7 +109,7 @@ class _DeviceInfoScreenState extends State<DeviceInfoScreen> {
                       configs: kImageEditorConfigs,
                       callbacks: ProImageEditorCallbacks(
                         onImageEditingComplete: (edited) async {
-                          if (!context.mounted) return;
+                          if (!editorCtx.mounted) return;
                           final location = await getSaveLocation(
                             suggestedName:
                                 'screenshot-${DateTime.now().millisecondsSinceEpoch}.png',
@@ -116,6 +117,9 @@ class _DeviceInfoScreenState extends State<DeviceInfoScreen> {
                           );
                           if (location != null) {
                             await File(location.path).writeAsBytes(edited);
+                          }
+                          if (editorCtx.mounted) {
+                            Navigator.of(editorCtx).pop(edited);
                           }
                         },
                       ),

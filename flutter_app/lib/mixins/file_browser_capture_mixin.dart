@@ -325,6 +325,10 @@ mixin FileBrowserCaptureMixin<T extends StatefulWidget> on State<T> {
         await onScreenshotSaved(bytes, localPath);
       } else {
         if (!mounted) return;
+        // Capture the outer context so we can pop the editor route
+        // ourselves after the async callback completes — ProImageEditor
+        // 9.x does not auto-pop once the callback goes async.
+        final editorCtx = context;
         await Navigator.push(
           context,
           MaterialPageRoute(
@@ -346,6 +350,9 @@ mixin FileBrowserCaptureMixin<T extends StatefulWidget> on State<T> {
                     await sessionProvider.saveScreenshotBytes(edited);
                   }
                   await onScreenshotSaved(edited, localPath);
+                  if (editorCtx.mounted) {
+                    Navigator.of(editorCtx).pop(edited);
+                  }
                 },
               ),
             ),
