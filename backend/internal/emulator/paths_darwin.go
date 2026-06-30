@@ -41,12 +41,34 @@ func defaultSDKSystemPaths(home string) []string {
 }
 
 // defaultJavaSystemPaths returns macOS well-known Java binary paths.
+//
+// Order matters — earlier entries are probed first. We deliberately list
+// any real JDK installs under /Library/Java/JavaVirtualMachines/ BEFORE
+// `/usr/bin/java`, because the Apple stub at /usr/bin/java hangs when
+// invoked from a GUI-app subprocess (the stub does launchd IPC with
+// java_helper that never completes outside an interactive Terminal).
+//
+// Sources for the JDK layout: Adoptium, Azul Zulu, Oracle — all install
+// under `/Library/Java/JavaVirtualMachines/<name>/Contents/Home/bin/java`
+// with `/Contents/Home` being JAVA_HOME.
 func defaultJavaSystemPaths(home string) []string {
-	return []string{
+	paths := []string{
 		"/Library/Internet Plug-Ins/JavaAppletPlugin.plugin/Contents/Home/bin/java",
-		"/usr/bin/java",
 		filepath.Join(home, ".jenv", "shims", "java"),
 	}
+	// Discover any installed real JDK at the standard Adoptium/Oracle
+	// path. filepath.Glob expands the wildcard at probe time, so the
+	// returned list always reflects what's actually on disk.
+	if matches, err := filepath.Glob("/Library/Java/JavaVirtualMachines/*/Contents/Home/bin/java"); err == nil {
+		paths = append(paths, matches...)
+	}
+	// Apple stub last — only used if nothing else is present. We deliberately
+	// keep it in the list so users without a JDK (just Apple stub) still get
+	// a JavaPath; they just have to install a real JDK before using
+	// sdkmanager / emulator (the stub will hang regardless of how we spawn
+	// it).
+	paths = append(paths, "/usr/bin/java")
+	return paths
 }
 
 // adoptiumOSName returns the Adoptium OS token for the current platform.

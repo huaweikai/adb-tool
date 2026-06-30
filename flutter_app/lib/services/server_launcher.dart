@@ -221,6 +221,13 @@ class ServerLauncher {
       '/usr/local/bin',
     ];
 
+    // PATH-environment-variable separator (':'' on Unix, ';' on Windows).
+    // NB: NOT to be confused with Platform.pathSeparator, which is the
+    // file-path component separator ('/' on Unix, '\\' on Windows). Using
+    // the wrong one corrupts PATH values into slash-joined nonsense, which
+    // is exactly the bug that broke sdkmanager spawn with exit 127.
+    final envSep = Platform.isWindows ? ';' : ':';
+
     // Sanity check: a valid PATH on a real desktop is at least a few
     // dozen chars (e.g. "/usr/bin:/bin:/usr/local/bin:/opt/...").
     // A < 100 char PATH usually means the rc file failed to source.
@@ -243,16 +250,16 @@ class ServerLauncher {
     // 2. User's existing Flutter-app PATH (Flutter ships some tools
     //    via dart / snap / brew on macOS).
     if (existingPath != null && existingPath.isNotEmpty) {
-      for (final d in existingPath.split(Platform.pathSeparator)) {
+      for (final d in existingPath.split(envSep)) {
         add(d);
       }
     }
     // 3. Shell PATH last (highest priority — Homebrew, rbenv, etc.).
-    for (final d in shellPath.split(Platform.pathSeparator)) {
+    for (final d in shellPath.split(envSep)) {
       add(d);
     }
 
-    return merged.join(Platform.pathSeparator);
+    return merged.join(envSep);
   }
 
   Future<void> stop() {

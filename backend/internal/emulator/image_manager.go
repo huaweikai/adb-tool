@@ -125,9 +125,21 @@ func (im *ImageManager) ScanAndRegister(path string) (int, error) {
 	log.Printf("[image] ScanAndRegister: found %d image(s) under %s", len(scanned), path)
 
 	now := time.Now().Format(time.RFC3339)
+	// Only persist entries that pass the on-disk validity check (have a
+	// system.img in place). Bogus directories that pass our layout guard
+	// but still don't have a real system image go to "no persist" rather
+	// than polluting the registry with `valid: false` rows the UI has
+	// to filter out. Past-tense entries that are already invalid in
+	// the registry are also pruned via reconcileRegistryLocked so the
+	// user can recover from earlier bad scans without manually editing
+	// `images.json`.
 	regImages := make([]RegisteredImage, 0, len(scanned))
 	for _, s := range scanned {
 		valid := imagePathValid(s.LocalPath)
+		if !valid {
+			log.Printf("[image] ScanAndRegister:   skip non-image dir (no system.img) path=%s", s.LocalPath)
+			continue
+		}
 		log.Printf("[image] ScanAndRegister:   register id=%s valid=%v path=%s", s.ID, valid, s.LocalPath)
 		regImages = append(regImages, RegisteredImage{
 			ID:             s.ID,
@@ -146,12 +158,31 @@ func (im *ImageManager) ScanAndRegister(path string) (int, error) {
 	imageRegistryMu.Lock()
 	defer imageRegistryMu.Unlock()
 	merged := registerImagesLocked(regImages)
+	merged = reconcileRegistryLocked(merged)
 	if err := saveRegisteredImagesLocked(merged); err != nil {
 		log.Printf("[image] ScanAndRegister: save failed: %v", err)
 		return 0, err
 	}
 	log.Printf("[image] ScanAndRegister: registry now has %d entry(ies) total", len(merged))
 	return len(scanned), nil
+}
+
+// reconcileRegistryLocked drops registered entries that no longer hold a
+// usable on-disk image (the path is gone, or the directory lacks a
+// system.img). It is the safety net for stale bogus entries left in the
+// persisted registry by earlier scans before the layout guard existed.
+//
+// Returns the pruned list. Caller must hold imageRegistryMu.
+func reconcileRegistryLocked(images []RegisteredImage) []RegisteredImage {
+	pruned := make([]RegisteredImage, 0, len(images))
+	for _, e := range images {
+		if !imagePathValid(e.Path) {
+			log.Printf("[image] reconcile: drop stale registry entry id=%s path=%s", e.ID, e.Path)
+			continue
+		}
+		pruned = append(pruned, e)
+	}
+	return pruned
 }
 
 // scanSystemImagesDir scans a directory for system images.
@@ -169,7 +200,21 @@ func (im *ImageManager) scanSystemImagesDir(baseDir string) []*SystemImage {
 		}
 
 		apiLevelDir := entry.Name() // e.g., "android-34"
+
+		// Layout guard: only treat entries that follow the canonical
+		// cmdline-tools system-image layout (`android-<level>`) as
+		// candidate api-level directories. Without this, scanning an SDK
+		// root like `…/sdk` happily walks `build-tools/<ver>/lib`,
+		// `cmake/<ver>/bin`, `platforms/<android-XX>`, etc. as if they
+		// were system-image directories and registers them as bogus
+		// entries with valid=false littering the registry.
+		if !strings.HasPrefix(apiLevelDir, "android-") {
+			continue
+		}
 		apiLevel := im.parseAPILevel(apiLevelDir)
+		if apiLevel <= 0 {
+			continue
+		}
 
 		variantDir := filepath.Join(baseDir, entry.Name())
 		variants, _ := os.ReadDir(variantDir)

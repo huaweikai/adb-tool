@@ -1921,13 +1921,14 @@ func (s *Server) handleEmulatorSDKInstall(w http.ResponseWriter, r *http.Request
 
 	sdkmanagerPath := EmulatorEngine.SdkmanagerPath
 	sdkPath := EmulatorEngine.AndroidHome
+	javaPath := EmulatorEngine.JavaPath
 	if sdkmanagerPath == "" || sdkPath == "" {
 		writeAPIError(w, http.StatusBadRequest,
 			"SDK not selected or sdkmanager not available — pick an SDK first")
 		return
 	}
 
-	job, err := SDKInstaller.Start(sdkmanagerPath, sdkPath, req.Packages)
+	job, err := SDKInstaller.Start(sdkmanagerPath, sdkPath, javaPath, req.Packages)
 	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
