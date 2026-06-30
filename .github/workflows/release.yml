@@ -74,9 +74,11 @@ jobs:
           path: dist/macos/*.dmg
 
   build-macos-amd64:
-    # Intel x86_64 runner,原生 amd64 —— 这是打 amd64 包唯一稳的路
-    # (M 系列 runner 走 Rosetta 跑 codesign 会挂,跟本机 M2 一样)
-    runs-on: macos-13
+    # Intel x86_64 runner, 原生 amd64 —— macos-13 runner 已于 2025-12
+    # 下线,GitHub 当前的 Intel 选项是 macos-15-intel(预计可用到 2027-08,
+    # 之后托管 macOS runner 全面转向 arm64)。保持 --arch amd64,build.sh
+    # 在 Intel runner 上跑 native x86_64 build,不需要 Rosetta。
+    runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v4
 
