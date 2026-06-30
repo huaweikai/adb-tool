@@ -14,7 +14,6 @@ import '../i18n.dart';
 import '../widgets/loading_view.dart';
 import '../widgets/error_view.dart';
 import '../widgets/file_transfer.dart';
-import '../widgets/video_preview.dart';
 import '../widgets/safe_dialog.dart';
 import '../widgets/transfer_progress_overlay.dart';
 import '../widgets/file_sheet_actions.dart';
@@ -101,28 +100,42 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
 
   @override
   Future<void> onScreenshotSaved(Uint8List bytes, String? localPath) async {
-    final location = await getSaveLocation(
-      suggestedName: 'screenshot-${DateTime.now().millisecondsSinceEpoch}.png',
-      confirmButtonText: tr('saveScreenshot'),
+    // The mixin has already shown the save dialog and written the file
+    // (when localPath != null). Only confirm with a snackbar here —
+    // showing another getSaveLocation would pop the dialog a second
+    // time. If the user cancelled in the mixin's dialog, localPath is
+    // null and there is nothing to confirm.
+    if (localPath == null) return;
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(tr('savedTo', {'path': localPath})),
+        behavior: SnackBarBehavior.floating,
+      ),
     );
-    if (location != null) {
-      await File(location.path).writeAsBytes(bytes);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(tr('savedTo', {'path': location.path})),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    }
   }
 
   @override
   Future<void> onVideoSaved(Uint8List bytes) async {
+    // The in-app preview is disabled (see lib/widgets/video_preview.dart).
+    // Hand the bytes straight to the user: pop a save-location picker
+    // and write the file. If the user cancels, the bytes are dropped
+    // (the backend's recording is already saved on-device under its
+    // own folder).
+    if (bytes.isEmpty) return;
     if (!mounted) return;
-    showDialog(
-      context: context,
-      builder: (_) => VideoPreview(videoBytes: bytes),
+    final location = await getSaveLocation(
+      suggestedName: 'screen-record-${DateTime.now().millisecondsSinceEpoch}.mp4',
+      confirmButtonText: tr('saveRecording'),
+    );
+    if (location == null) return;
+    await File(location.path).writeAsBytes(bytes);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(tr('recordingSaved', {'path': location.path})),
+        behavior: SnackBarBehavior.floating,
+      ),
     );
   }
 
