@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 )
 
 // DownloadType represents the type of download.
@@ -112,7 +113,9 @@ func (dm *DownloadManager) runDownload(item *DownloadItem) {
 		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", startPos))
 	}
 
-	client := &http.Client{}
+	client := &http.Client{
+		Timeout: 30 * time.Minute, // 30 minutes timeout for large downloads
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		file.Close()
