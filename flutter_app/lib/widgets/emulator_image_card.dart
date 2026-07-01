@@ -72,7 +72,7 @@ class EmulatorImageCard extends StatelessWidget {
               const SizedBox(height: 12),
               _buildDownloadProgress(),
             ],
-            if (image.isReady) ...[
+            if (image.isReady || image.status == EmulatorImageStatus.error) ...[
               const SizedBox(height: 12),
               _buildActions(context),
             ],

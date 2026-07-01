@@ -1024,15 +1024,39 @@ Widget _infoChip(IconData icon, String label, {required bool isReady}) {
             ],
           ),
           const SizedBox(height: 12),
-          TextField(
-            controller: _importPathController,
-            decoration: InputDecoration(
-              hintText: tr('engineCard.zipHint'),
-              hintStyle: TextStyle(color: Colors.grey.shade400),
-              isDense: true,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              border: const OutlineInputBorder(),
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _importPathController,
+                  decoration: InputDecoration(
+                    hintText: tr('engineCard.zipHint'),
+                    hintStyle: TextStyle(color: Colors.grey.shade400),
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    border: const OutlineInputBorder(),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton.filledTonal(
+                onPressed: () async {
+                  final file = await openFile(
+                    acceptedTypeGroups: [
+                      XTypeGroup(
+                        label: 'ZIP',
+                        extensions: ['zip'],
+                      ),
+                    ],
+                  );
+                  if (file != null) {
+                    _importPathController.text = file.path;
+                  }
+                },
+                icon: const Icon(Icons.folder_open, size: 20),
+                tooltip: tr('engineCard.browseZip'),
+              ),
+            ],
           ),
           const SizedBox(height: 8),
           Text(

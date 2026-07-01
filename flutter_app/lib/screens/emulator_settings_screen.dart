@@ -18,6 +18,7 @@ import '../widgets/add_image_dialog.dart';
 import '../widgets/emulator_instance_card.dart';
 import '../widgets/create_instance_dialog.dart';
 import '../widgets/cleanup_cache_dialog.dart';
+import '../widgets/mirror_config_card.dart';
 
 class EmulatorSettingsScreen extends StatefulWidget {
   const EmulatorSettingsScreen({super.key});
@@ -78,6 +79,8 @@ class _EmulatorSettingsScreenState extends State<EmulatorSettingsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            const MirrorConfigCard(),
+            const SizedBox(height: 16),
             const EmulatorEngineCard(),
             const SizedBox(height: 16),
             const EmulatorJavaCard(),

@@ -126,10 +126,11 @@ class _CreateInstanceDialogState extends State<CreateInstanceDialog> {
                 Row(
                   children: [
                     const Expanded(child: Text('CPU Cores:')),
-                    Expanded(
-                      flex: 2,
+                    SizedBox(
+                      width: 150,
                       child: DropdownButtonFormField<int>(
                         value: _cores,
+                        isExpanded: true,
                         items: [1, 2, 4, 8].map((c) {
                           return DropdownMenuItem(value: c, child: Text('$c'));
                         }).toList(),
@@ -146,10 +147,11 @@ class _CreateInstanceDialogState extends State<CreateInstanceDialog> {
                 Row(
                   children: [
                     const Expanded(child: Text('Memory (MB):')),
-                    Expanded(
-                      flex: 2,
+                    SizedBox(
+                      width: 150,
                       child: DropdownButtonFormField<int>(
                         value: _memoryMb,
+                        isExpanded: true,
                         items: [2048, 4096, 6144, 8192].map((m) {
                           return DropdownMenuItem(value: m, child: Text('$m MB'));
                         }).toList(),
@@ -206,10 +208,11 @@ class _CreateInstanceDialogState extends State<CreateInstanceDialog> {
                 Row(
                   children: [
                     const Expanded(child: Text('Density:')),
-                    Expanded(
-                      flex: 2,
+                    SizedBox(
+                      width: 150,
                       child: DropdownButtonFormField<int>(
                         value: _density,
+                        isExpanded: true,
                         items: [
                           const DropdownMenuItem(value: 160, child: Text('mdpi (160)')),
                           const DropdownMenuItem(value: 240, child: Text('hdpi (240)')),
@@ -230,10 +233,11 @@ class _CreateInstanceDialogState extends State<CreateInstanceDialog> {
                 Row(
                   children: [
                     const Expanded(child: Text('GPU:')),
-                    Expanded(
-                      flex: 2,
+                    SizedBox(
+                      width: 150,
                       child: DropdownButtonFormField<String>(
                         value: _gpuMode,
+                        isExpanded: true,
                         items: const [
                           DropdownMenuItem(value: 'auto', child: Text('Auto')),
                           DropdownMenuItem(value: 'host', child: Text('Host (GPU)')),

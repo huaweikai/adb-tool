@@ -465,7 +465,7 @@ JSON 命令格式：
 
 - 多个设备调试与测试功能页面，侧边栏导航
 - 中英双语（`_loc` 字典）
-- 暗/亮主题切换（持久化 `~/.adb_tool_prefs.json`）
+- 暗/亮主题切换 + 中英语言切换（持久化 `~/.adb-tool/prefs.json`）
 - HTTP REST + WebSocket 与后端通信
 
 ### 5.2 页面功能

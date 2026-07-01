@@ -125,6 +125,7 @@ const _locEmulatorZh = <String, String>{
       '从 Android 开发者官网下载 Command Line Tools 后粘贴下载链接',
   'engineCard.startDownload': '开始下载',
   'engineCard.zipHint': '输入 SDK 压缩包路径 (.zip)',
+  'engineCard.browseZip': '选择 ZIP 文件',
   'engineCard.zipHelp': '解压到 ~/.adb-tool/sdk/',
   'engineCard.importingDots': '导入中...',
   'engineCard.startImport': '开始导入',
@@ -296,6 +297,23 @@ const _locEmulatorZh = <String, String>{
   'cleanupCache.notExists': '不存在',
   'cleanupCache.sdkKept': 'Android SDK 已保留',
   'cleanupCache.close': '完成',
+
+  // ── widgets/mirror_config_card.dart ────────────────────────────────
+  'mirror.title': '下载镜像加速',
+  'mirror.subtitle': '配置国内镜像源加速 sdkmanager 下载',
+  'mirror.label': '镜像地址',
+  'mirror.hint': '例如: https://mirrors.cloud.tencent.com/AndroidSDK/',
+  'mirror.save': '保存',
+  'mirror.saved': '镜像配置已保存',
+  'mirror.clear': '清除',
+  'mirror.cleared': '镜像配置已清除',
+  'mirror.current': '当前镜像',
+  'mirror.none': '未配置（使用官方源）',
+  'mirror.tencent': '腾讯镜像',
+  'mirror.huawei': '华为镜像',
+  'mirror.apply': '应用',
+  'mirror.quickSelect': '快捷选择:',
+  'mirror.proxyHint': '配置后 sdkmanager 会通过镜像代理下载,可加速国内访问',
 };
 
 const _locEmulatorEn = <String, String>{
@@ -407,6 +425,7 @@ const _locEmulatorEn = <String, String>{
       'Download Command Line Tools from the Android dev site, then paste the download link',
   'engineCard.startDownload': 'Start download',
   'engineCard.zipHint': 'Enter SDK zip path (.zip)',
+  'engineCard.browseZip': 'Browse ZIP file',
   'engineCard.zipHelp': 'Extracts into ~/.adb-tool/sdk/',
   'engineCard.importingDots': 'Importing…',
   'engineCard.startImport': 'Start import',
@@ -581,4 +600,21 @@ const _locEmulatorEn = <String, String>{
   'cleanupCache.notExists': 'missing',
   'cleanupCache.sdkKept': 'Android SDK kept',
   'cleanupCache.close': 'Done',
+
+  // ── widgets/mirror_config_card.dart ────────────────────────────────
+  'mirror.title': 'Download Mirror',
+  'mirror.subtitle': 'Configure a mirror to speed up sdkmanager downloads',
+  'mirror.label': 'Mirror URL',
+  'mirror.hint': 'e.g. https://mirrors.cloud.tencent.com/AndroidSDK/',
+  'mirror.save': 'Save',
+  'mirror.saved': 'Mirror config saved',
+  'mirror.clear': 'Clear',
+  'mirror.cleared': 'Mirror config cleared',
+  'mirror.current': 'Current mirror',
+  'mirror.none': 'Not configured (using official source)',
+  'mirror.tencent': 'Tencent Mirror',
+  'mirror.huawei': 'Huawei Mirror',
+  'mirror.apply': 'Apply',
+  'mirror.quickSelect': 'Quick select:',
+  'mirror.proxyHint': 'Once set, sdkmanager downloads go through the mirror proxy for faster access.',
 };

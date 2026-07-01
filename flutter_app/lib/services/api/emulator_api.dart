@@ -117,6 +117,22 @@ mixin EmulatorApi on ApiBase {
     if (!isOk(response)) throw Exception(errorMessage(response));
     return SDKInstallJob.fromJson(responseMap(response));
   }
+
+  /// Get the current SDK mirror configuration.
+  Future<String> getMirrorURL() async {
+    final response = await dio.get('/api/emulator/mirror');
+    if (!isOk(response)) throw Exception(errorMessage(response));
+    return responseMap(response)['mirrorURL'] as String? ?? '';
+  }
+
+  /// Update the SDK mirror configuration.
+  Future<void> setMirrorURL(String mirrorURL) async {
+    final response = await dio.put(
+      '/api/emulator/mirror',
+      data: {'mirrorURL': mirrorURL},
+    );
+    if (!isOk(response)) throw Exception(errorMessage(response));
+  }
 }
 
 /// Represents a detected Android SDK on the system.
