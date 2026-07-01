@@ -37,16 +37,24 @@ class SavedDevicesDao extends DatabaseAccessor<AppDatabase>
 
   /// Insert or update a saved device. First-seen timestamp is only set on
   /// the initial insert; last-seen is refreshed on every call.
+  ///
+  /// [serial] is the stable identity (ro.serialno). [address] is the
+  /// current adb address (ip:port for wireless, may be empty for USB or
+  /// a brand-new device before the backend has reported props). When
+  /// [address] is provided, both `serial` and `address` are stored /
+  /// refreshed.
   Future<void> upsertSavedDevice({
     required String serial,
     required String model,
     required String brand,
     required String sdk,
     required bool isConnected,
+    String? address,
   }) async {
     await into(savedDevices).insertOnConflictUpdate(
       SavedDevicesCompanion.insert(
         serial: serial,
+        address: Value(address),
         model: model,
         brand: brand,
         sdk: sdk,
@@ -55,6 +63,111 @@ class SavedDevicesDao extends DatabaseAccessor<AppDatabase>
         lastSeenAt: Value(DateTime.now()),
       ),
     );
+  }
+
+  /// Look up a saved device by its current adb address (the
+  /// `ip:port` style value `GET /api/devices` returns in the
+  /// `serial` field). Used by the reconcile path to find a
+  /// legacy row whose PK is still the old adb-serial — for
+  /// wireless devices that predate the v8→v9 identity split,
+  /// `saved_devices.serial` and `saved_devices.address` both
+  /// point at the old `ip:port` until the device next reconnects
+  /// and the PK is upgraded to ro.serialno.
+  Future<SavedDevice?> getByAddress(String address) {
+    return (select(savedDevices)..where((t) => t.address.equals(address)))
+        .getSingleOrNull();
+  }
+
+  /// Update the adb address (ip:port) for a device row, without
+  /// touching anything else. Called when a wireless device
+  /// reconnects on a new port but its ro.serialno hasn't changed
+  /// (the common case once the v8→v9 identity split is in effect
+  /// — `serial` is already ro.serialno, only `address` needs
+  /// refreshing).
+  Future<void> updateAddress(String serial, String? address) async {
+    await (update(savedDevices)..where((t) => t.serial.equals(serial))).write(
+      SavedDevicesCompanion(
+        address: Value(address),
+        lastSeenAt: Value(DateTime.now()),
+      ),
+    );
+  }
+
+  /// Atomically rename a device's PK from [oldSerial] (the
+  /// legacy adb-serial) to [newSerial] (the freshly-fetched
+  /// ro.serialno), cascading the rename to every child table
+  /// whose FK points at `saved_devices.serial`. SQLite doesn't
+  /// auto-update FK references on a primary-key change, so we
+  /// have to do it explicitly.
+  ///
+  /// On the v8→v9 migration path this is called when an
+  /// offline wireless device comes back online for the first
+  /// time: its old row has `serial = <old ip:port>`, the
+  /// backend now reports `hardwareSerial = <real ro.serialno>`,
+  /// and the reconcile logic needs the PK (and every
+  /// `test_sessions.deviceSerial` / `scrcpy_options.serial`
+  /// reference) to flip to the new stable identity in one go.
+  ///
+  /// All four writes run inside the same `transaction(...)` —
+  /// if any step fails the whole rename rolls back and the
+  /// row keeps its old identity. The trick: SQLite would
+  /// raise FK 787 if we tried to UPDATE the parent's PK while
+  /// the child rows still pointed at the old value (or
+  /// vice-versa). The safe order is "add new → migrate
+  /// children → drop old": insert the row under the new PK
+  /// first, then UPDATE the child FKs to follow, then DELETE
+  /// the legacy row. The DB-level UNIQUE index on the PK
+  /// ensures we never have two rows with the same identity
+  /// visible at the same time.
+  Future<void> renamePrimaryKey(String oldSerial, String newSerial,
+      {String? newAddress}) async {
+    if (oldSerial == newSerial) return; // nothing to do
+    await transaction(() async {
+      // Step 1: read the legacy row so we can copy its
+      // display fields onto the new row.
+      final legacy = await (select(savedDevices)
+            ..where((t) => t.serial.equals(oldSerial)))
+          .getSingleOrNull();
+      if (legacy == null) return; // nothing to rename
+
+      // Step 2: insert a new row with the new PK, copying
+      // display fields. The legacy row still exists with
+      // its old PK — the unique PK index would have rejected
+      // any direct UPDATE to oldSerial's PK to the same
+      // value (it doesn't, but logically we want the new row
+      // to be a clean copy under the new identity, not a
+      // partial rewrite of the old one).
+      await into(savedDevices).insert(
+        SavedDevicesCompanion.insert(
+          serial: newSerial,
+          address: Value(newAddress ?? legacy.address),
+          model: legacy.model,
+          brand: legacy.brand,
+          sdk: legacy.sdk,
+          isConnected: legacy.isConnected,
+          firstSeenAt: legacy.firstSeenAt,
+          lastSeenAt: Value(DateTime.now()),
+        ),
+      );
+
+      // Step 3: migrate the child FKs to follow the new
+      // PK. Both child tables have `references(SavedDevices,
+      // #serial)` declared on their `serial` / `deviceSerial`
+      // column, so the new row satisfies them.
+      await db.customStatement(
+        'UPDATE test_sessions SET device_serial = ? WHERE device_serial = ?',
+        [newSerial, oldSerial],
+      );
+      await db.customStatement(
+        'UPDATE scrcpy_options SET serial = ? WHERE serial = ?',
+        [newSerial, oldSerial],
+      );
+
+      // Step 4: drop the legacy row. Children have already
+      // moved to the new PK, so this delete is clean.
+      await (delete(savedDevices)..where((t) => t.serial.equals(oldSerial)))
+          .go();
+    });
   }
 
   /// Update connection status for a single device. When a device
@@ -73,8 +186,8 @@ class SavedDevicesDao extends DatabaseAccessor<AppDatabase>
   }
 
   /// Reconcile all stored devices with a fresh list of currently-online
-  /// serials. Flips `isConnected` and `lastSeenAt` for any device whose
-  /// status differs.
+  /// stable identities. Legacy rows keyed by adb serial also match the same
+  /// value until they can be upgraded during online reconciliation.
   Future<void> updateAllDevicesConnection(Set<String> onlineSerials) async {
     final allDevices = await getAllSavedDevices();
     for (final device in allDevices) {

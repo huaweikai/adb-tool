@@ -49,6 +49,21 @@
 //        resolved by packageName to set is_checked = 1 on the
 //        matching new row. The JSON file is then deleted so a
 //        rollback to an older binary won't re-trigger the import.
+//   v9 — saved_devices: split identity into stable PK + transient
+//        adb address. New `address` column (nullable text, the
+//        current adb-serial). `serial` column is unchanged as a
+//        column but its semantic role changes: from now on it
+//        stores the device's ro.serialno (hardware identity, stable
+//        across reconnects), and `address` stores the adb
+//        ip:port that adb commands target. Migration copies the
+//        old `serial` value into `address` for every existing row;
+//        PK is left as-is (best-effort — real ro.serialno is only
+//        available when a device is online, and the runtime
+//        reconcile path upgrades offline wireless rows when they
+//        next reconnect). Rationale: wireless reconnects churn
+//        ip:port, and treating ip:port as the device identity made
+//        one physical device become N "new" devices in the sidebar
+//        with no way to remove them (test_sessions FK crash).
 import 'dart:io';
 
 import 'package:drift/drift.dart';
@@ -106,10 +121,10 @@ part 'database.g.dart';
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
-  AppDatabase.forTesting(QueryExecutor executor) : super(executor);
+  AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 8;
+  int get schemaVersion => 9;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -165,6 +180,40 @@ class AppDatabase extends _$AppDatabase {
             // v7 → v8: add sidebar UI preferences (width and collapsed state)
             await m.addColumn(appStates, appStates.sidebarWidth);
             await m.addColumn(appStates, appStates.sidebarCollapsed);
+          }
+          if (from < 9) {
+            // v8 → v9: split device identity into a stable PK
+            // (`serial` = ro.serialno) and a transient adb address
+            // (`address`). The previous schema had `serial` carrying
+            // both meanings, which meant every wireless reconnect
+            // (port changes on every `adb connect`) created a new
+            // device row, leaving stale rows that couldn't be removed
+            // (test_sessions FK crash — see the cascade fix on
+            // SavedDevicesDao.deleteSavedDevice).
+            //
+            // We can't backfill the stable PK here — ro.serialno is
+            // only readable while a device is online, and this
+            // migration runs on every launch regardless of who's
+            // plugged in. So we take the conservative path:
+            //
+            //   1. Add the new `address` column (nullable).
+            //   2. Copy the existing `serial` value into `address`.
+            //      Pre-v9, `serial` *was* the adb address, so this is
+            //      a perfect 1:1 backfill.
+            //
+            // What this leaves behind for offline wireless devices:
+            // `serial` is still the old `ip:port`. The next time
+            // the device comes online, DeviceProvider._refresh's
+            // reconcile logic looks it up by `address`, fetches the
+            // real ro.serialno from the backend, and does the
+            // PK-rename in a single transaction (with the
+            // test_sessions / scrcpy_options FKs updated atomically).
+            // USB devices are unaffected: their adb-serial usually
+            // equals ro.serialno, so nothing changes.
+            await m.addColumn(savedDevices, savedDevices.address);
+            await customStatement(
+              'UPDATE saved_devices SET address = serial',
+            );
           }
         },
         beforeOpen: (details) async {

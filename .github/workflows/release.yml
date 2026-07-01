@@ -68,18 +68,17 @@ jobs:
       - name: Build macOS .app (arm64)
         run: bash scripts/build.sh --platform macos --mode release --arch arm64
 
-      - name: Zip macOS arm64 artifact
-        run: ditto -c -k --keepParent dist/macos/arm64/adb_tool.app adb-tool-macos-arm64.zip
-
       - uses: actions/upload-artifact@v4
         with:
           name: adb-tool-macos-arm64
-          path: adb-tool-macos-arm64.zip
+          path: dist/macos/*.dmg
 
   build-macos-amd64:
-    # Intel x86_64 runner,原生 amd64 —— 这是打 amd64 包唯一稳的路
-    # (M 系列 runner 走 Rosetta 跑 codesign 会挂,跟本机 M2 一样)
-    runs-on: macos-13
+    # Intel x86_64 runner, 原生 amd64 —— macos-13 runner 已于 2025-12
+    # 下线,GitHub 当前的 Intel 选项是 macos-15-intel(预计可用到 2027-08,
+    # 之后托管 macOS runner 全面转向 arm64)。保持 --arch amd64,build.sh
+    # 在 Intel runner 上跑 native x86_64 build,不需要 Rosetta。
+    runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v4
 
@@ -102,13 +101,10 @@ jobs:
       - name: Build macOS .app (amd64)
         run: bash scripts/build.sh --platform macos --mode release --arch amd64
 
-      - name: Zip macOS amd64 artifact
-        run: ditto -c -k --keepParent dist/macos/amd64/adb_tool.app adb-tool-macos-amd64.zip
-
       - uses: actions/upload-artifact@v4
         with:
           name: adb-tool-macos-amd64
-          path: adb-tool-macos-amd64.zip
+          path: dist/macos/*.dmg
 
   create-release:
     needs: [build-windows, build-macos-arm64, build-macos-amd64]
@@ -123,6 +119,6 @@ jobs:
         with:
           files: |
             adb-tool-windows/*.msi
-            adb-tool-macos-arm64/adb-tool-macos-arm64.zip
-            adb-tool-macos-amd64/adb-tool-macos-amd64.zip
+            adb-tool-macos-arm64/*.dmg
+            adb-tool-macos-amd64/*.dmg
           generate_release_notes: true

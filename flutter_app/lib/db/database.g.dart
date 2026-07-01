@@ -14,6 +14,11 @@ class $SavedDevicesTable extends SavedDevices
   late final GeneratedColumn<String> serial = GeneratedColumn<String>(
       'serial', aliasedName, false,
       type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _addressMeta = const VerificationMeta('address');
+  @override
+  late final GeneratedColumn<String> address = GeneratedColumn<String>(
+      'address', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
   static const VerificationMeta _modelMeta = const VerificationMeta('model');
   @override
   late final GeneratedColumn<String> model = GeneratedColumn<String>(
@@ -75,6 +80,7 @@ class $SavedDevicesTable extends SavedDevices
   @override
   List<GeneratedColumn> get $columns => [
         serial,
+        address,
         model,
         brand,
         sdk,
@@ -100,6 +106,11 @@ class $SavedDevicesTable extends SavedDevices
           serial.isAcceptableOrUnknown(data['serial']!, _serialMeta));
     } else if (isInserting) {
       context.missing(_serialMeta);
+    }
+    if (data.containsKey('address')) {
+      context.handle(
+          _addressMeta,
+          address.isAcceptableOrUnknown(data['address']!, _addressMeta));
     }
     if (data.containsKey('model')) {
       context.handle(
@@ -170,6 +181,8 @@ class $SavedDevicesTable extends SavedDevices
     return SavedDevice(
       serial: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}serial'])!,
+      address: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}address']),
       model: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}model'])!,
       brand: attachedDatabase.typeMapping
@@ -199,6 +212,7 @@ class $SavedDevicesTable extends SavedDevices
 
 class SavedDevice extends DataClass implements Insertable<SavedDevice> {
   final String serial;
+  final String? address;
   final String model;
   final String brand;
   final String sdk;
@@ -224,6 +238,7 @@ class SavedDevice extends DataClass implements Insertable<SavedDevice> {
   final bool recordingIsSaving;
   const SavedDevice(
       {required this.serial,
+      this.address,
       required this.model,
       required this.brand,
       required this.sdk,
@@ -237,6 +252,9 @@ class SavedDevice extends DataClass implements Insertable<SavedDevice> {
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['serial'] = Variable<String>(serial);
+    if (!nullToAbsent || address != null) {
+      map['address'] = Variable<String>(address);
+    }
     map['model'] = Variable<String>(model);
     map['brand'] = Variable<String>(brand);
     map['sdk'] = Variable<String>(sdk);
@@ -258,6 +276,9 @@ class SavedDevice extends DataClass implements Insertable<SavedDevice> {
   SavedDevicesCompanion toCompanion(bool nullToAbsent) {
     return SavedDevicesCompanion(
       serial: Value(serial),
+      address: address == null && nullToAbsent
+          ? const Value.absent()
+          : Value(address),
       model: Value(model),
       brand: Value(brand),
       sdk: Value(sdk),
@@ -281,6 +302,7 @@ class SavedDevice extends DataClass implements Insertable<SavedDevice> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return SavedDevice(
       serial: serializer.fromJson<String>(json['serial']),
+      address: serializer.fromJson<String?>(json['address']),
       model: serializer.fromJson<String>(json['model']),
       brand: serializer.fromJson<String>(json['brand']),
       sdk: serializer.fromJson<String>(json['sdk']),
@@ -297,6 +319,7 @@ class SavedDevice extends DataClass implements Insertable<SavedDevice> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'serial': serializer.toJson<String>(serial),
+      'address': serializer.toJson<String?>(address),
       'model': serializer.toJson<String>(model),
       'brand': serializer.toJson<String>(brand),
       'sdk': serializer.toJson<String>(sdk),
@@ -311,6 +334,7 @@ class SavedDevice extends DataClass implements Insertable<SavedDevice> {
 
   SavedDevice copyWith(
           {String? serial,
+          Value<String?> address = const Value.absent(),
           String? model,
           String? brand,
           String? sdk,
@@ -322,6 +346,7 @@ class SavedDevice extends DataClass implements Insertable<SavedDevice> {
           bool? recordingIsSaving}) =>
       SavedDevice(
         serial: serial ?? this.serial,
+        address: address.present ? address.value : this.address,
         model: model ?? this.model,
         brand: brand ?? this.brand,
         sdk: sdk ?? this.sdk,
@@ -338,6 +363,7 @@ class SavedDevice extends DataClass implements Insertable<SavedDevice> {
   SavedDevice copyWithCompanion(SavedDevicesCompanion data) {
     return SavedDevice(
       serial: data.serial.present ? data.serial.value : this.serial,
+      address: data.address.present ? data.address.value : this.address,
       model: data.model.present ? data.model.value : this.model,
       brand: data.brand.present ? data.brand.value : this.brand,
       sdk: data.sdk.present ? data.sdk.value : this.sdk,
@@ -363,6 +389,7 @@ class SavedDevice extends DataClass implements Insertable<SavedDevice> {
   String toString() {
     return (StringBuffer('SavedDevice(')
           ..write('serial: $serial, ')
+          ..write('address: $address, ')
           ..write('model: $model, ')
           ..write('brand: $brand, ')
           ..write('sdk: $sdk, ')
@@ -379,6 +406,7 @@ class SavedDevice extends DataClass implements Insertable<SavedDevice> {
   @override
   int get hashCode => Object.hash(
       serial,
+      address,
       model,
       brand,
       sdk,
@@ -393,6 +421,7 @@ class SavedDevice extends DataClass implements Insertable<SavedDevice> {
       identical(this, other) ||
       (other is SavedDevice &&
           other.serial == this.serial &&
+          other.address == this.address &&
           other.model == this.model &&
           other.brand == this.brand &&
           other.sdk == this.sdk &&
@@ -406,6 +435,7 @@ class SavedDevice extends DataClass implements Insertable<SavedDevice> {
 
 class SavedDevicesCompanion extends UpdateCompanion<SavedDevice> {
   final Value<String> serial;
+  final Value<String?> address;
   final Value<String> model;
   final Value<String> brand;
   final Value<String> sdk;
@@ -418,6 +448,7 @@ class SavedDevicesCompanion extends UpdateCompanion<SavedDevice> {
   final Value<int> rowid;
   const SavedDevicesCompanion({
     this.serial = const Value.absent(),
+    this.address = const Value.absent(),
     this.model = const Value.absent(),
     this.brand = const Value.absent(),
     this.sdk = const Value.absent(),
@@ -431,6 +462,7 @@ class SavedDevicesCompanion extends UpdateCompanion<SavedDevice> {
   });
   SavedDevicesCompanion.insert({
     required String serial,
+    this.address = const Value.absent(),
     required String model,
     required String brand,
     required String sdk,
@@ -449,6 +481,7 @@ class SavedDevicesCompanion extends UpdateCompanion<SavedDevice> {
         firstSeenAt = Value(firstSeenAt);
   static Insertable<SavedDevice> custom({
     Expression<String>? serial,
+    Expression<String>? address,
     Expression<String>? model,
     Expression<String>? brand,
     Expression<String>? sdk,
@@ -462,6 +495,7 @@ class SavedDevicesCompanion extends UpdateCompanion<SavedDevice> {
   }) {
     return RawValuesInsertable({
       if (serial != null) 'serial': serial,
+      if (address != null) 'address': address,
       if (model != null) 'model': model,
       if (brand != null) 'brand': brand,
       if (sdk != null) 'sdk': sdk,
@@ -478,6 +512,7 @@ class SavedDevicesCompanion extends UpdateCompanion<SavedDevice> {
 
   SavedDevicesCompanion copyWith(
       {Value<String>? serial,
+      Value<String?>? address,
       Value<String>? model,
       Value<String>? brand,
       Value<String>? sdk,
@@ -490,6 +525,7 @@ class SavedDevicesCompanion extends UpdateCompanion<SavedDevice> {
       Value<int>? rowid}) {
     return SavedDevicesCompanion(
       serial: serial ?? this.serial,
+      address: address ?? this.address,
       model: model ?? this.model,
       brand: brand ?? this.brand,
       sdk: sdk ?? this.sdk,
@@ -508,6 +544,9 @@ class SavedDevicesCompanion extends UpdateCompanion<SavedDevice> {
     final map = <String, Expression>{};
     if (serial.present) {
       map['serial'] = Variable<String>(serial.value);
+    }
+    if (address.present) {
+      map['address'] = Variable<String>(address.value);
     }
     if (model.present) {
       map['model'] = Variable<String>(model.value);
@@ -546,6 +585,7 @@ class SavedDevicesCompanion extends UpdateCompanion<SavedDevice> {
   String toString() {
     return (StringBuffer('SavedDevicesCompanion(')
           ..write('serial: $serial, ')
+          ..write('address: $address, ')
           ..write('model: $model, ')
           ..write('brand: $brand, ')
           ..write('sdk: $sdk, ')

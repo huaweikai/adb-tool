@@ -6,7 +6,7 @@ mixin PackagesApi on ApiBase {
   Future<String> installPackage(String serial, List<int> apkBytes) async {
     final resp = await dio.post(
       '/api/install-package',
-      queryParameters: {'serial': serial},
+      queryParameters: deviceQueryParameters(serial),
       data: apkBytes,
       options: Options(contentType: 'application/octet-stream'),
     );
@@ -26,7 +26,7 @@ mixin PackagesApi on ApiBase {
     final data = await super.postLocalFile(
       '/api/install-package',
       apkPath,
-      queryParameters: {'serial': serial},
+      queryParameters: deviceQueryParameters(serial),
       onProgress: onProgress,
       cancelToken: cancelToken,
     );
@@ -36,7 +36,7 @@ mixin PackagesApi on ApiBase {
   Future<bool> uninstallPackage(String serial, String packageName) async {
     final resp = await dio.post(
       '/api/uninstall-package',
-      queryParameters: {'serial': serial, 'package': packageName},
+      queryParameters: deviceQueryParameters(serial, {'package': packageName}),
     );
     throwIfNotOk(resp);
     return true;

@@ -283,6 +283,14 @@ if [[ "$PLATFORM" == "macos" ]]; then
 
   mkdir -p "$DIST_MACOS_DIR"
 
+  # SetFile ships with Xcode Command Line Tools and is required for setting
+  # DMG volume icons. Bail out early with a clear message instead of failing
+  # silently inside the per-DMG loop.
+  if ! command -v SetFile >/dev/null 2>&1; then
+    echo "error: SetFile not found in PATH. Install Xcode Command Line Tools (xcode-select --install)."
+    exit 1
+  fi
+
   for TARGET in "${TARGETS[@]}"; do
     echo ""
     echo "==============================================="
@@ -318,12 +326,130 @@ if [[ "$PLATFORM" == "macos" ]]; then
     merge_to_universal
   fi
 
+  # Generate DMG volume icon from AppIcon.appiconset 1024 PNG.
+  # Output: $DIST_MACOS_DIR/AppIcon.icns (used below as DMG .VolumeIcon.icns).
+  # This icon is for the DMG volume itself; the .app inside the DMG already
+  # gets its icon from Assets.car compiled by Xcode actool, so we don't need
+  # to set CFBundleIconFile on the app — Xcode handles that via the asset
+  # catalog.
+  generate_dmg_icon() {
+    local icon_src="$ROOT_DIR/flutter_app/macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_1024.png"
+    local iconset_dir="$DIST_MACOS_DIR/AppIcon.iconset"
+    local icns_path="$DIST_MACOS_DIR/AppIcon.icns"
+
+    if [[ ! -f "$icon_src" ]]; then
+      echo "警告: 找不到图标源文件：$icon_src，DMG 将使用默认图标"
+      return 1
+    fi
+
+    echo "==> 生成 DMG 图标..."
+    rm -rf "$iconset_dir"
+    mkdir -p "$iconset_dir"
+
+    # Apple iconutil requires both 1x and 2x variants. The @2x suffix means
+    # 2x the listed pixel size, e.g. icon_512x512@2x.png is actually 1024x1024.
+    # Fail fast with a clear message if sips itself is missing or chokes on
+    # the source PNG, instead of producing a half-built iconset.
+    local sizes=(
+      "16:icon_16x16.png"
+      "32:icon_16x16@2x.png"
+      "32:icon_32x32.png"
+      "64:icon_32x32@2x.png"
+      "128:icon_128x128.png"
+      "256:icon_128x128@2x.png"
+      "256:icon_256x256.png"
+      "512:icon_256x256@2x.png"
+      "512:icon_512x512.png"
+      "1024:icon_512x512@2x.png"
+    )
+    for entry in "${sizes[@]}"; do
+      local px="${entry%%:*}"
+      local out="${entry##*:}"
+      if ! sips -z "$px" "$px" "$icon_src" --out "$iconset_dir/$out" >/dev/null; then
+        echo "error: sips failed generating $out from $icon_src" >&2
+        rm -rf "$iconset_dir"
+        return 1
+      fi
+    done
+
+    if ! iconutil -c icns "$iconset_dir" -o "$icns_path"; then
+      echo "error: iconutil failed building $icns_path" >&2
+      rm -rf "$iconset_dir"
+      return 1
+    fi
+    rm -rf "$iconset_dir"
+
+    echo "    DMG 图标：$icns_path"
+  }
+
+  DMG_ICON_PATH=""
+  if ! generate_dmg_icon; then
+    echo "warning: DMG 图标生成失败,卷宗将使用默认图标" >&2
+  elif [[ -f "$DIST_MACOS_DIR/AppIcon.icns" ]]; then
+    DMG_ICON_PATH="$DIST_MACOS_DIR/AppIcon.icns"
+  fi
+
+  # 为每个构建产物生成 DMG
+  if [[ "${QUIET_FINAL:-0}" != "1" ]]; then
+    for d in "$DIST_MACOS_DIR"/*/; do
+      [[ -d "$d" ]] || continue
+      app="$d/adb_tool.app"
+      [[ -d "$app" ]] || continue
+      arch_name="$(basename "$d")"
+      dmg_name="ADBTool-${MODE}-${arch_name}.dmg"
+      dmg_path="$DIST_MACOS_DIR/$dmg_name"
+      echo ""
+      echo "==> 生成 DMG ($arch_name)..."
+      # 创建临时目录，放入 .app + Applications 快捷方式
+      tmp_dmg="$(mktemp -d)"
+      ln -sf /Applications "$tmp_dmg/Applications"
+      cp -R "$app" "$tmp_dmg/ADB Tool.app"
+
+      # 生成 DMG
+      hdiutil create -volname "ADB Tool" \
+        -srcfolder "$tmp_dmg" \
+        -ov -format UDZO \
+        "$dmg_path" >/dev/null 2>&1
+
+      # 设置 DMG 卷图标（mount → 写 .VolumeIcon.icns → SetFile → detach）
+      # This is the canonical macOS recipe; setting the icon BEFORE hdiutil
+      # create does nothing because -srcfolder only copies files into the
+      # volume root and Finder won't auto-promote a hidden .VolumeIcon.icns.
+      if [[ -n "$DMG_ICON_PATH" && -f "$DMG_ICON_PATH" ]]; then
+        dmg_mount="$(mktemp -d)"
+        if hdiutil attach "$dmg_path" -mountpoint "$dmg_mount" -nobrowse >/dev/null 2>&1; then
+          cp "$DMG_ICON_PATH" "$dmg_mount/.VolumeIcon.icns"
+          SetFile -c icnC "$dmg_mount/.VolumeIcon.icns"
+          SetFile -a C "$dmg_mount"
+          # Try graceful detach first, force if anything is holding it open.
+          if ! hdiutil detach "$dmg_mount" >/dev/null 2>&1; then
+            if ! hdiutil detach -force "$dmg_mount" >/dev/null 2>&1; then
+              echo "warning: failed to detach DMG at $dmg_mount; manual cleanup may be needed" >&2
+            fi
+          fi
+        else
+          echo "warning: failed to attach $dmg_path to set volume icon" >&2
+        fi
+        rm -rf "$dmg_mount"
+      else
+        echo "    (DMG 卷图标未生成,使用默认图标)"
+      fi
+
+      rm -rf "$tmp_dmg"
+      echo "    DMG: $dmg_path"
+    done
+  fi
+
   if [[ "${QUIET_FINAL:-0}" != "1" ]]; then
     echo ""
     echo "==> 所有 macOS 构建完成："
     for d in "$DIST_MACOS_DIR"/*/; do
       [[ -d "$d" ]] || continue
       echo "    $d"
+    done
+    for f in "$DIST_MACOS_DIR"/*.dmg; do
+      [[ -f "$f" ]] || continue
+      echo "    $f"
     done
   fi
 

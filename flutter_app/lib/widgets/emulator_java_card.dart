@@ -421,6 +421,7 @@ class EmulatorJavaCard extends StatelessWidget {
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
                     value: selectedVersion,
+                    isExpanded: true,
                     decoration: InputDecoration(
                       labelText: tr('javaCard.versionLabel'),
                     ),
@@ -444,7 +445,7 @@ class EmulatorJavaCard extends StatelessWidget {
                       }
                     },
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
                   TextField(
                     controller: urlController,
                     decoration: InputDecoration(

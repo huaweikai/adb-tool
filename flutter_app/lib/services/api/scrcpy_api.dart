@@ -24,7 +24,7 @@ mixin ScrcpyApi on ApiBase {
     final body = (options ?? ScrcpyOptions()).toApiJson();
     final resp = await dio.post(
       '/api/scrcpy/start',
-      queryParameters: {'serial': serial},
+      queryParameters: deviceQueryParameters(serial),
       data: body,
     );
     throwIfNotOk(resp);
@@ -45,7 +45,7 @@ mixin ScrcpyApi on ApiBase {
       String serial, String action) async {
     final resp = await dio.post(
       '/api/scrcpy/action',
-      queryParameters: {'serial': serial, 'action': action},
+      queryParameters: deviceQueryParameters(serial, {'action': action}),
     );
     throwIfNotOk(resp);
     return responseMap(resp);
@@ -59,7 +59,7 @@ mixin ScrcpyApi on ApiBase {
   Future<ScrcpyStatus> scrcpyStatus({String? serial}) async {
     final resp = await dio.get(
       '/api/scrcpy/status',
-      queryParameters: serial != null ? {'serial': serial} : null,
+      queryParameters: serial != null ? deviceQueryParameters(serial) : null,
     );
     throwIfNotOk(resp);
     final data = responseMap(resp);

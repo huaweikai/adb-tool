@@ -10,7 +10,7 @@ mixin FileApi on ApiBase {
   Future<List<FileItem>> listFiles(String serial, String path) async {
     final resp = await dio.get(
       '/api/files',
-      queryParameters: {'serial': serial, 'path': path},
+      queryParameters: deviceQueryParameters(serial, {'path': path}),
     );
     throwIfNotOk(resp);
     final data = responseMap(resp);
@@ -21,7 +21,7 @@ mixin FileApi on ApiBase {
   Future<String> readFile(String serial, String path) async {
     final resp = await dio.get(
       '/api/file-content',
-      queryParameters: {'serial': serial, 'path': path},
+      queryParameters: deviceQueryParameters(serial, {'path': path}),
     );
     throwIfNotOk(resp);
     final data = responseMap(resp);
@@ -31,7 +31,7 @@ mixin FileApi on ApiBase {
   Future<String> readFileContent(String serial, String path) async {
     final resp = await dio.get(
       '/api/file-content',
-      queryParameters: {'serial': serial, 'path': path},
+      queryParameters: deviceQueryParameters(serial, {'path': path}),
     );
     throwIfNotOk(resp);
     final data = responseMap(resp);
@@ -41,7 +41,7 @@ mixin FileApi on ApiBase {
   Future<List<AppPackage>> getInstalledPackages(String serial) async {
     final resp = await dio.get(
       '/api/packages',
-      queryParameters: {'serial': serial},
+      queryParameters: deviceQueryParameters(serial),
     );
     throwIfNotOk(resp);
     final data = responseMap(resp);
@@ -56,11 +56,10 @@ mixin FileApi on ApiBase {
   }) async {
     final resp = await dio.post(
       '/api/file-delete',
-      queryParameters: {
-        'serial': serial,
+      queryParameters: deviceQueryParameters(serial, {
         'path': path,
         'recursive': recursive.toString(),
-      },
+      }),
     );
     throwIfNotOk(resp);
     return true;
@@ -69,7 +68,7 @@ mixin FileApi on ApiBase {
   Future<bool> renameFile(String serial, String from, String to) async {
     final resp = await dio.post(
       '/api/file-rename',
-      queryParameters: {'serial': serial, 'from': from, 'to': to},
+      queryParameters: deviceQueryParameters(serial, {'from': from, 'to': to}),
     );
     throwIfNotOk(resp);
     return true;
@@ -78,7 +77,7 @@ mixin FileApi on ApiBase {
   Future<bool> createDirectory(String serial, String path) async {
     final resp = await dio.post(
       '/api/file-mkdir',
-      queryParameters: {'serial': serial, 'path': path},
+      queryParameters: deviceQueryParameters(serial, {'path': path}),
     );
     throwIfNotOk(resp);
     return true;
@@ -87,7 +86,7 @@ mixin FileApi on ApiBase {
   Future<bool> createFile(String serial, String path) async {
     final resp = await dio.post(
       '/api/file-touch',
-      queryParameters: {'serial': serial, 'path': path},
+      queryParameters: deviceQueryParameters(serial, {'path': path}),
     );
     throwIfNotOk(resp);
     return true;
@@ -96,7 +95,7 @@ mixin FileApi on ApiBase {
   Future<FileStat> statFile(String serial, String path) async {
     final resp = await dio.get(
       '/api/file-stat',
-      queryParameters: {'serial': serial, 'path': path},
+      queryParameters: deviceQueryParameters(serial, {'path': path}),
     );
     throwIfNotOk(resp);
     final data = responseMap(resp);
@@ -106,7 +105,7 @@ mixin FileApi on ApiBase {
   Future<List<int>> pullFile(String serial, String path) async {
     final resp = await dio.get<List<int>>(
       '/api/pull-file',
-      queryParameters: {'serial': serial, 'path': path},
+      queryParameters: deviceQueryParameters(serial, {'path': path}),
       options: Options(responseType: ResponseType.bytes),
     );
     if (!isOk(resp)) {
@@ -128,7 +127,7 @@ mixin FileApi on ApiBase {
       final response = await dio.download(
         '/api/pull-file',
         localPath,
-        queryParameters: {'serial': serial, 'path': remotePath},
+        queryParameters: deviceQueryParameters(serial, {'path': remotePath}),
         cancelToken: cancelToken?.dioToken,
         onReceiveProgress: (received, total) {
           final expected = totalBytes > 0 ? totalBytes : total;
@@ -150,7 +149,7 @@ mixin FileApi on ApiBase {
   Future<bool> pushFile(String serial, String path, List<int> bytes) async {
     final resp = await dio.post(
       '/api/push-file',
-      queryParameters: {'serial': serial, 'path': path},
+      queryParameters: deviceQueryParameters(serial, {'path': path}),
       data: bytes,
       options: Options(contentType: 'application/octet-stream'),
     );
@@ -168,7 +167,7 @@ mixin FileApi on ApiBase {
     await super.postLocalFile(
       '/api/push-file',
       localPath,
-      queryParameters: {'serial': serial, 'path': remotePath},
+      queryParameters: deviceQueryParameters(serial, {'path': remotePath}),
       onProgress: onProgress,
       cancelToken: cancelToken,
     );

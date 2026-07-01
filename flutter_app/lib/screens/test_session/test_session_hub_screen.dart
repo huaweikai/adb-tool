@@ -953,7 +953,12 @@ class _NewSessionDialogState extends State<_NewSessionDialog> {
     final deviceProvider = context.read<DeviceProvider>();
     Device? device;
     try {
-      device = deviceProvider.devices.firstWhere((d) => d.serial == widget.serial);
+      // widget.serial is the stable identity (ro.serialno); match
+      // against either of the Device's two identity fields — adb
+      // serial for USB (same as ro.serialno) and the dedicated
+      // hardwareSerial for wireless. See Device.matchesIdentity.
+      device = deviceProvider.devices
+          .firstWhere((d) => d.matchesIdentity(widget.serial));
     } catch (_) {
       device = null;
     }
@@ -1005,7 +1010,12 @@ class _NewSessionDialogState extends State<_NewSessionDialog> {
     final deviceProvider = context.read<DeviceProvider>();
     Device? device;
     try {
-      device = deviceProvider.devices.firstWhere((d) => d.serial == widget.serial);
+      // widget.serial is the stable identity (ro.serialno); match
+      // against either of the Device's two identity fields — adb
+      // serial for USB (same as ro.serialno) and the dedicated
+      // hardwareSerial for wireless. See Device.matchesIdentity.
+      device = deviceProvider.devices
+          .firstWhere((d) => d.matchesIdentity(widget.serial));
     } catch (_) {
       device = null;
     }

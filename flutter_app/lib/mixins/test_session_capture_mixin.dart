@@ -226,6 +226,7 @@ mixin TestSessionCaptureMixin<T extends StatefulWidget> on State<T> {
 
       if (!opts.skipEdit) {
         if (!mounted) return;
+        final editorCtx = context;
         // Open the editor. Once the user saves, the bytes are
         // written to the session and the DB row is inserted by the
         // provider.
@@ -239,6 +240,9 @@ mixin TestSessionCaptureMixin<T extends StatefulWidget> on State<T> {
                 onImageEditingComplete: (edited) async {
                   final rel = await sessionProvider.saveScreenshotBytes(edited);
                   if (mounted) await onScreenshotSaved(edited, rel);
+                  if (editorCtx.mounted) {
+                    Navigator.of(editorCtx).pop(edited);
+                  }
                 },
               ),
             ),

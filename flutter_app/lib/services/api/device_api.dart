@@ -10,7 +10,8 @@ import 'package:flutter/foundation.dart';
 mixin DeviceApi on ApiBase {
   Future<List<Device>> getDevices() async {
     final resp = await dio.get('/api/devices');
-    debugPrint('[getDevices] status=${resp.statusCode} dataType=${resp.data.runtimeType} data=${resp.data}');
+    debugPrint(
+        '[getDevices] status=${resp.statusCode} dataType=${resp.data.runtimeType} data=${resp.data}');
     if (!isOk(resp)) {
       debugPrint('[getDevices] isOk=false err=${errorMessage(resp)}');
       throw Exception(errorMessage(resp));
@@ -23,7 +24,7 @@ mixin DeviceApi on ApiBase {
   Future<List<String>> getRunningPackages(String serial) async {
     final resp = await dio.get(
       '/api/running-packages',
-      queryParameters: {'serial': serial},
+      queryParameters: deviceQueryParameters(serial),
     );
     if (!isOk(resp)) return [];
     final data = responseMap(resp);
@@ -34,7 +35,7 @@ mixin DeviceApi on ApiBase {
   Future<String?> getPackagePid(String serial, String package) async {
     final resp = await dio.get(
       '/api/package-pid',
-      queryParameters: {'serial': serial, 'package': package},
+      queryParameters: deviceQueryParameters(serial, {'package': package}),
     );
     if (!isOk(resp)) return null;
     final data = responseMap(resp);
@@ -45,7 +46,7 @@ mixin DeviceApi on ApiBase {
   Future<bool> clearLogcat(String serial) async {
     final resp = await dio.get(
       '/api/clear',
-      queryParameters: {'serial': serial},
+      queryParameters: deviceQueryParameters(serial),
     );
     return isOk(resp);
   }
@@ -55,7 +56,8 @@ mixin DeviceApi on ApiBase {
       final resp =
           await dio.get('/api/adb-path').timeout(const Duration(seconds: 2));
       final ok = isOk(resp);
-      debugPrint('[isReady] status=${resp.statusCode} ok=$ok data=${resp.data}');
+      debugPrint(
+          '[isReady] status=${resp.statusCode} ok=$ok data=${resp.data}');
       return ok;
     } catch (e) {
       debugPrint('[isReady] EXCEPTION: $e');
@@ -77,7 +79,7 @@ mixin DeviceApi on ApiBase {
   Future<Map<String, String>> getDeviceDetail(String serial) async {
     final resp = await dio.get(
       '/api/device-detail',
-      queryParameters: {'serial': serial},
+      queryParameters: deviceQueryParameters(serial),
     );
     throwIfNotOk(resp);
     final data = responseMap(resp);
@@ -88,7 +90,7 @@ mixin DeviceApi on ApiBase {
   Future<DeviceStatus> getDeviceStatus(String serial) async {
     final resp = await dio.get(
       '/api/device-status',
-      queryParameters: {'serial': serial},
+      queryParameters: deviceQueryParameters(serial),
     );
     throwIfNotOk(resp);
     final data = responseMap(resp);
@@ -98,7 +100,7 @@ mixin DeviceApi on ApiBase {
   Future<String?> takeScreenshot(String serial) async {
     final resp = await dio.get<List<int>>(
       '/api/screenshot',
-      queryParameters: {'serial': serial},
+      queryParameters: deviceQueryParameters(serial),
       options: Options(responseType: ResponseType.bytes),
     );
     if (!isOk(resp)) return null;

@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -1921,13 +1922,15 @@ func (s *Server) handleEmulatorSDKInstall(w http.ResponseWriter, r *http.Request
 
 	sdkmanagerPath := EmulatorEngine.SdkmanagerPath
 	sdkPath := EmulatorEngine.AndroidHome
+	javaPath := EmulatorEngine.JavaPath
 	if sdkmanagerPath == "" || sdkPath == "" {
 		writeAPIError(w, http.StatusBadRequest,
 			"SDK not selected or sdkmanager not available — pick an SDK first")
 		return
 	}
 
-	job, err := SDKInstaller.Start(sdkmanagerPath, sdkPath, req.Packages)
+	mirrorURL := emulator.LoadMirrorConfig()
+	job, err := SDKInstaller.Start(sdkmanagerPath, sdkPath, javaPath, req.Packages, mirrorURL)
 	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -1953,4 +1956,47 @@ func (s *Server) handleEmulatorSDKInstallStatus(w http.ResponseWriter, r *http.R
 		return
 	}
 	writeJSON(w, job)
+}
+
+// handleEmulatorMirror handles GET (read) and PUT (update) for SDK mirror config.
+func (s *Server) handleEmulatorMirror(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case "GET":
+		mirrorURL := emulator.LoadMirrorConfig()
+		writeJSON(w, map[string]string{"mirrorURL": mirrorURL})
+	case "PUT":
+		defer r.Body.Close()
+		var req struct {
+			MirrorURL string `json:"mirrorURL"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeAPIError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		// Empty URL is allowed (clears the mirror). Non-empty must parse and
+		// resolve to a concrete http/https host so we don't silently accept
+		// garbage that sdkmanager would later ignore.
+		if req.MirrorURL != "" {
+			parsed, err := url.Parse(req.MirrorURL)
+			if err != nil {
+				writeAPIError(w, http.StatusBadRequest, fmt.Sprintf("invalid mirror URL: %v", err))
+				return
+			}
+			if parsed.Scheme != "http" && parsed.Scheme != "https" {
+				writeAPIError(w, http.StatusBadRequest, "mirror URL must use http or https")
+				return
+			}
+			if parsed.Host == "" {
+				writeAPIError(w, http.StatusBadRequest, "mirror URL must include a host")
+				return
+			}
+		}
+		if err := emulator.SaveMirrorConfig(req.MirrorURL); err != nil {
+			writeAPIError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, map[string]string{"mirrorURL": req.MirrorURL})
+	default:
+		writeAPIError(w, http.StatusMethodNotAllowed, "GET or PUT required")
+	}
 }

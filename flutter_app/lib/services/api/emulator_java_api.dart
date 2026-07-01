@@ -104,7 +104,8 @@ mixin EmulatorJavaApi on ApiBase {
   /// Delete a managed (downloaded / imported) Java runtime by id.
   /// Has no effect on system Java or other detected runtimes.
   Future<void> deleteJava(String id) async {
-    final response = await dio.post('/api/emulator/java/delete', data: {'id': id});
+    final response =
+        await dio.post('/api/emulator/java/delete', data: {'id': id});
     if (!isOk(response)) throw Exception(errorMessage(response));
   }
 
@@ -182,8 +183,8 @@ class JavaRuntimeStatus {
               .toList() ??
           [],
       defaultDownloads: (json['defaultDownloads'] as List<dynamic>?)
-              ?.map((e) =>
-                  JavaDownloadOption.fromJson(e as Map<String, dynamic>))
+              ?.map(
+                  (e) => JavaDownloadOption.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [],
     );

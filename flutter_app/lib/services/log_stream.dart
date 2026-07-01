@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../models/device.dart';
+import '../providers/device_provider.dart';
 
 /// Per-device WebSocket channel for logcat streaming.
 ///
@@ -11,7 +12,17 @@ import '../models/device.dart';
 /// creates a fresh `LogSession` per connection, so multiple parallel
 /// channels are fully supported server-side.
 class _DeviceLogChannel {
-  final String serial;
+  /// Stable device identity (ro.serialno). The channel keys itself
+  /// by this value and re-resolves the live adb-serial via
+  /// [DeviceProvider] on every (re)connect — that way a wireless
+  /// port change doesn't strand the channel on a dead adb address.
+  final String stableSerial;
+
+  /// Resolver for the current adb address. Required because the
+  /// backend's `start` action carries the adb-serial in its
+  /// payload, and that serial churns on wireless reconnects.
+  final DeviceProvider deviceProvider;
+
   LogFilter filter;
   WebSocketChannel? ws;
   StreamSubscription? sub;
@@ -23,7 +34,11 @@ class _DeviceLogChannel {
 
   static const _maxBackoffSeconds = 30;
 
-  _DeviceLogChannel({required this.serial, required this.filter});
+  _DeviceLogChannel({
+    required this.stableSerial,
+    required this.deviceProvider,
+    required this.filter,
+  });
 
   Stream<List<LogEntry>> get stream => _controller.stream;
   Stream<bool> get connectionState => _connectionController.stream;
@@ -39,9 +54,19 @@ class _DeviceLogChannel {
 
     channel.ready.then((_) {
       reconnectAttempt = 0;
+      // Resolve stable identity → live adb address on every
+      // (re)connect. The address churns on wireless reconnects, so
+      // using the value cached at channel-creation time would strand
+      // us on a dead transport after the first reconnect.
+      final adbSerial = deviceProvider.onlineAddressFor(stableSerial);
+      if (adbSerial == null || adbSerial.isEmpty) {
+        _connectionController.add(false);
+        _scheduleReconnect();
+        return;
+      }
       _send({
         'action': 'start',
-        'serial': serial,
+        'serial': adbSerial,
         'filters': filter.toJson(),
       });
       _connectionController.add(true);
@@ -141,7 +166,15 @@ class _DeviceLogChannel {
 /// Lifecycle: this service is a top-level singleton (registered in di.dart).
 /// It lives for the entire app session; channels are created lazily on
 /// first `connect()` and torn down on `stop(serial)`.
+///
+/// All public methods take the device's **stable identity** (ro.serialno).
+/// The channel resolves that to the current adb address on every
+/// (re)connect via the injected [DeviceProvider] so a wireless port
+/// change picks up the new transport without losing accumulated state.
 class LogStreamService {
+  LogStreamService(this._deviceProvider);
+
+  final DeviceProvider _deviceProvider;
   final Map<String, _DeviceLogChannel> _channels = {};
 
   /// Returns the live entry stream for a specific device.
@@ -162,7 +195,11 @@ class LogStreamService {
       existing.updateFilter(filter);
       return;
     }
-    final channel = _DeviceLogChannel(serial: serial, filter: filter);
+    final channel = _DeviceLogChannel(
+      stableSerial: serial,
+      deviceProvider: _deviceProvider,
+      filter: filter,
+    );
     _channels[serial] = channel;
     channel.start();
   }

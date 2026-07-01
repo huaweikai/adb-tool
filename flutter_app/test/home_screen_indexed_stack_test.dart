@@ -65,7 +65,7 @@ void main() {
         providers: [
           Provider<AppDatabase>.value(value: db),
           Provider<ApiClient>.value(value: api),
-          Provider<LogStreamService>.value(value: LogStreamService()),
+          Provider<LogStreamService>.value(value: LogStreamService(deviceProvider)),
           ChangeNotifierProvider<ThemeProvider>(create: (_) => ThemeProvider()),
           ChangeNotifierProvider<LocaleProvider>(
               create: (_) => LocaleProvider()),

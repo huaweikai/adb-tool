@@ -1,11 +1,29 @@
 package server
 
+// Device is one row in the response of `GET /api/devices`. It carries
+// two identity fields:
+//
+//   - Serial:        the adb-level address (ip:port for wireless,
+//                    transport-id / hardware serial for USB). This
+//                    is what adb commands target — passes through to
+//                    `adb -s <Serial> ...` unchanged.
+//   - HardwareSerial: the device's stable hardware identity
+//                    (ro.serialno). Used by the Flutter side as the
+//                    saved_devices primary key so the same physical
+//                    device keeps one row across reconnects, even
+//                    when the adb Serial changes (typical for
+//                    wireless: ip:port churns on every reconnect).
+//
+// For USB devices the two are usually identical. For wireless they
+// are not — Serial is something like "192.168.31.141:33729" while
+// HardwareSerial is the phone's ro.serialno (e.g. "R5CT70AHPDR").
 type Device struct {
-	Serial string `json:"serial"`
-	State  string `json:"state"`
-	Model  string `json:"model"`
-	Brand  string `json:"brand"`
-	SDK    string `json:"sdk"`
+	Serial         string `json:"serial"`
+	HardwareSerial string `json:"hardwareSerial,omitempty"`
+	State          string `json:"state"`
+	Model          string `json:"model"`
+	Brand          string `json:"brand"`
+	SDK            string `json:"sdk"`
 }
 
 type LogFilter struct {

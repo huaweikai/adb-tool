@@ -3,39 +3,56 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
-String get _prefsPath {
+String get prefsPath {
   final home = Platform.environment['HOME'] ??
       Platform.environment['USERPROFILE'] ??
       '.';
-  return '$home/.adb_tool_prefs.json';
+  return '$home/.adb-tool/prefs.json';
 }
 
-ThemeMode _loadTheme() {
+Map<String, dynamic> _loadPrefs() {
   try {
-    final f = File(_prefsPath);
-    if (f.existsSync()) {
-      final data = json.decode(f.readAsStringSync());
-      return data['dark'] == false ? ThemeMode.light : ThemeMode.dark;
+    final home = Platform.environment['HOME'] ??
+        Platform.environment['USERPROFILE'] ??
+        '.';
+    final legacyFile = File('$home/.adb_tool_prefs.json');
+    final newFile = File(prefsPath);
+    if (!newFile.existsSync() && legacyFile.existsSync()) {
+      newFile.parent.createSync(recursive: true);
+      legacyFile.renameSync(newFile.path);
+    }
+    if (newFile.existsSync()) {
+      return json.decode(newFile.readAsStringSync()) as Map<String, dynamic>;
     }
   } catch (_) {}
-  return ThemeMode.dark;
+  return {};
 }
 
-void _saveTheme(bool dark) {
+void savePrefs(Map<String, dynamic> data) {
   try {
-    File(_prefsPath).writeAsStringSync(json.encode({'dark': dark}));
+    final file = File(prefsPath);
+    file.parent.createSync(recursive: true);
+    final existing = _loadPrefs();
+    file.writeAsStringSync(json.encode({...existing, ...data}));
   } catch (_) {}
 }
 
 class ThemeProvider extends ChangeNotifier {
-  ThemeMode _themeMode = _loadTheme();
+  ThemeMode _themeMode = ThemeMode.dark;
+
+  ThemeProvider() {
+    final prefs = _loadPrefs();
+    if (prefs.containsKey('dark')) {
+      _themeMode = prefs['dark'] == false ? ThemeMode.light : ThemeMode.dark;
+    }
+  }
 
   ThemeMode get themeMode => _themeMode;
   bool get isDark => _themeMode == ThemeMode.dark;
 
   void toggle() {
     _themeMode = isDark ? ThemeMode.light : ThemeMode.dark;
-    _saveTheme(isDark);
+    savePrefs({'dark': isDark});
     notifyListeners();
   }
 }

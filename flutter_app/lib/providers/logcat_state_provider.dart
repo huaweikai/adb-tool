@@ -33,13 +33,30 @@ class LogcatDeviceState {
   ///     O(K*N) (indexOf + removeAt for each); with the Set it's O(K) +
   ///     a single O(N) rebuild of the list when anything actually moved.
   ///
-  /// [displayed] returns a fresh List snapshot on every access so that
-  /// Selector consumers (the log list widget) see a new identity on
-  /// every flush and rebuild — without this they'd compare identical
-  /// lists and skip the rebuild entirely.
+  /// [_displayedVersion] tracks mutations; [displayed] returns a cached
+  /// snapshot that only creates a new List when the content changed.
+  ///
+  /// IMPORTANT: any new mutator that changes [_displayedList] MUST
+  /// bump [_displayedVersion] (so the [Selector] in
+  /// `logcat_screen.dart` sees a new list identity and triggers a
+  /// rebuild). Current mutators that bump the version:
+  ///   * [flushPending]  — when a new batch is merged
+  ///   * [refilter]      — when the filter changes
+  ///   * [clear]         — when the user clicks "Clear Logs"
+  /// If you add a fourth mutator, add the bump there too or the
+  /// log list will silently stop updating.
   final List<LogEntry> _displayedList = [];
   final Set<LogEntry> _displayedSet = Set<LogEntry>.identity();
-  List<LogEntry> get displayed => List<LogEntry>.of(_displayedList);
+  int _displayedVersion = 0;
+  int _cachedVersion = -1;
+  List<LogEntry>? _cachedDisplayed;
+  List<LogEntry> get displayed {
+    if (_cachedVersion != _displayedVersion) {
+      _cachedVersion = _displayedVersion;
+      _cachedDisplayed = List<LogEntry>.of(_displayedList);
+    }
+    return _cachedDisplayed!;
+  }
 
   /// Entries received from the stream but not yet merged into [entries].
   /// Batched flush keeps the rebuild rate bounded.
@@ -74,9 +91,11 @@ class LogcatDeviceState {
     final batch = List<LogEntry>.from(pending);
     pending.clear();
     entries.addAll(batch);
+    var changed = false;
     for (final e in batch) {
       if (e.matchesFilter(filter) && _displayedSet.add(e)) {
         _displayedList.add(e);
+        changed = true;
       }
     }
     if (entries.length > _maxEntries) {
@@ -93,8 +112,10 @@ class LogcatDeviceState {
         _displayedList
           ..clear()
           ..addAll(_displayedSet);
+        changed = true;
       }
     }
+    if (changed) _displayedVersion++;
   }
 
   /// Re-filter the displayed view against the current filter.
@@ -106,6 +127,7 @@ class LogcatDeviceState {
     _displayedList
       ..clear()
       ..addAll(_displayedSet);
+    _displayedVersion++;
   }
 
   /// Wipe both the raw and displayed buffers (e.g. user clicked "clear").
@@ -114,6 +136,7 @@ class LogcatDeviceState {
     _displayedList.clear();
     _displayedSet.clear();
     pending.clear();
+    _displayedVersion++;
   }
 
   /// True if there is anything to render or display in the status bar.
@@ -123,6 +146,12 @@ class LogcatDeviceState {
 
 /// App-wide logcat state. Holds a per-device [LogcatDeviceState] so
 /// switching devices preserves entries, filter, scroll, and pause state.
+///
+/// The `serial` argument on every public method is the device's **stable
+/// identity** (ro.serialno) — the same value carried in `DeviceSerialScope`.
+/// Keys states by stable identity so a wireless reconnect (which churns
+/// the adb address) doesn't lose the user's filter / pause / scroll
+/// state.
 ///
 /// Notifications are debounced: a stream batch of N entries triggers at
 /// most one [notifyListeners] per frame, so a flood of log lines doesn't
@@ -136,12 +165,23 @@ class LogcatStateProvider extends ChangeNotifier {
     // call is fire-and-forget here (we're already past the point of caring
     // about the result); the OS will reap the subprocess anyway.
     _offlineSub = _deviceProvider.onDeviceOffline.listen((event) {
+      // The state map is keyed by stable identity; the offline event
+      // carries both the disappearing adb-serial AND the device's
+      // ro.serialno, so we use the latter for the lookup.
+      final stable = event.hardwareSerial;
+      if (stable == null || stable.isEmpty) {
+        // No stable identity (e.g. backend couldn't read props). We
+        // can't map the event back to a state key, so skip the
+        // best-effort cleanup. The user can still stop the recording
+        // manually.
+        return;
+      }
       debugPrint(
-          '[LogcatStateProvider] device offline: ${event.serial} — stopping recording');
-      final wasRecording = stateFor(event.serial).recording != null;
-      stopRecordingIfActive(event.serial);
+          '[LogcatStateProvider] device offline: $stable — stopping recording');
+      final wasRecording = stateFor(stable).recording != null;
+      stopRecordingIfActive(stable);
       if (wasRecording && !_recordingInterrupted.isClosed) {
-        _recordingInterrupted.add(event.serial);
+        _recordingInterrupted.add(stable);
       }
     });
   }
@@ -165,6 +205,8 @@ class LogcatStateProvider extends ChangeNotifier {
   bool _disposed = false;
 
   /// Get-or-create the state for a device. Safe to call repeatedly.
+  /// The [serial] is the device's stable identity (ro.serialno) so
+  /// state survives wireless reconnects.
   LogcatDeviceState stateFor(String serial) =>
       _states.putIfAbsent(serial, () => LogcatDeviceState(serial: serial));
 
@@ -180,24 +222,7 @@ class LogcatStateProvider extends ChangeNotifier {
     state.userStopped = false;
     _svc.connect(serial, state.filter);
     state.streaming = true;
-
-    _logSubs[serial]?.cancel();
-    _logSubs[serial] = _svc.streamFor(serial).listen((batch) {
-      if (batch.isEmpty) return;
-      state.pending.addAll(batch);
-      // Coalesce: flush immediately if we hit the burst threshold,
-      // otherwise the periodic flush timer in the screen handles it.
-      if (state.pending.length >= 300) {
-        _flush(serial);
-      }
-    });
-
-    _connSubs[serial]?.cancel();
-    _connSubs[serial] = _svc.connectionStateFor(serial).listen((connected) {
-      state.wsConnected = connected;
-      _notify();
-    });
-
+    _wireSubscriptions(serial);
     _notify();
   }
 
@@ -244,6 +269,8 @@ class LogcatStateProvider extends ChangeNotifier {
     String? packagePid,
   }) {
     final state = stateFor(serial);
+    final needsRestart = (priority != null && priority != state.filter.priority) ||
+        (packagePid != null && packagePid != state.filter.packagePid);
     if (tag != null) state.filter.tag = tag;
     if (keyword != null) state.filter.keyword = keyword;
     if (packageName != null) state.filter.packageName = packageName;
@@ -251,7 +278,11 @@ class LogcatStateProvider extends ChangeNotifier {
     if (packagePid != null) state.filter.packagePid = packagePid;
     state.refreshDisplayed();
     if (state.streaming) {
-      _svc.updateFilter(serial, state.filter);
+      if (needsRestart) {
+        _restartStream(serial);
+      } else {
+        _svc.updateFilter(serial, state.filter);
+      }
     }
     _notify();
   }
@@ -306,9 +337,12 @@ class LogcatStateProvider extends ChangeNotifier {
     final state = stateFor(serial);
     state.packagePid = pid;
     state.filter.packagePid = pid ?? '';
+    if (pid == null) {
+      state.filter.packageName = '';
+    }
     state.refreshDisplayed();
     if (state.streaming) {
-      _svc.updateFilter(serial, state.filter);
+      _restartStream(serial);
     }
     _notify();
   }
@@ -387,6 +421,40 @@ class LogcatStateProvider extends ChangeNotifier {
   void _notify() {
     if (_disposed) return;
     notifyListeners();
+  }
+
+  /// Wire up stream and connection-state subscriptions for [serial].
+  /// Shared by [startStream] and [_restartStream] to avoid duplicating
+  /// the listener setup.
+  void _wireSubscriptions(String serial) {
+    final state = stateFor(serial);
+    _logSubs[serial]?.cancel();
+    _logSubs[serial] = _svc.streamFor(serial).listen((batch) {
+      if (batch.isEmpty) return;
+      state.pending.addAll(batch);
+      if (state.pending.length >= 300) {
+        _flush(serial);
+      }
+    });
+    _connSubs[serial]?.cancel();
+    _connSubs[serial] = _svc.connectionStateFor(serial).listen((connected) {
+      state.wsConnected = connected;
+      _notify();
+    });
+  }
+
+  /// Restart the backend logcat process with the current filter.
+  /// Properly tears down the old channel and re-subscribes to the new
+  /// one's stream so logs keep flowing. Used by [updateField] and
+  /// [setPackagePid] when a priority / --pid change requires a process
+  /// restart.
+  void _restartStream(String serial) {
+    final state = stateFor(serial);
+    _logSubs.remove(serial)?.cancel();
+    _connSubs.remove(serial)?.cancel();
+    _svc.stop(serial);
+    _svc.connect(serial, state.filter);
+    _wireSubscriptions(serial);
   }
 
   @override

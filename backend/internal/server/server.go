@@ -316,6 +316,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/emulator/java/import", s.handleEmulatorJavaImport)
 	mux.HandleFunc("/api/emulator/java/delete", s.handleEmulatorJavaDelete)
 
+	// SDK mirror config
+	mux.HandleFunc("/api/emulator/mirror", s.handleEmulatorMirror)
+
 	// Unified download API (replaces Java-specific and image-specific download APIs)
 	mux.HandleFunc("/api/emulator/downloads", s.handleEmulatorDownloads)
 	mux.HandleFunc("/api/emulator/download/progress", s.handleEmulatorDownloadProgress)

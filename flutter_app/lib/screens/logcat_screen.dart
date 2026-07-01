@@ -41,6 +41,9 @@ class LogcatScreen extends StatefulWidget {
 }
 
 class _LogcatScreenState extends State<LogcatScreen> {
+  /// Stable device identity (ro.serialno). Survives reconnects —
+  /// handed to `ApiClient` directly; the API boundary resolves
+  /// it to the current adb address on demand.
   String? get _selectedSerial => context.read<DeviceSerialScope>().serial;
 
   // Highlight rules are global UI tooling (apply across all devices);
@@ -116,9 +119,9 @@ class _LogcatScreenState extends State<LogcatScreen> {
       const Duration(milliseconds: 80),
       (_) {
         if (!mounted) return;
-        final serial = _selectedSerial;
-        if (serial == null) return;
-        context.read<LogcatStateProvider>().flushPending(serial);
+        final deviceSerial = _selectedSerial;
+        if (deviceSerial == null) return;
+        context.read<LogcatStateProvider>().flushPending(deviceSerial);
         if (_autoScroll) _tryAutoScroll();
       },
     );
@@ -144,12 +147,12 @@ class _LogcatScreenState extends State<LogcatScreen> {
   /// into the input controllers. Called only when [_hydratedSerial]
   /// changes (i.e. first mount, or device switch). Never call from
   /// build() unconditionally — that would clobber in-progress typing.
-  void _hydrateControllersFor(String serial) {
-    final state = context.read<LogcatStateProvider>().stateFor(serial);
+  void _hydrateControllersFor(String deviceSerial) {
+    final state = context.read<LogcatStateProvider>().stateFor(deviceSerial);
     _tagCtrl.text = state.filter.tag;
     _kwCtrl.text = state.filter.keyword;
     _pkgCtrl.text = state.filter.packageName;
-    _hydratedSerial = serial;
+    _hydratedSerial = deviceSerial;
   }
 
   @override
@@ -167,21 +170,43 @@ class _LogcatScreenState extends State<LogcatScreen> {
   }
 
   Future<void> _resolvePackage() async {
-    final serial = _selectedSerial;
+    final deviceSerial = _selectedSerial;
     final pkg = _pkgCtrl.text.trim();
-    if (pkg.isEmpty || serial == null) {
-      context.read<LogcatStateProvider>().setPackagePid(serial ?? '', null);
-      if (serial != null) {
-        context
-            .read<LogcatStateProvider>()
-            .updateField(serial, packageName: '');
-      }
+    if (pkg.isEmpty || deviceSerial == null) {
+      context.read<LogcatStateProvider>().setPackagePid(deviceSerial ?? '', null);
       return;
     }
-    context.read<LogcatStateProvider>().updateField(serial, packageName: pkg);
-    final pid = await context.read<ApiClient>().getPackagePid(serial, pkg);
-    if (!mounted) return;
-    context.read<LogcatStateProvider>().setPackagePid(serial, pid);
+    context.read<LogcatStateProvider>().updateField(deviceSerial, packageName: pkg);
+    try {
+      final pid = await context.read<ApiClient>().getPackagePid(deviceSerial, pkg);
+      if (!mounted) return;
+      if (pid == null) {
+        _showPidNotFound(pkg);
+        context.read<LogcatStateProvider>().updateField(
+          deviceSerial,
+          packagePid: '',
+        );
+        return;
+      }
+      context.read<LogcatStateProvider>().setPackagePid(deviceSerial, pid);
+    } catch (_) {
+      if (!mounted) return;
+      _showPidNotFound(pkg);
+      context.read<LogcatStateProvider>().updateField(
+        deviceSerial,
+        packagePid: '',
+      );
+    }
+  }
+
+  void _showPidNotFound(String pkg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(tr('logcatPackagePidNotFound', {'pkg': pkg})),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 3),
+      ),
+    );
   }
 
   void _tryAutoScroll() {
@@ -218,12 +243,12 @@ class _LogcatScreenState extends State<LogcatScreen> {
   }
 
   Future<void> _startRecording() async {
-    final serial = _selectedSerial;
-    if (serial == null) return;
+    final deviceSerial = _selectedSerial;
+    if (deviceSerial == null) return;
     final p = context.read<LogcatStateProvider>();
-    if (p.isRecording(serial)) return; // already recording
+    if (p.isRecording(deviceSerial)) return; // already recording
     try {
-      await p.startRecording(serial);
+      await p.startRecording(deviceSerial);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -236,14 +261,14 @@ class _LogcatScreenState extends State<LogcatScreen> {
   }
 
   Future<void> _stopAndPromptSave() async {
-    final serial = _selectedSerial;
-    if (serial == null) return;
+    final deviceSerial = _selectedSerial;
+    if (deviceSerial == null) return;
     final p = context.read<LogcatStateProvider>();
-    if (!p.isRecording(serial)) return;
+    if (!p.isRecording(deviceSerial)) return;
 
     RecordingResult? result;
     try {
-      result = await p.stopRecording(serial);
+      result = await p.stopRecording(deviceSerial);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -259,7 +284,7 @@ class _LogcatScreenState extends State<LogcatScreen> {
 
     // Suggest a stable, sortable file name: device_ts.log
     final ts = _fileTimestamp(DateTime.now());
-    final safeSerial = serial.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+    final safeSerial = deviceSerial.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
     final suggested = 'logcat_${safeSerial}_$ts.log';
 
     final location = await getSaveLocation(
@@ -297,40 +322,40 @@ class _LogcatScreenState extends State<LogcatScreen> {
   }
 
   void _startStream() {
-    final serial = _selectedSerial;
-    if (serial == null) return;
-    context.read<LogcatStateProvider>().startStream(serial);
+    final deviceSerial = _selectedSerial;
+    if (deviceSerial == null) return;
+    context.read<LogcatStateProvider>().startStream(deviceSerial);
   }
 
   void _stopStream() {
-    final serial = _selectedSerial;
-    if (serial == null) return;
-    context.read<LogcatStateProvider>().stopStream(serial);
+    final deviceSerial = _selectedSerial;
+    if (deviceSerial == null) return;
+    context.read<LogcatStateProvider>().stopStream(deviceSerial);
   }
 
   void _pauseStream() {
-    final serial = _selectedSerial;
-    if (serial == null) return;
-    context.read<LogcatStateProvider>().pauseStream(serial);
+    final deviceSerial = _selectedSerial;
+    if (deviceSerial == null) return;
+    context.read<LogcatStateProvider>().pauseStream(deviceSerial);
   }
 
   void _resumeStream() {
-    final serial = _selectedSerial;
-    if (serial == null) return;
-    context.read<LogcatStateProvider>().resumeStream(serial);
+    final deviceSerial = _selectedSerial;
+    if (deviceSerial == null) return;
+    context.read<LogcatStateProvider>().resumeStream(deviceSerial);
   }
 
   void _clearLogs() {
-    final serial = _selectedSerial;
-    if (serial == null) return;
+    final deviceSerial = _selectedSerial;
+    if (deviceSerial == null) return;
     final p = context.read<LogcatStateProvider>();
-    p.clearBuffers(serial);
-    context.read<ApiClient>().clearLogcat(serial);
+    p.clearBuffers(deviceSerial);
+    context.read<ApiClient>().clearLogcat(deviceSerial);
   }
 
   void _applyConfig(TestAppConfig config) {
-    final serial = _selectedSerial;
-    if (serial == null) return;
+    final deviceSerial = _selectedSerial;
+    if (deviceSerial == null) return;
     final pkg = config.packageName;
     final tag = config.logcat.tags.join(', ');
     final kw = config.logcat.keywords.join(', ');
@@ -343,7 +368,7 @@ class _LogcatScreenState extends State<LogcatScreen> {
     _kwCtrl.text = kw;
 
     context.read<LogcatStateProvider>().updateField(
-          serial,
+          deviceSerial,
           tag: tag,
           keyword: kw,
           packageName: pkg,
@@ -365,9 +390,9 @@ class _LogcatScreenState extends State<LogcatScreen> {
     context.watch<LocaleProvider>();
     final config = context.watch<TestConfigProvider>().currentApp;
     final configId = config?.id;
-    final serial = _selectedSerial;
+    final deviceSerial = _selectedSerial;
 
-    if (serial == null) {
+    if (deviceSerial == null) {
       return _buildNoDevice();
     }
 
@@ -375,8 +400,8 @@ class _LogcatScreenState extends State<LogcatScreen> {
     // (first mount or after a device switch). Do NOT call this on
     // every build — that would clobber whatever the user has typed
     // since the last stream batch arrived.
-    if (_hydratedSerial != serial) {
-      _hydrateControllersFor(serial);
+    if (_hydratedSerial != deviceSerial) {
+      _hydrateControllersFor(deviceSerial);
     }
 
     if (configId != null && configId != _lastAppliedConfigId) {
@@ -390,52 +415,50 @@ class _LogcatScreenState extends State<LogcatScreen> {
     }
 
     // Restart the flush timer if the active device changed.
-    if (_flushTimerSerial != serial) {
-      _flushTimerSerial = serial;
+    if (_flushTimerSerial != deviceSerial) {
+      _flushTimerSerial = deviceSerial;
       _startFlushTimer();
     }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        OfflineBanner(serial: serial),
-        _LogcatToolbar(
-          serial: serial,
-          // Pass the live device state so the toolbar can disable
-          // buttons that need a working adb connection (start stream,
-          // start/stop recording). Filter inputs and Clear Logs stay
-          // enabled — they're local-only operations that don't touch
-          // the device.
-          isOnline: context.watch<DeviceProvider>().isDeviceConnected(serial),
-          tagCtrl: _tagCtrl,
-          kwCtrl: _kwCtrl,
-          pkgCtrl: _pkgCtrl,
-          ruleCtrl: _ruleCtrl,
-          highlightRules: _highlightRules,
-          customRuleColors: _customRuleColors,
-          autoScroll: _autoScroll,
-          onAutoScrollChanged: (v) {
-            setState(() => _autoScroll = v);
-            if (v) _animateToBottomAfterFrame();
-          },
-          onStartStream: _startStream,
-          onStopStream: _stopStream,
-          onPauseStream: _pauseStream,
-          onResumeStream: _resumeStream,
-          onClearLogs: _clearLogs,
-          onStartRecording: _startRecording,
-          onStopRecording: _stopAndPromptSave,
-          onResolvePackage: _resolvePackage,
-          onHighlightRulesChanged: () => setState(() {}),
+        OfflineBanner(serial: deviceSerial),
+        Selector<DeviceProvider, bool>(
+          selector: (_, p) => p.isDeviceConnected(deviceSerial),
+          builder: (ctx, isOnline, _) => _LogcatToolbar(
+            deviceSerial: deviceSerial,
+            isOnline: isOnline,
+            tagCtrl: _tagCtrl,
+            kwCtrl: _kwCtrl,
+            pkgCtrl: _pkgCtrl,
+            ruleCtrl: _ruleCtrl,
+            highlightRules: _highlightRules,
+            customRuleColors: _customRuleColors,
+            autoScroll: _autoScroll,
+            onAutoScrollChanged: (v) {
+              setState(() => _autoScroll = v);
+              if (v) _animateToBottomAfterFrame();
+            },
+            onStartStream: _startStream,
+            onStopStream: _stopStream,
+            onPauseStream: _pauseStream,
+            onResumeStream: _resumeStream,
+            onClearLogs: _clearLogs,
+            onStartRecording: _startRecording,
+            onStopRecording: _stopAndPromptSave,
+            onResolvePackage: _resolvePackage,
+            onHighlightRulesChanged: () => setState(() {}),
+          ),
         ),
         Expanded(
           child: _LogList(
-            serial: serial,
+            deviceSerial: deviceSerial,
             scrollCtrl: _scrollCtrl,
             highlightRules: _highlightRules,
           ),
         ),
-        _LogcatStatusBar(serial: serial, highlightRules: _highlightRules),
+        _LogcatStatusBar(deviceSerial: deviceSerial, highlightRules: _highlightRules),
       ],
     );
   }
@@ -468,7 +491,7 @@ class _LogcatScreenState extends State<LogcatScreen> {
 /// notify does NOT rebuild this widget because the snapshot is unchanged.
 class _LogcatToolbar extends StatelessWidget {
   const _LogcatToolbar({
-    required this.serial,
+    required this.deviceSerial,
     required this.isOnline,
     required this.tagCtrl,
     required this.kwCtrl,
@@ -489,7 +512,7 @@ class _LogcatToolbar extends StatelessWidget {
     required this.onHighlightRulesChanged,
   });
 
-  final String serial;
+  final String deviceSerial;
   final bool isOnline;
   final TextEditingController tagCtrl;
   final TextEditingController kwCtrl;
@@ -514,7 +537,7 @@ class _LogcatToolbar extends StatelessWidget {
     final theme = Theme.of(context);
     return Selector<LogcatStateProvider, _ToolbarSnapshot>(
       selector: (_, p) {
-        final s = p.stateFor(serial);
+        final s = p.stateFor(deviceSerial);
         return _ToolbarSnapshot(
           streaming: s.streaming,
           paused: s.paused,
@@ -668,7 +691,7 @@ class _LogcatToolbar extends StatelessWidget {
       child: TextField(
         controller: tagCtrl,
         onChanged: (v) =>
-            ctx.read<LogcatStateProvider>().updateField(serial, tag: v),
+            ctx.read<LogcatStateProvider>().updateField(deviceSerial, tag: v),
         decoration: InputDecoration(
           labelText: tr('tag'),
           labelStyle: const TextStyle(fontSize: 11),
@@ -712,7 +735,7 @@ class _LogcatToolbar extends StatelessWidget {
           final newPrio = v ?? '';
           ctx
               .read<LogcatStateProvider>()
-              .updateField(serial, priority: newPrio);
+              .updateField(deviceSerial, priority: newPrio);
         },
       ),
     );
@@ -724,7 +747,7 @@ class _LogcatToolbar extends StatelessWidget {
       child: TextField(
         controller: kwCtrl,
         onChanged: (v) =>
-            ctx.read<LogcatStateProvider>().updateField(serial, keyword: v),
+            ctx.read<LogcatStateProvider>().updateField(deviceSerial, keyword: v),
         decoration: InputDecoration(
           labelText: tr('keyword'),
           labelStyle: const TextStyle(fontSize: 11),
@@ -739,11 +762,11 @@ class _LogcatToolbar extends StatelessWidget {
   }
 
   Widget _buildPackageFilter(BuildContext ctx, String? pid) {
-    // Stateful autocomplete widget — owns the per-serial package cache
+    // Stateful autocomplete widget — owns the per-deviceSerial package cache
     // with TTL so repeat focus on the same device doesn't hit /api/packages
     // every time. See [_PackageAutocompleteField] for details.
     return _PackageAutocompleteField(
-      serial: serial,
+      deviceSerial: deviceSerial,
       controller: pkgCtrl,
       pid: pid,
       onResolve: onResolvePackage,
@@ -997,12 +1020,12 @@ class _ToolbarSnapshot {
 /// do not, because their Selectors see the same snapshot value.
 class _LogList extends StatelessWidget {
   const _LogList({
-    required this.serial,
+    required this.deviceSerial,
     required this.scrollCtrl,
     required this.highlightRules,
   });
 
-  final String serial;
+  final String deviceSerial;
   final ScrollController scrollCtrl;
   final List<HighlightRule> highlightRules;
 
@@ -1010,7 +1033,7 @@ class _LogList extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Selector<LogcatStateProvider, List<LogEntry>>(
-      selector: (_, p) => p.stateFor(serial).displayed,
+      selector: (_, p) => p.stateFor(deviceSerial).displayed,
       builder: (ctx, entries, _) {
         if (entries.isEmpty) {
           return Center(
@@ -1039,7 +1062,7 @@ class _LogList extends StatelessWidget {
           // position across widget unmount/remount. Combined with the
           // per-device Provider state, this means switching devices and
           // coming back finds you exactly where you left off.
-          key: PageStorageKey('logcat:$serial'),
+          key: PageStorageKey('logcat:$deviceSerial'),
           itemCount: entries.length,
           padding: EdgeInsets.zero,
           itemBuilder: (ctx, i) {
@@ -1212,11 +1235,11 @@ class _LogList extends StatelessWidget {
 /// notifies don't change any of these, so the row does not rebuild.
 class _LogcatStatusBar extends StatelessWidget {
   const _LogcatStatusBar({
-    required this.serial,
+    required this.deviceSerial,
     required this.highlightRules,
   });
 
-  final String serial;
+  final String deviceSerial;
   final List<HighlightRule> highlightRules;
 
   @override
@@ -1224,7 +1247,7 @@ class _LogcatStatusBar extends StatelessWidget {
     final theme = Theme.of(context);
     return Selector<LogcatStateProvider, _StatusSnapshot>(
       selector: (_, p) {
-        final s = p.stateFor(serial);
+        final s = p.stateFor(deviceSerial);
         return _StatusSnapshot(
           streaming: s.streaming,
           paused: s.paused,
@@ -1369,13 +1392,13 @@ String _fileTimestamp(DateTime dt) {
 ///
 /// Owns:
 ///   - A static `Map<String, _PackageCacheEntry>` keyed by device
-///     serial, so repeat focuses on the same device don't re-fetch
+///     deviceSerial, so repeat focuses on the same device don't re-fetch
 ///     /api/packages. TTL is 30 s — long enough to make typing-flow
 ///     snappy without leaving the cache stale after the user installs
 ///     an app.
 ///
 /// Behaviors:
-///   - On focus, ensure cache is fresh for current serial; lazily
+///   - On focus, ensure cache is fresh for current deviceSerial; lazily
 ///     fetch /api/packages if missing or expired.
 ///   - Empty text dumps the full cached list (so the user can browse /
 ///     scroll without typing). On non-empty input, filters with
@@ -1391,13 +1414,13 @@ String _fileTimestamp(DateTime dt) {
 ///     advancing to the next focusable widget in the toolbar row.
 class _PackageAutocompleteField extends StatefulWidget {
   const _PackageAutocompleteField({
-    required this.serial,
+    required this.deviceSerial,
     required this.controller,
     required this.pid,
     required this.onResolve,
   });
 
-  final String serial;
+  final String deviceSerial;
   final TextEditingController controller;
   final String? pid;
   final VoidCallback onResolve;
@@ -1408,11 +1431,10 @@ class _PackageAutocompleteField extends StatefulWidget {
 }
 
 class _PackageAutocompleteFieldState extends State<_PackageAutocompleteField> {
-  // Per-device cached package list. Static so it survives toolbar
-  // rebuilds and tab switches; a focus event on the same serial within
-  // TTL is a pure in-memory lookup with no IO.
   static final Map<String, _PackageCacheEntry> _cache = {};
   static const Duration _ttl = Duration(seconds: 30);
+  // Sentinel entry rendered as "清除筛选" at the top of the suggestion list.
+  static final AppPackage _clearPackage = AppPackage(packageName: '', sourceDir: '');
 
   List<AppPackage> _packages = const [];
   bool _loading = false;
@@ -1420,9 +1442,7 @@ class _PackageAutocompleteFieldState extends State<_PackageAutocompleteField> {
   @override
   void initState() {
     super.initState();
-    // Adopt cached list synchronously so the first focus shows results
-    // without a network round-trip.
-    final cached = _cache[widget.serial];
+    final cached = _cache[widget.deviceSerial];
     if (cached != null && DateTime.now().difference(cached.fetchedAt) < _ttl) {
       _packages = cached.packages;
     }
@@ -1431,15 +1451,13 @@ class _PackageAutocompleteFieldState extends State<_PackageAutocompleteField> {
   @override
   void didUpdateWidget(_PackageAutocompleteField old) {
     super.didUpdateWidget(old);
-    // Device switch — drop the in-memory list so the popup can't show
-    // options from device A under device B's toolbar.
-    if (old.serial != widget.serial) {
+    if (old.deviceSerial != widget.deviceSerial) {
       _packages = const [];
     }
   }
 
   Future<void> _ensureLoaded() async {
-    final cached = _cache[widget.serial];
+    final cached = _cache[widget.deviceSerial];
     final fresh =
         cached != null && DateTime.now().difference(cached.fetchedAt) < _ttl;
     if (fresh) {
@@ -1452,8 +1470,8 @@ class _PackageAutocompleteFieldState extends State<_PackageAutocompleteField> {
     setState(() => _loading = true);
     try {
       final api = context.read<ApiClient>();
-      final pkgs = await api.getInstalledPackages(widget.serial);
-      _cache[widget.serial] = _PackageCacheEntry(pkgs, DateTime.now());
+      final pkgs = await api.getInstalledPackages(widget.deviceSerial);
+      _cache[widget.deviceSerial] = _PackageCacheEntry(pkgs, DateTime.now());
       if (!mounted) return;
       setState(() {
         _packages = pkgs;
@@ -1466,30 +1484,19 @@ class _PackageAutocompleteFieldState extends State<_PackageAutocompleteField> {
     }
   }
 
-  /// Compute the suggestion list shown in the TypeAheadField popup.
-  /// Returns an empty list (not null) when the popup should be empty
-  /// — the widget renders a "no items found" state for null which we
-  /// don't want for the exact-match / no-packages cases.
   Future<List<AppPackage>> _computeSuggestions(String pattern) async {
-    // Lazy fetch on first use; subsequent calls within the field's
-    // lifetime are pure in-memory filter.
     if (_packages.isEmpty) {
       await _ensureLoaded();
     }
     final typed = pattern.trim();
-    // Empty text → dump the full cached list (user can browse / scroll).
-    if (typed.isEmpty) return List.of(_packages);
-    // Exact match against any installed package — hide the popup so
-    // pressing Enter resolves the PID without forcing the user to
-    // "select" the already-correct match.
-    final hasExact = _packages.any((p) => p.packageName == typed);
-    if (hasExact) return const <AppPackage>[];
+    if (typed.isEmpty) return [_clearPackage, ..._packages];
     final q = typed.toLowerCase();
-    return _packages
+    final filtered = _packages
         .where((p) =>
             p.packageName.toLowerCase().contains(q) ||
             p.shortName.toLowerCase().contains(q))
         .toList(growable: false);
+    return [_clearPackage, ...filtered];
   }
 
   @override
@@ -1499,26 +1506,17 @@ class _PackageAutocompleteFieldState extends State<_PackageAutocompleteField> {
       width: 180,
       child: TypeAheadField<AppPackage>(
         controller: widget.controller,
-        // textInputAction.search keeps Enter semantics local — it
-        // fires onSubmitted without telling the IME to advance focus.
-        // Combined with the explicit focus request below, focus stays
-        // in the field after Enter.
+        constraints: const BoxConstraints(maxHeight: 200),
         builder: (context, textController, focusNode) => TextField(
           controller: textController,
           focusNode: focusNode,
           textInputAction: TextInputAction.search,
           onSubmitted: (_) {
-            widget.onResolve();
-            // Re-request focus so Enter doesn't leave the field
-            // empty / focused-out (Flutter's TypeAheadField keeps
-            // focus after suggestion selection; this is the "no
-            // suggestion highlighted" path).
-            FocusScope.of(context).requestFocus(FocusNode());
+            FocusScope.of(context).requestFocus(focusNode);
           },
           decoration: InputDecoration(
             labelText: tr('package'),
             labelStyle: const TextStyle(fontSize: 11),
-            isDense: true,
             contentPadding:
                 const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
             border: const OutlineInputBorder(
@@ -1534,29 +1532,36 @@ class _PackageAutocompleteFieldState extends State<_PackageAutocompleteField> {
                   )
                 : (pid != null
                     ? Padding(
-                        padding: const EdgeInsets.only(top: 12, right: 4),
+                        padding: const EdgeInsets.only(right: 4),
                         child: Text('PID:$pid',
                             style: TextStyle(
-                                fontSize: 9, color: Colors.green.shade300)),
+                                fontSize: 10,
+                                color: Colors.green.shade300,
+                                fontFamily: 'Menlo')),
                       )
                     : null),
           ),
-          style: const TextStyle(fontSize: 11, fontFamily: 'Menlo'),
-          // Trigger cache load on tap, not just on text change — the
-          // user may focus the field and scroll the popup without ever
-          // typing a character.
+          style: const TextStyle(fontSize: 12, fontFamily: 'Menlo'),
           onTap: _ensureLoaded,
         ),
         suggestionsCallback: _computeSuggestions,
-        // Show suggestions even when the user hasn't typed anything —
-        // tap focus → see full app list, then narrow by typing.
         hideOnEmpty: false,
-        // Keep suggestions visible across the (potentially long)
-        // cache refetch — better to see a slightly stale list than a
-        // flashing empty box.
         hideOnLoading: false,
         itemBuilder: (context, AppPackage pkg) {
           final theme = Theme.of(context);
+          if (pkg.packageName.isEmpty) {
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              child: Text(
+                tr('clearFilter'),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: theme.colorScheme.onSurfaceVariant,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            );
+          }
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             child: Column(
@@ -1586,14 +1591,8 @@ class _PackageAutocompleteFieldState extends State<_PackageAutocompleteField> {
             offset: widget.controller.text.length,
           );
           widget.onResolve();
-          // Re-request focus so the user can immediately refine the
-          // value or hit Enter again without first clicking back into
-          // the field.
           FocusScope.of(context).requestFocus(FocusNode());
         },
-        // Empty when exact match or no typed query but also no
-        // packages yet — show nothing rather than a misleading
-        // "no items found" toast.
         emptyBuilder: (_) => const SizedBox.shrink(),
       ),
     );

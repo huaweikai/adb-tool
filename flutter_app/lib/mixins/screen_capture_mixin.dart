@@ -139,6 +139,7 @@ mixin ScreenCaptureMixin<T extends StatefulWidget> on State<T> {
         await onScreenshotSaved(bytes, localPath);
       } else {
         if (!mounted) return;
+        final editorCtx = context;
         await Navigator.push(
           context,
           MaterialPageRoute(
@@ -160,6 +161,9 @@ mixin ScreenCaptureMixin<T extends StatefulWidget> on State<T> {
                     await sessionProvider.saveScreenshotBytes(edited);
                   }
                   await onScreenshotSaved(edited, localPath);
+                  if (editorCtx.mounted) {
+                    Navigator.of(editorCtx).pop(edited);
+                  }
                 },
               ),
             ),

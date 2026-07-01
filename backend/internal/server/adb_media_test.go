@@ -81,14 +81,26 @@ func main() {
 	if len(os.Args) < 2 {
 		os.Exit(1)
 	}
-	args := os.Args[1:]
+	rawArgs := os.Args[1:]
 
-	// Log invocations.
+	// Log invocations first (using the raw form production code
+	// actually passes) so the test sees what the production code
+	// is doing, not the post-normalization view.
 	if log := os.Getenv("ADB_FAKE_LOG"); log != "" {
 		if f, err := os.OpenFile(log, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
-			f.WriteString(strings.Join(args, " ") + "\n")
+			f.WriteString(strings.Join(rawArgs, " ") + "\n")
 			f.Close()
 		}
+	}
+
+	// Production code now uses the single-arg form "-sSERIAL" (avoids
+	// adb's argv parser splitting on internal whitespace in mDNS
+	// serials). Normalize that back to the two-arg "-s SERIAL" form
+	// so the rest of this fake's parser doesn't have to special-case
+	// both spellings.
+	args := rawArgs
+	if len(args) >= 1 && len(args[0]) > 2 && args[0][:2] == "-s" {
+		args = append([]string{"-s", args[0][2:]}, args[1:]...)
 	}
 
 	// Route: -s SERIAL shell <cmd>

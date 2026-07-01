@@ -6,7 +6,7 @@ mixin LogcatApi on ApiBase {
   Future<String> getRecentLogcat(String serial, {int lines = 1000}) async {
     final resp = await dio.get(
       '/api/logcat-recent',
-      queryParameters: {'serial': serial, 'lines': lines},
+      queryParameters: deviceQueryParameters(serial, {'lines': lines}),
     );
     throwIfNotOk(resp);
     final data = responseMap(resp);
@@ -21,12 +21,11 @@ mixin LogcatApi on ApiBase {
   }) async {
     final resp = await dio.post(
       '/api/session-logcat',
-      data: {
+      data: deviceBodyParameters(serial, {
         'action': action,
-        'serial': serial,
         'sessionDir': sessionDir,
         'packageName': packageName,
-      },
+      }),
       options: Options(contentType: Headers.jsonContentType),
     );
     throwIfNotOk(resp);
@@ -43,11 +42,10 @@ mixin LogcatApi on ApiBase {
   }) async {
     final resp = await dio.post(
       '/api/local-recording',
-      data: {
+      data: deviceBodyParameters(serial, {
         'action': 'start',
-        'serial': serial,
         'packageName': packageName,
-      },
+      }),
       options: Options(contentType: Headers.jsonContentType),
     );
     throwIfNotOk(resp);
@@ -61,10 +59,9 @@ mixin LogcatApi on ApiBase {
   Future<Map<String, dynamic>> stopLocalRecording(String serial) async {
     final resp = await dio.post(
       '/api/local-recording',
-      data: {
+      data: deviceBodyParameters(serial, {
         'action': 'stop',
-        'serial': serial,
-      },
+      }),
       options: Options(contentType: Headers.jsonContentType),
     );
     throwIfNotOk(resp);

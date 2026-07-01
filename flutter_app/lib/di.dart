@@ -49,23 +49,26 @@ Future<void> setupDependencies() async {
   // ── 1. Core infrastructure (no app-layer dependencies) ──────────────
   getIt.registerSingleton<AppDatabase>(AppDatabase());
 
+  // DeviceProvider needs DB
+  getIt.registerSingleton<DeviceProvider>(
+    DeviceProvider(db: getIt<AppDatabase>()),
+  );
+
   getIt.registerSingleton<ApiClient>(
-    ApiClient('http://127.0.0.1:9876'),
+    ApiClient(
+      'http://127.0.0.1:9876',
+      deviceProvider: getIt<DeviceProvider>(),
+    ),
   );
 
   getIt.registerSingleton<LogStreamService>(
-    LogStreamService(),
+    LogStreamService(getIt<DeviceProvider>()),
   );
 
   // ── 2. UI state providers ────────────────────────────────────────────
   // Theme / locale are independent
   getIt.registerSingleton<ThemeProvider>(ThemeProvider());
   getIt.registerSingleton<LocaleProvider>(LocaleProvider());
-
-  // DeviceProvider needs DB
-  getIt.registerSingleton<DeviceProvider>(
-    DeviceProvider(db: getIt<AppDatabase>()),
-  );
 
   // TestConfigProvider needs a DAO from DB
   getIt.registerSingleton<TestConfigProvider>(

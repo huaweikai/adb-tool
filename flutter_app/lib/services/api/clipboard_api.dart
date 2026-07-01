@@ -6,7 +6,7 @@ mixin ClipboardApi on ApiBase {
   Future<bool> checkClipboardInstalled(String serial) async {
     final resp = await dio.get(
       '/api/clipboard-check',
-      queryParameters: {'serial': serial},
+      queryParameters: deviceQueryParameters(serial),
     );
     throwIfNotOk(resp);
     final data = responseMap(resp);
@@ -16,7 +16,7 @@ mixin ClipboardApi on ApiBase {
   Future<bool> installClipboardHelper(String serial) async {
     final resp = await dio.post(
       '/api/clipboard-install',
-      queryParameters: {'serial': serial},
+      queryParameters: deviceQueryParameters(serial),
     );
     throwIfNotOk(resp);
     return true;
@@ -25,7 +25,7 @@ mixin ClipboardApi on ApiBase {
   Future<bool> sendClipboard(String serial, String text) async {
     final resp = await dio.post(
       '/api/clipboard-send',
-      queryParameters: {'serial': serial},
+      queryParameters: deviceQueryParameters(serial),
       data: {'text': text},
       options: Options(contentType: Headers.jsonContentType),
     );
@@ -36,7 +36,7 @@ mixin ClipboardApi on ApiBase {
   Future<bool> uninstallClipboardHelper(String serial) async {
     final resp = await dio.post(
       '/api/clipboard-uninstall',
-      queryParameters: {'serial': serial},
+      queryParameters: deviceQueryParameters(serial),
     );
     throwIfNotOk(resp);
     return true;

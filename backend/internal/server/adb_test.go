@@ -108,8 +108,6 @@ exit 0
 
 func TestDevicesSkipsPropsForDisconnectedStates(t *testing.T) {
 	adbPath := writeFakeAdb(t, `#!/bin/sh
-printf '%s ' "$@" >> "$ADB_FAKE_LOG"
-printf '\n' >> "$ADB_FAKE_LOG"
 if [ "$1" = "devices" ]; then
   printf 'List of devices attached\n'
   printf 'offline-serial\toffline product:test model:Offline device:test\n'
@@ -117,11 +115,14 @@ if [ "$1" = "devices" ]; then
   printf 'ready-serial\tdevice product:test model:Ready device:test\n'
   exit 0
 fi
-if [ "$3" = "shell" ] && echo "$4" | grep -q "getprop"; then
-  printf 'Ready\n'
-  printf 'TestBrand\n'
-  printf '35\n'
-  exit 0
+if echo "$*" | grep -q shell; then
+  if echo "$*" | grep -q getprop; then
+    printf 'Ready\n'
+    printf 'TestBrand\n'
+    printf '35\n'
+    printf 'ROSN-12345\n'
+    exit 0
+  fi
 fi
 exit 1
 `)
@@ -140,6 +141,9 @@ exit 1
 	}
 	if devices[2].Model != "Ready" {
 		t.Fatalf("connected device should load props: %+v", devices[2])
+	}
+	if devices[2].HardwareSerial != "ROSN-12345" {
+		t.Fatalf("connected device should populate hardwareSerial: %+v", devices[2])
 	}
 
 	logBytes, err := os.ReadFile(logPath)
@@ -175,10 +179,17 @@ func writeFakeAdb(t *testing.T, script string) string {
 		batch := strings.Join([]string{
 			"@echo off",
 			"echo %* >> \"%ADB_FAKE_LOG%\"",
-			"if \"%1\"==\"version\" echo Android Debug Bridge version 1.0.41& exit /b 0",
-			"if \"%1\"==\"start-server\" echo * daemon started successfully *& exit /b 0",
-			"if \"%1\"==\"devices\" echo List of devices attached& echo offline-serial	offline product:test model:Offline device:test& echo unauth-serial	unauthorized product:test model:Unauthorized device:test& echo ready-serial	device product:test model:Ready device:test& exit /b 0",
-			"if \"%3\"==\"shell\" echo %4 | findstr getprop >nul && echo Ready& echo TestBrand& echo 35& exit /b 0",
+			"if \"%1\"==\"version\" (echo Android Debug Bridge version 1.0.41& exit /b 0)",
+			"if \"%1\"==\"start-server\" (echo * daemon started successfully *& exit /b 0)",
+			"if \"%1\"==\"devices\" (echo List of devices attached& echo offline-serial	offline product:test model:Offline device:test& echo unauth-serial	unauthorized product:test model:Unauthorized device:test& echo ready-serial	device product:test model:Ready device:test& exit /b 0)",
+			// Production code now passes -s<serial> instead of -s <serial>,
+			// so position-based %3=="shell" no longer matches. Fall back
+			// to substring presence in the full arg list. Each branch is
+			// a single line with a single-command `if` so the `&` chain
+			// doesn't get tangled with cmd's `(` block parsing.
+			"echo %* | findstr /C:\"shell\" >nul",
+			"if not errorlevel 1 echo %* | findstr /C:\"getprop\" >nul",
+			"if not errorlevel 1 (echo DEBUG-STAGE3>>\"%ADB_FAKE_LOG%\" & echo Ready& echo TestBrand& echo 35& echo ROSN-12345& exit /b 0)",
 			"exit /b 1",
 		}, "\r\n")
 		if err := os.WriteFile(path, []byte(batch), 0o755); err != nil {

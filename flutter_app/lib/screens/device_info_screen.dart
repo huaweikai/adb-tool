@@ -24,6 +24,9 @@ class DeviceInfoScreen extends StatefulWidget {
 }
 
 class _DeviceInfoScreenState extends State<DeviceInfoScreen> {
+  /// Stable device identity (ro.serialno). Survives reconnects —
+  /// handed to `ApiClient` directly; the API boundary resolves
+  /// it to the current adb address on demand.
   String? get _selectedSerial => context.read<DeviceSerialScope>().serial;
 
   Map<String, String> _props = {};
@@ -38,7 +41,8 @@ class _DeviceInfoScreenState extends State<DeviceInfoScreen> {
   }
 
   Future<void> _loadInfo() async {
-    if (_selectedSerial == null) {
+    final stable = _selectedSerial;
+    if (stable == null) {
       setState(() {
         _props = {};
         _error = tr('selectDevice');
@@ -51,7 +55,7 @@ class _DeviceInfoScreenState extends State<DeviceInfoScreen> {
     });
     try {
       final props =
-          await context.read<ApiClient>().getDeviceDetail(_selectedSerial!);
+          await context.read<ApiClient>().getDeviceDetail(stable);
       if (!mounted) return;
       setState(() {
         _props = props;
@@ -67,10 +71,11 @@ class _DeviceInfoScreenState extends State<DeviceInfoScreen> {
   }
 
   Future<void> _takeScreenshot() async {
-    if (_selectedSerial == null) return;
+    final stable = _selectedSerial;
+    if (stable == null) return;
     try {
       final b64 =
-          await context.read<ApiClient>().takeScreenshot(_selectedSerial!);
+          await context.read<ApiClient>().takeScreenshot(stable);
       if (!mounted) return;
       if (b64 != null) {
         var bytes = base64Decode(b64);
@@ -95,6 +100,7 @@ class _DeviceInfoScreenState extends State<DeviceInfoScreen> {
           }
         } else {
           if (!mounted) return;
+          final editorCtx = context;
           await Navigator.push(
             context,
             MaterialPageRoute(
@@ -103,7 +109,7 @@ class _DeviceInfoScreenState extends State<DeviceInfoScreen> {
                       configs: kImageEditorConfigs,
                       callbacks: ProImageEditorCallbacks(
                         onImageEditingComplete: (edited) async {
-                          if (!context.mounted) return;
+                          if (!editorCtx.mounted) return;
                           final location = await getSaveLocation(
                             suggestedName:
                                 'screenshot-${DateTime.now().millisecondsSinceEpoch}.png',
@@ -111,6 +117,9 @@ class _DeviceInfoScreenState extends State<DeviceInfoScreen> {
                           );
                           if (location != null) {
                             await File(location.path).writeAsBytes(edited);
+                          }
+                          if (editorCtx.mounted) {
+                            Navigator.of(editorCtx).pop(edited);
                           }
                         },
                       ),

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -94,6 +95,19 @@ func streamLines(r io.Reader, handleLine func(string)) {
 	}
 }
 
+// lookupEnv returns the value for key in a "KEY=VALUE" env slice, mirroring
+// os.LookupEnv for cmd.Env. We need this because cmd.Env is a slice, not
+// the parent process map, so we can't call os.LookupEnv on it directly.
+func lookupEnv(env []string, key string) (string, bool) {
+	prefix := key + "="
+	for _, kv := range env {
+		if strings.HasPrefix(kv, prefix) {
+			return kv[len(prefix):], true
+		}
+	}
+	return "", false
+}
+
 // NewSDKInstaller creates a new SDKInstaller.
 func NewSDKInstaller() *SDKInstaller {
 	return &SDKInstaller{jobs: make(map[string]*InstallJob)}
@@ -114,7 +128,17 @@ var percentRegex = regexp.MustCompile(`(\d{1,3})\s*%`)
 
 // Start launches an install job. Returns the job immediately; the actual
 // sdkmanager process runs in a goroutine.
-func (s *SDKInstaller) Start(sdkmanagerPath, sdkPath string, packages []string) (*InstallJob, error) {
+//
+// javaPath is the path to the Java executable the engine resolved (may be
+// empty). When non-empty we derive JAVA_HOME and pass it to the sdkmanager
+// subprocess so its wrapper script can locate Java even when the parent
+// process's PATH is minimal — this is the GUI-launched case where macOS
+// LaunchServices strips the user's shell PATH and sdkmanager's shebang
+// resolution (or its `which java` fallback) would otherwise exit 127.
+//
+// mirrorURL is an optional mirror proxy URL (e.g. "https://mirrors.cloud.tencent.com/AndroidSDK/").
+// When non-empty, sdkmanager uses it as a proxy to speed up downloads in China.
+func (s *SDKInstaller) Start(sdkmanagerPath, sdkPath, javaPath string, packages []string, mirrorURL string) (*InstallJob, error) {
 	if _, err := os.Stat(sdkmanagerPath); err != nil {
 		return nil, fmt.Errorf("sdkmanager not found at %s: %w", sdkmanagerPath, err)
 	}
@@ -135,11 +159,38 @@ func (s *SDKInstaller) Start(sdkmanagerPath, sdkPath string, packages []string) 
 	s.jobs[job.ID] = job
 	s.mu.Unlock()
 
-	go s.run(job, sdkmanagerPath, sdkPath)
+	go s.run(job, sdkmanagerPath, sdkPath, javaPath, mirrorURL)
 	return job, nil
 }
 
-func (s *SDKInstaller) run(job *InstallJob, sdkmanagerPath, sdkPath string) {
+// buildSDKManagerEnv assembles the environment that we hand to the
+// sdkmanager subprocess. ANDROID_HOME / ANDROID_SDK_ROOT always point at
+// the user-selected SDK so sdkmanager resolves the install target
+// regardless of where the parent daemon was launched from. JAVA_HOME is
+// derived from javaPath when available — sdkmanager is a shell wrapper
+// that prefers $JAVA_HOME/bin/java over `which java`, and the `which`
+// fallback fails on GUI-launched macOS apps whose PATH does not include
+// a JDK.
+//
+// When javaPath is empty (engine couldn't resolve one) we still let the
+// process run — sdkmanager will fall back to `which java` and succeed
+// when the parent env happens to have one on PATH.
+func buildSDKManagerEnv(sdkPath, javaPath string) []string {
+	env := append(os.Environ(),
+		"ANDROID_HOME="+sdkPath,
+		"ANDROID_SDK_ROOT="+sdkPath,
+	)
+	if javaPath != "" {
+		// javaPath is the path to the `java` executable, e.g.
+		// /Library/Java/JavaVirtualMachines/jdk-17.jdk/Contents/Home/bin/java
+		// or /usr/bin/java. JAVA_HOME is the directory above `bin/`,
+		// which is the parent of the parent.
+		env = append(env, "JAVA_HOME="+filepath.Dir(filepath.Dir(javaPath)))
+	}
+	return env
+}
+
+func (s *SDKInstaller) run(job *InstallJob, sdkmanagerPath, sdkPath, javaPath string, mirrorURL string) {
 	s.update(job, func() {
 		job.Status = "running"
 		job.StartedAt = time.Now()
@@ -149,17 +200,110 @@ func (s *SDKInstaller) run(job *InstallJob, sdkmanagerPath, sdkPath string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// sdkmanager requires license acceptance before installing. It prompts
-	// once per license and waits for a 'y' on stdin — so we pump answers
-	// in a goroutine, with a small delay between each, until the process
-	// exits. The user has explicitly pressed "download" in the UI, which
-	// counts as informed consent for the SDK licenses.
-	args := append([]string{"--sdk_root=" + sdkPath}, job.Packages...)
-	cmd := exec.CommandContext(ctx, sdkmanagerPath, args...)
-	cmd.Env = append(os.Environ(),
-		"ANDROID_HOME="+sdkPath,
-		"ANDROID_SDK_ROOT="+sdkPath,
-	)
+	// Pre-accept the well-known Android SDK licenses. Without this, the
+	// first-ever install on a fresh machine blocks forever at the
+	// "Accept? (y/N):" prompt — even with our 'y'-pumping stdin
+	// goroutine, the prompt blocks the JVM before the goroutine's first
+	// 'y' can land (and on a TTY-less parent like our Flutter GUI child
+	// the prompt hangs outright). Accepting the licenses on disk is the
+	// same trick Android Studio / Flutter doctor use; see licenses.go.
+	if err := acceptSDKLicenses(); err != nil {
+		s.fail(job, fmt.Errorf("pre-accept licenses: %w", err))
+		return
+	}
+
+	// Resolve classpath from the cmdline-tools we have on disk. We
+	// bypass the sdkmanager shell wrapper entirely — that wrapper has
+	// too many env / shebang / cwd / `which java` quirks to be a
+	// reliable non-interactive spawn target (see the historical debug
+	// log in PR #... — env exit 127, JAVA_HOME propagated-but-ignored,
+	// silent hangs at cd "$(dirname "$0")", ...). Running java
+	// ourselves with the canonical classpath avoids all of them.
+	classpath, appHome, err := resolveSDKManagerClasspath(sdkmanagerPath)
+	if err != nil || appHome == "" {
+		s.fail(job, fmt.Errorf("resolve sdkmanager classpath: %w", err))
+		return
+	}
+
+	// Effective Java path: prefer the one engine resolved, otherwise
+	// fall back to "java" on PATH (we explicitly set JAVA_HOME so the
+	// wrapper's "which java" fallback isn't needed).
+	if javaPath == "" {
+		s.fail(job, fmt.Errorf("no java path resolved; cannot launch sdkmanager"))
+		return
+	}
+	if _, err := os.Stat(javaPath); err != nil {
+		s.fail(job, fmt.Errorf("java path not found: %s: %w", javaPath, err))
+		return
+	}
+
+	args := []string{
+		"-Dcom.android.sdklib.toolsdir=" + appHome,
+		"-classpath", classpath,
+		"com.android.sdklib.tool.sdkmanager.SdkManagerCli",
+		"--sdk_root=" + sdkPath,
+	}
+	if mirrorURL != "" {
+		parsed, err := url.Parse(mirrorURL)
+		if err == nil && parsed.Host != "" {
+			host := parsed.Hostname()
+			port := parsed.Port()
+			if port == "" {
+				if parsed.Scheme == "https" {
+					port = "443"
+				} else {
+					port = "80"
+				}
+			}
+			proxyArgs := []string{
+				"--proxy=" + parsed.Scheme,
+				"--proxy_host=" + host,
+				"--proxy_port=" + port,
+			}
+			// --no_https only makes sense when the mirror itself is plain HTTP.
+			// For HTTPS mirrors (Tencent/Huawei), forcing HTTP downgrades and can
+			// break downloads or trigger cert issues — leave the flag off.
+			if parsed.Scheme == "http" {
+				proxyArgs = append(proxyArgs, "--no_https")
+			}
+			args = append(args, proxyArgs...)
+		}
+	}
+	args = append(args, job.Packages...)
+	cmd := exec.CommandContext(ctx, javaPath, args...)
+	cmd.Env = buildSDKManagerEnv(sdkPath, javaPath)
+
+	log.Printf("[sdk-installer] spawn: java=%q args=%v sdkRoot=%q", javaPath, args, sdkPath)
+	for _, kv := range cmd.Env {
+		switch {
+		case strings.HasPrefix(kv, "JAVA_HOME="),
+			strings.HasPrefix(kv, "ANDROID_HOME="),
+			strings.HasPrefix(kv, "ANDROID_SDK_ROOT="):
+			log.Printf("[sdk-installer] env: %s", kv)
+		}
+	}
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		s.fail(job, fmt.Errorf("stdout pipe: %w", err))
+		return
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		s.fail(job, fmt.Errorf("stderr pipe: %w", err))
+		return
+	}
+
+	// Pump "y\n" answers into the subprocess's stdin so any license prompt
+	// we missed in our pre-accepted hash list still gets a "yes". This
+	// covers future cmdline-tools versions whose license text rotates to
+	// a new SHA-1 we haven't seen yet.
+	//
+	// Strictly speaking our acceptSDKLicenses() pre-write is the primary
+	// acceptance mechanism (covers the well-known hashes we baked in).
+	// The goroutine below is a belt-and-suspenders fallback for hashes
+	// we don't yet know about — the UI's "Download" button counts as
+	// informed consent for any license that turns up.
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		s.fail(job, fmt.Errorf("stdin pipe: %w", err))
@@ -181,19 +325,8 @@ func (s *SDKInstaller) run(job *InstallJob, sdkmanagerPath, sdkPath string) {
 		}
 	}()
 
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		s.fail(job, fmt.Errorf("stdout pipe: %w", err))
-		return
-	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		s.fail(job, fmt.Errorf("stderr pipe: %w", err))
-		return
-	}
-
 	if err := cmd.Start(); err != nil {
-		s.fail(job, fmt.Errorf("start sdkmanager: %w", err))
+		s.fail(job, fmt.Errorf("start java: %w", err))
 		return
 	}
 

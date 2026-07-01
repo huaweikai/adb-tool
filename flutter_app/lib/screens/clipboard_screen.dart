@@ -16,6 +16,10 @@ class ClipboardScreen extends StatefulWidget {
 }
 
 class _ClipboardScreenState extends State<ClipboardScreen> {
+  /// Stable device identity (ro.serialno) — what the screen is
+  /// "about". Survives wireless reconnects. Handed directly to
+  /// `ApiClient`; the API boundary resolves it to the current
+  /// adb address on demand.
   String? get _selectedSerial => context.read<DeviceSerialScope>().serial;
 
   final TextEditingController _textCtrl = TextEditingController();
@@ -31,20 +35,14 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
   @override
   void initState() {
     super.initState();
-    _textCtrl.addListener(_onTextChanged);
     _checkInstalled();
   }
 
   @override
   void dispose() {
-    _textCtrl.removeListener(_onTextChanged);
     _textCtrl.dispose();
     _focusNode.dispose();
     super.dispose();
-  }
-
-  void _onTextChanged() {
-    setState(() {});
   }
 
   Future<void> _checkInstalled() async {
@@ -76,7 +74,8 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
 
   Future<bool> _ensureInstalled() async {
     if (_helperInstalled) return true;
-    if (_selectedSerial == null) return false;
+    final stable = _selectedSerial;
+    if (stable == null) return false;
 
     setState(() {
       _installing = true;
@@ -84,7 +83,7 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
     });
 
     try {
-      await context.read<ApiClient>().installClipboardHelper(_selectedSerial!);
+      await context.read<ApiClient>().installClipboardHelper(stable);
       if (!mounted) return false;
       setState(() {
         _helperInstalled = true;
@@ -105,7 +104,9 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
 
   Future<void> _sendToClipboard() async {
     final text = _textCtrl.text;
-    if (text.isEmpty || _selectedSerial == null) return;
+    if (text.isEmpty) return;
+    final stable = _selectedSerial;
+    if (stable == null) return;
 
     final installed = await _ensureInstalled();
     if (!installed || !mounted) return;
@@ -116,7 +117,7 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
     });
 
     try {
-      await context.read<ApiClient>().sendClipboard(_selectedSerial!, text);
+      await context.read<ApiClient>().sendClipboard(stable, text);
       if (!mounted) return;
       // Persist to history (DB-backed). Dedup + favorite-preserve is
       // handled inside the DAO; we just fire and forget.
@@ -138,7 +139,8 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
   }
 
   Future<void> _uninstallHelper() async {
-    if (_selectedSerial == null) return;
+    final stable = _selectedSerial;
+    if (stable == null) return;
 
     setState(() {
       _uninstalling = true;
@@ -148,7 +150,7 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
     try {
       await context
           .read<ApiClient>()
-          .uninstallClipboardHelper(_selectedSerial!);
+          .uninstallClipboardHelper(stable);
       if (!mounted) return;
       setState(() {
         _helperInstalled = false;
@@ -315,18 +317,23 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
                         fontSize: 11,
                         color: theme.colorScheme.onSurfaceVariant)),
                 const Spacer(),
-                if (_textCtrl.text.isNotEmpty)
-                  InkWell(
-                    borderRadius: BorderRadius.circular(4),
-                    onTap: (busy || !isOnline) ? null : _clearInput,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
-                      child: Text(tr('clearInput'),
-                          style: TextStyle(
-                              fontSize: 11, color: theme.colorScheme.primary)),
-                    ),
-                  ),
+                ValueListenableBuilder(
+                  valueListenable: _textCtrl,
+                  builder: (context, TextEditingValue value, _) {
+                    if (value.text.isEmpty) return const SizedBox.shrink();
+                    return InkWell(
+                      borderRadius: BorderRadius.circular(4),
+                      onTap: (busy || !isOnline) ? null : _clearInput,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        child: Text(tr('clearInput'),
+                            style: TextStyle(
+                                fontSize: 11, color: theme.colorScheme.primary)),
+                      ),
+                    );
+                  },
+                ),
               ],
             ),
             const SizedBox(height: 8),

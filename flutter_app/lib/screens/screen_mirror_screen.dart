@@ -35,7 +35,12 @@ class ScreenMirrorScreen extends StatefulWidget {
 }
 
 class _ScreenMirrorScreenState extends State<ScreenMirrorScreen> {
-  String? get _serial => context.read<DeviceSerialScope>().serial;
+  /// Stable device identity (ro.serialno). Survives reconnects.
+  /// Handed to `MirrorStateProvider` and `ScrcpySettingsProvider`
+  /// for state lookups; the adb address is resolved internally
+  /// by ApiClient when the mirror state actually starts the
+  /// subprocess.
+  String? get _selectedSerial => context.read<DeviceSerialScope>().serial;
 
   // Scrcpy subprocess state lives in MirrorStateProvider so the offline-
   // listener hook can mutate it from anywhere. This screen just watches
@@ -48,14 +53,19 @@ class _ScreenMirrorScreenState extends State<ScreenMirrorScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final mirror = context.read<MirrorStateProvider>();
-      final s = _serial;
-      if (s != null) {
-        mirror.refreshForSerial(s);
+      // refreshForSerial keys the scrcpy status lookup by stable
+      // identity (the ApiClient resolves it to the current adb
+      // address internally).
+      final stable = _selectedSerial;
+      if (stable != null) {
+        mirror.refreshForSerial(stable);
       }
       _startPoll();
       // Tell the settings provider which device's options to surface
-      // now that we have a build context.
-      context.read<ScrcpySettingsProvider>().setActiveSerial(s);
+      // now that we have a build context. ScrcpySettings caches by
+      // saved_devices.serial (= ro.serialno, the stable identity),
+      // so the lookup key is the scope serial, not the adb-serial.
+      context.read<ScrcpySettingsProvider>().setActiveSerial(_selectedSerial);
     });
   }
 
@@ -63,7 +73,9 @@ class _ScreenMirrorScreenState extends State<ScreenMirrorScreen> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     // Re-key the settings cache when the user picks a different device.
-    final s = _serial;
+    // The cache key is the stable identity (saved_devices.serial =
+    // ro.serialno) — same as the initial setActiveSerial call above.
+    final s = _selectedSerial;
     final settings = context.read<ScrcpySettingsProvider>();
     if (settings.current == null || s != _lastSeenSerial) {
       settings.setActiveSerial(s);
@@ -90,7 +102,7 @@ class _ScreenMirrorScreenState extends State<ScreenMirrorScreen> {
   }
 
   Future<void> _onStart() async {
-    final s = _serial;
+    final s = _selectedSerial;
     if (s == null) return;
     final mirror = context.read<MirrorStateProvider>();
     if (mirror.busy) return;
@@ -173,8 +185,8 @@ class _ScreenMirrorScreenState extends State<ScreenMirrorScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final serial = _serial;
-    if (serial == null) {
+    final stable = _selectedSerial;
+    if (stable == null) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -188,21 +200,23 @@ class _ScreenMirrorScreenState extends State<ScreenMirrorScreen> {
     }
 
     // Watch the provider so offline-stop / refresh transitions rebuild
-    // the right pane without a setState call in this widget.
+    // the right pane without a setState call in this widget. The
+    // provider hides the adb-serial / stable-identity comparison
+    // internally so this screen stays address-agnostic.
     final mirror = context.watch<MirrorStateProvider>();
     final status = mirror.status;
-    final isRunning = status.running && status.serial == serial;
+    final isRunning = status.running && mirror.isOurs(stable);
 
     // Responsive: side-by-side on wide windows, stacked on narrow ones.
     // scrcpy itself renders in its own SDL window, so the tab content
     // can afford to be more verbose than a typical mobile layout.
     return OfflineGuard(
-      serial: serial,
+      serial: stable,
       child: LayoutBuilder(
         builder: (context, constraints) {
           const breakpoint = 720.0;
           final rightPane = _RightPane(
-            serial: serial,
+            serial: stable,
             isRunning: isRunning,
             elapsed: status.elapsedSeconds,
             busy: mirror.busy,
