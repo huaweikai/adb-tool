@@ -38,6 +38,7 @@ func sdkConfigPath() string {
 
 type sdkConfig struct {
 	SelectedPath string `json:"selectedPath"`
+	MirrorURL    string `json:"mirrorURL,omitempty"`
 }
 
 // LoadSelectedSDKPath returns the user-selected SDK path, or "" if none.
@@ -64,6 +65,38 @@ func SaveSelectedSDKPath(path string) error {
 		return err
 	}
 	return os.WriteFile(cfgPath, data, 0644)
+}
+
+// LoadMirrorConfig returns the configured mirror URL, or "" if none.
+func LoadMirrorConfig() string {
+	data, err := os.ReadFile(sdkConfigPath())
+	if err != nil {
+		return ""
+	}
+	var cfg sdkConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return ""
+	}
+	return cfg.MirrorURL
+}
+
+// SaveMirrorConfig persists the mirror URL setting.
+func SaveMirrorConfig(mirrorURL string) error {
+	cfgPath := sdkConfigPath()
+	data, err := os.ReadFile(cfgPath)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	var cfg sdkConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		cfg = sdkConfig{}
+	}
+	cfg.MirrorURL = mirrorURL
+	out, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(cfgPath, out, 0644)
 }
 
 // sdkPathHasEmulator reports whether the given SDK path contains the emulator binary.

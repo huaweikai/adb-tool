@@ -101,13 +101,28 @@ func (im *ImageManager) scanImagesFromDir(root string) []*SystemImage {
 	}
 
 	// Case 2: root IS a system-images directory (android-XX/variant/arch).
-	found = append(found, im.scanSystemImagesDir(root)...)
+	if len(found) == 0 {
+		found = append(found, im.scanSystemImagesDir(root)...)
+	}
 
-	// Case 3: root is a single image directory (contains system.img).
+	// Case 3: root is .adb-tool directory — scan emulator/system-images
+	if len(found) == 0 && filepath.Base(root) == ".adb-tool" {
+		adbToolSysImages := filepath.Join(root, "emulator", "system-images")
+		if info, err := os.Stat(adbToolSysImages); err == nil && info.IsDir() {
+			found = append(found, im.scanSystemImagesDir(adbToolSysImages)...)
+		}
+	}
+
+	// Case 4: root is a single image directory (contains system.img).
 	if len(found) == 0 {
 		if parsed, err := im.ParseLocalImage(root); err == nil && len(parsed.Files) > 0 {
 			found = append(found, parsed)
 		}
+	}
+
+	// Case 5: Recursive scan for non-standard directory structures.
+	if len(found) == 0 {
+		found = append(found, im.scanSystemImagesDirRecursive(root)...)
 	}
 
 	return found
@@ -253,6 +268,82 @@ func (im *ImageManager) scanSystemImagesDir(baseDir string) []*SystemImage {
 	return images
 }
 
+// scanSystemImagesDirRecursive scans a directory tree for system images.
+// It looks for directories containing system.img and reads metadata from
+// config.ini or source.properties. This is more flexible than the rigid
+// 3-level directory structure assumption.
+func (im *ImageManager) scanSystemImagesDirRecursive(baseDir string) []*SystemImage {
+	images := []*SystemImage{}
+	visited := map[string]bool{}
+
+	// Skip directories that are known to not be system images
+	skipDirs := map[string]bool{
+		".android":       true,
+		"avd":            true,
+		".avd":           true,
+		"build-tools":    true,
+		"cmake":          true,
+		"platforms":      true,
+		"platform-tools": true,
+		"tools":          true,
+	}
+
+	var walk func(dir string, depth int)
+	walk = func(dir string, depth int) {
+		if depth > 10 { // Prevent infinite recursion
+			return
+		}
+
+		if visited[dir] {
+			return
+		}
+		visited[dir] = true
+
+		// Skip known non-image directories
+		baseName := filepath.Base(dir)
+		if skipDirs[baseName] {
+			return
+		}
+
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return
+		}
+
+		// Check if this directory contains system.img (is an image directory)
+		hasSystemImg := false
+		for _, entry := range entries {
+			if !entry.IsDir() && entry.Name() == "system.img" {
+				hasSystemImg = true
+				break
+			}
+		}
+
+		if hasSystemImg {
+			// Parse this as an image directory
+			parsed, err := im.ParseLocalImage(dir)
+			if err == nil && len(parsed.Files) > 0 {
+				// Only add if we could parse valid metadata
+				if parsed.APILevel > 0 {
+					images = append(images, parsed)
+				}
+			}
+			return // Don't recurse into image directories
+		}
+
+		// Recurse into subdirectories
+		for _, entry := range entries {
+			if entry.IsDir() {
+				subdir := filepath.Join(dir, entry.Name())
+				walk(subdir, depth+1)
+			}
+		}
+	}
+
+	walk(baseDir, 0)
+	return images
+}
+
 // scanImageFiles scans an image directory for required files.
 func (im *ImageManager) scanImageFiles(imageDir string) map[string]string {
 	files := map[string]string{}
@@ -393,6 +484,24 @@ func (im *ImageManager) ParseLocalImage(localPath string) (*SystemImage, error) 
 	}
 	if arch == "" {
 		arch = im.detectArch(localPath)
+	}
+
+	// Try to infer arch and variant from directory structure if not found in config
+	if arch == "" || arch == "x86_64" { // detectArch returns x86_64 by default
+		// Check parent directory name for arch
+		parent := filepath.Base(localPath)
+		if parent == "arm64-v8a" || parent == "x86_64" || parent == "x86" || parent == "armeabi-v7a" {
+			arch = parent
+		}
+	}
+
+	// Try to infer variant from directory structure if not found
+	if variant == "default" {
+		// Check parent directory name for variant
+		parent := filepath.Base(localPath)
+		if parent == "google_apis" || parent == "google_apis_playstore" || parent == "aosp" {
+			variant = parent
+		}
 	}
 
 	parsedLevel := im.parseAPILevel(apiLevel)
@@ -745,32 +854,65 @@ func (im *ImageManager) imagesFoundIn(root string) []*SystemImage {
 // images that lived on disk before the registry existed — they get picked up
 // the next time the backend boots.
 func (im *ImageManager) ScanAndRegisterStorage() (int, error) {
-	if im.StorageDir == "" {
-		return 0, nil
-	}
-	info, err := os.Stat(im.StorageDir)
-	if err != nil || !info.IsDir() {
-		return 0, nil
-	}
-
-	imageDirs, err := findAllImageDirs(im.StorageDir)
-	if err != nil {
-		return 0, fmt.Errorf("walk storage dir: %w", err)
-	}
-	if len(imageDirs) == 0 {
-		return 0, nil
-	}
-
-	log.Printf("[image] ScanAndRegisterStorage: found %d candidate image dir(s) under %s", len(imageDirs), im.StorageDir)
 	total := 0
-	for _, d := range imageDirs {
-		count, err := im.ScanAndRegister(d)
-		if err != nil {
-			log.Printf("[image] ScanAndRegisterStorage: register %s failed: %v", d, err)
-			continue
+	home, _ := os.UserHomeDir()
+
+	// Scan the default storage directory (~/.adb-tool/emulator/system-images)
+	if im.StorageDir != "" {
+		info, err := os.Stat(im.StorageDir)
+		if err == nil && info.IsDir() {
+			imageDirs, err := findAllImageDirs(im.StorageDir)
+			if err != nil {
+				return total, fmt.Errorf("walk storage dir: %w", err)
+			}
+			if len(imageDirs) > 0 {
+				log.Printf("[image] ScanAndRegisterStorage: found %d candidate image dir(s) under %s", len(imageDirs), im.StorageDir)
+				for _, d := range imageDirs {
+					count, err := im.ScanAndRegister(d)
+					if err != nil {
+						log.Printf("[image] ScanAndRegisterStorage: register %s failed: %v", d, err)
+						continue
+					}
+					total += count
+				}
+			}
 		}
-		total += count
 	}
+
+	// Also scan ~/.adb-tool/sdk/system-images (common location for managed SDK)
+	if home != "" {
+		adbToolSDKSysImages := filepath.Join(home, ".adb-tool", "sdk", "system-images")
+		info, err := os.Stat(adbToolSDKSysImages)
+		if err == nil && info.IsDir() {
+			log.Printf("[image] ScanAndRegisterStorage: scanning .adb-tool/sdk/system-images at %s", adbToolSDKSysImages)
+			count, err := im.ScanAndRegister(adbToolSDKSysImages)
+			if err != nil {
+				log.Printf("[image] ScanAndRegisterStorage: .adb-tool/sdk scan failed: %v", err)
+			} else {
+				total += count
+			}
+		}
+	}
+
+	// Also scan the AndroidHome SDK directory if set, unless it's the
+	// .adb-tool/sdk we already scanned above (avoid double-registration).
+	if im.AndroidHome != "" {
+		alreadyScanned := home != "" && im.AndroidHome == filepath.Join(home, ".adb-tool", "sdk")
+		if !alreadyScanned {
+			sysImagesDir := filepath.Join(im.AndroidHome, "system-images")
+			info, err := os.Stat(sysImagesDir)
+			if err == nil && info.IsDir() {
+				log.Printf("[image] ScanAndRegisterStorage: scanning SDK system-images at %s", sysImagesDir)
+				count, err := im.ScanAndRegister(sysImagesDir)
+				if err != nil {
+					log.Printf("[image] ScanAndRegisterStorage: SDK scan failed: %v", err)
+				} else {
+					total += count
+				}
+			}
+		}
+	}
+
 	log.Printf("[image] ScanAndRegisterStorage: total %d image(s) registered", total)
 	return total, nil
 }

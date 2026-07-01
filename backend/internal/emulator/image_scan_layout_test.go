@@ -112,9 +112,14 @@ func TestScanSystemImagesDirRootIsSDKSkipsNonImageChildren(t *testing.T) {
 func TestScanAndRegisterSkipsBogusTopLevel(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp) // Windows uses USERPROFILE for os.UserHomeDir()
 
 	root := t.TempDir()
 	writeBogusSDKLayout(t, root)
+
+	// Create a fresh ImageManager with temp directory
+	storageDir := filepath.Join(tmp, ".adb-tool", "emulator", "system-images")
+	im := &ImageManager{StorageDir: storageDir}
 
 	// Seed the registry with a stale bogus entry that pre-existed the fix.
 	if err := saveRegisteredImagesLocked([]RegisteredImage{
@@ -124,7 +129,6 @@ func TestScanAndRegisterSkipsBogusTopLevel(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	im := NewImageManager("")
 	if _, err := im.ScanAndRegister(root); err != nil {
 		t.Fatal(err)
 	}
@@ -139,5 +143,10 @@ func TestScanAndRegisterSkipsBogusTopLevel(t *testing.T) {
 		if strings.HasPrefix(e.ID, "build-tools-") || strings.HasPrefix(e.ID, "cmake-") || strings.HasPrefix(e.ID, "platforms-") {
 			t.Errorf("registry kept bogus id=%s", e.ID)
 		}
+	}
+
+	// Clean up: save empty registry
+	if err := saveRegisteredImagesLocked([]RegisteredImage{}); err != nil {
+		t.Fatal(err)
 	}
 }

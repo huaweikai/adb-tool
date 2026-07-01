@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -134,7 +135,10 @@ var percentRegex = regexp.MustCompile(`(\d{1,3})\s*%`)
 // process's PATH is minimal — this is the GUI-launched case where macOS
 // LaunchServices strips the user's shell PATH and sdkmanager's shebang
 // resolution (or its `which java` fallback) would otherwise exit 127.
-func (s *SDKInstaller) Start(sdkmanagerPath, sdkPath, javaPath string, packages []string) (*InstallJob, error) {
+//
+// mirrorURL is an optional mirror proxy URL (e.g. "https://mirrors.cloud.tencent.com/AndroidSDK/").
+// When non-empty, sdkmanager uses it as a proxy to speed up downloads in China.
+func (s *SDKInstaller) Start(sdkmanagerPath, sdkPath, javaPath string, packages []string, mirrorURL string) (*InstallJob, error) {
 	if _, err := os.Stat(sdkmanagerPath); err != nil {
 		return nil, fmt.Errorf("sdkmanager not found at %s: %w", sdkmanagerPath, err)
 	}
@@ -155,7 +159,7 @@ func (s *SDKInstaller) Start(sdkmanagerPath, sdkPath, javaPath string, packages 
 	s.jobs[job.ID] = job
 	s.mu.Unlock()
 
-	go s.run(job, sdkmanagerPath, sdkPath, javaPath)
+	go s.run(job, sdkmanagerPath, sdkPath, javaPath, mirrorURL)
 	return job, nil
 }
 
@@ -186,7 +190,7 @@ func buildSDKManagerEnv(sdkPath, javaPath string) []string {
 	return env
 }
 
-func (s *SDKInstaller) run(job *InstallJob, sdkmanagerPath, sdkPath, javaPath string) {
+func (s *SDKInstaller) run(job *InstallJob, sdkmanagerPath, sdkPath, javaPath string, mirrorURL string) {
 	s.update(job, func() {
 		job.Status = "running"
 		job.StartedAt = time.Now()
@@ -238,6 +242,32 @@ func (s *SDKInstaller) run(job *InstallJob, sdkmanagerPath, sdkPath, javaPath st
 		"-classpath", classpath,
 		"com.android.sdklib.tool.sdkmanager.SdkManagerCli",
 		"--sdk_root=" + sdkPath,
+	}
+	if mirrorURL != "" {
+		parsed, err := url.Parse(mirrorURL)
+		if err == nil && parsed.Host != "" {
+			host := parsed.Hostname()
+			port := parsed.Port()
+			if port == "" {
+				if parsed.Scheme == "https" {
+					port = "443"
+				} else {
+					port = "80"
+				}
+			}
+			proxyArgs := []string{
+				"--proxy=" + parsed.Scheme,
+				"--proxy_host=" + host,
+				"--proxy_port=" + port,
+			}
+			// --no_https only makes sense when the mirror itself is plain HTTP.
+			// For HTTPS mirrors (Tencent/Huawei), forcing HTTP downgrades and can
+			// break downloads or trigger cert issues — leave the flag off.
+			if parsed.Scheme == "http" {
+				proxyArgs = append(proxyArgs, "--no_https")
+			}
+			args = append(args, proxyArgs...)
+		}
 	}
 	args = append(args, job.Packages...)
 	cmd := exec.CommandContext(ctx, javaPath, args...)
