@@ -60,6 +60,38 @@ func TestDeleteRegisteredImageOnlyUnregistersExternalDirectory(t *testing.T) {
 	})
 }
 
+// Regression: images installed under ~/.adb-tool/sdk/system-images
+// (the managed Android SDK layout that ImageManager.ScanAndRegisterStorage
+// also picks up) must be treated as managed, not external. Previously
+// isManagedImagePath only recognised ~/.adb-tool/emulator/system-images,
+// so deleting such an image only dropped the registry row while leaving
+// ~1GB of system.img on disk.
+func TestDeleteRegisteredImageRemovesManagedSDKDirectory(t *testing.T) {
+	withTempHome(t, func(home string) {
+		managedPath := filepath.Join(home, ".adb-tool", "sdk", "system-images", "android-30", "default", "x86_64")
+		writeTestImageDir(t, managedPath)
+		writeImageRegistry(t, []RegisteredImage{{
+			ID:   "managed-sdk",
+			Name: "Managed SDK Image",
+			Path: managedPath,
+		}})
+
+		removed, err := DeleteRegisteredImage("managed-sdk", nil)
+		if err != nil {
+			t.Fatalf("DeleteRegisteredImage returned error: %v", err)
+		}
+		if removed.DeleteMode != ImageDeleteModeFilesRemoved {
+			t.Fatalf("DeleteMode = %q, want %q", removed.DeleteMode, ImageDeleteModeFilesRemoved)
+		}
+		if _, err := os.Stat(managedPath); !os.IsNotExist(err) {
+			t.Fatalf("managed SDK image directory still exists or stat failed unexpectedly: %v", err)
+		}
+		if got := LoadRegisteredImages(); len(got) != 0 {
+			t.Fatalf("registry has %d image(s), want 0", len(got))
+		}
+	})
+}
+
 func TestDeleteRegisteredImageReturnsErrorForUnknownID(t *testing.T) {
 	withTempHome(t, func(home string) {
 		writeImageRegistry(t, []RegisteredImage{{

@@ -124,6 +124,21 @@ func managedImageRoot() string {
 	return filepath.Join(home, ".adb-tool", "emulator", "system-images")
 }
 
+// managedImageRoots returns every root under ~/.adb-tool that ImageManager
+// itself manages and may safely delete from. Scan paths must stay in sync
+// with this list — otherwise an image gets scanned in, but DeleteRegistered
+// falls back to "registry only" because it doesn't recognise the path as
+// ours. Currently:
+//   - ~/.adb-tool/emulator/system-images (legacy / default StorageDir)
+//   - ~/.adb-tool/sdk/system-images       (managed Android SDK installed by us)
+func managedImageRoots() []string {
+	home, _ := os.UserHomeDir()
+	return []string{
+		filepath.Join(home, ".adb-tool", "emulator", "system-images"),
+		filepath.Join(home, ".adb-tool", "sdk", "system-images"),
+	}
+}
+
 func IsManagedImagePath(path string) bool {
 	return isManagedImagePath(path)
 }
@@ -132,19 +147,24 @@ func isManagedImagePath(path string) bool {
 	if path == "" {
 		return false
 	}
-	root, err := filepath.Abs(managedImageRoot())
-	if err != nil {
-		root = managedImageRoot()
-	}
 	target, err := filepath.Abs(path)
 	if err != nil {
 		target = path
 	}
-	rel, err := filepath.Rel(root, target)
-	if err != nil {
-		return false
+	for _, root := range managedImageRoots() {
+		rootAbs, err := filepath.Abs(root)
+		if err != nil {
+			rootAbs = root
+		}
+		rel, err := filepath.Rel(rootAbs, target)
+		if err != nil {
+			continue
+		}
+		if rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator))) {
+			return true
+		}
 	}
-	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)))
+	return false
 }
 
 // imagePathValid reports whether a registered image path still holds a usable
