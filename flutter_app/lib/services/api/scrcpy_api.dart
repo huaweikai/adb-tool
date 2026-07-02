@@ -80,27 +80,36 @@ mixin ScrcpyApi on ApiBase {
   // recording while the other subprocess is in flight. The capture
   // mixin layer surfaces that as a confirm dialog and re-calls start
   // with force=true if the user agrees.
+  //
+  // The destination path is owned by the backend (under
+  // ~/.adb-tool/scrcpy_recordings/, see ScrcpyRecordingSandboxDir in
+  // adb_scrcpy_record.go) — the Flutter side doesn't pick or persist
+  // a directory any more. The start response carries the path; the
+  // capture mixin reads it back via the status response at stop time.
 
-  /// Start a windowless scrcpy that records to [outputPath] on the
-  /// host filesystem. Pass [force]=true to gracefully kill an
-  /// in-flight mirror session before starting the recording (the
-  /// recording-mirror conflict is the only place force is meaningful;
-  /// when a previous recording is running it's always replaced).
+  /// Start a windowless scrcpy recording. Pass [force]=true to
+  /// gracefully kill an in-flight mirror session before starting the
+  /// recording (the recording-mirror conflict is the only place force
+  /// is meaningful; when a previous recording is running it's always
+  /// replaced).
+  ///
+  /// Returns the host output path the backend picked
+  /// (under `~/.adb-tool/scrcpy_recordings/`). The capture mixin
+  /// persists this on its in-memory state so the stop path can read
+  /// the file back.
   ///
   /// Throws [ScrcpyRecordBusyException] when the backend refuses with
   /// 409 (i.e. force=false and something is already running). The
   /// exception carries [ScrcpyRecordBusyException.kind] so the UI can
   /// render an appropriate message.
-  Future<Map<String, dynamic>> startScrcpyRecording(
-    String serial,
-    String outputPath, {
+  Future<String> startScrcpyRecording(
+    String serial, {
     bool force = false,
   }) async {
     final resp = await dio.post(
       '/api/scrcpy/record/start',
       queryParameters: {
         ...deviceQueryParameters(serial),
-        'outputPath': outputPath,
         if (force) 'force': 'true',
       },
     );
@@ -113,7 +122,8 @@ mixin ScrcpyApi on ApiBase {
       );
     }
     throwIfNotOk(resp);
-    return responseMap(resp);
+    final data = responseMap(resp);
+    return (data['outputPath'] as String?) ?? '';
   }
 
   /// Stop the windowless recording subprocess. No-op if nothing is

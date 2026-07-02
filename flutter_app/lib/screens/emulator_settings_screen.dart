@@ -17,7 +17,6 @@ import '../widgets/emulator_image_card.dart';
 import '../widgets/add_image_dialog.dart';
 import '../widgets/emulator_instance_card.dart';
 import '../widgets/create_instance_dialog.dart';
-import '../widgets/cleanup_cache_dialog.dart';
 import '../widgets/mirror_config_card.dart';
 
 class EmulatorSettingsScreen extends StatefulWidget {
@@ -65,14 +64,6 @@ class _EmulatorSettingsScreenState extends State<EmulatorSettingsScreen> {
       appBar: AppBar(
         title: Text(tr('emulatorSettings.title')),
         centerTitle: false,
-        actions: [
-          IconButton(
-            tooltip: tr('emulatorSettings.cleanupTooltip'),
-            icon: const Icon(Icons.delete_sweep_outlined),
-            onPressed: () => showCleanupCacheDialog(context),
-          ),
-          const SizedBox(width: 4),
-        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),

@@ -17,7 +17,6 @@
 // the single source of truth, which means navigating away and back
 // (which disposes & rebuilds the State) does NOT lose progress.
 import 'dart:async';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -338,16 +337,6 @@ mixin TestSessionCaptureMixin<T extends StatefulWidget> on State<T> {
 
   Future<void> _startScrcpyRecording(
       String s, RecordingSettingsProvider settings) async {
-    if (!settings.scrcpyConfigured) {
-      _showSnackBar(tr('screenRecord.scrcpyRequiresDir'));
-      return;
-    }
-    final dir = settings.outputDir!;
-    final filename =
-        'adb-tool-record_${DateTime.now().millisecondsSinceEpoch}.mp4';
-    final outputPath = '$dir${Platform.pathSeparator}$filename';
-    _scrcpyOutputPath = outputPath;
-
     final startedAtMs = DateTime.now().millisecondsSinceEpoch;
     try {
       await savedDevicesDao.setScreenRecord(
@@ -355,7 +344,8 @@ mixin TestSessionCaptureMixin<T extends StatefulWidget> on State<T> {
         owner: recordOwner.dbValue,
         startedAtMs: startedAtMs,
       );
-      await _capture.startScrcpyRecording(s, outputPath);
+      final path = await _capture.startScrcpyRecording(s);
+      _scrcpyOutputPath = path.isEmpty ? null : path;
       if (sessionProvider.hasRunningSession) {
         await sessionProvider.markScreenRecordStarted();
       }
@@ -377,7 +367,8 @@ mixin TestSessionCaptureMixin<T extends StatefulWidget> on State<T> {
         return;
       }
       try {
-        await _capture.startScrcpyRecording(s, outputPath, force: true);
+        final path = await _capture.startScrcpyRecording(s, force: true);
+        _scrcpyOutputPath = path.isEmpty ? null : path;
         if (sessionProvider.hasRunningSession) {
           await sessionProvider.markScreenRecordStarted();
         }
@@ -491,6 +482,11 @@ mixin TestSessionCaptureMixin<T extends StatefulWidget> on State<T> {
         try {
           await savedDevicesDao.clearScreenRecord(s);
         } catch (_) {}
+        if (path != null) {
+          try {
+            await _capture.discardScrcpyRecording(path);
+          } catch (_) {}
+        }
         return;
       }
       final bytes = path != null
@@ -508,6 +504,20 @@ mixin TestSessionCaptureMixin<T extends StatefulWidget> on State<T> {
         await onVideoSaved(bytes, rel);
       } else {
         await onVideoDiscarded();
+      }
+      // Sandbox cleanup. The session has its own copy under
+      // <session_dir>/<relative_path>; the file under
+      // ~/.adb-tool/scrcpy_recordings is just a temp staging area
+      // and is no longer needed. Best-effort: AV scanners on
+      // Windows occasionally hold the handle briefly, in which
+      // case the cleanup fails silently and the file gets swept
+      // on the next session sweep.
+      if (path != null) {
+        try {
+          await _capture.discardScrcpyRecording(path);
+        } catch (e) {
+          debugPrint('[ScreenRecord] sandbox cleanup failed: $e');
+        }
       }
     } catch (e) {
       _scrcpyOutputPath = null;

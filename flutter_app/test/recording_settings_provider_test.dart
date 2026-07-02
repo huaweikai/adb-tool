@@ -32,11 +32,13 @@ void main() {
     expect(provider.method, ScreenRecordMethod.adb);
     expect(provider.outputDir, isNull);
     expect(provider.loaded, isFalse);
-    expect(provider.scrcpyConfigured, isFalse);
   });
 
   test('load() reads persisted method + outputDir from AppStates', () async {
     // Pre-populate the singleton row with scrcpy + a directory.
+    // The outputDir column is reserved for future expansion
+    // (custom output directory); current UI doesn't read it but
+    // the column stays nullable for v10 compatibility.
     await db.appStatesDao.updateAppState(
       screenRecordMethod: 'scrcpy',
       scrcpyRecordOutputDir: '/tmp/recordings',
@@ -46,7 +48,6 @@ void main() {
     expect(provider.loaded, isTrue);
     expect(provider.method, ScreenRecordMethod.scrcpy);
     expect(provider.outputDir, '/tmp/recordings');
-    expect(provider.scrcpyConfigured, isTrue);
   });
 
   test('setMethod persists and notifies listeners', () async {
@@ -62,7 +63,9 @@ void main() {
     expect(state.screenRecordMethod, 'scrcpy');
   });
 
-  test('setOutputDir stores and clearOutputDir unsets', () async {
+  test('setOutputDir stores and clearing unsets (reserved for future use)', () async {
+    // No UI calls this today but the column + provider method stay
+    // alive for a potential "custom output directory" option.
     await provider.setOutputDir('/tmp/foo');
     expect(provider.outputDir, '/tmp/foo');
 
@@ -74,21 +77,6 @@ void main() {
 
     final after = await db.appStatesDao.getAppState();
     expect(after.scrcpyRecordOutputDir, isNull);
-  });
-
-  test('scrcpyConfigured requires both method=scrcpy AND a directory', () async {
-    expect(provider.scrcpyConfigured, isFalse); // method=adb, no dir
-
-    // Switching the method alone isn't enough — we still need a dir.
-    await provider.setMethod(ScreenRecordMethod.scrcpy);
-    expect(provider.scrcpyConfigured, isFalse); // no dir yet
-
-    await provider.setOutputDir('/tmp/foo');
-    expect(provider.scrcpyConfigured, isTrue);
-
-    // Going back to adb turns it off even with a dir set.
-    await provider.setMethod(ScreenRecordMethod.adb);
-    expect(provider.scrcpyConfigured, isFalse);
   });
 
   test('ScreenRecordMethod.fromDb round-trips both values', () {

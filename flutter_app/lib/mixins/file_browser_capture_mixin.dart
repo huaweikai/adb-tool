@@ -255,24 +255,19 @@ mixin FileBrowserCaptureMixin<T extends StatefulWidget> on State<T> {
     }
   }
 
-  /// Scrcpy-method path. Validates that the user has picked an output
-  /// directory, then runs the conflict-confirm flow (mirror in flight
-  /// → dialog) before starting. The recording subprocess writes the
-  /// MP4 directly to host disk; we just remember the path so the
-  /// stop path can read it back.
+  /// Scrcpy-method path. The destination file is owned by the
+  /// backend (under `~/.adb-tool/scrcpy_recordings/`) — the Flutter
+  /// side doesn't pick or persist a directory any more. The start
+  /// response carries the path back; we stash it in [_scrcpyOutputPath]
+  /// so the stop path can read the file. After the user saves the
+  /// recording through the system save dialog (host's
+  /// onVideoSaved), we delete the sandbox file.
+  ///
+  /// Conflict handling: when the backend returns 409 (mirror in
+  /// flight), show a confirm dialog. On agreement, re-call with
+  /// force=true. Record-busy → dismiss-only (force can't help).
   Future<void> _startScrcpyRecording(
       String s, RecordingSettingsProvider settings) async {
-    if (!settings.scrcpyConfigured) {
-      _showSnackBar(tr('screenRecord.scrcpyRequiresDir'));
-      return;
-    }
-
-    final dir = settings.outputDir!;
-    final filename =
-        'adb-tool-record_${DateTime.now().millisecondsSinceEpoch}.mp4';
-    final outputPath = '$dir${Platform.pathSeparator}$filename';
-    _scrcpyOutputPath = outputPath;
-
     final startedAtMs = DateTime.now().millisecondsSinceEpoch;
     try {
       // Stamp the device row first so the FAB / other surface sees
@@ -282,12 +277,10 @@ mixin FileBrowserCaptureMixin<T extends StatefulWidget> on State<T> {
         owner: recordOwner.dbValue,
         startedAtMs: startedAtMs,
       );
-      await _capture.startScrcpyRecording(s, outputPath);
+      final path = await _capture.startScrcpyRecording(s);
+      _scrcpyOutputPath = path.isEmpty ? null : path;
       _showSnackBar(tr('recordingStarted'));
     } on ScrcpyRecordBusyException catch (e) {
-      // Mirror-busy → offer to preempt. Record-busy → dismiss-only
-      // dialog (force can't help: the backend won't preempt another
-      // recording either way).
       if (!mounted) {
         _scrcpyOutputPath = null;
         try {
@@ -304,7 +297,8 @@ mixin FileBrowserCaptureMixin<T extends StatefulWidget> on State<T> {
         return;
       }
       try {
-        await _capture.startScrcpyRecording(s, outputPath, force: true);
+        final path = await _capture.startScrcpyRecording(s, force: true);
+        _scrcpyOutputPath = path.isEmpty ? null : path;
       } catch (e2) {
         _scrcpyOutputPath = null;
         try {
@@ -409,9 +403,13 @@ mixin FileBrowserCaptureMixin<T extends StatefulWidget> on State<T> {
   }
 
   /// Scrcpy-method stop: graceful kill the subprocess (scrcpy
-  /// finalizes the MP4 muxer), then read the file off disk. Same
-  /// bytes-to-onVideoSaved contract as the adb path so the host
-  /// screen's save logic is method-agnostic.
+  /// finalizes the MP4 muxer), then read the file off disk and
+  /// hand the bytes to the host's onVideoSaved. The host pops a
+  /// save dialog (same flow as the adb method) and writes the
+  /// final copy to wherever the user picks. After the host
+  /// returns — regardless of whether the user kept the file or
+  /// cancelled — we delete the sandbox file. The file is a
+  /// temporary staging area, not a permanent home.
   Future<void> _stopScrcpyRecording(String s) async {
     final path = _scrcpyOutputPath;
     try {
@@ -421,6 +419,11 @@ mixin FileBrowserCaptureMixin<T extends StatefulWidget> on State<T> {
         try {
           await savedDevicesDao.clearScreenRecord(s);
         } catch (_) {}
+        if (path != null) {
+          try {
+            await _capture.discardScrcpyRecording(path);
+          } catch (_) {}
+        }
         return;
       }
       final bytes = path != null
@@ -433,6 +436,17 @@ mixin FileBrowserCaptureMixin<T extends StatefulWidget> on State<T> {
         await onVideoSaved(bytes);
       } else {
         await onVideoDiscarded();
+      }
+      // Sandbox cleanup — see method doc. Errors here are
+      // best-effort: if the file is locked (Windows AV scan
+      // briefly holds the handle, etc.) the user can still find
+      // and delete it manually from ~/.adb-tool/scrcpy_recordings.
+      if (path != null) {
+        try {
+          await _capture.discardScrcpyRecording(path);
+        } catch (e) {
+          debugPrint('[ScreenRecord] sandbox cleanup failed: $e');
+        }
       }
     } catch (e) {
       _scrcpyOutputPath = null;

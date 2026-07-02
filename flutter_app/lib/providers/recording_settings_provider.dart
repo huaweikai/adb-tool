@@ -4,16 +4,22 @@
 // row so the choice survives across launches and is visible to every
 // surface that wants to start a recording.
 //
-// Read path: any consumer (capture mixin, recording settings page)
-// calls `method` to get the current choice. The provider also
-// surfaces the user's chosen scrcpy output directory so the capture
-// mixin can hand it to the backend start call without a separate
-// read.
+// Read path: any consumer (capture mixin, settings page) calls
+// `method` to get the current choice. There's no per-user output
+// directory any more — the scrcpy recording path is owned by the
+// backend (see ScrcpyRecordingSandboxDir in adb_scrcpy_record.go),
+// so the Flutter side has nothing to validate or persist about the
+// destination.
 //
-// Write path: every mutation goes through [setMethod] / [setOutputDir]
-// so the DB write and the in-memory state stay in sync. We don't
-// debounce — settings change rarely and a stale persisted value is
-// much worse than a tiny amount of write amplification.
+// The `scrcpyRecordOutputDir` column and [outputDir] / [setOutputDir]
+// are kept on the schema and the provider for future expansion
+// (a "custom output directory" advanced option, perhaps), but
+// nothing in the current UI reads or writes them.
+//
+// Write path: every mutation goes through [setMethod] so the DB
+// write and the in-memory state stay in sync. We don't debounce —
+// settings change rarely and a stale persisted value is much worse
+// than a tiny amount of write amplification.
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -64,17 +70,13 @@ class RecordingSettingsProvider extends ChangeNotifier {
   RecordingSettingsProvider({required AppDatabase db}) : _db = db;
 
   ScreenRecordMethod get method => _method;
-  String? get outputDir => _outputDir;
-  bool get loaded => _loaded;
 
-  /// True iff the user has picked scrcpy mode AND chosen an output
-  /// directory. The capture mixin uses this to decide whether to
-  /// show a "先在录屏设置中选择目录" snackbar vs. actually starting
-  /// the recording.
-  bool get scrcpyConfigured =>
-      _method == ScreenRecordMethod.scrcpy &&
-      _outputDir != null &&
-      _outputDir!.isNotEmpty;
+  /// Output directory for scrcpy-mode recordings. Reserved for
+  /// future "custom output directory" expansion; the current UI
+  /// doesn't read or write this. See class doc.
+  String? get outputDir => _outputDir;
+
+  bool get loaded => _loaded;
 
   /// One-shot read on app start so the in-memory state matches the
   /// DB before any consumer reads it. Safe to call multiple times —
@@ -96,8 +98,10 @@ class RecordingSettingsProvider extends ChangeNotifier {
     await _db.appStatesDao.updateAppState(screenRecordMethod: method.dbValue);
   }
 
-  /// Update the scrcpy output directory. Pass null to clear it
-  /// (the user can "unset" the directory to be forced to re-pick).
+  /// Update the scrcpy output directory. Reserved for future
+  /// "custom output directory" expansion; the current UI doesn't
+  /// call this. The DB column stays nullable so an old persisted
+  /// value doesn't trip a v10 → v11 migration on a future read.
   Future<void> setOutputDir(String? dir) async {
     if (_outputDir == dir && _loaded) return;
     _outputDir = dir;

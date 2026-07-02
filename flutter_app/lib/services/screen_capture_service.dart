@@ -40,23 +40,24 @@ class ScreenCaptureService {
   // (`--no-window --record=<path>`); scrcpy itself writes the MP4
   // directly to the host filesystem, so on stop we just read the
   // resulting file — no `adb pull` round trip.
+  //
+  // The destination path is owned by the backend
+  // (`~/.adb-tool/scrcpy_recordings/`, see ScrcpyRecordingSandboxDir
+  // in adb_scrcpy_record.go). The Flutter side gets the path back
+  // from the start response and reuses it on stop.
 
-  /// Start a scrcpy windowless recording. [outputPath] is the fully
-  /// qualified host file path scrcpy will write to; the caller is
-  /// responsible for picking a filename (the recording settings page
-  /// pins the directory, this picks the timestamp suffix).
+  /// Start a scrcpy windowless recording. Returns the host output
+  /// path the backend picked — the caller should remember it for the
+  /// stop path (read it back, then move or delete the file).
   ///
   /// Throws [ScrcpyRecordBusyException] when the backend refuses
   /// with 409. The capture mixin layer surfaces that as a confirm
   /// dialog and re-calls with force=true if the user agrees.
   Future<String> startScrcpyRecording(
-    String serial,
-    String outputPath, {
+    String serial, {
     bool force = false,
   }) async {
-    final resp = await _api.startScrcpyRecording(serial, outputPath,
-        force: force);
-    return (resp['outputPath'] as String?) ?? outputPath;
+    return _api.startScrcpyRecording(serial, force: force);
   }
 
   /// Stop the scrcpy recording subprocess. No-op if nothing is
@@ -74,5 +75,17 @@ class ScreenCaptureService {
   Future<Uint8List> readScrcpyRecording(String path) async {
     final file = File(path);
     return Uint8List.fromList(await file.readAsBytes());
+  }
+
+  /// Delete a finished recording off the host disk. The capture
+  /// mixin's stop path calls this after the user has saved the file
+  /// (file_browser flow) or after the test-session provider has
+  /// ingested it (test_session flow). Idempotent: a missing file is
+  /// not an error.
+  Future<void> discardScrcpyRecording(String path) async {
+    final file = File(path);
+    if (await file.exists()) {
+      await file.delete();
+    }
   }
 }

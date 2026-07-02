@@ -1,8 +1,8 @@
 // HTTP handlers for the windowless scrcpy recording endpoints. Mirror
-// the handlers_scrcpy.go surface in shape but with two new knobs:
-//   - outputPath: the fully-qualified file path scrcpy will write to.
-//   - force: when true, gracefully kill any in-progress mirror
-//     session before starting the recording.
+// the handlers_scrcpy.go surface in shape but with the destination
+// path computed by the backend (see ScrcpyRecordingSandboxDir in
+// adb_scrcpy_record.go) — the Flutter side just kicks off the
+// recording and the file shows up under ~/.adb-tool/scrcpy_recordings.
 //
 // All write paths use the standard envelope (see response.go). 4xx
 // responses carry the discriminator in `data` so the Flutter side can
@@ -17,18 +17,18 @@ import (
 )
 
 // handleScrcpyRecordingStart spawns a windowless scrcpy that records
-// to outputPath on the host filesystem. See adb_scrcpy_record.go
-// for the full conflict / force semantics.
+// to a per-call file under ScrcpyRecordingSandboxDir(). See
+// adb_scrcpy_record.go for the full conflict / force semantics.
 //
 // Request:
 //
-//	POST /api/scrcpy/record/start?serial=xxx&outputPath=/path/to/file.mp4[&force=true]
+//	POST /api/scrcpy/record/start?serial=xxx[&force=true]
 //
 // Responses:
 //   200 — {status: "started", serial, outputPath}
-//   400 — invalid serial / outputPath
+//   400 — invalid serial
 //   409 — scrcpy busy (mirror or recording). `data.kind` is "mirror" or "record".
-//   500 — spawn failure / scrcpy binary missing / adb-side error
+//   500 — spawn failure / scrcpy binary missing / sandbox dir error / adb-side error
 func (s *Server) handleScrcpyRecordingStart(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	serial := q.Get("serial")
@@ -36,19 +36,9 @@ func (s *Server) handleScrcpyRecordingStart(w http.ResponseWriter, r *http.Reque
 		writeAPIError(w, http.StatusBadRequest, "serial required")
 		return
 	}
-	outputPath := q.Get("outputPath")
-	if outputPath == "" {
-		writeAPIError(w, http.StatusBadRequest, "outputPath required")
-		return
-	}
 	force, _ := strconv.ParseBool(q.Get("force"))
 
-	if err := s.adb.isScrcpyRecordOutputPath(outputPath); err != nil {
-		writeAPIError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	err := s.adb.StartScrcpyRecording(serial, outputPath, force)
+	outputPath, err := s.adb.StartScrcpyRecording(serial, force)
 	if err == nil {
 		writeJSON(w, map[string]interface{}{
 			"status":     "started",
@@ -70,7 +60,7 @@ func (s *Server) handleScrcpyRecordingStart(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Spawn / binary / adb errors land here.
+	// Spawn / binary / sandbox-dir errors land here.
 	writeAPIError(w, http.StatusInternalServerError, err.Error())
 }
 
@@ -88,8 +78,8 @@ func (s *Server) handleScrcpyRecordingStop(w http.ResponseWriter, r *http.Reques
 // handleScrcpyRecordingStatus reports the windowless recording
 // subprocess state. Mirrors /api/scrcpy/status in shape but adds
 // `outputPath` (the host file scrcpy is writing to) so the UI can
-// show "recording → /path/to/file.mp4" without having to re-derive it
-// from settings.
+// show "recording → /path/to/file.mp4" without having to re-derive
+// it from settings.
 func (s *Server) handleScrcpyRecordingStatus(w http.ResponseWriter, r *http.Request) {
 	running, serial, outputPath, pid, elapsed := s.adb.ScrcpyRecordingStatus()
 

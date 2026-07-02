@@ -42,24 +42,27 @@ class ScrcpyRecordStateProvider extends ChangeNotifier {
     }
   }
 
-  /// Start a recording against the given device. The capture mixin
-  /// layer is responsible for picking the output path (typically
-  /// `RecordingSettingsProvider.outputDir` + a fresh filename) and
-  /// for handling the conflict-confirm dialog before calling this.
+  /// Start a recording against the given device. The backend
+  /// owns the destination path (under `~/.adb-tool/scrcpy_recordings/`)
+  /// and the start response carries it back; the capture mixin
+  /// reads it off [status] after the next poll cycle.
   ///
-  /// Returns the response map on success. Re-throws backend errors
-  /// (other than 409, which the caller is expected to have dealt
-  /// with already) so the caller can show a snackbar with the actual
-  /// error.
-  Future<Map<String, dynamic>> start(
-      String stableSerial, String outputPath) async {
-    if (_busy) return {};
+  /// The capture mixin layer is responsible for handling the
+  /// conflict-confirm dialog before calling this — when force=false
+  /// and a mirror session is running, the backend returns 409 and
+  /// the mixin re-calls with force=true after the user agrees.
+  ///
+  /// Re-throws backend errors (other than 409, which the caller is
+  /// expected to have dealt with already) so the caller can show a
+  /// snackbar with the actual error.
+  Future<String> start(String stableSerial, {bool force = false}) async {
+    if (_busy) return '';
     _busy = true;
     notifyListeners();
     try {
-      final resp = await _api.startScrcpyRecording(stableSerial, outputPath);
+      final path = await _api.startScrcpyRecording(stableSerial, force: force);
       await refresh();
-      return resp;
+      return path;
     } finally {
       _busy = false;
       notifyListeners();

@@ -22,7 +22,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 )
@@ -80,10 +79,34 @@ func (e *scrcpyRecordBusyError) Error() string {
 
 func (e *scrcpyRecordBusyError) Unwrap() error { return ErrScrcpyBusy }
 
-// StartScrcpyRecording spawns a windowless scrcpy that records to
-// outputPath. The outputPath is a host file path; we expect the
-// caller (Flutter) to have already verified the directory exists and
-// is writable.
+// ScrcpyRecordingSandboxDir returns the host directory where the
+// backend writes in-progress scrcpy recordings. We use a fixed
+// per-user path under the home directory so:
+//   - the user can find the file later if the UI fails to clean up
+//     (e.g. the app crashed mid-recording).
+//   - the file lives across app restarts, unlike os.TempDir() which
+//     is wiped by the OS on reboot.
+//   - the path is portable between macOS, Windows, and Linux.
+//
+// Convention matches the rest of the backend's per-user data
+// (~/.adb-tool/emulator for emulator state, ~/.adb-tool/scrcpy_recordings
+// for in-flight recordings).
+func ScrcpyRecordingSandboxDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve home dir for scrcpy sandbox: %w", err)
+	}
+	return filepath.Join(home, ".adb-tool", "scrcpy_recordings"), nil
+}
+
+// StartScrcpyRecording spawns a windowless scrcpy that records to a
+// per-call file under ScrcpyRecordingSandboxDir(). The path is
+// computed by the backend (not the caller) so the Flutter side has
+// nothing to validate or persist — the recording settings page no
+// longer asks the user for a destination directory, and the file
+// is gone after the user saves it through the system save dialog
+// (file-browser flow) or moves it to the session dir
+// (test-session flow).
 //
 // Behavior when something is already running:
 //   - If a mirror session is running and force=false → returns
@@ -97,40 +120,43 @@ func (e *scrcpyRecordBusyError) Unwrap() error { return ErrScrcpyBusy }
 //     because the saved file would overwrite and the user clearly
 //     asked for a new one.
 //
-// The outputPath is fully-qualified and the file is opened by scrcpy
-// itself, so we don't need to do any I/O on the host side. If scrcpy
-// fails to start (binary missing, adb connection refused, etc.) we
-// return the raw error and the caller surfaces it.
-func (m *AdbManager) StartScrcpyRecording(serial, outputPath string, force bool) error {
+// The file is opened by scrcpy itself, so we don't need to do any
+// I/O on the host side. If scrcpy fails to start (binary missing,
+// adb connection refused, etc.) we return the raw error and the
+// caller surfaces it.
+func (m *AdbManager) StartScrcpyRecording(serial string, force bool) (string, error) {
 	if serial == "" {
-		return fmt.Errorf("serial required")
-	}
-	if outputPath == "" {
-		return fmt.Errorf("outputPath required")
+		return "", fmt.Errorf("serial required")
 	}
 
-	// Reject obviously bad paths before spawning. The handler also
-	// checks this, but defending here keeps the engine from holding
-	// the lock while doing filesystem I/O.
-	dir := filepath.Dir(outputPath)
-	if info, err := os.Stat(dir); err != nil {
-		return fmt.Errorf("output directory: %w", err)
-	} else if !info.IsDir() {
-		return fmt.Errorf("output directory is not a directory: %s", dir)
+	dir, err := ScrcpyRecordingSandboxDir()
+	if err != nil {
+		return "", err
 	}
-
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", fmt.Errorf("create scrcpy sandbox: %w", err)
+	}
 	// Probe writability by creating and immediately closing a temp
 	// file. Cheap; fails fast on read-only mounts.
 	probe, err := os.CreateTemp(dir, ".adb-tool-record-probe-*")
 	if err != nil {
-		return fmt.Errorf("output directory not writable: %w", err)
+		return "", fmt.Errorf("scrcpy sandbox not writable: %w", err)
 	}
 	probe.Close()
 	os.Remove(probe.Name())
 
+	// Filename: nanosecond timestamp avoids collisions even when the
+	// user starts/stops multiple recordings in quick succession. We
+	// keep the legacy `adb-tool-record_` prefix so an existing
+	// tmp-cleanup sweep (the ADB recording flow's
+	// `adb-recording-*.mp4` pattern is a sibling, not a conflict)
+	// stays easy to reason about.
+	outputPath := filepath.Join(dir,
+		fmt.Sprintf("adb-tool-record_%d.mp4", time.Now().UnixNano()))
+
 	paths, err := FindScrcpy(m.scrcpyFS)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	m.scrcpyRecord.mu.Lock()
@@ -151,7 +177,7 @@ func (m *AdbManager) StartScrcpyRecording(serial, outputPath string, force bool)
 	// mostly about clean SDL shutdown.
 	if m.scrcpy.cmd != nil && m.scrcpy.cmd.Process != nil {
 		if !force {
-			return &scrcpyRecordBusyError{
+			return "", &scrcpyRecordBusyError{
 				Kind:   scrcpyRecordBusyMirror,
 				Serial: m.scrcpy.serial,
 			}
@@ -179,7 +205,7 @@ func (m *AdbManager) StartScrcpyRecording(serial, outputPath string, force bool)
 	configureScrcpySysProc(cmd)
 
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("start scrcpy recording: %w", err)
+		return "", fmt.Errorf("start scrcpy recording: %w", err)
 	}
 
 	done := make(chan struct{})
@@ -216,7 +242,7 @@ func (m *AdbManager) StartScrcpyRecording(serial, outputPath string, force bool)
 		m.scrcpyRecord.mu.Unlock()
 	}()
 
-	return nil
+	return outputPath, nil
 }
 
 // scpyRecordUnlock / scpyRecordProcessAlive / killRecordingLocked /
@@ -356,36 +382,4 @@ func (m *AdbManager) isScrcpyRecordBusy() bool {
 	m.scrcpyRecord.mu.Lock()
 	defer m.scrcpyRecord.mu.Unlock()
 	return m.scpyRecordProcessAlive()
-}
-
-// isScrcpyRecordOutputPath is a path validation helper exposed for
-// the handler. Returns the cleaned absolute path plus a nil error if
-// the path is acceptable.
-func (m *AdbManager) isScrcpyRecordOutputPath(p string) error {
-	if p == "" {
-		return errors.New("outputPath required")
-	}
-	cleaned := filepath.Clean(p)
-	if !filepath.IsAbs(cleaned) {
-		return errors.New("outputPath must be absolute")
-	}
-	dir := filepath.Dir(cleaned)
-	info, err := os.Stat(dir)
-	if err != nil {
-		return fmt.Errorf("output directory: %w", err)
-	}
-	if !info.IsDir() {
-		return fmt.Errorf("output directory is not a directory: %s", dir)
-	}
-	// basename sanity: scrcpy will write to this path verbatim, so an
-	// empty basename would be a bug. Filename with NUL is always a
-	// bug.
-	base := filepath.Base(cleaned)
-	if base == "" || base == "." || base == ".." {
-		return errors.New("outputPath has invalid basename")
-	}
-	if strings.ContainsRune(base, 0) {
-		return errors.New("outputPath contains NUL")
-	}
-	return nil
 }
