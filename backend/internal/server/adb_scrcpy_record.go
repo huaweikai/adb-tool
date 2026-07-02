@@ -160,12 +160,12 @@ func (m *AdbManager) StartScrcpyRecording(serial string, force bool) (string, er
 	}
 
 	m.scrcpyRecord.mu.Lock()
-	defer m.scpyRecordUnlock() // see below — keeps the per-state unlock DRY
+	defer m.scrcpyRecordUnlock() // see below — keeps the per-state unlock DRY
 
 	// Recording already running? Kill and restart. No "force" knob
 	// here — a second recording click is unambiguously "I want a
 	// new one, replace the old".
-	if m.scrcpyRecord.cmd != nil && m.scpyRecordProcessAlive() {
+	if m.scrcpyRecord.cmd != nil && m.scrcpyRecordProcessAlive() {
 		m.killRecordingLocked("replaced by new recording")
 	}
 
@@ -245,19 +245,19 @@ func (m *AdbManager) StartScrcpyRecording(serial string, force bool) (string, er
 	return outputPath, nil
 }
 
-// scpyRecordUnlock / scpyRecordProcessAlive / killRecordingLocked /
+// scrcpyRecordUnlock / scrcpyRecordProcessAlive / killRecordingLocked /
 // killMirrorForRecordLocked — small helpers that keep the lock-handling
 // conventions visible inline. We use the same locking scheme as the
 // mirror code (single mutex per state slot, never touch fields without
 // holding it) so a future refactor can keep both code paths in sync.
 
-// scpyRecordUnlock defers correctly: the recorder takes one lock at a
+// scrcpyRecordUnlock defers correctly: the recorder takes one lock at a
 // time, so defer-friendly wrapper is just Unlock. Kept as a separate
 // name so any future expansion (e.g. ordered mirror + record locks)
 // is a single search-and-replace.
-func (m *AdbManager) scpyRecordUnlock() { m.scrcpyRecord.mu.Unlock() }
+func (m *AdbManager) scrcpyRecordUnlock() { m.scrcpyRecord.mu.Unlock() }
 
-func (m *AdbManager) scpyRecordProcessAlive() bool {
+func (m *AdbManager) scrcpyRecordProcessAlive() bool {
 	cmd := m.scrcpyRecord.cmd
 	if cmd == nil || cmd.Process == nil {
 		return false
@@ -381,5 +381,5 @@ func (m *AdbManager) ScrcpyRecordingStatus() (running bool, serial, outputPath s
 func (m *AdbManager) isScrcpyRecordBusy() bool {
 	m.scrcpyRecord.mu.Lock()
 	defer m.scrcpyRecord.mu.Unlock()
-	return m.scpyRecordProcessAlive()
+	return m.scrcpyRecordProcessAlive()
 }

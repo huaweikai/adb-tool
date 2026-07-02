@@ -46,6 +46,7 @@ import '../services/api_client.dart';
 import '../services/screen_capture_service.dart';
 import '../services/screen_record_owner.dart';
 import '../providers/recording_settings_provider.dart';
+import '../providers/scrcpy_record_state_provider.dart';
 import '../providers/test_session_provider.dart';
 import '../widgets/recording_settings_dialogs.dart';
 import '../widgets/screenshot_watermark.dart';
@@ -263,11 +264,19 @@ mixin FileBrowserCaptureMixin<T extends StatefulWidget> on State<T> {
   /// recording through the system save dialog (host's
   /// onVideoSaved), we delete the sandbox file.
   ///
+  /// We go through [ScrcpyRecordStateProvider.start] (not the service
+  /// layer directly) so the provider's status is updated
+  /// synchronously — the mirror page's "scrcpy is busy recording"
+  /// banner then appears immediately, not on the next 2s poll.
+  ///
   /// Conflict handling: when the backend returns 409 (mirror in
   /// flight), show a confirm dialog. On agreement, re-call with
   /// force=true. Record-busy → dismiss-only (force can't help).
   Future<void> _startScrcpyRecording(
       String s, RecordingSettingsProvider settings) async {
+    // Capture the provider BEFORE the first await so we don't reach
+    // for a possibly-disposed BuildContext after the DB write.
+    final recordState = context.read<ScrcpyRecordStateProvider>();
     final startedAtMs = DateTime.now().millisecondsSinceEpoch;
     try {
       // Stamp the device row first so the FAB / other surface sees
@@ -277,7 +286,7 @@ mixin FileBrowserCaptureMixin<T extends StatefulWidget> on State<T> {
         owner: recordOwner.dbValue,
         startedAtMs: startedAtMs,
       );
-      final path = await _capture.startScrcpyRecording(s);
+      final path = await recordState.start(s);
       _scrcpyOutputPath = path.isEmpty ? null : path;
       _showSnackBar(tr('recordingStarted'));
     } on ScrcpyRecordBusyException catch (e) {
@@ -288,7 +297,11 @@ mixin FileBrowserCaptureMixin<T extends StatefulWidget> on State<T> {
         } catch (_) {}
         return;
       }
-      final ok = await showScrcpyBusyConfirmDialog(context, busy: e);
+      final ok = await showScrcpyBusyConfirmDialog(
+        context,
+        busy: e,
+        activeSerial: s,
+      );
       if (ok != true) {
         _scrcpyOutputPath = null;
         try {
@@ -297,7 +310,7 @@ mixin FileBrowserCaptureMixin<T extends StatefulWidget> on State<T> {
         return;
       }
       try {
-        final path = await _capture.startScrcpyRecording(s, force: true);
+        final path = await recordState.start(s, force: true);
         _scrcpyOutputPath = path.isEmpty ? null : path;
       } catch (e2) {
         _scrcpyOutputPath = null;

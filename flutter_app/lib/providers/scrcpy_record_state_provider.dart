@@ -1,11 +1,17 @@
 // State for the windowless scrcpy recording subprocess. Mirrors
 // `MirrorStateProvider` in shape — both manage a single scrcpy
-// subprocess with a 2s poll — but kept separate because the two
-// subprocesses are mutually exclusive on the same device and a
-// shared provider would muddy the "which scrcpy owns this device?"
-// question. The mirror page reads both providers to render the
-// "recording in progress" badge and disable the start-mirror button
-// when a recording is in flight on the active device.
+// subprocess with a 2s poll — and crucially the capture mixin
+// (file-browser / test-session) drives start/stop THROUGH this
+// provider rather than calling the service layer directly, so the
+// mirror page's "scrcpy is busy" banner updates synchronously
+// instead of waiting for the next 2s poll.
+//
+// The two subprocesses (mirror + recording) are mutually exclusive
+// on the same device: scrcpy holds the adb connection, and a second
+// scrcpy would fail with "device already in use" or steal the
+// connection. Keeping them as separate providers makes the conflict
+// visible at the type level; the mirror page reads both to render
+// the recording badge and disable the start-mirror button.
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -20,8 +26,35 @@ class ScrcpyRecordStateProvider extends ChangeNotifier {
   ScrcpyRecordStatus _status = ScrcpyRecordStatus.stopped;
   ScrcpyRecordStatus get status => _status;
 
-  bool _busy = false;
-  bool get busy => _busy;
+  /// Start a windowless scrcpy recording against the device with the
+  /// given stable serial. Pass [force]=true to gracefully kill an
+  /// in-flight mirror session before starting the recording.
+  ///
+  /// Returns the host output path the backend picked (under
+  /// `~/.adb-tool/scrcpy_recordings/`). The caller should remember
+  /// it for the stop path.
+  ///
+  /// Throws [ScrcpyRecordBusyException] on 409. The caller is
+  /// expected to surface a confirm dialog and re-call with
+  /// force=true if the user agrees.
+  ///
+  /// On success, refreshes the local status synchronously and
+  /// notifies listeners — so the mirror page's "recording in
+  /// progress" banner appears immediately, not on the next 2s poll.
+  Future<String> start(String stableSerial, {bool force = false}) async {
+    final path = await _api.startScrcpyRecording(stableSerial, force: force);
+    await refresh();
+    return path;
+  }
+
+  /// Stop the running recording subprocess. No-op if nothing is
+  /// recording. Notifies listeners on success so the mirror page's
+  /// "recording" banner clears immediately.
+  Future<void> stop() async {
+    await _api.stopScrcpyRecording();
+    _status = ScrcpyRecordStatus.stopped;
+    notifyListeners();
+  }
 
   /// Poll the backend. Errors are swallowed — network blips shouldn't
   /// flicker the UI. Only notifies on change so the elapsed-seconds
@@ -39,47 +72,6 @@ class ScrcpyRecordStateProvider extends ChangeNotifier {
       notifyListeners();
     } catch (e) {
       debugPrint('[ScrcpyRecordStateProvider] refresh error (ignored): $e');
-    }
-  }
-
-  /// Start a recording against the given device. The backend
-  /// owns the destination path (under `~/.adb-tool/scrcpy_recordings/`)
-  /// and the start response carries it back; the capture mixin
-  /// reads it off [status] after the next poll cycle.
-  ///
-  /// The capture mixin layer is responsible for handling the
-  /// conflict-confirm dialog before calling this — when force=false
-  /// and a mirror session is running, the backend returns 409 and
-  /// the mixin re-calls with force=true after the user agrees.
-  ///
-  /// Re-throws backend errors (other than 409, which the caller is
-  /// expected to have dealt with already) so the caller can show a
-  /// snackbar with the actual error.
-  Future<String> start(String stableSerial, {bool force = false}) async {
-    if (_busy) return '';
-    _busy = true;
-    notifyListeners();
-    try {
-      final path = await _api.startScrcpyRecording(stableSerial, force: force);
-      await refresh();
-      return path;
-    } finally {
-      _busy = false;
-      notifyListeners();
-    }
-  }
-
-  /// Stop the running recording. No-op if nothing is recording.
-  Future<void> stop() async {
-    if (_busy) return;
-    _busy = true;
-    notifyListeners();
-    try {
-      await _api.stopScrcpyRecording();
-      _status = ScrcpyRecordStatus.stopped;
-    } finally {
-      _busy = false;
-      notifyListeners();
     }
   }
 }

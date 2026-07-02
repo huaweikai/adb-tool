@@ -539,7 +539,6 @@ class _RightPane extends StatelessWidget {
     final accent = isThisDevice
         ? theme.colorScheme.error
         : theme.colorScheme.tertiary;
-    final filename = recording.outputPath.split(Platform.pathSeparator).last;
     final elapsed = recording.elapsedSeconds;
     final titleText = isThisDevice
         ? tr('scrcpy.recordingActiveOnCard',
@@ -561,27 +560,11 @@ class _RightPane extends StatelessWidget {
           ),
           const SizedBox(width: 6),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  titleText,
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: accent, fontWeight: FontWeight.w600),
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if (isThisDevice) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    '$filename · ${tr('scrcpy.recordingStopOnlyHere')}',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                        fontSize: 11),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ],
+            child: Text(
+              titleText,
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: accent, fontWeight: FontWeight.w600),
+              overflow: TextOverflow.ellipsis,
             ),
           ),
         ],

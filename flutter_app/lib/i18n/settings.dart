@@ -44,7 +44,7 @@ const _locSettingsZh = <String, String>{
       '开始录屏将停止当前投屏会话，是否继续？',
   'recording.scrcpyBusyRecordTitle': '检测到 scrcpy 已在录屏',
   'recording.scrcpyBusyRecordBody':
-      '另一台设备正在使用 scrcpy 录屏。一次只能运行一个 scrcpy 进程。',
+      '设备 {serial} 正在 scrcpy 录屏。一次只能运行一个 scrcpy 进程。',
   'recording.scrcpyBusyContinue': '停止投屏并录屏',
   'recording.scrcpyBusyCancel': '取消',
   'recording.startFailed': '启动录屏失败：{error}',
@@ -56,8 +56,6 @@ const _locSettingsZh = <String, String>{
   'scrcpy.recordingActiveOnCard': '录屏中 {seconds}s',
   'scrcpy.recordingActiveOther': '另一台设备正在录屏',
   'scrcpy.recordingCantStartMirror': 'scrcpy 正在录屏，无法启动投屏',
-  'scrcpy.recordingToPath': '保存到：{path}',
-  'scrcpy.recordingStopOnlyHere': '请到录屏页面停止',
 };
 
 const _locSettingsEn = <String, String>{
@@ -89,7 +87,7 @@ const _locSettingsEn = <String, String>{
       'Starting a recording will stop the current mirror session. Continue?',
   'recording.scrcpyBusyRecordTitle': 'scrcpy is already recording',
   'recording.scrcpyBusyRecordBody':
-      'Another scrcpy recording is in flight. Only one scrcpy process can run at a time.',
+      'Device {serial} is recording via scrcpy. Only one scrcpy process can run at a time.',
   'recording.scrcpyBusyContinue': 'Stop mirror and record',
   'recording.scrcpyBusyCancel': 'Cancel',
   'recording.startFailed': 'Failed to start recording: {error}',
@@ -100,6 +98,4 @@ const _locSettingsEn = <String, String>{
   'scrcpy.recordingActiveOnCard': 'Recording {seconds}s',
   'scrcpy.recordingActiveOther': 'Another device is recording',
   'scrcpy.recordingCantStartMirror': 'scrcpy is recording — cannot start mirror',
-  'scrcpy.recordingToPath': 'Saving to: {path}',
-  'scrcpy.recordingStopOnlyHere': 'Stop from the recording surface',
 };

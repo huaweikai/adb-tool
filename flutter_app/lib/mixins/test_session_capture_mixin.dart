@@ -27,6 +27,7 @@ import '../db/database.dart';
 import '../db/dao/saved_devices_dao.dart';
 import '../i18n.dart';
 import '../providers/recording_settings_provider.dart';
+import '../providers/scrcpy_record_state_provider.dart';
 import '../providers/test_session_provider.dart';
 import '../services/api_client.dart';
 import '../services/screen_capture_service.dart';
@@ -337,6 +338,12 @@ mixin TestSessionCaptureMixin<T extends StatefulWidget> on State<T> {
 
   Future<void> _startScrcpyRecording(
       String s, RecordingSettingsProvider settings) async {
+    // Capture the provider BEFORE the first await so we don't reach
+    // for a possibly-disposed BuildContext after the DB write. Going
+    // through the provider (not the service layer directly) means the
+    // mirror page's "scrcpy is busy recording" banner appears
+    // synchronously instead of waiting for the next 2s poll.
+    final recordState = context.read<ScrcpyRecordStateProvider>();
     final startedAtMs = DateTime.now().millisecondsSinceEpoch;
     try {
       await savedDevicesDao.setScreenRecord(
@@ -344,7 +351,7 @@ mixin TestSessionCaptureMixin<T extends StatefulWidget> on State<T> {
         owner: recordOwner.dbValue,
         startedAtMs: startedAtMs,
       );
-      final path = await _capture.startScrcpyRecording(s);
+      final path = await recordState.start(s);
       _scrcpyOutputPath = path.isEmpty ? null : path;
       if (sessionProvider.hasRunningSession) {
         await sessionProvider.markScreenRecordStarted();
@@ -358,7 +365,11 @@ mixin TestSessionCaptureMixin<T extends StatefulWidget> on State<T> {
         } catch (_) {}
         return;
       }
-      final ok = await showScrcpyBusyConfirmDialog(context, busy: e);
+      final ok = await showScrcpyBusyConfirmDialog(
+        context,
+        busy: e,
+        activeSerial: s,
+      );
       if (ok != true) {
         _scrcpyOutputPath = null;
         try {
@@ -367,7 +378,7 @@ mixin TestSessionCaptureMixin<T extends StatefulWidget> on State<T> {
         return;
       }
       try {
-        final path = await _capture.startScrcpyRecording(s, force: true);
+        final path = await recordState.start(s, force: true);
         _scrcpyOutputPath = path.isEmpty ? null : path;
         if (sessionProvider.hasRunningSession) {
           await sessionProvider.markScreenRecordStarted();
