@@ -66,10 +66,11 @@ copy_app() {
 
 # ---------------- dmg ----------------
 create_dmg() {
-  local arch=$(uname -m)
-  local app="$MACOS/$arch/$BUNDLE"
+  local raw=$(uname -m)
+  local arch="amd64"; [[ "$raw" == "arm64" ]] && arch="arm64"
+  local app="$MACOS/$raw/$BUNDLE"
   local ver="${PRODUCT_VERSION:-dev}"
-  local dmg="$MACOS/ADBTool-$ver.dmg"
+  local dmg="$MACOS/ADBTool-$ver-$arch.dmg"
 
   rm -rf /tmp/dmg
   mkdir -p /tmp/dmg

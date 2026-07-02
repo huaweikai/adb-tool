@@ -24,7 +24,7 @@ jobs:
           name: android
           path: adb_tool_app/app/build/outputs/apk/**/release/*.apk
 
-  macos:
+  macos-arm64:
     runs-on: macos-14
     needs: android
     steps:
@@ -53,7 +53,42 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: macos
+          name: macos-arm64
+          path: dist/macos/*.dmg
+
+  macos-amd64:
+    # Intel x86_64 runner — macos-13 was retired 2025-12, GitHub's current
+    # Intel option is macos-15-intel (expected available until 2027-08).
+    # build.sh runs native x86_64 build on this host, no Rosetta needed.
+    runs-on: macos-15-intel
+    needs: android
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          check-latest: true
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Read version from pubspec
+        id: ver
+        run: |
+          VERSION=$(grep '^version:' flutter_app/pubspec.yaml | awk '{print $2}' | sed 's/+.*//')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Using version: $VERSION"
+
+      - name: Build macOS
+        env:
+          PRODUCT_VERSION: ${{ steps.ver.outputs.version }}
+        run: PRODUCT_VERSION="$PRODUCT_VERSION" bash scripts/build.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-amd64
           path: dist/macos/*.dmg
 
   windows:
@@ -90,7 +125,7 @@ jobs:
 
   release:
     runs-on: ubuntu-latest
-    needs: [macos, windows]
+    needs: [macos-arm64, macos-amd64, windows]
 
     permissions:
       contents: write
@@ -101,5 +136,6 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           files: |
-            macos/**/*.dmg
+            macos-arm64/**/*.dmg
+            macos-amd64/**/*.dmg
             windows/**/*.msi
