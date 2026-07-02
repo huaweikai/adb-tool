@@ -51,6 +51,8 @@ const _locSettingsZh = <String, String>{
   'recording.stopFailed': '停止录屏失败：{error}',
   'recording.fileSaved': '录屏已保存到 {path}',
   'recording.fileSavedNotif': '录屏文件：{path}',
+  'recording.sandboxCleanupFailed':
+      '录屏已保存到目标位置。沙盒副本未能自动清理，请手动删除：{path}',
 
   // ── Mirror page integration ────────────────────────────────────
   'scrcpy.recordingActiveOnCard': '录屏中 {seconds}s',
@@ -94,6 +96,8 @@ const _locSettingsEn = <String, String>{
   'recording.stopFailed': 'Failed to stop recording: {error}',
   'recording.fileSaved': 'Recording saved to {path}',
   'recording.fileSavedNotif': 'Recording file: {path}',
+  'recording.sandboxCleanupFailed':
+      'Recording saved, but the sandbox copy could not be cleaned up automatically. Please delete manually: {path}',
 
   'scrcpy.recordingActiveOnCard': 'Recording {seconds}s',
   'scrcpy.recordingActiveOther': 'Another device is recording',

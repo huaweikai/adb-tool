@@ -528,6 +528,11 @@ mixin TestSessionCaptureMixin<T extends StatefulWidget> on State<T> {
           await _capture.discardScrcpyRecording(path);
         } catch (e) {
           debugPrint('[ScreenRecord] sandbox cleanup failed: $e');
+          if (mounted) {
+            _showSnackBar(
+              tr('recording.sandboxCleanupFailed', {'path': path}),
+            );
+          }
         }
       }
     } catch (e) {

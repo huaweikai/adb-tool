@@ -63,20 +63,26 @@ void main() {
     expect(state.screenRecordMethod, 'scrcpy');
   });
 
-  test('setOutputDir stores and clearing unsets (reserved for future use)', () async {
-    // No UI calls this today but the column + provider method stay
-    // alive for a potential "custom output directory" option.
-    await provider.setOutputDir('/tmp/foo');
-    expect(provider.outputDir, '/tmp/foo');
+  test('setMethod is a no-op when value is unchanged', () async {
+    await provider.load();
+    var notifyCount = 0;
+    provider.addListener(() => notifyCount++);
 
-    final state = await db.appStatesDao.getAppState();
-    expect(state.scrcpyRecordOutputDir, '/tmp/foo');
+    await provider.setMethod(ScreenRecordMethod.adb);
+    expect(notifyCount, 0);
+    expect(provider.method, ScreenRecordMethod.adb);
+  });
 
-    await provider.setOutputDir(null);
-    expect(provider.outputDir, isNull);
+  test('setMethod fires notifyListeners when value changes', () async {
+    await provider.load();
+    var notifyCount = 0;
+    provider.addListener(() => notifyCount++);
 
-    final after = await db.appStatesDao.getAppState();
-    expect(after.scrcpyRecordOutputDir, isNull);
+    await provider.setMethod(ScreenRecordMethod.scrcpy);
+    expect(notifyCount, 1);
+
+    await provider.setMethod(ScreenRecordMethod.scrcpy);
+    expect(notifyCount, 1);
   });
 
   test('ScreenRecordMethod.fromDb round-trips both values', () {
@@ -96,6 +102,31 @@ void main() {
     expect(columnNames, containsAll([
       'screen_record_method',
       'scrcpy_record_output_dir',
+    ]));
+  });
+
+  test('app_states schema matches v10 expectations (locks hand-edited database.g.dart)', () async {
+    // This is a guard against database.g.dart drift. The file is
+    // hand-edited because build_runner is broken on the current
+    // analyzer 13.0.0 toolchain (pubspec.yaml has the override block).
+    // When build_runner is fixed, regenerate database.g.dart and
+    // update the expected column list if drift is intentional.
+    final schema =
+        await db.customSelect('PRAGMA table_info(app_states)').get();
+    final columnNames =
+        schema.map((row) => row.data['name'] as String).toList();
+    expect(columnNames, containsAll(<String>[
+      'id',
+      'active_serial',
+      'active_key',
+      'expanded_serials',
+      'last_successful_refresh',
+      'selected_s_d_k_path', // drift: drift uses this for `selectedSDKPath`
+      'selected_java_path',
+      'sidebar_width',
+      'sidebar_collapsed',
+      'screen_record_method', // v10
+      'scrcpy_record_output_dir', // v10
     ]));
   });
 }

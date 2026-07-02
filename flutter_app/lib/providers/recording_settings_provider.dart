@@ -92,7 +92,7 @@ class RecordingSettingsProvider extends ChangeNotifier {
 
   /// Switch the recording method. Persisted to the DB on success.
   Future<void> setMethod(ScreenRecordMethod method) async {
-    if (_method == method && _loaded) return;
+    if (_method == method) return;
     _method = method;
     notifyListeners();
     await _db.appStatesDao.updateAppState(screenRecordMethod: method.dbValue);
