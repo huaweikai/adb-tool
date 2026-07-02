@@ -64,6 +64,10 @@
 //        ip:port, and treating ip:port as the device identity made
 //        one physical device become N "new" devices in the sidebar
 //        with no way to remove them (test_sessions FK crash).
+//   v10 — app_states: add `screenRecordMethod` (default 'adb') and
+//        `scrcpyRecordOutputDir` (nullable). These are the two new
+//        user-facing knobs the recording settings page exposes —
+//        see lib/screens/recording_settings_screen.dart.
 import 'dart:io';
 
 import 'package:drift/drift.dart';
@@ -124,7 +128,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 9;
+  int get schemaVersion => 10;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -214,6 +218,16 @@ class AppDatabase extends _$AppDatabase {
             await customStatement(
               'UPDATE saved_devices SET address = serial',
             );
+          }
+          if (from < 10) {
+            // v9 → v10: screen-recording method + scrcpy output dir.
+            // `screenRecordMethod` defaults to 'adb' so existing users
+            // see no behavior change. `scrcpyRecordOutputDir` is
+            // nullable — the user hasn't picked one yet (the settings
+            // page prompts for it before allowing scrcpy-mode
+            // recording to start).
+            await m.addColumn(appStates, appStates.screenRecordMethod);
+            await m.addColumn(appStates, appStates.scrcpyRecordOutputDir);
           }
         },
         beforeOpen: (details) async {

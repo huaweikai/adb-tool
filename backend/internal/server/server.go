@@ -181,6 +181,7 @@ func (s *Server) Close() {
 //   - handlers_logcat.go    /ws/logs, /api/logcat-recent, /api/session-logcat
 //   - handlers_screen.go    /api/screenshot, /api/screen-record, /api/screen-record-video
 //   - handlers_scrcpy.go    /api/scrcpy/{start,stop,action,status}
+//   - handlers_scrcpy_record.go /api/scrcpy/record/{start,stop,status}
 //   - handlers_wireless.go  /api/adb-wireless-{pair,connect,disconnect,scan}
 //   - handlers_clipboard.go /api/clipboard-{check,install,send,uninstall}
 //   - handlers_meta.go      /api/backend-logs, /api/identify, /api/shutdown, /api/adb-exec
@@ -230,6 +231,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/scrcpy/stop", s.handleScrcpyStop)
 	mux.HandleFunc("/api/scrcpy/action", s.handleScrcpyAction)
 	mux.HandleFunc("/api/scrcpy/status", s.handleScrcpyStatus)
+
+	// Scrcpy windowless recording (--no-window --record=<path>). Used
+	// when the user picks "scrcpy" as their screen-recording method in
+	// the new recording settings page. Mutually exclusive with the
+	// mirror session — see adb_scrcpy_record.go for the conflict rules.
+	mux.HandleFunc("/api/scrcpy/record/start", s.handleScrcpyRecordingStart)
+	mux.HandleFunc("/api/scrcpy/record/stop", s.handleScrcpyRecordingStop)
+	mux.HandleFunc("/api/scrcpy/record/status", s.handleScrcpyRecordingStatus)
 
 	// Wireless ADB
 	mux.HandleFunc("/api/adb-wireless-pair", s.handleAdbWirelessPair)

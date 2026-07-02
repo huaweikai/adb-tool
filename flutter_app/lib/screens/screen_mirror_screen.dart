@@ -5,7 +5,9 @@ import 'package:provider/provider.dart';
 import '../i18n.dart';
 import '../providers/device_provider.dart';
 import '../providers/mirror_state_provider.dart';
+import '../providers/scrcpy_record_state_provider.dart';
 import '../providers/scrcpy_settings_provider.dart';
+import '../services/api_client.dart';
 import '../widgets/offline_guard.dart';
 import '../widgets/scrcpy_settings_panel.dart';
 import '../widgets/scrcpy_shortcut_reference.dart';
@@ -97,7 +99,15 @@ class _ScreenMirrorScreenState extends State<ScreenMirrorScreen> {
   void _startPoll() {
     _pollTimer?.cancel();
     _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) {
-      if (mounted) context.read<MirrorStateProvider>().refresh();
+      if (!mounted) return;
+      context.read<MirrorStateProvider>().refresh();
+      // Also poll the windowless recording subprocess — when it's
+      // in flight on the active device, the Start button here must
+      // be disabled. Cheaper than a separate widget listening
+      // (the recording provider has no offline hook because it has
+      // nothing to clean up on its own — the subprocess exits when
+      // the user clicks stop on the recording page).
+      context.read<ScrcpyRecordStateProvider>().refresh();
     });
   }
 
@@ -106,6 +116,24 @@ class _ScreenMirrorScreenState extends State<ScreenMirrorScreen> {
     if (s == null) return;
     final mirror = context.read<MirrorStateProvider>();
     if (mirror.busy) return;
+    // Block Start when a windowless recording is in flight on the
+    // active device — scrcpy is single-instance per host so we'd
+    // either fail to start the mirror or kill the user's recording.
+    // The reverse is OK (recording kills mirror gracefully, see
+    // adb_scrcpy_record.go), but we don't want the mirror UI to
+    // silently do that without the user seeing it.
+    final recording = context.read<ScrcpyRecordStateProvider>().status;
+    if (recording.running && recording.serial == s) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(tr('scrcpy.recordingCantStartMirror')),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+      return;
+    }
     final opts = context.read<ScrcpySettingsProvider>().current;
     if (opts == null) {
       return;
@@ -199,13 +227,19 @@ class _ScreenMirrorScreenState extends State<ScreenMirrorScreen> {
       );
     }
 
-    // Watch the provider so offline-stop / refresh transitions rebuild
+    // Watch the providers so offline-stop / refresh transitions rebuild
     // the right pane without a setState call in this widget. The
     // provider hides the adb-serial / stable-identity comparison
     // internally so this screen stays address-agnostic.
     final mirror = context.watch<MirrorStateProvider>();
+    final recording = context.watch<ScrcpyRecordStateProvider>().status;
     final status = mirror.status;
     final isRunning = status.running && mirror.isOurs(stable);
+    // Recording is "blocking" the mirror when it's running on the
+    // active device. Other-device recordings are surfaced as a
+    // banner but don't disable the start button.
+    final recordingBlocksMirror =
+        recording.running && recording.serial == stable;
 
     // Responsive: side-by-side on wide windows, stacked on narrow ones.
     // scrcpy itself renders in its own SDL window, so the tab content
@@ -220,6 +254,8 @@ class _ScreenMirrorScreenState extends State<ScreenMirrorScreen> {
             isRunning: isRunning,
             elapsed: status.elapsedSeconds,
             busy: mirror.busy,
+            recording: recording,
+            recordingBlocksMirror: recordingBlocksMirror,
             onStart: _onStart,
             onStop: _onStop,
           );
@@ -308,6 +344,8 @@ class _RightPane extends StatelessWidget {
   final bool isRunning;
   final int elapsed;
   final bool busy;
+  final ScrcpyRecordStatus recording;
+  final bool recordingBlocksMirror;
   final VoidCallback onStart;
   final VoidCallback onStop;
   const _RightPane({
@@ -315,6 +353,8 @@ class _RightPane extends StatelessWidget {
     required this.isRunning,
     required this.elapsed,
     required this.busy,
+    required this.recording,
+    required this.recordingBlocksMirror,
     required this.onStart,
     required this.onStop,
   });
@@ -336,27 +376,37 @@ class _RightPane extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: LayoutBuilder(builder: (context, constraints) {
-          final statusCard =
-              _buildStatusCard(theme, serial, isRunning, elapsed);
+          final statusCard = _buildStatusCard(
+              theme, serial, isRunning, elapsed, recording, recordingBlocksMirror);
+          // When a recording is blocking the mirror, the start
+          // button stays rendered (so the user can see why nothing
+          // happens) but is disabled with a tooltip explaining.
           final startButton = Row(
             children: [
               Expanded(
-                child: FilledButton.icon(
-                  onPressed: busy ? null : (isRunning ? onStop : onStart),
-                  icon: Icon(isRunning ? Icons.stop : Icons.play_arrow),
-                  label: Text(
-                    isRunning ? tr('scrcpyStop') : tr('scrcpyStart'),
-                  ),
-                  style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    backgroundColor: isRunning ? theme.colorScheme.error : null,
+                child: Tooltip(
+                  message: recordingBlocksMirror
+                      ? tr('scrcpy.recordingCantStartMirror')
+                      : '',
+                  child: FilledButton.icon(
+                    onPressed: busy || recordingBlocksMirror
+                        ? null
+                        : (isRunning ? onStop : onStart),
+                    icon: Icon(isRunning ? Icons.stop : Icons.play_arrow),
+                    label: Text(
+                      isRunning ? tr('scrcpyStop') : tr('scrcpyStart'),
+                    ),
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      backgroundColor: isRunning ? theme.colorScheme.error : null,
+                    ),
                   ),
                 ),
               ),
               if (isRunning) ...[
                 const SizedBox(width: 8),
                 IconButton.filledTonal(
-                  onPressed: busy ? null : onStart,
+                  onPressed: busy || recordingBlocksMirror ? null : onStart,
                   tooltip: tr('scrcpyRestart'),
                   icon: const Icon(Icons.refresh),
                 ),
@@ -419,38 +469,118 @@ class _RightPane extends StatelessWidget {
   }
 
   Widget _buildStatusCard(
-      ThemeData theme, String serial, bool isRunning, int elapsed) {
+    ThemeData theme,
+    String serial,
+    bool isRunning,
+    int elapsed,
+    ScrcpyRecordStatus recording,
+    bool recordingBlocksMirror,
+  ) {
     final color =
         isRunning ? theme.colorScheme.primary : theme.colorScheme.outline;
     return Container(
       padding: const EdgeInsets.all(4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: isRunning ? Colors.green : theme.colorScheme.outline,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      tr('scrcpyTitle', {'serial': serial}),
+                      style: theme.textTheme.titleSmall,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      isRunning
+                          ? tr('scrcpyElapsed', {'seconds': elapsed.toString()})
+                          : tr('scrcpyStopped'),
+                      style: theme.textTheme.bodySmall?.copyWith(color: color),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          // Recording-on-this-device banner. Sits under the mirror
+          // status so the user can see both: "scrcpy is busy doing
+          // a recording on top of your selected device, that's why
+          // the Start button is grey". For recordings on OTHER
+          // devices, we show a different message (awareness without
+          // disabling local controls).
+          if (recording.running) ...[
+            const SizedBox(height: 8),
+            _buildRecordingBanner(
+                theme, recording, isThisDevice: recordingBlocksMirror),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecordingBanner(
+    ThemeData theme,
+    ScrcpyRecordStatus recording, {
+    required bool isThisDevice,
+  }) {
+    final accent = isThisDevice
+        ? theme.colorScheme.error
+        : theme.colorScheme.tertiary;
+    final filename = recording.outputPath.split(Platform.pathSeparator).last;
+    final elapsed = recording.elapsedSeconds;
+    final titleText = isThisDevice
+        ? tr('scrcpy.recordingActiveOnCard',
+            {'seconds': elapsed.toString()})
+        : tr('scrcpy.recordingActiveOther');
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: accent.withAlpha(30),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: accent.withAlpha(120)),
+      ),
       child: Row(
         children: [
-          Container(
-            width: 10,
-            height: 10,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: isRunning ? Colors.green : theme.colorScheme.outline,
-            ),
+          Icon(
+            isThisDevice ? Icons.fiber_manual_record : Icons.info_outline,
+            size: 14,
+            color: accent,
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 6),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  tr('scrcpyTitle', {'serial': serial}),
-                  style: theme.textTheme.titleSmall,
+                  titleText,
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: accent, fontWeight: FontWeight.w600),
                   overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  isRunning
-                      ? tr('scrcpyElapsed', {'seconds': elapsed.toString()})
-                      : tr('scrcpyStopped'),
-                  style: theme.textTheme.bodySmall?.copyWith(color: color),
-                ),
+                if (isThisDevice) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    '$filename · ${tr('scrcpy.recordingStopOnlyHere')}',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        fontSize: 11),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
               ],
             ),
           ),

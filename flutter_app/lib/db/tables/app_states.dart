@@ -20,4 +20,19 @@ class AppStates extends Table {
   // Sidebar UI preferences
   IntColumn get sidebarWidth => integer().withDefault(const Constant(240))();
   BoolColumn get sidebarCollapsed => boolean().withDefault(const Constant(false))();
+
+  // Screen-recording method (v10). "adb" uses the legacy
+  // `adb screenrecord` path; "scrcpy" uses the bundled scrcpy
+  // binary in --no-window --record mode. Defaults to "adb" so
+  // existing users get the same behavior they had pre-migration.
+  TextColumn get screenRecordMethod =>
+      text().withDefault(const Constant('adb'))();
+
+  // Output directory for scrcpy-mode recordings. Nullable because
+  // the user may not have picked one yet (the settings page blocks
+  // "start recording" until this is set, but the row can exist with
+  // the field NULL). Absolute path on the host filesystem — not
+  // validated at write time; the backend re-validates before each
+  // start call.
+  TextColumn get scrcpyRecordOutputDir => text().nullable()();
 }

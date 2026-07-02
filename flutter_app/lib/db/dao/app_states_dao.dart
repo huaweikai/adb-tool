@@ -44,6 +44,9 @@ class AppStatesDao extends DatabaseAccessor<AppDatabase>
     bool clearJavaPath = false,
     int? sidebarWidth,
     bool? sidebarCollapsed,
+    String? screenRecordMethod,
+    String? scrcpyRecordOutputDir,
+    bool clearScrcpyRecordOutputDir = false,
   }) async {
     final state = await getAppState();
     await (update(appStates)..where((t) => t.id.equals(state.id))).write(
@@ -72,6 +75,14 @@ class AppStatesDao extends DatabaseAccessor<AppDatabase>
         sidebarCollapsed: sidebarCollapsed != null
             ? Value(sidebarCollapsed)
             : const Value.absent(),
+        screenRecordMethod: screenRecordMethod != null
+            ? Value(screenRecordMethod)
+            : const Value.absent(),
+        scrcpyRecordOutputDir: clearScrcpyRecordOutputDir
+            ? const Value(null)
+            : scrcpyRecordOutputDir != null
+                ? Value(scrcpyRecordOutputDir)
+                : const Value.absent(),
       ),
     );
   }
@@ -116,6 +127,26 @@ class AppStatesDao extends DatabaseAccessor<AppDatabase>
   Future<bool> getSidebarCollapsed() async {
     final state = await getAppState();
     return state.sidebarCollapsed;
+  }
+
+  /// Read the current screen-recording method. Defaults to 'adb' for
+  /// rows that predate v10 (the column has a server-side default of
+  /// 'adb' so the in-DB value is also 'adb' on freshly-upgraded
+  /// databases; this getter is the read-side of the same contract).
+  Future<String> getScreenRecordMethod() async {
+    final state = await getAppState();
+    // Belt-and-braces: the column has a default in the migration,
+    // but a row inserted via getAppState() pre-migration could
+    // theoretically still be in flight when the column gets added.
+    return state.screenRecordMethod.isEmpty ? 'adb' : state.screenRecordMethod;
+  }
+
+  /// Read the scrcpy-mode output directory. Null if the user hasn't
+  /// picked one yet — callers should treat null as "scrcpy mode not
+  /// yet configured" and block recording accordingly.
+  Future<String?> getScrcpyRecordOutputDir() async {
+    final state = await getAppState();
+    return state.scrcpyRecordOutputDir;
   }
 
   // --- JSON helpers --------------------------------------------------------

@@ -27,6 +27,7 @@ import 'test_config_screen.dart';
 import '../widgets/wireless_adb_dialog.dart';
 import 'screen_mirror_screen.dart';
 import 'emulator_settings_screen.dart';
+import 'recording_settings_screen.dart';
 
 enum NavItem {
   status,
@@ -61,6 +62,7 @@ class _NavConfig {
 const _backendLogKey = '_backend_logs';
 const _testConfigKey = '_test_config';
 const _emulatorKey = '_emulator_settings';
+const _recordingKey = '_recording_settings';
 
 class _CachedScreen extends StatelessWidget {
   final String? serial;
@@ -255,7 +257,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     int removed = 0;
     for (final k in keys) {
       if (removed >= toRemove) break;
-      if (k == _activeKey || k == _backendLogKey || k == _emulatorKey) continue;
+      if (k == _activeKey || k == _backendLogKey || k == _emulatorKey || k == _recordingKey) continue;
       _screens.remove(k);
       removed++;
     }
@@ -291,6 +293,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     setState(() => _activeKey = _emulatorKey);
   }
 
+  void _openRecordingSettings() {
+    if (!_screens.containsKey(_recordingKey)) {
+      _screens[_recordingKey] = const _CachedScreen(
+        serial: null,
+        child: RecordingSettingsScreen(),
+      );
+    }
+    setState(() => _activeKey = _recordingKey);
+  }
+
   /// Restore the active page from saved _activeKey
   void _restoreActivePage(List<SavedDevice> savedDevices) {
     if (_activeKey == null) return;
@@ -306,6 +318,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
     if (_activeKey == _emulatorKey) {
       _openEmulatorSettings();
+      return;
+    }
+    if (_activeKey == _recordingKey) {
+      _openRecordingSettings();
       return;
     }
 
@@ -659,6 +675,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
           _buildCollapsedGlobalEntry(
             theme,
+            icon: Icons.fiber_manual_record,
+            tooltip: tr('screenRecord.title'),
+            isActive: _activeKey == _recordingKey,
+            onTap: () => _expandAndOpen(_openRecordingSettings),
+          ),
+          _buildCollapsedGlobalEntry(
+            theme,
             icon: Icons.terminal,
             tooltip: tr('backendLogs'),
             isActive: _activeKey == _backendLogKey,
@@ -776,6 +799,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             // visible BETA so users know to expect rough edges.
             extraBadge: 'BETA',
             onTap: _openEmulatorSettings,
+          ),
+          _buildGlobalEntry(
+            theme,
+            keyName: _recordingKey,
+            icon: Icons.fiber_manual_record,
+            label: tr('screenRecord.title'),
+            badge: 'MP4',
+            onTap: _openRecordingSettings,
           ),
           _buildGlobalEntry(
             theme,

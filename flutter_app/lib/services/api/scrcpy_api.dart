@@ -70,6 +70,79 @@ mixin ScrcpyApi on ApiBase {
       elapsedSeconds: (data['elapsed'] as num?)?.toInt() ?? 0,
     );
   }
+
+  // ── Windowless recording (--no-window --record=<path>) ──────────────
+  //
+  // These three calls drive a SEPARATE scrcpy subprocess from the
+  // mirror one. The two are mutually exclusive on the same device
+  // (scrcpy holds the adb connection); the backend returns 409 with
+  // `data.kind = "mirror" | "record"` when the user tries to start a
+  // recording while the other subprocess is in flight. The capture
+  // mixin layer surfaces that as a confirm dialog and re-calls start
+  // with force=true if the user agrees.
+
+  /// Start a windowless scrcpy that records to [outputPath] on the
+  /// host filesystem. Pass [force]=true to gracefully kill an
+  /// in-flight mirror session before starting the recording (the
+  /// recording-mirror conflict is the only place force is meaningful;
+  /// when a previous recording is running it's always replaced).
+  ///
+  /// Throws [ScrcpyRecordBusyException] when the backend refuses with
+  /// 409 (i.e. force=false and something is already running). The
+  /// exception carries [ScrcpyRecordBusyException.kind] so the UI can
+  /// render an appropriate message.
+  Future<Map<String, dynamic>> startScrcpyRecording(
+    String serial,
+    String outputPath, {
+    bool force = false,
+  }) async {
+    final resp = await dio.post(
+      '/api/scrcpy/record/start',
+      queryParameters: {
+        ...deviceQueryParameters(serial),
+        'outputPath': outputPath,
+        if (force) 'force': 'true',
+      },
+    );
+    if (resp.statusCode == 409) {
+      final data = responseMap(resp);
+      throw ScrcpyRecordBusyException(
+        kind: data['kind'] as String? ?? 'record',
+        serial: data['serial'] as String? ?? '',
+        message: errorMessage(resp),
+      );
+    }
+    throwIfNotOk(resp);
+    return responseMap(resp);
+  }
+
+  /// Stop the windowless recording subprocess. No-op if nothing is
+  /// running (returns 200 either way so the UI can fire it on every
+  /// state transition).
+  Future<Map<String, dynamic>> stopScrcpyRecording() async {
+    final resp = await dio.post('/api/scrcpy/record/stop');
+    throwIfNotOk(resp);
+    return responseMap(resp);
+  }
+
+  /// Query the windowless recording subprocess state. When [serial]
+  /// is provided, only returns running=true if the recording is
+  /// attached to that exact device.
+  Future<ScrcpyRecordStatus> scrcpyRecordingStatus({String? serial}) async {
+    final resp = await dio.get(
+      '/api/scrcpy/record/status',
+      queryParameters: serial != null ? deviceQueryParameters(serial) : null,
+    );
+    throwIfNotOk(resp);
+    final data = responseMap(resp);
+    return ScrcpyRecordStatus(
+      running: data['running'] == true,
+      serial: data['serial'] as String? ?? '',
+      outputPath: data['outputPath'] as String? ?? '',
+      pid: (data['pid'] as num?)?.toInt() ?? 0,
+      elapsedSeconds: (data['elapsed'] as num?)?.toInt() ?? 0,
+    );
+  }
 }
 
 class ScrcpyStatus {
@@ -98,4 +171,52 @@ class ScrcpyStatus {
         pid: (m['pid'] as num?)?.toInt() ?? 0,
         elapsedSeconds: (m['elapsed'] as num?)?.toInt() ?? 0,
       );
+}
+
+class ScrcpyRecordStatus {
+  final bool running;
+  final String serial;
+  final String outputPath;
+  final int pid;
+  final int elapsedSeconds;
+
+  const ScrcpyRecordStatus({
+    required this.running,
+    required this.serial,
+    required this.outputPath,
+    required this.pid,
+    required this.elapsedSeconds,
+  });
+
+  static const stopped = ScrcpyRecordStatus(
+    running: false,
+    serial: '',
+    outputPath: '',
+    pid: 0,
+    elapsedSeconds: 0,
+  );
+}
+
+/// Thrown by [ScrcpyApi.startScrcpyRecording] when the backend
+/// responds with 409 (something is already using scrcpy). The
+/// [kind] field is the discriminator — "mirror" means the user has
+/// a screen-mirror session running; "record" means a previous
+/// recording is still in flight. The capture mixin uses the kind to
+/// pick a different confirm-dialog copy.
+class ScrcpyRecordBusyException implements Exception {
+  final String kind;
+  final String serial;
+  final String message;
+
+  const ScrcpyRecordBusyException({
+    required this.kind,
+    required this.serial,
+    required this.message,
+  });
+
+  bool get isMirrorBusy => kind == 'mirror';
+  bool get isRecordBusy => kind == 'record';
+
+  @override
+  String toString() => 'ScrcpyRecordBusyException($kind, $serial): $message';
 }

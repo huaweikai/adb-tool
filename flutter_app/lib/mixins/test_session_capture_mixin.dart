@@ -17,19 +17,23 @@
 // the single source of truth, which means navigating away and back
 // (which disposes & rebuilds the State) does NOT lose progress.
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:pro_image_editor/pro_image_editor.dart';
+import 'package:provider/provider.dart';
 
 import '../db/database.dart';
 import '../db/dao/saved_devices_dao.dart';
 import '../i18n.dart';
+import '../providers/recording_settings_provider.dart';
 import '../providers/test_session_provider.dart';
 import '../services/api_client.dart';
 import '../services/screen_capture_service.dart';
 import '../services/screen_record_owner.dart';
 import '../widgets/editor_i18n.dart';
+import '../widgets/recording_settings_dialogs.dart';
 import '../widgets/screenshot_watermark.dart';
 
 mixin TestSessionCaptureMixin<T extends StatefulWidget> on State<T> {
@@ -62,6 +66,11 @@ mixin TestSessionCaptureMixin<T extends StatefulWidget> on State<T> {
   /// cancelled when no recording, when the widget disposes, or when
   /// the active serial changes.
   Timer? _elapsedTicker;
+
+  /// Scrcpy-method path: where the MP4 was being written while the
+  /// recording was in flight. Set at start, consumed at stop. Null
+  /// when using adb-mode recording or when idle.
+  String? _scrcpyOutputPath;
 
   // ── Lifecycle hooks (must be called by the State) ─────────────────────
   /// Subscribe to the active device's row. Call from `initState` after
@@ -262,6 +271,9 @@ mixin TestSessionCaptureMixin<T extends StatefulWidget> on State<T> {
   Future<void> startRecording() async {
     final s = serial;
     if (s == null) return;
+    // Capture the provider BEFORE the first await so we don't reach
+    // for a possibly-disposed BuildContext after the DB read.
+    final settings = context.read<RecordingSettingsProvider>();
     // Always read the fresh row from DB — _deviceRow may still be null if
     // the stream hasn't emitted yet after a State rebuild.
     final row = await savedDevicesDao.getBySerial(s);
@@ -278,6 +290,14 @@ mixin TestSessionCaptureMixin<T extends StatefulWidget> on State<T> {
       return;
     }
 
+    if (settings.method == ScreenRecordMethod.scrcpy) {
+      await _startScrcpyRecording(s, settings);
+    } else {
+      await _startAdbRecording(s);
+    }
+  }
+
+  Future<void> _startAdbRecording(String s) async {
     final startedAtMs = DateTime.now().millisecondsSinceEpoch;
     try {
       // Stamp the device row FIRST so the other surface sees us
@@ -316,6 +336,72 @@ mixin TestSessionCaptureMixin<T extends StatefulWidget> on State<T> {
     }
   }
 
+  Future<void> _startScrcpyRecording(
+      String s, RecordingSettingsProvider settings) async {
+    if (!settings.scrcpyConfigured) {
+      _showSnackBar(tr('screenRecord.scrcpyRequiresDir'));
+      return;
+    }
+    final dir = settings.outputDir!;
+    final filename =
+        'adb-tool-record_${DateTime.now().millisecondsSinceEpoch}.mp4';
+    final outputPath = '$dir${Platform.pathSeparator}$filename';
+    _scrcpyOutputPath = outputPath;
+
+    final startedAtMs = DateTime.now().millisecondsSinceEpoch;
+    try {
+      await savedDevicesDao.setScreenRecord(
+        s,
+        owner: recordOwner.dbValue,
+        startedAtMs: startedAtMs,
+      );
+      await _capture.startScrcpyRecording(s, outputPath);
+      if (sessionProvider.hasRunningSession) {
+        await sessionProvider.markScreenRecordStarted();
+      }
+      _showSnackBar(tr('recordingStarted'));
+    } on ScrcpyRecordBusyException catch (e) {
+      if (!mounted) {
+        _scrcpyOutputPath = null;
+        try {
+          await savedDevicesDao.clearScreenRecord(s);
+        } catch (_) {}
+        return;
+      }
+      final ok = await showScrcpyBusyConfirmDialog(context, busy: e);
+      if (ok != true) {
+        _scrcpyOutputPath = null;
+        try {
+          await savedDevicesDao.clearScreenRecord(s);
+        } catch (_) {}
+        return;
+      }
+      try {
+        await _capture.startScrcpyRecording(s, outputPath, force: true);
+        if (sessionProvider.hasRunningSession) {
+          await sessionProvider.markScreenRecordStarted();
+        }
+      } catch (e2) {
+        _scrcpyOutputPath = null;
+        try {
+          await savedDevicesDao.clearScreenRecord(s);
+        } catch (_) {}
+        if (!mounted) return;
+        _showSnackBar('${tr('recording.startFailed')}: $e2');
+        return;
+      }
+      if (!mounted) return;
+      _showSnackBar(tr('recordingStarted'));
+    } catch (e) {
+      _scrcpyOutputPath = null;
+      try {
+        await savedDevicesDao.clearScreenRecord(s);
+      } catch (_) {}
+      if (!mounted) return;
+      _showSnackBar('${tr('recording.startFailed')}: $e');
+    }
+  }
+
   Future<void> stopRecording() async {
     final s = serial;
     if (s == null) return;
@@ -342,37 +428,15 @@ mixin TestSessionCaptureMixin<T extends StatefulWidget> on State<T> {
       return;
     }
 
+    final settings = context.read<RecordingSettingsProvider>();
     try {
-      // Flip to saving BEFORE we touch adb so the UI shows the
-      // "保存中..." spinner for the duration of the pull.
+      // Flip to saving BEFORE we touch the backend so the UI shows
+      // the "保存中..." spinner for the duration of the stop.
       await savedDevicesDao.setScreenRecordSaving(s, true);
-      final bytes = await _capture.stopScreenRecordAndPull(s);
-      if (!mounted) {
-        // Widget gone: still clean up.
-        try {
-          await savedDevicesDao.clearScreenRecord(s);
-        } catch (_) {}
-        try {
-          await apiClient.setShowTouches(s, false);
-        } catch (_) {}
-        return;
-      }
-      String? rel;
-      final hasUsableBytes = bytes.isNotEmpty;
-      if (hasUsableBytes) {
-        rel = await sessionProvider.saveVideoBytes(bytes);
-      }
-      await savedDevicesDao.clearScreenRecord(s);
-      await _syncDeviceRowFromDb();
-      try {
-        await apiClient.setShowTouches(s, false);
-      } catch (e) {
-        debugPrint('[ScreenRecord] show_touches off failed: $e');
-      }
-      if (hasUsableBytes && rel != null && rel.isNotEmpty) {
-        await onVideoSaved(bytes, rel);
+      if (settings.method == ScreenRecordMethod.scrcpy) {
+        await _stopScrcpyRecording(s);
       } else {
-        await onVideoDiscarded();
+        await _stopAdbRecording(s);
       }
     } catch (e) {
       try {
@@ -384,6 +448,70 @@ mixin TestSessionCaptureMixin<T extends StatefulWidget> on State<T> {
       } catch (_) {}
       if (!mounted) return;
       _showSnackBar('${tr('recordingStopFailed')}: $e');
+    }
+  }
+
+  Future<void> _stopAdbRecording(String s) async {
+    final bytes = await _capture.stopScreenRecordAndPull(s);
+    if (!mounted) {
+      // Widget gone: still clean up.
+      try {
+        await savedDevicesDao.clearScreenRecord(s);
+      } catch (_) {}
+      try {
+        await apiClient.setShowTouches(s, false);
+      } catch (_) {}
+      return;
+    }
+    String? rel;
+    final hasUsableBytes = bytes.isNotEmpty;
+    if (hasUsableBytes) {
+      rel = await sessionProvider.saveVideoBytes(bytes);
+    }
+    await savedDevicesDao.clearScreenRecord(s);
+    await _syncDeviceRowFromDb();
+    try {
+      await apiClient.setShowTouches(s, false);
+    } catch (e) {
+      debugPrint('[ScreenRecord] show_touches off failed: $e');
+    }
+    if (hasUsableBytes && rel != null && rel.isNotEmpty) {
+      await onVideoSaved(bytes, rel);
+    } else {
+      await onVideoDiscarded();
+    }
+  }
+
+  Future<void> _stopScrcpyRecording(String s) async {
+    final path = _scrcpyOutputPath;
+    try {
+      await _capture.stopScrcpyRecording();
+      if (!mounted) {
+        _scrcpyOutputPath = null;
+        try {
+          await savedDevicesDao.clearScreenRecord(s);
+        } catch (_) {}
+        return;
+      }
+      final bytes = path != null
+          ? await _capture.readScrcpyRecording(path)
+          : Uint8List(0);
+      _scrcpyOutputPath = null;
+      String? rel;
+      final hasUsableBytes = bytes.isNotEmpty;
+      if (hasUsableBytes) {
+        rel = await sessionProvider.saveVideoBytes(bytes);
+      }
+      await savedDevicesDao.clearScreenRecord(s);
+      await _syncDeviceRowFromDb();
+      if (hasUsableBytes && rel != null && rel.isNotEmpty) {
+        await onVideoSaved(bytes, rel);
+      } else {
+        await onVideoDiscarded();
+      }
+    } catch (e) {
+      _scrcpyOutputPath = null;
+      rethrow;
     }
   }
 

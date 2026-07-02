@@ -29,6 +29,14 @@ type AdbManager struct {
 	scrcpy    scrcpyState
 	scrcpyFS  embed.FS // injected by NewAdbManager, sourced from main's embed_scrcpy_*.go
 
+	// scrcpyRecord bundles the windowless recording subprocess
+	// (--no-window --record=<path>). Like the mirror, only one such
+	// process per host — but a separate state slot because the two
+	// invocations are mutually exclusive and need distinct locking.
+	// Access only via scrcpyRecord.mu — never touch these fields
+	// directly from outside adb_scrcpy_record.go.
+	scrcpyRecord scrcpyRecordState
+
 	propsMu        sync.Mutex
 	propsCache     map[string]cachedDeviceProps
 	restartMu      sync.Mutex
