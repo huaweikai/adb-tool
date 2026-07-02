@@ -3,7 +3,7 @@
     Name="ADB Tool"
     Manufacturer="com.example"
     Version="$(var.ProductVersion)"
-    ProductCode="*"
+    ProductCode="{A41436A5-1D8F-485B-A469-CD70CABFC9C1}"
     UpgradeCode="{7EEE1BBA-2B37-408A-9C03-D6E670D2EB8F}"
     Scope="perMachine"
     InstallerVersion="500">

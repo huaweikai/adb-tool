@@ -21,6 +21,7 @@ backend/adb-tool
 backend/adb-tool.exe
 flutter_app/windows/runner/Resources/*.exe
 flutter_app/windows/runner/resources/*.exe
+flutter_app/windows/runner/*.exe
 dist/
 .wix/
 .idea/
