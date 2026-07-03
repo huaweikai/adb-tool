@@ -76,8 +76,38 @@ class ScrcpyShortcutReference extends StatelessWidget {
               ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
         ),
         const SizedBox(height: 10),
-        Expanded(
-            child: isMac
+        LayoutBuilder(
+          builder: (context, constraints) {
+            if (constraints.maxHeight.isFinite) {
+              // Bounded height (wide layout – _RightPane gives us a
+              // definite remaining height via Expanded). Use Expanded
+              // so _OsCard gets a tight height and scrolls properly.
+              return Expanded(
+                child: isMac
+                    ? _OsCard(
+                        osLabel: tr('scrcpyRefPlatformMac'),
+                        mod: '⌘',
+                        modSymbol: '⌘ Command',
+                        shortcuts: _shortcuts,
+                      )
+                    : isWin
+                        ? _OsCard(
+                            osLabel: tr('scrcpyRefPlatformWin'),
+                            mod: 'Alt',
+                            modSymbol: 'Alt',
+                            shortcuts: _shortcuts,
+                          )
+                        : _OsCard(
+                            osLabel: tr('scrcpyRefPlatformOther'),
+                            mod: 'Ctrl',
+                            modSymbol: 'Ctrl',
+                            shortcuts: _shortcuts,
+                          ),
+              );
+            }
+            // Unbounded height (narrow layout – outer ListView scrolls).
+            // Expanded would throw, so render _OsCard directly.
+            return isMac
                 ? _OsCard(
                     osLabel: tr('scrcpyRefPlatformMac'),
                     mod: '⌘',
@@ -91,18 +121,14 @@ class ScrcpyShortcutReference extends StatelessWidget {
                         modSymbol: 'Alt',
                         shortcuts: _shortcuts,
                       )
-                    :
-                    // Linux / other: scrcpy's default shortcut mod is still
-                    // lalt/lsuper, but Super on Linux is the OS key. We show
-                    // Ctrl as a sensible default since most Linux DEs route
-                    // Super to the activities overlay and Ctrl+<key> is
-                    // generally free.
-                    _OsCard(
+                    : _OsCard(
                         osLabel: tr('scrcpyRefPlatformOther'),
                         mod: 'Ctrl',
                         modSymbol: 'Ctrl',
                         shortcuts: _shortcuts,
-                      ))
+                      );
+          },
+        ),
       ],
     );
   }
