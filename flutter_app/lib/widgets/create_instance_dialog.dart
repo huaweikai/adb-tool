@@ -78,6 +78,7 @@ class _CreateInstanceDialogState extends State<CreateInstanceDialog> {
                     }
                     return DropdownButtonFormField<String>(
                       value: _selectedImageId,
+                      isExpanded: true,
                       decoration: const InputDecoration(
                         border: OutlineInputBorder(),
                         hintText: 'Select a system image',
