@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -78,6 +79,34 @@ class _CachedScreen extends StatelessWidget {
       child: child,
     );
   }
+}
+
+/// Narrow value class for [HomeScreen]'s dependency on [DeviceProvider].
+///
+/// `context.select` compares the returned value with `==`. By overriding
+/// `==` here (using [listEquals] for the device list) the screen rebuilds
+/// only when the device list *contents* actually change — not on every
+/// 5s `notifyListeners()` that reassigns the list to a fresh instance
+/// holding identical data. This keeps the `IndexedStack` of cached
+/// per-device screens from rebuilding every poll cycle.
+class _HomeSnapshot {
+  final List<SavedDevice> savedDevices;
+  final bool online;
+  final String? lastDbError;
+
+  const _HomeSnapshot(this.savedDevices, this.online, this.lastDbError);
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is _HomeSnapshot &&
+          online == other.online &&
+          lastDbError == other.lastDbError &&
+          listEquals(savedDevices, other.savedDevices);
+
+  @override
+  int get hashCode =>
+      Object.hash(online, lastDbError, Object.hashAll(savedDevices));
 }
 
 class HomeScreen extends StatefulWidget {
@@ -181,8 +210,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
+    // Pause the 5s polling loop while the app is backgrounded so we
+    // don't keep hitting the backend + reconciling the DB from off-
+    // screen. The timer is restarted on resume.
+    if (state == AppLifecycleState.paused) {
+      _refreshTimer?.cancel();
+      _refreshTimer = null;
+    } else if (state == AppLifecycleState.resumed) {
       context.read<DeviceProvider>().refresh(context.read<ApiClient>());
+      _refreshTimer ??= Timer.periodic(const Duration(seconds: 5), (_) {
+        context.read<DeviceProvider>().refresh(context.read<ApiClient>());
+      });
     }
   }
 
@@ -257,7 +295,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     int removed = 0;
     for (final k in keys) {
       if (removed >= toRemove) break;
-      if (k == _activeKey || k == _backendLogKey || k == _emulatorKey || k == _settingsKey) continue;
+      if (k == _activeKey ||
+          k == _backendLogKey ||
+          k == _emulatorKey ||
+          k == _settingsKey) continue;
       _screens.remove(k);
       removed++;
     }
@@ -361,10 +402,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    final deviceProvider = context.watch<DeviceProvider>();
+    final snapshot = context.select<DeviceProvider, _HomeSnapshot>(
+      (p) => _HomeSnapshot(p.savedDevices, p.online, p.lastDbError),
+    );
     context.watch<LocaleProvider>();
-    final savedDevices = deviceProvider.savedDevices;
-    final backendOnline = deviceProvider.online;
+    final savedDevices = snapshot.savedDevices;
+    final backendOnline = snapshot.online;
 
     // Restore page from saved state when devices are loaded
     if (savedDevices.isNotEmpty && _activeKey != null && !_restoredFromState) {
@@ -378,8 +421,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       body: Column(
         children: [
           if (!backendOnline) _buildOfflineBanner(context),
-          if (deviceProvider.lastDbError != null)
-            _buildDbErrorBanner(context, deviceProvider.lastDbError!),
+          if (snapshot.lastDbError != null)
+            _buildDbErrorBanner(context, snapshot.lastDbError!),
           Expanded(
             child: Row(
               children: [
@@ -1227,12 +1270,11 @@ class _DeviceTreeArea extends StatelessWidget {
                 children: [
                   Icon(Icons.phone_android,
                       size: 40,
-                      color: theme.colorScheme.onSurfaceVariant
-                          .withAlpha(100)),
+                      color: theme.colorScheme.onSurfaceVariant.withAlpha(100)),
                   const SizedBox(height: 8),
                   Text(tr('noDevices'),
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant)),
                   const SizedBox(height: 4),
                   Text(tr('noDevicesHint'),
                       style: TextStyle(
@@ -1279,8 +1321,7 @@ class _DeviceTreeArea extends StatelessWidget {
     // disconnect button on the serial string itself (e.g. `contains(':')`)
     // — the stable identity never contains ':' once the row is
     // upgraded past v9 migration, so the button would vanish.
-    final hasWifi =
-        context.read<DeviceProvider>().hasWifiTransport(d.serial);
+    final hasWifi = context.read<DeviceProvider>().hasWifiTransport(d.serial);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1361,8 +1402,7 @@ class _DeviceTreeArea extends StatelessWidget {
                   // device currently has a live Wi-Fi transport to
                   // disconnect from. The disconnect target is the
                   // `ip:port` of that transport, not the saved PK.
-                  if (isConnected && hasWifi)
-                    _disconnectButton(context, d),
+                  if (isConnected && hasWifi) _disconnectButton(context, d),
                 ],
               ),
             ),

@@ -227,14 +227,19 @@ class _ScreenMirrorScreenState extends State<ScreenMirrorScreen> {
       );
     }
 
-    // Watch the providers so offline-stop / refresh transitions rebuild
-    // the right pane without a setState call in this widget. The
-    // provider hides the adb-serial / stable-identity comparison
-    // internally so this screen stays address-agnostic.
-    final mirror = context.watch<MirrorStateProvider>();
-    final recording = context.watch<ScrcpyRecordStateProvider>().status;
-    final status = mirror.status;
-    final isRunning = status.running && mirror.isOurs(stable);
+    // `select` (not `watch`) so this pane only rebuilds when the fields
+    // it actually consumes change. Both providers already de-dup
+    // notifies on no-op polls; combined with the const settings panel
+    // below, this keeps start/stop transitions from cascading into the
+    // ScrcpySettingsPanel subtree.
+    final status =
+        context.select<MirrorStateProvider, ScrcpyStatus>((p) => p.status);
+    final busy = context.select<MirrorStateProvider, bool>((p) => p.busy);
+    final isOurs =
+        context.select<MirrorStateProvider, bool>((p) => p.isOurs(stable));
+    final recording = context
+        .select<ScrcpyRecordStateProvider, ScrcpyRecordStatus>((p) => p.status);
+    final isRunning = status.running && isOurs;
     // Recording is "blocking" the mirror when it's running on the
     // active device. Other-device recordings are surfaced as a
     // banner but don't disable the start button.
@@ -253,7 +258,7 @@ class _ScreenMirrorScreenState extends State<ScreenMirrorScreen> {
             serial: stable,
             isRunning: isRunning,
             elapsed: status.elapsedSeconds,
-            busy: mirror.busy,
+            busy: busy,
             recording: recording,
             recordingBlocksMirror: recordingBlocksMirror,
             onStart: _onStart,
@@ -376,8 +381,8 @@ class _RightPane extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: LayoutBuilder(builder: (context, constraints) {
-          final statusCard = _buildStatusCard(
-              theme, serial, isRunning, elapsed, recording, recordingBlocksMirror);
+          final statusCard = _buildStatusCard(theme, serial, isRunning, elapsed,
+              recording, recordingBlocksMirror);
           // When a recording is blocking the mirror, the start
           // button stays rendered (so the user can see why nothing
           // happens) but is disabled with a tooltip explaining.
@@ -398,7 +403,8 @@ class _RightPane extends StatelessWidget {
                     ),
                     style: FilledButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 14),
-                      backgroundColor: isRunning ? theme.colorScheme.error : null,
+                      backgroundColor:
+                          isRunning ? theme.colorScheme.error : null,
                     ),
                   ),
                 ),
@@ -523,8 +529,8 @@ class _RightPane extends StatelessWidget {
           // disabling local controls).
           if (recording.running) ...[
             const SizedBox(height: 8),
-            _buildRecordingBanner(
-                theme, recording, isThisDevice: recordingBlocksMirror),
+            _buildRecordingBanner(theme, recording,
+                isThisDevice: recordingBlocksMirror),
           ],
         ],
       ),
@@ -536,13 +542,11 @@ class _RightPane extends StatelessWidget {
     ScrcpyRecordStatus recording, {
     required bool isThisDevice,
   }) {
-    final accent = isThisDevice
-        ? theme.colorScheme.error
-        : theme.colorScheme.tertiary;
+    final accent =
+        isThisDevice ? theme.colorScheme.error : theme.colorScheme.tertiary;
     final elapsed = recording.elapsedSeconds;
     final titleText = isThisDevice
-        ? tr('scrcpy.recordingActiveOnCard',
-            {'seconds': elapsed.toString()})
+        ? tr('scrcpy.recordingActiveOnCard', {'seconds': elapsed.toString()})
         : tr('scrcpy.recordingActiveOther');
     return Container(
       padding: const EdgeInsets.all(8),

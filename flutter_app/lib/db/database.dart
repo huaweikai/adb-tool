@@ -153,7 +153,26 @@ class AppDatabase extends _$AppDatabase {
             // v2 → v3: add the screen-record-owner column and a
             // supporting index for the "is anyone recording on this
             // device" query.
-            await m.addColumn(testSessions, testSessions.screenRecordOwner);
+            //
+            // Guard the addColumn: the v2 step above calls
+            // `m.createTable(testSessions)`, which generates DDL from
+            // the *current* Dart table class — and that class already
+            // declares `screenRecordOwner` (the column was added in
+            // v3 but createTable doesn't know the historical schema
+            // boundary). So a fresh v1→v3 upgrade has already created
+            // the column, and a bare `addColumn` here crashes with
+            // "duplicate column name: screen_record_owner". Only add
+            // it when the PRAGMA says the column is absent (the real
+            // v2→v3 upgrade path — table created before the column
+            // existed).
+            final cols = await customSelect(
+              'PRAGMA table_info(test_sessions)',
+            ).get();
+            final hasOwner = cols.any(
+                (row) => row.read<String>('name') == 'screen_record_owner');
+            if (!hasOwner) {
+              await m.addColumn(testSessions, testSessions.screenRecordOwner);
+            }
             await customStatement(
               'CREATE INDEX IF NOT EXISTS idx_sessions_recording_owner '
               'ON test_sessions (device_serial) WHERE screen_record_owner IS NOT NULL',
@@ -257,16 +276,16 @@ class AppDatabase extends _$AppDatabase {
       'CREATE UNIQUE INDEX IF NOT EXISTS idx_one_running_per_device '
       'ON test_sessions (device_serial) WHERE status = 0',
     );
-  await customStatement(
-    'CREATE INDEX IF NOT EXISTS idx_sessions_device_started '
-    'ON test_sessions (device_serial, started_at DESC)',
-  );
-  // Partial index: "which device currently has a screen recording open"
-  await customStatement(
-    'CREATE INDEX IF NOT EXISTS idx_sessions_recording_owner '
-    'ON test_sessions (device_serial) WHERE screen_record_owner IS NOT NULL',
-  );
-}
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_sessions_device_started '
+      'ON test_sessions (device_serial, started_at DESC)',
+    );
+    // Partial index: "which device currently has a screen recording open"
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_sessions_recording_owner '
+      'ON test_sessions (device_serial) WHERE screen_record_owner IS NOT NULL',
+    );
+  }
 }
 
 LazyDatabase _openConnection() {

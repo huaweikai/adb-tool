@@ -116,9 +116,8 @@ class _AdbCommandScreenState extends State<AdbCommandScreen> {
     });
 
     try {
-      final result = await context
-          .read<ApiClient>()
-          .executeAdbCommand(stable, args);
+      final result =
+          await context.read<ApiClient>().executeAdbCommand(stable, args);
       if (!mounted) return;
       setState(() {
         _records.add(_CommandRecord(
@@ -357,8 +356,10 @@ class _AdbCommandScreenState extends State<AdbCommandScreen> {
 
     // Watch device connection so the input field, Execute, and quick-
     // action buttons reflect the disabled state when the device drops.
-    final isOnline =
-        context.watch<DeviceProvider>().isDeviceConnected(_selectedSerial!);
+    // `select` (not `watch`) so the screen only rebuilds when this
+    // device's connection state actually flips — not on every 5s poll.
+    final isOnline = context.select<DeviceProvider, bool>(
+        (p) => p.isDeviceConnected(_selectedSerial!));
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -571,10 +572,12 @@ class _AdbCommandScreenState extends State<AdbCommandScreen> {
         ? theme.colorScheme.error
         : theme.colorScheme.primary;
     // Quick actions all shell out to adb — they need a live device.
-    // Read connection state at build time (this widget is rebuilt by
-    // the parent Column which watches DeviceProvider).
+    // `select` narrows the dependency to this device's connection bool
+    // so the action row doesn't rebuild on unrelated DeviceProvider
+    // notifications.
     final isOnline = _selectedSerial != null &&
-        context.watch<DeviceProvider>().isDeviceConnected(_selectedSerial!);
+        context.select<DeviceProvider, bool>(
+            (p) => p.isDeviceConnected(_selectedSerial!));
     return OutlinedButton.icon(
       onPressed: (_running || !isOnline) ? null : () => _runQuickAction(action),
       icon:
