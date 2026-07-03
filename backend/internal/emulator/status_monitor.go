@@ -14,6 +14,7 @@ type StatusMonitor struct {
 	instanceManager *InstanceManager
 	clients         map[*websocket.Conn]map[string]bool // conn -> instance IDs to watch
 	mu              sync.RWMutex
+	writeMu         sync.Mutex // serializes all conn.WriteJSON calls
 	broadcast       chan StatusUpdate
 	stop            chan struct{}
 }
@@ -69,11 +70,24 @@ func (sm *StatusMonitor) Unregister(conn *websocket.Conn) {
 }
 
 // SendUpdate sends a status update to all watching clients.
+// Previously this pushed to an internal broadcast channel that was
+// *never consumed by any goroutine*, so every BroadcastStatus /
+// BroadcastLog call silently dropped the message on the floor.
+// The UI never received "Boot completed" / StatusRunning pushes
+// and stayed stuck at mid-boot progress forever. Now we iterate
+// over connected clients directly with proper write serialization.
 func (sm *StatusMonitor) SendUpdate(update StatusUpdate) {
-	select {
-	case sm.broadcast <- update:
-	default:
-		// Channel full, skip
+	sm.mu.RLock()
+	snapshot := make([]*websocket.Conn, 0, len(sm.clients))
+	for conn := range sm.clients {
+		snapshot = append(snapshot, conn)
+	}
+	sm.mu.RUnlock()
+
+	for _, conn := range snapshot {
+		if err := sm.writeJSON(conn, update); err != nil {
+			go sm.Unregister(conn)
+		}
 	}
 }
 
@@ -183,8 +197,13 @@ func (sm *StatusMonitor) checkAndBroadcastStatus() {
 	}
 }
 
-// writeJSON writes a JSON message to the WebSocket.
+// writeJSON writes a JSON message to the WebSocket. Serialized via
+// writeMu so gorilla/websocket's "no concurrent writes" contract is
+// never violated — SendUpdate, checkAndBroadcastStatus, and the WS
+// handler's ping goroutine all write to the same connection.
 func (sm *StatusMonitor) writeJSON(conn *websocket.Conn, update StatusUpdate) error {
+	sm.writeMu.Lock()
+	defer sm.writeMu.Unlock()
 	return conn.WriteJSON(update)
 }
 

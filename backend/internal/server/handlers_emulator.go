@@ -1860,16 +1860,21 @@ func (s *Server) handleEmulatorStatusWS(w http.ResponseWriter, r *http.Request) 
 	}()
 	defer close(stopPing)
 
-	// Send initial status for watched instances
+	// Send initial status for watched instances — include boot fields
+	// so the UI doesn't flash 0% / empty stage before the first
+	// pollStatus tick arrives with the real values.
 	if len(instanceIDs) > 0 {
 		for _, id := range instanceIDs {
 			inst, err := s.instanceManager.Get(id)
 			if err == nil {
 				update := emulator.StatusUpdate{
-					Type:       "status",
-					InstanceID: inst.ID,
-					Status:     inst.Status,
-					Timestamp:  time.Now(),
+					Type:         "status",
+					InstanceID:   inst.ID,
+					Status:       inst.Status,
+					Timestamp:    time.Now(),
+					BootStage:    inst.BootStage,
+					BootProgress: inst.BootProgress,
+					BootMessage:  inst.BootMessage,
 				}
 				_ = safeWriteJSON(update)
 			}

@@ -248,7 +248,13 @@ class EmulatorInstanceProvider extends ChangeNotifier {
   }
 
   String _getStatusWebSocketUrl(List<String> instanceIds) {
-    final ids = instanceIds.join(',');
+    // When the instance list is empty (e.g. on first connect before
+    // fetchInstances completes), pass "*" so the backend registers a
+    // wildcard watch and sends updates for ALL instances.  Without
+    // this, the empty id= param creates an empty watchMap on the
+    // backend and every broadcast is silently skipped — the UI would
+    // be stuck showing stale boot progress forever.
+    final ids = instanceIds.isEmpty ? '*' : instanceIds.join(',');
     // _api.baseUrl is an http(s) URL like "http://127.0.0.1:9876" — we
     // can't just prepend "ws://", that yields "ws://http://..." and
     // the hostname becomes the literal string "http". Swap the scheme

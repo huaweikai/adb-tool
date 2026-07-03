@@ -34,10 +34,10 @@ var ErrScrcpyBusy = errors.New("scrcpy is in use")
 
 // scrcpyRecordState holds the live windowless-recording scrcpy
 // subprocess. Like the mirror state, there's only one such process
-// per host (one scrcpy at a time). The output path is final — scrcpy
-// appends its own timestamp/extension suffix internally when
-// `--record` is given as a directory, so we pass a fully-qualified
-// file path here and trust scrcpy to write to it as-is.
+// per host (one scrcpy at a time). The outputPath is fully-qualified
+// — the backend's StartScrcpyRecording constructs it under
+// ScrcpyRecordingSandboxDir() and passes it to scrcpy as
+// --record=<path>. Scrcpy writes the MP4 to that exact path.
 type scrcpyRecordState struct {
 	mu         sync.Mutex
 	cmd        *exec.Cmd
@@ -374,12 +374,4 @@ func (m *AdbManager) ScrcpyRecordingStatus() (running bool, serial, outputPath s
 		m.scrcpyRecord.outputPath,
 		m.scrcpyRecord.cmd.Process.Pid,
 		time.Since(m.scrcpyRecord.started)
-}
-
-// isScrcpyRecordBusy is a single-call probe used by tests and by
-// future endpoints that want to gate on "any scrcpy is recording".
-func (m *AdbManager) isScrcpyRecordBusy() bool {
-	m.scrcpyRecord.mu.Lock()
-	defer m.scrcpyRecord.mu.Unlock()
-	return m.scrcpyRecordProcessAlive()
 }
