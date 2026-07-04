@@ -86,13 +86,18 @@ class _AddImageDialogState extends State<AddImageDialog> {
                   const SizedBox(height: 12),
                   Text(
                     tr('addImage.historyTitle'),
-                    style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w500, fontSize: 13),
                   ),
                   const SizedBox(height: 4),
                   ConstrainedBox(
                     constraints: const BoxConstraints(maxHeight: 160),
                     child: ListView.builder(
                       shrinkWrap: true,
+                      // Nested inside the dialog's outer scroll — disable
+                      // its own scrolling so the two viewports don't fight
+                      // over the gesture (and the a11y bridge doesn't warn).
+                      physics: const NeverScrollableScrollPhysics(),
                       itemCount: widget.savedSources.length,
                       itemBuilder: (context, index) {
                         final s = widget.savedSources[index];
@@ -141,14 +146,21 @@ class _AddImageDialogState extends State<AddImageDialog> {
                 const SizedBox(height: 8),
                 DropdownButtonFormField<int>(
                   value: _sdkApiLevel,
-                  decoration: InputDecoration(labelText: tr('addImage.apiLevel')),
+                  decoration:
+                      InputDecoration(labelText: tr('addImage.apiLevel')),
                   items: const [
-                    DropdownMenuItem(value: 30, child: Text('Android 11 (API 30)')),
-                    DropdownMenuItem(value: 31, child: Text('Android 12 (API 31)')),
-                    DropdownMenuItem(value: 32, child: Text('Android 12L (API 32)')),
-                    DropdownMenuItem(value: 33, child: Text('Android 13 (API 33)')),
-                    DropdownMenuItem(value: 34, child: Text('Android 14 (API 34)')),
-                    DropdownMenuItem(value: 35, child: Text('Android 15 (API 35)')),
+                    DropdownMenuItem(
+                        value: 30, child: Text('Android 11 (API 30)')),
+                    DropdownMenuItem(
+                        value: 31, child: Text('Android 12 (API 31)')),
+                    DropdownMenuItem(
+                        value: 32, child: Text('Android 12L (API 32)')),
+                    DropdownMenuItem(
+                        value: 33, child: Text('Android 13 (API 33)')),
+                    DropdownMenuItem(
+                        value: 34, child: Text('Android 14 (API 34)')),
+                    DropdownMenuItem(
+                        value: 35, child: Text('Android 15 (API 35)')),
                   ],
                   onChanged: (v) {
                     if (v != null) setState(() => _sdkApiLevel = v);
@@ -175,7 +187,8 @@ class _AddImageDialogState extends State<AddImageDialog> {
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
                   value: _sdkVariant,
-                  decoration: InputDecoration(labelText: tr('addImage.variant')),
+                  decoration:
+                      InputDecoration(labelText: tr('addImage.variant')),
                   items: [
                     DropdownMenuItem(
                       value: 'google_apis_playstore',
@@ -205,8 +218,10 @@ class _AddImageDialogState extends State<AddImageDialog> {
               if (_selectedSource == 2) ...[
                 SegmentedButton<int>(
                   segments: [
-                    ButtonSegment(value: 0, label: Text(tr('addImage.pickFolder'))),
-                    ButtonSegment(value: 1, label: Text(tr('addImage.pickZip'))),
+                    ButtonSegment(
+                        value: 0, label: Text(tr('addImage.pickFolder'))),
+                    ButtonSegment(
+                        value: 1, label: Text(tr('addImage.pickZip'))),
                   ],
                   selected: {_localKind},
                   onSelectionChanged: (selection) {
@@ -221,7 +236,9 @@ class _AddImageDialogState extends State<AddImageDialog> {
                   controller: _pathController,
                   readOnly: true,
                   decoration: InputDecoration(
-                    labelText: _localKind == 0 ? tr('addImage.folderLabel') : tr('addImage.zipLabel'),
+                    labelText: _localKind == 0
+                        ? tr('addImage.folderLabel')
+                        : tr('addImage.zipLabel'),
                     hintText: _localKind == 0
                         ? tr('addImage.folderHint')
                         : tr('addImage.zipFileHint'),
@@ -252,7 +269,9 @@ class _AddImageDialogState extends State<AddImageDialog> {
         ),
         FilledButton(
           onPressed: _submit,
-          child: Text(_selectedSource == 0 ? tr('engineCard.startDownload') : tr('addImage.confirm')),
+          child: Text(_selectedSource == 0
+              ? tr('engineCard.startDownload')
+              : tr('addImage.confirm')),
         ),
       ],
     );
@@ -267,7 +286,8 @@ class _AddImageDialogState extends State<AddImageDialog> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(tr('addImage.folderPickFailed', {'error': '$e'}))),
+        SnackBar(
+            content: Text(tr('addImage.folderPickFailed', {'error': '$e'}))),
       );
     }
   }
@@ -316,7 +336,9 @@ class _AddImageDialogState extends State<AddImageDialog> {
       if (_pathController.text.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(_localKind == 0 ? tr('addImage.validator.folder') : tr('addImage.validator.zip')),
+            content: Text(_localKind == 0
+                ? tr('addImage.validator.folder')
+                : tr('addImage.validator.zip')),
           ),
         );
         return;

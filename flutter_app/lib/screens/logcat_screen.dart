@@ -173,19 +173,24 @@ class _LogcatScreenState extends State<LogcatScreen> {
     final deviceSerial = _selectedSerial;
     final pkg = _pkgCtrl.text.trim();
     if (pkg.isEmpty || deviceSerial == null) {
-      context.read<LogcatStateProvider>().setPackagePid(deviceSerial ?? '', null);
+      context
+          .read<LogcatStateProvider>()
+          .setPackagePid(deviceSerial ?? '', null);
       return;
     }
-    context.read<LogcatStateProvider>().updateField(deviceSerial, packageName: pkg);
+    context
+        .read<LogcatStateProvider>()
+        .updateField(deviceSerial, packageName: pkg);
     try {
-      final pid = await context.read<ApiClient>().getPackagePid(deviceSerial, pkg);
+      final pid =
+          await context.read<ApiClient>().getPackagePid(deviceSerial, pkg);
       if (!mounted) return;
       if (pid == null) {
         _showPidNotFound(pkg);
         context.read<LogcatStateProvider>().updateField(
-          deviceSerial,
-          packagePid: '',
-        );
+              deviceSerial,
+              packagePid: '',
+            );
         return;
       }
       context.read<LogcatStateProvider>().setPackagePid(deviceSerial, pid);
@@ -193,9 +198,9 @@ class _LogcatScreenState extends State<LogcatScreen> {
       if (!mounted) return;
       _showPidNotFound(pkg);
       context.read<LogcatStateProvider>().updateField(
-        deviceSerial,
-        packagePid: '',
-      );
+            deviceSerial,
+            packagePid: '',
+          );
     }
   }
 
@@ -325,24 +330,36 @@ class _LogcatScreenState extends State<LogcatScreen> {
     final deviceSerial = _selectedSerial;
     if (deviceSerial == null) return;
     context.read<LogcatStateProvider>().startStream(deviceSerial);
+    // Entries will start arriving — arm the flush loop.
+    _startFlushTimer();
   }
 
   void _stopStream() {
     final deviceSerial = _selectedSerial;
     if (deviceSerial == null) return;
     context.read<LogcatStateProvider>().stopStream(deviceSerial);
+    // Drain anything still pending, then stop the loop — no more
+    // entries will arrive so the 80ms tick would just spin idle.
+    context.read<LogcatStateProvider>().flushPending(deviceSerial);
+    _flushTimer?.cancel();
+    _flushTimer = null;
   }
 
   void _pauseStream() {
     final deviceSerial = _selectedSerial;
     if (deviceSerial == null) return;
     context.read<LogcatStateProvider>().pauseStream(deviceSerial);
+    // Paused stream produces no entries — pause the flush loop too.
+    _flushTimer?.cancel();
+    _flushTimer = null;
   }
 
   void _resumeStream() {
     final deviceSerial = _selectedSerial;
     if (deviceSerial == null) return;
     context.read<LogcatStateProvider>().resumeStream(deviceSerial);
+    // Entries flow again — re-arm the flush loop.
+    _startFlushTimer();
   }
 
   void _clearLogs() {
@@ -388,7 +405,12 @@ class _LogcatScreenState extends State<LogcatScreen> {
     // entire screen (toolbar + list + status bar) every batch. Instead
     // each region subscribes via Selector.
     context.watch<LocaleProvider>();
-    final config = context.watch<TestConfigProvider>().currentApp;
+    // `select` (not `watch`) so the screen rebuilds only when the
+    // currentApp instance actually changes (switch / edit), not on
+    // every TestConfigProvider notify (e.g. adding a non-current app
+    // config to the list).
+    final config =
+        context.select<TestConfigProvider, TestAppConfig?>((p) => p.currentApp);
     final configId = config?.id;
     final deviceSerial = _selectedSerial;
 
@@ -414,10 +436,20 @@ class _LogcatScreenState extends State<LogcatScreen> {
       _lastAppliedConfigId = null;
     }
 
-    // Restart the flush timer if the active device changed.
+    // Restart the flush timer if the active device changed — but only
+    // when that device is actually streaming. The previous version ran
+    // the 80ms tick for the whole screen lifetime, even with no stream
+    // and no pending entries.
     if (_flushTimerSerial != deviceSerial) {
       _flushTimerSerial = deviceSerial;
-      _startFlushTimer();
+      final streaming =
+          context.read<LogcatStateProvider>().stateFor(deviceSerial).streaming;
+      if (streaming) {
+        _startFlushTimer();
+      } else {
+        _flushTimer?.cancel();
+        _flushTimer = null;
+      }
     }
 
     return Column(
@@ -458,7 +490,8 @@ class _LogcatScreenState extends State<LogcatScreen> {
             highlightRules: _highlightRules,
           ),
         ),
-        _LogcatStatusBar(deviceSerial: deviceSerial, highlightRules: _highlightRules),
+        _LogcatStatusBar(
+            deviceSerial: deviceSerial, highlightRules: _highlightRules),
       ],
     );
   }
@@ -746,8 +779,9 @@ class _LogcatToolbar extends StatelessWidget {
       width: 130,
       child: TextField(
         controller: kwCtrl,
-        onChanged: (v) =>
-            ctx.read<LogcatStateProvider>().updateField(deviceSerial, keyword: v),
+        onChanged: (v) => ctx
+            .read<LogcatStateProvider>()
+            .updateField(deviceSerial, keyword: v),
         decoration: InputDecoration(
           labelText: tr('keyword'),
           labelStyle: const TextStyle(fontSize: 11),
@@ -1434,7 +1468,8 @@ class _PackageAutocompleteFieldState extends State<_PackageAutocompleteField> {
   static final Map<String, _PackageCacheEntry> _cache = {};
   static const Duration _ttl = Duration(seconds: 30);
   // Sentinel entry rendered as "清除筛选" at the top of the suggestion list.
-  static final AppPackage _clearPackage = AppPackage(packageName: '', sourceDir: '');
+  static final AppPackage _clearPackage =
+      AppPackage(packageName: '', sourceDir: '');
 
   List<AppPackage> _packages = const [];
   bool _loading = false;

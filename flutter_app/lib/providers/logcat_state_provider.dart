@@ -193,6 +193,12 @@ class LogcatStateProvider extends ChangeNotifier {
   final Map<String, StreamSubscription<List<LogEntry>>> _logSubs = {};
   final Map<String, StreamSubscription<bool>> _connSubs = {};
   StreamSubscription<DeviceOfflineEvent>? _offlineSub;
+  // Per-serial debounce for updateField's expensive tail (refilter +
+  // WebSocket filter msg + notify). The tag/keyword TextFields fire
+  // onChanged per keystroke; without this, each tap refilters the whole
+  // 5000-entry buffer and sends a WS message.
+  final Map<String, Timer> _filterDebounce = {};
+  final Map<String, bool> _pendingRestart = {};
 
   /// Emits the serial whose local logcat recording was force-stopped
   /// because its target device went offline. UI subscribes to show
@@ -269,22 +275,35 @@ class LogcatStateProvider extends ChangeNotifier {
     String? packagePid,
   }) {
     final state = stateFor(serial);
-    final needsRestart = (priority != null && priority != state.filter.priority) ||
-        (packagePid != null && packagePid != state.filter.packagePid);
+    final needsRestart =
+        (priority != null && priority != state.filter.priority) ||
+            (packagePid != null && packagePid != state.filter.packagePid);
+    // Update the filter fields immediately (cheap) — the expensive
+    // tail (refilter 5000 entries + WebSocket filter msg + notify) is
+    // debounced per-serial so a burst of keystrokes runs it once after
+    // the user stops typing, not per-tap.
     if (tag != null) state.filter.tag = tag;
     if (keyword != null) state.filter.keyword = keyword;
     if (packageName != null) state.filter.packageName = packageName;
     if (priority != null) state.filter.priority = priority;
     if (packagePid != null) state.filter.packagePid = packagePid;
-    state.refreshDisplayed();
-    if (state.streaming) {
-      if (needsRestart) {
-        _restartStream(serial);
-      } else {
-        _svc.updateFilter(serial, state.filter);
+    if (needsRestart) _pendingRestart[serial] = true;
+    _filterDebounce[serial]?.cancel();
+    _filterDebounce[serial] = Timer(const Duration(milliseconds: 200), () {
+      _filterDebounce.remove(serial);
+      if (_disposed) return;
+      final s = stateFor(serial);
+      final restart = _pendingRestart.remove(serial) ?? false;
+      s.refreshDisplayed();
+      if (s.streaming) {
+        if (restart) {
+          _restartStream(serial);
+        } else {
+          _svc.updateFilter(serial, s.filter);
+        }
       }
-    }
-    _notify();
+      _notify();
+    });
   }
 
   /// Stop streaming for the device, but keep its entries in memory so
@@ -468,11 +487,15 @@ class LogcatStateProvider extends ChangeNotifier {
     for (final s in _connSubs.values) {
       s.cancel();
     }
+    for (final t in _filterDebounce.values) {
+      t.cancel();
+    }
     for (final state in _states.values) {
       state.recording?.dispose();
     }
     _logSubs.clear();
     _connSubs.clear();
+    _filterDebounce.clear();
     _states.clear();
     super.dispose();
   }

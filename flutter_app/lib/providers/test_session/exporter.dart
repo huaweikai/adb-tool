@@ -20,17 +20,16 @@ class SessionExporter {
   /// absolute path of the written file.
   Future<String> writeReport(TestSessionRow session,
       {required AppDatabase db}) async {
-    final events = await db.testSessionsDao.watchEventsForSession(session.id).first;
+    final events =
+        await db.testSessionsDao.watchEventsForSession(session.id).first;
     final artifacts =
         await db.testSessionsDao.watchArtifactsForSession(session.id).first;
     final issues =
         await db.testSessionsDao.watchIssuesForSession(session.id).first;
     final notes =
         await db.testSessionsDao.watchNotesForSession(session.id).first;
-    final planItems = await db
-        .testSessionsDao
-        .watchPlanItemsForSession(session.id)
-        .first;
+    final planItems =
+        await db.testSessionsDao.watchPlanItemsForSession(session.id).first;
 
     final appSupport = await getApplicationSupportDirectory();
     final reportDir = Directory(p.join(
@@ -49,12 +48,15 @@ class SessionExporter {
     if (issues.isEmpty) {
       buffer.writeln('-');
     } else {
+      // One batched IN (...) query for every issue's linked artifacts —
+      // was N per-issue queries (findArtifactsForIssue) inside the loop.
+      final artifactsByIssue = await db.testSessionsDao.findArtifactsForIssues(
+        issues.map((i) => i.id),
+      );
       for (var i = 0; i < issues.length; i++) {
         final issue = issues[i];
-        final linkedArtifacts = await db.testSessionsDao
-            .findArtifactsForIssue(issue.id);
-        final linkedNames =
-            linkedArtifacts.map((a) => a.name).join(', ');
+        final linkedArtifacts = artifactsByIssue[issue.id] ?? const [];
+        final linkedNames = linkedArtifacts.map((a) => a.name).join(', ');
         buffer
           ..writeln(
               '### ISSUE-${SessionFormatters.issueNumber(i + 1)} ${issue.title}')
@@ -114,8 +116,7 @@ class SessionExporter {
             ? ' (${item.updatedAt!.difference(item.startedAt!).inMinutes}m '
                 '${item.updatedAt!.difference(item.startedAt!).inSeconds.remainder(60)}s)'
             : '';
-        buffer.writeln(
-            '- [$status] ${item.flowName} / ${item.step}$durStr');
+        buffer.writeln('- [$status] ${item.flowName} / ${item.step}$durStr');
         if (item.message.isNotEmpty) {
           buffer.writeln('  - ${item.message}');
         }
@@ -182,10 +183,14 @@ class SessionExporter {
       ..writeln(SessionFormatters.dateTime(issue.createdAt))
       ..writeln()
       ..writeln(SessionFormatters.bracket(t, 'clipboardTestEnvironment'))
-      ..writeln('${t('reportDevice')}：${session.deviceModel.isEmpty ? session.deviceSerial : session.deviceModel}')
-      ..writeln('${t('reportBrand')}：${session.deviceBrand.isEmpty ? '-' : session.deviceBrand}')
-      ..writeln('${t('reportSdk')}：${session.deviceSdk.isEmpty ? '-' : session.deviceSdk}')
-      ..writeln('${t('reportPackageName')}：${session.packageName.isEmpty ? '-' : session.packageName}')
+      ..writeln(
+          '${t('reportDevice')}：${session.deviceModel.isEmpty ? session.deviceSerial : session.deviceModel}')
+      ..writeln(
+          '${t('reportBrand')}：${session.deviceBrand.isEmpty ? '-' : session.deviceBrand}')
+      ..writeln(
+          '${t('reportSdk')}：${session.deviceSdk.isEmpty ? '-' : session.deviceSdk}')
+      ..writeln(
+          '${t('reportPackageName')}：${session.packageName.isEmpty ? '-' : session.packageName}')
       ..writeln()
       ..writeln(SessionFormatters.bracket(t, 'clipboardIssueSteps'))
       ..writeln(issue.steps.isEmpty ? '-' : issue.steps)

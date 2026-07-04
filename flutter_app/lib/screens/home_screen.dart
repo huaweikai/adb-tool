@@ -9,7 +9,6 @@ import '../providers/theme_provider.dart';
 import '../providers/device_provider.dart'
     show DeviceSerialScope, DeviceScreenActiveScope, DeviceProvider;
 import '../providers/locale_provider.dart';
-import '../providers/test_config_provider.dart';
 import '../providers/test_session_provider.dart';
 import '../providers/emulator_engine_provider.dart';
 import '../providers/emulator_java_provider.dart';
@@ -73,7 +72,11 @@ class _CachedScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    context.watch<TestConfigProvider>();
+    // NOTE: do NOT `context.watch<TestConfigProvider>()` here. Every
+    // cached screen in the IndexedStack is mounted (kept alive); a watch
+    // here would rebuild *all* of them on every TestConfigProvider
+    // notify, even the non-active ones. Each screen watches the providers
+    // it actually needs itself, so non-active tabs stay idle.
     return Provider<DeviceSerialScope>.value(
       value: DeviceSerialScope(serial),
       child: child,
@@ -125,6 +128,10 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Timer? _refreshTimer;
+  // True while the app is backgrounded — gates the self-rescheduling
+  // refresh loop so an in-flight refresh's whenComplete doesn't re-arm
+  // the timer while paused.
+  bool _paused = false;
 
   final Set<String> _expandedSerials = {};
   final Map<String, _CachedScreen> _screens = {};
@@ -156,10 +163,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final dp = context.read<DeviceProvider>();
     final db = dp.db;
 
-    final activeKey = await db.appStatesDao.getActiveKey();
-    final expandedSerials = await db.appStatesDao.getExpandedSerials();
-    final sidebarWidth = await db.appStatesDao.getSidebarWidth();
-    final sidebarCollapsed = await db.appStatesDao.getSidebarCollapsed();
+    // Read the singleton row ONCE instead of four times — the previous
+    // getActiveKey / getExpandedSerials / getSidebarWidth /
+    // getSidebarCollapsed calls each issued their own SELECT against
+    // app_states on every app launch.
+    final state = await db.appStatesDao.getAppState();
+    final activeKey = state.activeKey;
+    final expandedSerials = db.appStatesDao.expandedSerialsFromState(state);
+    final sidebarWidth = state.sidebarWidth;
+    final sidebarCollapsed = state.sidebarCollapsed;
 
     if (!mounted) return;
 
@@ -192,17 +204,36 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _startRefresh() async {
-    final api = context.read<ApiClient>();
+    // Kick off the first refresh immediately; the loop self-schedules
+    // the next one 5s after each refresh COMPLETES (single-shot, not
+    // Timer.periodic). The previous periodic timer fired every 5s from
+    // tick START, so a slow backend shrank the gap between refreshes
+    // toward zero; this keeps a fixed 5s rest after each refresh.
+    _runRefresh();
+  }
+
+  void _scheduleNextRefresh() {
+    _refreshTimer?.cancel();
+    _refreshTimer = Timer(const Duration(seconds: 5), _runRefresh);
+  }
+
+  void _runRefresh() {
+    if (!mounted || _paused) return;
     final dp = context.read<DeviceProvider>();
-    dp.refresh(api);
-    _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
-      context.read<DeviceProvider>().refresh(context.read<ApiClient>());
+    final api = context.read<ApiClient>();
+    // refresh() returns the in-flight future if one is already running
+    // (the provider's _refreshing guard), so concurrent ticks are a
+    // no-op — but we still attach whenComplete so the loop reschedules
+    // exactly once per completed refresh.
+    dp.refresh(api).whenComplete(() {
+      if (mounted && !_paused) _scheduleNextRefresh();
     });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _paused = true;
     _refreshTimer?.cancel();
     _sidebarWidth.dispose();
     super.dispose();
@@ -212,15 +243,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // Pause the 5s polling loop while the app is backgrounded so we
     // don't keep hitting the backend + reconciling the DB from off-
-    // screen. The timer is restarted on resume.
+    // screen. The loop is restarted on resume.
     if (state == AppLifecycleState.paused) {
+      _paused = true;
       _refreshTimer?.cancel();
       _refreshTimer = null;
     } else if (state == AppLifecycleState.resumed) {
-      context.read<DeviceProvider>().refresh(context.read<ApiClient>());
-      _refreshTimer ??= Timer.periodic(const Duration(seconds: 5), (_) {
-        context.read<DeviceProvider>().refresh(context.read<ApiClient>());
-      });
+      _paused = false;
+      _runRefresh();
     }
   }
 
@@ -1087,6 +1117,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   void _clearAllState() {
+    _paused = true;
     _refreshTimer?.cancel();
     _refreshTimer = null;
     _screens.clear();

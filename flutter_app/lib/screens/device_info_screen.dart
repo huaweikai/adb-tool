@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -33,11 +34,20 @@ class _DeviceInfoScreenState extends State<DeviceInfoScreen> {
   bool _loading = false;
   String? _error;
   String _searchQuery = '';
+  // Debounce for the property search box — the previous per-keystroke
+  // setState rebuilt the whole props list on every tap.
+  Timer? _searchDebounce;
 
   @override
   void initState() {
     super.initState();
     _loadInfo();
+  }
+
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadInfo() async {
@@ -54,8 +64,7 @@ class _DeviceInfoScreenState extends State<DeviceInfoScreen> {
       _error = null;
     });
     try {
-      final props =
-          await context.read<ApiClient>().getDeviceDetail(stable);
+      final props = await context.read<ApiClient>().getDeviceDetail(stable);
       if (!mounted) return;
       setState(() {
         _props = props;
@@ -74,8 +83,7 @@ class _DeviceInfoScreenState extends State<DeviceInfoScreen> {
     final stable = _selectedSerial;
     if (stable == null) return;
     try {
-      final b64 =
-          await context.read<ApiClient>().takeScreenshot(stable);
+      final b64 = await context.read<ApiClient>().takeScreenshot(stable);
       if (!mounted) return;
       if (b64 != null) {
         var bytes = base64Decode(b64);
@@ -200,7 +208,12 @@ class _DeviceInfoScreenState extends State<DeviceInfoScreen> {
           SizedBox(
             width: 250,
             child: TextField(
-              onChanged: (v) => setState(() => _searchQuery = v),
+              onChanged: (v) {
+                _searchDebounce?.cancel();
+                _searchDebounce = Timer(const Duration(milliseconds: 200), () {
+                  if (mounted) setState(() => _searchQuery = v);
+                });
+              },
               decoration: InputDecoration(
                 hintText: tr('searchProps'),
                 hintStyle: const TextStyle(fontSize: 12),

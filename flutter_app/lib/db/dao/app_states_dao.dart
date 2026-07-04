@@ -51,7 +51,8 @@ class AppStatesDao extends DatabaseAccessor<AppDatabase>
     final state = await getAppState();
     await (update(appStates)..where((t) => t.id.equals(state.id))).write(
       AppStatesCompanion(
-        activeSerial: activeSerial != null ? Value(activeSerial) : const Value.absent(),
+        activeSerial:
+            activeSerial != null ? Value(activeSerial) : const Value.absent(),
         activeKey: activeKey != null ? Value(activeKey) : const Value.absent(),
         expandedSerials: expandedSerials != null
             ? Value(_listToJson(expandedSerials))
@@ -69,9 +70,8 @@ class AppStatesDao extends DatabaseAccessor<AppDatabase>
             : selectedJavaPath != null
                 ? Value(selectedJavaPath)
                 : const Value.absent(),
-        sidebarWidth: sidebarWidth != null
-            ? Value(sidebarWidth)
-            : const Value.absent(),
+        sidebarWidth:
+            sidebarWidth != null ? Value(sidebarWidth) : const Value.absent(),
         sidebarCollapsed: sidebarCollapsed != null
             ? Value(sidebarCollapsed)
             : const Value.absent(),
@@ -90,6 +90,14 @@ class AppStatesDao extends DatabaseAccessor<AppDatabase>
   /// Parse the expanded-serials JSON array.
   Future<List<String>> getExpandedSerials() async {
     final state = await getAppState();
+    return _jsonToList(state.expandedSerials);
+  }
+
+  /// Parse the expanded-serials JSON from an already-fetched [AppState]
+  /// row, so callers that already hold the row (e.g. via a single
+  /// `getAppState()` call) don't need a second SELECT just to get the
+  /// parsed list.
+  List<String> expandedSerialsFromState(AppState state) {
     return _jsonToList(state.expandedSerials);
   }
 

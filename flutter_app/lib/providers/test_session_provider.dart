@@ -226,11 +226,22 @@ class TestSessionProvider extends ChangeNotifier {
   Future<TestSession?> _hydrate(String sessionId) async {
     final s = await _dao.findSessionById(sessionId);
     if (s == null) return null;
-    final events = await _dao.watchEventsForSession(sessionId).first;
-    final artifacts = await _dao.watchArtifactsForSession(sessionId).first;
-    final issues = await _dao.watchIssuesForSession(sessionId).first;
-    final notes = await _dao.watchNotesForSession(sessionId).first;
-    final planItems = await _dao.watchPlanItemsForSession(sessionId).first;
+    // Start all five child-table queries before awaiting any of them.
+    // The previous sequential `await … .first` per table made each
+    // hydrate (called after every note / issue / screenshot mutation)
+    // pay 5 isolate round-trips back-to-back. Drift's background
+    // isolate still runs them in order, but dispatching them together
+    // collapses the await/hop overhead from 5 round-trips to one batch.
+    final eventsF = _dao.watchEventsForSession(sessionId).first;
+    final artifactsF = _dao.watchArtifactsForSession(sessionId).first;
+    final notesF = _dao.watchNotesForSession(sessionId).first;
+    final issuesF = _dao.watchIssuesForSession(sessionId).first;
+    final planItemsF = _dao.watchPlanItemsForSession(sessionId).first;
+    final events = await eventsF;
+    final artifacts = await artifactsF;
+    final notes = await notesF;
+    final issues = await issuesF;
+    final planItems = await planItemsF;
     return _rowToModel(s, events, artifacts, notes, issues, planItems);
   }
 

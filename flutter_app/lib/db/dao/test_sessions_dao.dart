@@ -54,8 +54,7 @@ class TestSessionsDao extends DatabaseAccessor<AppDatabase>
   /// guarantees at most one row, so we use watchSingleOrNull.
   Stream<TestSessionRow?> watchActiveSessionForDevice(String serial) {
     return (select(testSessions)
-          ..where(
-              (t) => t.deviceSerial.equals(serial) & t.status.equals(0))
+          ..where((t) => t.deviceSerial.equals(serial) & t.status.equals(0))
           ..limit(1))
         .watchSingleOrNull();
   }
@@ -114,7 +113,8 @@ class TestSessionsDao extends DatabaseAccessor<AppDatabase>
 
   /// All artifact rows linked to one issue (via the m:n table). Used by
   /// the "related artifacts" preview on the issue card.
-  Future<List<TestSessionArtifactRow>> findArtifactsForIssue(String issueId) async {
+  Future<List<TestSessionArtifactRow>> findArtifactsForIssue(
+      String issueId) async {
     final query = select(testSessionIssueArtifacts).join([
       innerJoin(
         testSessionArtifacts,
@@ -124,6 +124,36 @@ class TestSessionsDao extends DatabaseAccessor<AppDatabase>
       ..where(testSessionIssueArtifacts.issueId.equals(issueId));
     final rows = await query.get();
     return rows.map((r) => r.readTable(testSessionArtifacts)).toList();
+  }
+
+  /// All artifact rows linked to any of [issueIds] (via the m:n table),
+  /// keyed by issue ID. A single batched `IN (...)` query that replaces
+  /// the per-issue loop in SessionExporter.writeReport (was N queries for
+  /// N issues; now one regardless of issue count).
+  Future<Map<String, List<TestSessionArtifactRow>>> findArtifactsForIssues(
+      Iterable<String> issueIds) async {
+    final idList = issueIds.toList();
+    if (idList.isEmpty) return const {};
+    final query = select(testSessionIssueArtifacts).join([
+      innerJoin(
+        testSessionArtifacts,
+        testSessionArtifacts.id.equalsExp(testSessionIssueArtifacts.artifactId),
+      ),
+    ])
+      ..where(testSessionIssueArtifacts.issueId.isIn(idList));
+    final rows = await query.get();
+    final out = <String, List<TestSessionArtifactRow>>{
+      for (final id in idList) id: <TestSessionArtifactRow>[],
+    };
+    for (final r in rows) {
+      // read() returns String? because the column might be absent from a
+      // joined row; the join above always includes the m:n table, so this
+      // value is non-null in practice.
+      final issueId = r.read(testSessionIssueArtifacts.issueId)!;
+      final artifact = r.readTable(testSessionArtifacts);
+      (out[issueId] ??= <TestSessionArtifactRow>[]).add(artifact);
+    }
+    return out;
   }
 
   // ===== Mutations: test_sessions =========================================
@@ -181,9 +211,7 @@ class TestSessionsDao extends DatabaseAccessor<AppDatabase>
   ) async {
     await (update(testSessions)..where((t) => t.id.equals(id))).write(
       TestSessionsCompanion(
-        screenRecordOwner: owner == null
-            ? const Value(null)
-            : Value(owner),
+        screenRecordOwner: owner == null ? const Value(null) : Value(owner),
       ),
     );
   }
@@ -195,8 +223,7 @@ class TestSessionsDao extends DatabaseAccessor<AppDatabase>
   Stream<List<TestSessionRow>> watchRecordingOwnersForDevice(String serial) {
     return (select(testSessions)
           ..where((t) =>
-              t.deviceSerial.equals(serial) &
-              t.screenRecordOwner.isNotNull())
+              t.deviceSerial.equals(serial) & t.screenRecordOwner.isNotNull())
           ..limit(1))
         .watch();
   }
@@ -221,8 +248,7 @@ class TestSessionsDao extends DatabaseAccessor<AppDatabase>
 
   /// Bulk insert plan items (typically at session start when the test
   /// flow is snapshotted). Uses a single batch for one round-trip.
-  Future<void> insertPlanItems(
-      List<TestSessionPlanItemsCompanion> entries) {
+  Future<void> insertPlanItems(List<TestSessionPlanItemsCompanion> entries) {
     return batch((b) => b.insertAll(testSessionPlanItems, entries));
   }
 
@@ -238,10 +264,8 @@ class TestSessionsDao extends DatabaseAccessor<AppDatabase>
       TestSessionPlanItemsCompanion(
         status: status != null ? Value(status) : const Value.absent(),
         message: message != null ? Value(message) : const Value.absent(),
-        startedAt:
-            startedAt != null ? Value(startedAt) : const Value.absent(),
-        updatedAt:
-            updatedAt != null ? Value(updatedAt) : const Value.absent(),
+        startedAt: startedAt != null ? Value(startedAt) : const Value.absent(),
+        updatedAt: updatedAt != null ? Value(updatedAt) : const Value.absent(),
       ),
     );
   }

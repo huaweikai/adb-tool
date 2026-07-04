@@ -28,6 +28,12 @@ class _DeviceLogChannel {
   StreamSubscription? sub;
   Timer? reconnectTimer;
   int reconnectAttempt = 0;
+  // Guards _scheduleReconnect against the burst of error events a single
+  // failed connection can emit (onError + onDone + ready.catchError can
+  // all fire in quick succession). Without it, each call incremented
+  // reconnectAttempt and reset the timer, inflating the backoff from 1s
+  // to 30s before the first reconnect even ran.
+  bool _reconnecting = false;
 
   final _controller = StreamController<List<LogEntry>>.broadcast();
   final _connectionController = StreamController<bool>.broadcast();
@@ -115,13 +121,20 @@ class _DeviceLogChannel {
   }
 
   void _scheduleReconnect() {
-    reconnectAttempt++;
+    // Drop overlapping schedules from the burst of error events one
+    // failed connection can emit — only the first one arms a timer.
+    if (_reconnecting) return;
+    _reconnecting = true;
     final delaySeconds = min(
       _maxBackoffSeconds,
       1 << reconnectAttempt.clamp(0, 5),
     );
     reconnectTimer?.cancel();
     reconnectTimer = Timer(Duration(seconds: delaySeconds), () {
+      // Increment in the callback (not at schedule time) so a burst of
+      // errors doesn't inflate the backoff before the reconnect runs.
+      reconnectAttempt++;
+      _reconnecting = false;
       _doConnect();
     });
   }

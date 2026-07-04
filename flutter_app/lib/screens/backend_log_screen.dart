@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/api_client.dart';
 import '../i18n.dart';
+import '../providers/device_provider.dart' show DeviceScreenActiveScope;
 import '../providers/locale_provider.dart';
 
 class BackendLogEntry {
@@ -52,6 +53,16 @@ class _BackendLogScreenState extends State<BackendLogScreen> {
   String _filterQuery = '';
   bool _showErrorsOnly = false;
 
+  // Consecutive fetch failures. After [_maxConsecutiveErrors] in a row
+  // the poll timer is cancelled and the status banner flips to offline —
+  // the previous `catch (_) {}` silently retried forever, even with the
+  // backend gone. Hitting Refresh after the backend recovers restarts it.
+  int _consecutiveErrors = 0;
+  static const int _maxConsecutiveErrors = 3;
+  // Debounce for the filter text field — the previous per-keystroke
+  // setState re-filtered (and rebuilt the whole log list) on every tap.
+  Timer? _filterDebounce;
+
   @override
   void initState() {
     super.initState();
@@ -62,12 +73,18 @@ class _BackendLogScreenState extends State<BackendLogScreen> {
   @override
   void dispose() {
     _pollTimer?.cancel();
+    _filterDebounce?.cancel();
     _scrollCtrl.dispose();
     _filterCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _fetch() async {
+    if (!mounted) return;
+    // Skip the HTTP round-trip while this tab isn't the active one in
+    // the IndexedStack — the screen stays mounted, so without this
+    // guard the 2s poll keeps hitting the backend from the background.
+    if (!context.read<DeviceScreenActiveScope>().active) return;
     try {
       final api = context.read<ApiClient>();
       final identity = await api.getServerIdentity();
@@ -89,6 +106,11 @@ class _BackendLogScreenState extends State<BackendLogScreen> {
           _serverInfo = tr('backendServerOffline');
         }
       });
+      // Success: reset the failure streak and, if the timer had been
+      // stopped (e.g. user hit Refresh after a recovery), restart it.
+      _consecutiveErrors = 0;
+      _pollTimer ??=
+          Timer.periodic(const Duration(seconds: 2), (_) => _fetch());
       if (_autoScroll && wasAtBottom) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (_scrollCtrl.hasClients) {
@@ -96,7 +118,18 @@ class _BackendLogScreenState extends State<BackendLogScreen> {
           }
         });
       }
-    } catch (_) {}
+    } catch (_) {
+      if (!mounted) return;
+      _consecutiveErrors++;
+      if (_consecutiveErrors >= _maxConsecutiveErrors) {
+        _pollTimer?.cancel();
+        _pollTimer = null;
+        setState(() {
+          _serverOnline = false;
+          _serverInfo = tr('backendServerOffline');
+        });
+      }
+    }
   }
 
   List<BackendLogEntry> get _filteredLogs {
@@ -209,7 +242,14 @@ class _BackendLogScreenState extends State<BackendLogScreen> {
             width: 200,
             child: TextField(
               controller: _filterCtrl,
-              onChanged: (v) => setState(() => _filterQuery = v),
+              onChanged: (v) {
+                // Debounce — the previous per-keystroke setState
+                // re-filtered the whole log list on every tap.
+                _filterDebounce?.cancel();
+                _filterDebounce = Timer(const Duration(milliseconds: 200), () {
+                  if (mounted) setState(() => _filterQuery = v);
+                });
+              },
               decoration: InputDecoration(
                 hintText: tr('filterCommand'),
                 hintStyle: const TextStyle(fontSize: 11),

@@ -148,9 +148,7 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
     });
 
     try {
-      await context
-          .read<ApiClient>()
-          .uninstallClipboardHelper(stable);
+      await context.read<ApiClient>().uninstallClipboardHelper(stable);
       if (!mounted) return;
       setState(() {
         _helperInstalled = false;
@@ -189,7 +187,9 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
   Widget build(BuildContext context) {
     context.watch<LocaleProvider>();
     final theme = Theme.of(context);
-    final entries = context.watch<ClipboardHistoryProvider>().entries;
+    final entries =
+        context.select<ClipboardHistoryProvider, List<SentClipboardEntryData>>(
+            (p) => p.entries);
 
     if (_selectedSerial == null) {
       return Center(
@@ -200,9 +200,11 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
     }
 
     // Watch device connection so the input card / buttons reflect the
-    // disabled state when the device goes offline mid-edit.
-    final isOnline =
-        context.watch<DeviceProvider>().isDeviceConnected(_selectedSerial!);
+    // disabled state when the device goes offline mid-edit. `select`
+    // narrows to this device's connection bool so the screen doesn't
+    // rebuild on every 5s DeviceProvider poll when state is unchanged.
+    final isOnline = context.select<DeviceProvider, bool>(
+        (p) => p.isDeviceConnected(_selectedSerial!));
 
     return CustomScrollView(
       slivers: [
@@ -329,7 +331,8 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
                             horizontal: 6, vertical: 2),
                         child: Text(tr('clearInput'),
                             style: TextStyle(
-                                fontSize: 11, color: theme.colorScheme.primary)),
+                                fontSize: 11,
+                                color: theme.colorScheme.primary)),
                       ),
                     );
                   },

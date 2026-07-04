@@ -100,14 +100,25 @@ class _ScreenMirrorScreenState extends State<ScreenMirrorScreen> {
     _pollTimer?.cancel();
     _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) {
       if (!mounted) return;
-      context.read<MirrorStateProvider>().refresh();
+      // Skip the HTTP round-trip when this tab isn't active in the
+      // IndexedStack (the screen stays mounted) or when there's nothing
+      // to monitor — no scrcpy mirror and no windowless recording in
+      // flight. The guard reads the last-known status; a poll that
+      // discovers a stop flips status to stopped, so the *next* tick
+      // skips. _onStart / recording start set status to running
+      // synchronously, so the next tick resumes polling.
+      if (!context.read<DeviceScreenActiveScope>().active) return;
+      final mirror = context.read<MirrorStateProvider>();
+      final recording = context.read<ScrcpyRecordStateProvider>();
+      if (!mirror.status.running && !recording.status.running) return;
+      mirror.refresh();
       // Also poll the windowless recording subprocess — when it's
       // in flight on the active device, the Start button here must
       // be disabled. Cheaper than a separate widget listening
       // (the recording provider has no offline hook because it has
       // nothing to clean up on its own — the subprocess exits when
       // the user clicks stop on the recording page).
-      context.read<ScrcpyRecordStateProvider>().refresh();
+      recording.refresh();
     });
   }
 
