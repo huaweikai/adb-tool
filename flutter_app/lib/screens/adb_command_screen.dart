@@ -358,8 +358,11 @@ class _AdbCommandScreenState extends State<AdbCommandScreen> {
     // action buttons reflect the disabled state when the device drops.
     // `select` (not `watch`) so the screen only rebuilds when this
     // device's connection state actually flips — not on every 5s poll.
-    final isOnline = context.select<DeviceProvider, bool>(
-        (p) => p.isDeviceConnected(_selectedSerial!));
+    // Read serial outside the selector — context.read inside a select
+    // callback is forbidden by Provider.
+    final serial = _selectedSerial!;
+    final isOnline = context
+        .select<DeviceProvider, bool>((p) => p.isDeviceConnected(serial));
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -463,7 +466,7 @@ class _AdbCommandScreenState extends State<AdbCommandScreen> {
                     children: [
                       SizedBox(
                         width: 390,
-                        child: _buildQuickPanel(theme),
+                        child: _buildQuickPanel(theme, isOnline),
                       ),
                       const SizedBox(width: 12),
                       Expanded(child: _buildOutputPanel(theme)),
@@ -478,7 +481,7 @@ class _AdbCommandScreenState extends State<AdbCommandScreen> {
     );
   }
 
-  Widget _buildQuickPanel(ThemeData theme) {
+  Widget _buildQuickPanel(ThemeData theme, bool isOnline) {
     final config = context.read<TestConfigProvider>().currentApp;
     final groups = List<AdbCommandActionGroup>.from(adbCommandQuickGroups);
     if (config != null && config.deepLinks.isNotEmpty) {
@@ -526,7 +529,8 @@ class _AdbCommandScreenState extends State<AdbCommandScreen> {
               padding: const EdgeInsets.all(10),
               itemCount: groups.length,
               separatorBuilder: (_, __) => const SizedBox(height: 10),
-              itemBuilder: (ctx, i) => _buildActionGroup(theme, groups[i]),
+              itemBuilder: (ctx, i) =>
+                  _buildActionGroup(theme, groups[i], isOnline),
             ),
           ),
         ],
@@ -534,7 +538,8 @@ class _AdbCommandScreenState extends State<AdbCommandScreen> {
     );
   }
 
-  Widget _buildActionGroup(ThemeData theme, AdbCommandActionGroup group) {
+  Widget _buildActionGroup(
+      ThemeData theme, AdbCommandActionGroup group, bool isOnline) {
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
@@ -559,7 +564,7 @@ class _AdbCommandScreenState extends State<AdbCommandScreen> {
             spacing: 8,
             runSpacing: 8,
             children: group.actions
-                .map((action) => _buildActionButton(theme, action))
+                .map((action) => _buildActionButton(theme, action, isOnline))
                 .toList(),
           ),
         ],
@@ -567,17 +572,16 @@ class _AdbCommandScreenState extends State<AdbCommandScreen> {
     );
   }
 
-  Widget _buildActionButton(ThemeData theme, AdbCommandQuickAction action) {
+  Widget _buildActionButton(
+      ThemeData theme, AdbCommandQuickAction action, bool isOnline) {
     final color = action.destructive
         ? theme.colorScheme.error
         : theme.colorScheme.primary;
-    // Quick actions all shell out to adb — they need a live device.
-    // `select` narrows the dependency to this device's connection bool
-    // so the action row doesn't rebuild on unrelated DeviceProvider
-    // notifications.
-    final isOnline = _selectedSerial != null &&
-        context.select<DeviceProvider, bool>(
-            (p) => p.isDeviceConnected(_selectedSerial!));
+    // `isOnline` is computed in the parent build() (where context.select
+    // is legal) and threaded down here. Calling context.select/watch
+    // inside this method is forbidden — it's invoked from a
+    // ListView.separated itemBuilder (layout-time callback), and
+    // Provider requires the call to happen in a widget's build method.
     return OutlinedButton.icon(
       onPressed: (_running || !isOnline) ? null : () => _runQuickAction(action),
       icon:

@@ -203,8 +203,11 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
     // disabled state when the device goes offline mid-edit. `select`
     // narrows to this device's connection bool so the screen doesn't
     // rebuild on every 5s DeviceProvider poll when state is unchanged.
-    final isOnline = context.select<DeviceProvider, bool>(
-        (p) => p.isDeviceConnected(_selectedSerial!));
+    // Read the serial outside the selector callback — calling
+    // context.read inside a select callback is forbidden by Provider.
+    final serial = _selectedSerial!;
+    final isOnline = context
+        .select<DeviceProvider, bool>((p) => p.isDeviceConnected(serial));
 
     return CustomScrollView(
       slivers: [
