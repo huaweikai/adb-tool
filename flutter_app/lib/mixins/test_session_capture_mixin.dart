@@ -17,6 +17,7 @@
 // the single source of truth, which means navigating away and back
 // (which disposes & rebuilds the State) does NOT lose progress.
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -31,6 +32,7 @@ import '../providers/scrcpy_record_state_provider.dart';
 import '../providers/test_session_provider.dart';
 import '../services/api_client.dart';
 import '../services/screen_capture_service.dart';
+import '../services/recording_strategy.dart';
 import '../services/screen_record_owner.dart';
 import '../widgets/editor_i18n.dart';
 import '../widgets/recording_settings_dialogs.dart';
@@ -67,10 +69,6 @@ mixin TestSessionCaptureMixin<T extends StatefulWidget> on State<T> {
   /// the active serial changes.
   Timer? _elapsedTicker;
 
-  /// Scrcpy-method path: where the MP4 was being written while the
-  /// recording was in flight. Set at start, consumed at stop. Null
-  /// when using adb-mode recording or when idle.
-  String? _scrcpyOutputPath;
 
   // ── Lifecycle hooks (must be called by the State) ─────────────────────
   /// Subscribe to the active device's row. Call from `initState` after
@@ -271,15 +269,10 @@ mixin TestSessionCaptureMixin<T extends StatefulWidget> on State<T> {
   Future<void> startRecording() async {
     final s = serial;
     if (s == null) return;
-    // Capture the provider BEFORE the first await so we don't reach
-    // for a possibly-disposed BuildContext after the DB read.
     final settings = context.read<RecordingSettingsProvider>();
-    // Always read the fresh row from DB — _deviceRow may still be null if
-    // the stream hasn't emitted yet after a State rebuild.
+    final recordState = context.read<ScrcpyRecordStateProvider>();
     final row = await savedDevicesDao.getBySerial(s);
     if (row?.recordingOwner != null) {
-      // Already recording on this device — refuse unless we are
-      // somehow stale.
       final rowOwner = ScreenRecordOwnerX.fromDb(row!.recordingOwner!);
       if (rowOwner != null && rowOwner != recordOwner) {
         _showSnackBar(tr('recordInProgressOtherFmt',
@@ -290,79 +283,30 @@ mixin TestSessionCaptureMixin<T extends StatefulWidget> on State<T> {
       return;
     }
 
-    if (settings.method == ScreenRecordMethod.scrcpy) {
-      await _startScrcpyRecording(s, settings);
-    } else {
-      await _startAdbRecording(s);
-    }
-  }
-
-  Future<void> _startAdbRecording(String s) async {
     final startedAtMs = DateTime.now().millisecondsSinceEpoch;
-    try {
-      // Stamp the device row FIRST so the other surface sees us
-      // as soon as possible (the row triggers their stream).
-      await savedDevicesDao.setScreenRecord(
-        s,
-        owner: recordOwner.dbValue,
-        startedAtMs: startedAtMs,
-      );
-      // Best-effort: enable Android touch feedback. Failure here
-      // doesn't block the recording itself.
-      try {
-        await apiClient.setShowTouches(s, true);
-      } catch (e) {
-        debugPrint('[ScreenRecord] show_touches on failed: $e');
-      }
-      // Actually fire the adb-side screenrecord.
-      await _capture.startScreenRecord(s);
-      // Session-side bookkeeping: append a "recording started"
-      // event to the active session's timeline.
-      if (sessionProvider.hasRunningSession) {
-        await sessionProvider.markScreenRecordStarted();
-      }
-      _showSnackBar(tr('recordingStarted'));
-    } catch (e) {
-      // Failure: roll back the DB row so the device doesn't show
-      // "recording in progress" forever.
-      try {
-        await savedDevicesDao.clearScreenRecord(s);
-      } catch (_) {}
-      try {
-        await apiClient.setShowTouches(s, false);
-      } catch (_) {}
-      if (!mounted) return;
-      _showSnackBar('${tr('recordingFailed')}: $e');
-    }
-  }
+    final strategy = RecordingStrategy.create(
+      settings.method,
+      serial: s,
+      api: apiClient,
+      capture: _capture,
+      recordState: recordState,
+    );
+    _strategy = strategy;
 
-  Future<void> _startScrcpyRecording(
-      String s, RecordingSettingsProvider settings) async {
-    // Capture the provider BEFORE the first await so we don't reach
-    // for a possibly-disposed BuildContext after the DB write. Going
-    // through the provider (not the service layer directly) means the
-    // mirror page's "scrcpy is busy recording" banner appears
-    // synchronously instead of waiting for the next 2s poll.
-    final recordState = context.read<ScrcpyRecordStateProvider>();
-    final startedAtMs = DateTime.now().millisecondsSinceEpoch;
     try {
       await savedDevicesDao.setScreenRecord(
         s,
         owner: recordOwner.dbValue,
         startedAtMs: startedAtMs,
       );
-      final path = await recordState.start(s);
-      _scrcpyOutputPath = path.isEmpty ? null : path;
+      await strategy.start();
       if (sessionProvider.hasRunningSession) {
         await sessionProvider.markScreenRecordStarted();
       }
-      _showSnackBar(tr('recordingStarted'));
     } on ScrcpyRecordBusyException catch (e) {
+      _strategy = null;
       if (!mounted) {
-        _scrcpyOutputPath = null;
-        try {
-          await savedDevicesDao.clearScreenRecord(s);
-        } catch (_) {}
+        try { await savedDevicesDao.clearScreenRecord(s); } catch (_) {}
         return;
       }
       final ok = await showScrcpyBusyConfirmDialog(
@@ -371,45 +315,46 @@ mixin TestSessionCaptureMixin<T extends StatefulWidget> on State<T> {
         activeSerial: s,
       );
       if (ok != true) {
-        _scrcpyOutputPath = null;
-        try {
-          await savedDevicesDao.clearScreenRecord(s);
-        } catch (_) {}
+        try { await savedDevicesDao.clearScreenRecord(s); } catch (_) {}
         return;
       }
       try {
-        final path = await recordState.start(s, force: true);
-        _scrcpyOutputPath = path.isEmpty ? null : path;
+        await savedDevicesDao.setScreenRecord(
+          s,
+          owner: recordOwner.dbValue,
+          startedAtMs: startedAtMs,
+        );
+        await strategy.start(force: true);
         if (sessionProvider.hasRunningSession) {
           await sessionProvider.markScreenRecordStarted();
         }
+        _strategy = strategy;
       } catch (e2) {
-        _scrcpyOutputPath = null;
-        try {
-          await savedDevicesDao.clearScreenRecord(s);
-        } catch (_) {}
+        _strategy = null;
+        try { await savedDevicesDao.clearScreenRecord(s); } catch (_) {}
+        try { await strategy.cleanup(); } catch (_) {}
         if (!mounted) return;
         _showSnackBar('${tr('recording.startFailed')}: $e2');
         return;
       }
-      if (!mounted) return;
-      _showSnackBar(tr('recordingStarted'));
     } catch (e) {
-      _scrcpyOutputPath = null;
-      try {
-        await savedDevicesDao.clearScreenRecord(s);
-      } catch (_) {}
+      _strategy = null;
+      try { await savedDevicesDao.clearScreenRecord(s); } catch (_) {}
+      try { await strategy.cleanup(); } catch (_) {}
       if (!mounted) return;
-      _showSnackBar('${tr('recording.startFailed')}: $e');
+      _showSnackBar('${tr('recordingFailed')}: $e');
+      return;
     }
+    _showSnackBar(tr('recordingStarted'));
   }
+
+  RecordingStrategy? _strategy;
 
   Future<void> stopRecording() async {
     final s = serial;
     if (s == null) return;
     final row = _deviceRow;
 
-    // Refuse if the recording doesn't belong to us.
     if (row?.recordingOwner != null &&
         row!.recordingOwner != recordOwner.dbValue) {
       final other = ScreenRecordOwnerX.fromDb(row.recordingOwner);
@@ -420,124 +365,41 @@ mixin TestSessionCaptureMixin<T extends StatefulWidget> on State<T> {
       return;
     }
 
-    // Already saving — second click is a no-op.
     if (row?.recordingIsSaving ?? false) {
       return;
     }
 
-    // No active recording at all — also a no-op.
     if (row?.recordingOwner == null) {
       return;
     }
 
-    final settings = context.read<RecordingSettingsProvider>();
+    final strategy = _strategy;
+    _strategy = null;
+    if (strategy == null) return;
+
     try {
-      // Flip to saving BEFORE we touch the backend so the UI shows
-      // the "保存中..." spinner for the duration of the stop.
       await savedDevicesDao.setScreenRecordSaving(s, true);
-      if (settings.method == ScreenRecordMethod.scrcpy) {
-        await _stopScrcpyRecording(s);
-      } else {
-        await _stopAdbRecording(s);
-      }
-    } catch (e) {
-      try {
-        await savedDevicesDao.clearScreenRecord(s);
-        await _syncDeviceRowFromDb();
-      } catch (_) {}
-      try {
-        await apiClient.setShowTouches(s, false);
-      } catch (_) {}
-      if (!mounted) return;
-      _showSnackBar('${tr('recordingStopFailed')}: $e');
-    }
-  }
-
-  Future<void> _stopAdbRecording(String s) async {
-    final bytes = await _capture.stopScreenRecordAndPull(s);
-    if (!mounted) {
-      // Widget gone: still clean up.
-      try {
-        await savedDevicesDao.clearScreenRecord(s);
-      } catch (_) {}
-      try {
-        await apiClient.setShowTouches(s, false);
-      } catch (_) {}
-      return;
-    }
-    String? rel;
-    final hasUsableBytes = bytes.isNotEmpty;
-    if (hasUsableBytes) {
-      rel = await sessionProvider.saveVideoBytes(bytes);
-    }
-    await savedDevicesDao.clearScreenRecord(s);
-    await _syncDeviceRowFromDb();
-    try {
-      await apiClient.setShowTouches(s, false);
-    } catch (e) {
-      debugPrint('[ScreenRecord] show_touches off failed: $e');
-    }
-    if (hasUsableBytes && rel != null && rel.isNotEmpty) {
-      await onVideoSaved(bytes, rel);
-    } else {
-      await onVideoDiscarded();
-    }
-  }
-
-  Future<void> _stopScrcpyRecording(String s) async {
-    final path = _scrcpyOutputPath;
-    try {
-      await _capture.stopScrcpyRecording(s);
-      if (!mounted) {
-        _scrcpyOutputPath = null;
-        try {
-          await savedDevicesDao.clearScreenRecord(s);
-        } catch (_) {}
-        if (path != null) {
-          try {
-            await _capture.discardScrcpyRecording(path);
-          } catch (_) {}
-        }
-        return;
-      }
-      final bytes = path != null
-          ? await _capture.readScrcpyRecording(path)
-          : Uint8List(0);
-      _scrcpyOutputPath = null;
+      final path = await strategy.stop();
+      final bytes =
+          path != null ? await File(path).readAsBytes() : Uint8List(0);
       String? rel;
-      final hasUsableBytes = bytes.isNotEmpty;
-      if (hasUsableBytes) {
+      if (bytes.isNotEmpty) {
         rel = await sessionProvider.saveVideoBytes(bytes);
       }
       await savedDevicesDao.clearScreenRecord(s);
       await _syncDeviceRowFromDb();
-      if (hasUsableBytes && rel != null && rel.isNotEmpty) {
+      await strategy.cleanup();
+      if (bytes.isNotEmpty && rel != null && rel.isNotEmpty) {
         await onVideoSaved(bytes, rel);
       } else {
         await onVideoDiscarded();
       }
-      // Sandbox cleanup. The session has its own copy under
-      // <session_dir>/<relative_path>; the file under
-      // ~/.adb-tool/scrcpy_recordings is just a temp staging area
-      // and is no longer needed. Best-effort: AV scanners on
-      // Windows occasionally hold the handle briefly, in which
-      // case the cleanup fails silently and the file gets swept
-      // on the next session sweep.
-      if (path != null) {
-        try {
-          await _capture.discardScrcpyRecording(path);
-        } catch (e) {
-          debugPrint('[ScreenRecord] sandbox cleanup failed: $e');
-          if (mounted) {
-            _showSnackBar(
-              tr('recording.sandboxCleanupFailed', {'path': path}),
-            );
-          }
-        }
-      }
     } catch (e) {
-      _scrcpyOutputPath = null;
-      rethrow;
+      try { await savedDevicesDao.clearScreenRecord(s); } catch (_) {}
+      try { await _syncDeviceRowFromDb(); } catch (_) {}
+      try { await strategy.cleanup(); } catch (_) {}
+      if (!mounted) return;
+      _showSnackBar('${tr('recordingStopFailed')}: $e');
     }
   }
 

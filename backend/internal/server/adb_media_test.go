@@ -23,7 +23,7 @@ func TestScreenRecordStartsWithPlainAdbScreenrecord(t *testing.T) {
 		t.Fatalf("StartScreenRecord returned error: %v", err)
 	}
 	waitForLogContains(t, logPath, "-s serial-1 shell screenrecord /sdcard/adb-tool-record.mp4")
-	if err := manager.StopScreenRecord("serial-1"); err != nil {
+	if _, err := manager.StopScreenRecord("serial-1"); err != nil {
 		logBytes, _ := os.ReadFile(logPath)
 		t.Fatalf("StopScreenRecord returned error: %v\nLog:\n%s", err, string(logBytes))
 	}
@@ -71,6 +71,7 @@ func writePlainScreenRecordFakeAdb(t *testing.T) string {
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -123,6 +124,13 @@ func main() {
 			}
 			os.Exit(0)
 		}
+	}
+	// Pull command: -s serial pull src dst — create target file on host.
+	if len(args) >= 5 && args[0] == "-s" && args[2] == "pull" {
+		dstPath := args[len(args)-1]
+		os.MkdirAll(dstPath[:len(dstPath)-len(filepath.Base(dstPath))], 0755)
+		os.WriteFile(dstPath, []byte("fake-mp4-data"), 0644)
+		os.Exit(0)
 	}
 	os.Exit(1)
 }

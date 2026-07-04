@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:pro_image_editor/pro_image_editor.dart';
 import 'package:provider/provider.dart';
+import '../mixins/device_reconnect_mixin.dart';
 import '../services/api_client.dart';
 import '../i18n.dart';
 import '../providers/locale_provider.dart';
@@ -24,7 +25,8 @@ class DeviceInfoScreen extends StatefulWidget {
   State<DeviceInfoScreen> createState() => _DeviceInfoScreenState();
 }
 
-class _DeviceInfoScreenState extends State<DeviceInfoScreen> {
+class _DeviceInfoScreenState extends State<DeviceInfoScreen>
+    with DeviceReconnectMixin<DeviceInfoScreen> {
   /// Stable device identity (ro.serialno). Survives reconnects —
   /// handed to `ApiClient` directly; the API boundary resolves
   /// it to the current adb address on demand.
@@ -42,6 +44,16 @@ class _DeviceInfoScreenState extends State<DeviceInfoScreen> {
   void initState() {
     super.initState();
     _loadInfo();
+  }
+
+  @override
+  String? get reconnectSerial => _selectedSerial;
+
+  @override
+  void onDeviceReconnected() {
+    if (_error != null || (_props.isEmpty && !_loading)) {
+      _loadInfo();
+    }
   }
 
   @override

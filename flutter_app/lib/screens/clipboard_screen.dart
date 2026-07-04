@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../mixins/device_reconnect_mixin.dart';
 import '../db/database.dart';
 import '../services/api_client.dart';
 import '../i18n.dart';
@@ -15,7 +16,8 @@ class ClipboardScreen extends StatefulWidget {
   State<ClipboardScreen> createState() => _ClipboardScreenState();
 }
 
-class _ClipboardScreenState extends State<ClipboardScreen> {
+class _ClipboardScreenState extends State<ClipboardScreen>
+    with DeviceReconnectMixin<ClipboardScreen> {
   /// Stable device identity (ro.serialno) — what the screen is
   /// "about". Survives wireless reconnects. Handed directly to
   /// `ApiClient`; the API boundary resolves it to the current
@@ -36,6 +38,18 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
   void initState() {
     super.initState();
     _checkInstalled();
+  }
+
+  // ── DeviceReconnectMixin 实现 ─────────────────────────────────
+
+  @override
+  String? get reconnectSerial => _selectedSerial;
+
+  @override
+  void onDeviceReconnected() {
+    if (!_helperInstalled && !_checkingInstalled) {
+      _checkInstalled();
+    }
   }
 
   @override
