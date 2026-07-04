@@ -233,6 +233,7 @@ class _AppManagerScreenState extends State<AppManagerScreen>
   }
 
   Future<void> _onDropApk(DropDoneDetails details) async {
+    if (!context.read<DeviceScreenActiveScope>().active) return;
     if (_installing) return;
     final deviceSerial = _selectedSerial;
     if (deviceSerial == null) return;

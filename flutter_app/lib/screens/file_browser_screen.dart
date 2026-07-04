@@ -708,6 +708,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
   }
 
   Future<void> _onDropFile(DropDoneDetails details) async {
+    if (!context.read<DeviceScreenActiveScope>().active) return;
     if (isTransferring) return;
     final deviceSerial = _selectedSerial;
     if (deviceSerial == null) return;
