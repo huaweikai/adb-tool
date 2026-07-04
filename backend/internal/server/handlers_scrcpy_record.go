@@ -64,11 +64,15 @@ func (s *Server) handleScrcpyRecordingStart(w http.ResponseWriter, r *http.Reque
 	writeAPIError(w, http.StatusInternalServerError, err.Error())
 }
 
-// handleScrcpyRecordingStop gracefully stops the recording subprocess.
-// No-op if nothing is running (returns 200 either way so the UI can
-// safely call it on every state transition).
+// handleScrcpyRecordingStop gracefully stops the recording subprocess
+// for the given device. No-op if nothing is running on that device.
 func (s *Server) handleScrcpyRecordingStop(w http.ResponseWriter, r *http.Request) {
-	if err := s.adb.StopScrcpyRecording(); err != nil {
+	serial := r.URL.Query().Get("serial")
+	if serial == "" {
+		writeAPIError(w, http.StatusBadRequest, "serial required")
+		return
+	}
+	if err := s.adb.StopScrcpyRecording(serial); err != nil {
 		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -76,24 +80,10 @@ func (s *Server) handleScrcpyRecordingStop(w http.ResponseWriter, r *http.Reques
 }
 
 // handleScrcpyRecordingStatus reports the windowless recording
-// subprocess state. Mirrors /api/scrcpy/status in shape but adds
-// `outputPath` (the host file scrcpy is writing to) so the UI can
-// show "recording → /path/to/file.mp4" without having to re-derive
-// it from settings.
+// subprocess state for the given device.
 func (s *Server) handleScrcpyRecordingStatus(w http.ResponseWriter, r *http.Request) {
-	running, serial, outputPath, pid, elapsed := s.adb.ScrcpyRecordingStatus()
-
 	requestedSerial := r.URL.Query().Get("serial")
-	if requestedSerial != "" && serial != requestedSerial {
-		// Caller asked about a specific device and the recording is on
-		// a different one — report as not running. Matches the
-		// /api/scrcpy/status behavior.
-		running = false
-		serial = ""
-		outputPath = ""
-		pid = 0
-		elapsed = 0
-	}
+	running, serial, outputPath, pid, elapsed := s.adb.ScrcpyRecordingStatus(requestedSerial)
 
 	writeJSON(w, map[string]interface{}{
 		"running":    running,

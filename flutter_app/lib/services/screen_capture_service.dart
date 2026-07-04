@@ -63,8 +63,8 @@ class ScreenCaptureService {
   /// Stop the scrcpy recording subprocess. No-op if nothing is
   /// running. The output file is already on disk at this point
   /// (scrcpy finalizes the muxer on graceful shutdown).
-  Future<void> stopScrcpyRecording() async {
-    await _api.stopScrcpyRecording();
+  Future<void> stopScrcpyRecording(String serial) async {
+    await _api.stopScrcpyRecording(serial);
   }
 
   /// Read a finished recording off the host disk. Used by the capture

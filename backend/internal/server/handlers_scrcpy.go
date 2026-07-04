@@ -77,11 +77,15 @@ func isValidationError(err error) bool {
 	return strings.Contains(err.Error(), "invalid scrcpy options:")
 }
 
-// handleScrcpyStop kills the running scrcpy subprocess. Returns 200
-// even if nothing was running — stopping a non-running scrcpy is a
-// no-op from the user's perspective and shouldn't surface as an error.
+// handleScrcpyStop kills the mirror subprocess for the given device.
+// Returns 200 even if nothing was running.
 func (s *Server) handleScrcpyStop(w http.ResponseWriter, r *http.Request) {
-	if err := s.adb.StopScrcpy(); err != nil {
+	serial := r.URL.Query().Get("serial")
+	if serial == "" {
+		writeAPIError(w, http.StatusBadRequest, "serial required")
+		return
+	}
+	if err := s.adb.StopScrcpy(serial); err != nil {
 		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -121,18 +125,12 @@ func (s *Server) handleScrcpyAction(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleScrcpyStatus reports whether scrcpy is running and on which
+// handleScrcpyStatus reports whether scrcpy is running on the given
 // device. Optional `serial` query param: when provided, only returns
 // running=true if the running scrcpy is attached to that serial.
-// Used by the Flutter UI on tab open to decide whether to show
-// "Start" or "Stop".
 func (s *Server) handleScrcpyStatus(w http.ResponseWriter, r *http.Request) {
-	running, serial, pid, elapsed := s.adb.ScrcpyStatus()
-
 	requestedSerial := r.URL.Query().Get("serial")
-	if requestedSerial != "" && serial != requestedSerial {
-		running = false
-	}
+	running, serial, pid, elapsed := s.adb.ScrcpyStatus(requestedSerial)
 
 	writeJSON(w, map[string]interface{}{
 		"running": running,

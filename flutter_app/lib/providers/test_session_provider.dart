@@ -401,7 +401,11 @@ class TestSessionProvider extends ChangeNotifier {
 
     _activeSessionId = id;
     await _refreshCurrentHydrated();
-    return _currentHydrated!;
+    final result = _currentHydrated;
+    if (result == null) {
+      throw StateError('Session not found after create: $id');
+    }
+    return result;
   }
 
   Future<TestSession> finishSession() async {
@@ -421,13 +425,19 @@ class TestSessionProvider extends ChangeNotifier {
         title: _t('eventSessionFinished'),
       ));
     });
-    final session = await _dao.findSessionById(id);
-    if (session != null) {
-      await _exporter.writeReport(session, db: _db);
+    final row = await _dao.findSessionById(id);
+    if (row != null) {
+      await _exporter.writeReport(row, db: _db);
     }
+    // Don't rely on _currentHydrated — it may be null if initial hydration
+    // failed while _activeSessionId was already set. Re-hydrate directly.
     _activeSessionId = null;
     await _refreshCurrentHydrated();
-    return _currentHydrated!;
+    final result = await _hydrate(id);
+    if (result == null) {
+      throw StateError('Session not found after finish: $id');
+    }
+    return result;
   }
 
   /// Mark the active session as abandoned (device dropped / user force-end).
@@ -606,7 +616,11 @@ class TestSessionProvider extends ChangeNotifier {
       ));
     });
     await _refreshCurrentHydrated();
-    return _currentHydrated!.issues.firstWhere((i) => i.id == issueId);
+    final s = _currentHydrated;
+    if (s == null) {
+      throw StateError('Session not found: $_activeSessionId');
+    }
+    return s.issues.firstWhere((i) => i.id == issueId);
   }
 
   String buildIssueClipboardText(TestSessionIssue issue) {
@@ -1016,9 +1030,13 @@ class TestSessionProvider extends ChangeNotifier {
 
   /// Make the given session the "active" one (legacy UI compatibility).
   /// Hydrates and notifies so the existing screen re-renders.
+  /// Throws [StateError] if the session is not found in the database.
   Future<TestSession> loadHistoricalSession(String sessionId) async {
     _activeSessionId = sessionId;
     await _refreshCurrentHydrated();
+    if (_currentHydrated == null) {
+      throw StateError('Session not found: $sessionId');
+    }
     return _currentHydrated!;
   }
 

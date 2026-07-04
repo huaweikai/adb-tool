@@ -89,7 +89,7 @@ class _TestSessionHubScreenState extends State<TestSessionHubScreen> {
       );
     }
 
-    final db = context.read<AppDatabase>();
+    final db = context.watch<AppDatabase>();
 
     return Scaffold(
       resizeToAvoidBottomInset: false,
@@ -159,8 +159,8 @@ class _StartCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final db = context.read<AppDatabase>();
-    final sessionProvider = context.read<TestSessionProvider>();
+    final db = context.watch<AppDatabase>();
+    final sessionProvider = context.watch<TestSessionProvider>();
 
     return StreamBuilder<TestSessionRow?>(
       key: ValueKey('start-card-active:$serial'),

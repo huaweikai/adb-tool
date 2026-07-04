@@ -785,6 +785,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
 
   @override
   Widget build(BuildContext context) {
+    context.watch<DeviceSerialScope>();
     context.watch<LocaleProvider>();
     context.watch<TestConfigProvider>();
     // The mixin's initScreenRecordState() opened a stream subscription

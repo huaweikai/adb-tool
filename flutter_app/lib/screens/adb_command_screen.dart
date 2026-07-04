@@ -342,6 +342,7 @@ class _AdbCommandScreenState extends State<AdbCommandScreen> {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<DeviceSerialScope>();
     context.watch<LocaleProvider>();
     context.watch<TestConfigProvider>();
     final theme = Theme.of(context);

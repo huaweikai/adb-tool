@@ -342,6 +342,7 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<DeviceSerialScope>();
     context.watch<LocaleProvider>();
     if (_selectedSerial == null) {
       return Center(

@@ -487,7 +487,7 @@ mixin TestSessionCaptureMixin<T extends StatefulWidget> on State<T> {
   Future<void> _stopScrcpyRecording(String s) async {
     final path = _scrcpyOutputPath;
     try {
-      await _capture.stopScrcpyRecording();
+      await _capture.stopScrcpyRecording(s);
       if (!mounted) {
         _scrcpyOutputPath = null;
         try {

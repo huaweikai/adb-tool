@@ -58,6 +58,9 @@ const _locSettingsZh = <String, String>{
   'scrcpy.recordingActiveOnCard': '录屏中 {seconds}s',
   'scrcpy.recordingActiveOther': '另一台设备正在录屏',
   'scrcpy.recordingCantStartMirror': 'scrcpy 正在录屏，无法启动投屏',
+  'scrcpy.recordingBusyTitle': '检测到 scrcpy 正在录屏',
+  'scrcpy.recordingBusyBody': '当前设备正在录屏，开始投屏将停止录屏，是否继续？',
+  'scrcpy.recordingBusyContinue': '停止录屏并投屏',
 };
 
 const _locSettingsEn = <String, String>{
@@ -102,4 +105,8 @@ const _locSettingsEn = <String, String>{
   'scrcpy.recordingActiveOnCard': 'Recording {seconds}s',
   'scrcpy.recordingActiveOther': 'Another device is recording',
   'scrcpy.recordingCantStartMirror': 'scrcpy is recording — cannot start mirror',
+  'scrcpy.recordingBusyTitle': 'scrcpy recording detected',
+  'scrcpy.recordingBusyBody':
+      'This device is recording. Starting mirror will stop the recording. Continue?',
+  'scrcpy.recordingBusyContinue': 'Stop recording and mirror',
 };

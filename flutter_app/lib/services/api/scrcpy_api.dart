@@ -32,8 +32,9 @@ mixin ScrcpyApi on ApiBase {
   }
 
   /// Kill the running scrcpy subprocess. No-op if nothing's running.
-  Future<Map<String, dynamic>> stopScrcpy() async {
-    final resp = await dio.post('/api/scrcpy/stop');
+  Future<Map<String, dynamic>> stopScrcpy(String serial) async {
+    final resp = await dio.post('/api/scrcpy/stop',
+        queryParameters: deviceQueryParameters(serial));
     throwIfNotOk(resp);
     return responseMap(resp);
   }
@@ -129,8 +130,9 @@ mixin ScrcpyApi on ApiBase {
   /// Stop the windowless recording subprocess. No-op if nothing is
   /// running (returns 200 either way so the UI can fire it on every
   /// state transition).
-  Future<Map<String, dynamic>> stopScrcpyRecording() async {
-    final resp = await dio.post('/api/scrcpy/record/stop');
+  Future<Map<String, dynamic>> stopScrcpyRecording(String serial) async {
+    final resp = await dio.post('/api/scrcpy/record/stop',
+        queryParameters: deviceQueryParameters(serial));
     throwIfNotOk(resp);
     return responseMap(resp);
   }

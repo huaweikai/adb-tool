@@ -79,41 +79,26 @@ func (a scrcpyAction) androidKeyCode() (int, error) {
 }
 
 // scrcpyState holds the live scrcpy subprocess and the device it's
-// attached to. Scrcpy itself is a single-instance desktop app — one
-// SDL window per host — so we keep one cmd rather than a per-device map.
+// attached to. One per mirrored device, stored in AdbManager.scrcpyMap.
+// Protected by AdbManager.scrcpyMu (map-level lock, not per-entry).
 type scrcpyState struct {
-	mu      sync.Mutex
 	cmd     *exec.Cmd
 	serial  string
 	started time.Time
 	done    chan struct{} // closed when cmd.Wait returns
 }
 
-// reset clears state after a process exits. Safe to call multiple times.
-func (s *scrcpyState) reset() {
-	s.cmd = nil
-	s.serial = ""
-	s.started = time.Time{}
-	s.done = nil
-}
-
 // StartScrcpy spawns the bundled scrcpy binary attached to the given
 // serial, applying the user-supplied options. If a previous scrcpy
-// instance is still running it's killed first — only one scrcpy window
-// per host makes sense.
+// instance for the same device is still running it's killed first.
+// Different devices can run mirror concurrently.
 //
-// The cwd of the subprocess is set to the scrcpy distribution directory
-// so scrcpy can locate scrcpy-server (and, on Windows, its sibling
-// DLLs) without needing SCRCPY_SERVER_PATH or PATH tricks.
-//
-// Pass an empty ScrcpyOptions to use DefaultScrcpyOptions() — useful
-// for the "I just want to start it" case from the shortcut button.
+// Refuses to start if the same device has an active recording (the
+// two scrcpy invocations are mutually exclusive per device).
 func (m *AdbManager) StartScrcpy(serial string, opts ScrcpyOptions) error {
 	if err := opts.Validate(); err != nil {
 		return fmt.Errorf("invalid scrcpy options: %w", err)
 	}
-	// Fill zero values with defaults so the user gets a sensible
-	// baseline even if they only set a few fields.
 	if isZeroOptions(opts) {
 		opts = DefaultScrcpyOptions()
 	}
@@ -123,47 +108,35 @@ func (m *AdbManager) StartScrcpy(serial string, opts ScrcpyOptions) error {
 		return err
 	}
 
-	m.scrcpy.mu.Lock()
-	defer m.scrcpy.mu.Unlock()
+	m.scrcpyMu.Lock()
+	defer m.scrcpyMu.Unlock()
 
-	// If a previous run is still alive, kill it first. We don't surface
-	// that failure to the caller — the user asked for a fresh start and
-	// the stale process is in the way.
-	if m.scrcpy.cmd != nil && m.scrcpy.cmd.Process != nil {
-		// Graceful shutdown so any in-progress recording can finalize.
-		// On Unix: SIGTERM. On Windows: WM_CLOSE via taskkill (no /F).
-		if killErr := terminateScrcpyProcess(m.scrcpy.cmd.Process); killErr != nil {
-			Log.Add("scrcpy stale kill", "", killErr, 0)
-		}
-		// Best-effort drain so cmd.Process isn't reused.
-		select {
-		case <-m.scrcpy.done:
-		case <-time.After(2 * time.Second):
-			Log.Add("scrcpy stale wait", "timed out after 2s", nil, 2*time.Second)
-		}
-		m.scrcpy.reset()
+	// Same-device recording conflict check.
+	if rec, ok := m.scrcpyRecordMap[serial]; ok && rec.cmd != nil && rec.cmd.Process != nil && rec.cmd.ProcessState == nil {
+		return fmt.Errorf("scrcpy is busy recording (serial=%s)", serial)
 	}
 
-	// Build the argv: serial selector first (scrcpy wants it before
-	// any flag), then the user options translated to scrcpy flags.
-	// Flag names are verified against scrcpy 4.0 cli.c — see
-	// ScrcpyOptions.Args() for the per-field documentation.
+	// Kill stale mirror for this device if one exists.
+	if old, ok := m.scrcpyMap[serial]; ok && old.cmd != nil && old.cmd.Process != nil {
+		if killErr := terminateScrcpyProcess(old.cmd.Process); killErr != nil {
+			Log.Add("scrcpy stale kill", "serial="+serial, killErr, 0)
+		}
+		select {
+		case <-old.done:
+		case <-time.After(2 * time.Second):
+			Log.Add("scrcpy stale wait", "serial="+serial+" timed out after 2s", nil, 2*time.Second)
+		}
+		delete(m.scrcpyMap, serial)
+	}
+
 	args := []string{"-s", serial}
 	args = append(args, opts.Args()...)
 
 	cmd := exec.Command(paths.Binary, args...)
 	cmd.Dir = paths.Dir
-	// Capture scrcpy's stdout/stderr into an in-memory buffer instead
-	// of inheriting them. On Windows we set CREATE_NO_WINDOW (no
-	// console at all), so inherited streams would go nowhere and any
-	// "could not connect" / "server push failed" message scrcpy prints
-	// right before it exits would be lost. Buffering lets us attach the
-	// output tail to the "scrcpy exited" log entry for diagnosis.
 	out := &syncBuffer{}
 	cmd.Stdout = out
 	cmd.Stderr = out
-	// The platform-specific configureScrcpySysProc sets CREATE_NO_WINDOW
-	// on Windows so no console box pops up alongside the SDL window.
 	configureScrcpySysProc(cmd)
 
 	if err := cmd.Start(); err != nil {
@@ -171,38 +144,33 @@ func (m *AdbManager) StartScrcpy(serial string, opts ScrcpyOptions) error {
 	}
 
 	done := make(chan struct{})
-	m.scrcpy.cmd = cmd
-	m.scrcpy.serial = serial
-	m.scrcpy.started = time.Now()
-	m.scrcpy.done = done
+	m.scrcpyMap[serial] = &scrcpyState{
+		cmd:     cmd,
+		serial:  serial,
+		started: time.Now(),
+		done:    done,
+	}
 
 	Log.Add("scrcpy started",
 		fmt.Sprintf("serial=%s arch=%s pid=%d args=%d", serial, paths.Arch, cmd.Process.Pid, len(args)),
 		nil, 0)
 
-	// Background goroutine: when scrcpy exits, clear state. This is the
-	// only way we notice a user closes the SDL window directly.
 	go func() {
 		waitErr := cmd.Wait()
 		close(done)
 
-		m.scrcpy.mu.Lock()
-		// Only clear if this is still the same instance (a fresh
-		// StartScrcpy may have replaced it by now).
-		if m.scrcpy.cmd == cmd {
-			elapsed := time.Since(m.scrcpy.started)
-			m.scrcpy.reset()
-			// Surface the exit code and the captured output tail so an
-			// unexpected early exit (auth denied, encoder unsupported,
-			// missing DLL, etc.) is visible in the backend log rather
-			// than appearing as a bare "scrcpy exited".
+		m.scrcpyMu.Lock()
+		// Only clear if this is still the same instance.
+		if cur, ok := m.scrcpyMap[serial]; ok && cur.cmd == cmd {
+			elapsed := time.Since(cur.started)
+			delete(m.scrcpyMap, serial)
 			result := fmt.Sprintf("serial=%s exit=%s", serial, describeExit(waitErr))
 			if tail := out.tail(800); tail != "" {
 				result += " output=" + tail
 			}
 			Log.Add("scrcpy exited", result, nil, elapsed)
 		}
-		m.scrcpy.mu.Unlock()
+		m.scrcpyMu.Unlock()
 	}()
 
 	return nil
@@ -221,46 +189,55 @@ func describeExit(err error) string {
 	return err.Error()
 }
 
-// StopScrcpy gracefully stops the running scrcpy subprocess (if any).
-// Sends a graceful shutdown signal so scrcpy can finalize its recording
-// file before exiting — SIGTERM on Unix, WM_CLOSE via `taskkill /pid`
-// (no /F) on Windows. See terminateScrcpyProcess for the rationale.
-// Safe to call when nothing is running — returns nil in that case.
-func (m *AdbManager) StopScrcpy() error {
-	m.scrcpy.mu.Lock()
-	cmd := m.scrcpy.cmd
-	done := m.scrcpy.done
-	m.scrcpy.mu.Unlock()
-
-	if cmd == nil || cmd.Process == nil {
+// StopScrcpy gracefully stops the mirror subprocess for the given
+// device. No-op if nothing is running for that serial.
+func (m *AdbManager) StopScrcpy(serial string) error {
+	m.scrcpyMu.Lock()
+	st, ok := m.scrcpyMap[serial]
+	if !ok || st.cmd == nil || st.cmd.Process == nil {
+		m.scrcpyMu.Unlock()
 		return nil
 	}
+	cmd := st.cmd
+	done := st.done
+	m.scrcpyMu.Unlock()
 
 	if err := terminateScrcpyProcess(cmd.Process); err != nil {
-		Log.Add("scrcpy stop signal", "", err, 0)
+		Log.Add("scrcpy stop signal", "serial="+serial, err, 0)
 		return nil
 	}
 
 	select {
 	case <-done:
-		Log.Add("scrcpy stopped", "graceful", nil, 0)
+		Log.Add("scrcpy stopped", "serial="+serial+" graceful", nil, 0)
 	case <-time.After(10 * time.Second):
-		Log.Add("scrcpy stop timeout", "forcing kill after 10s", nil, 10*time.Second)
+		Log.Add("scrcpy stop timeout", "serial="+serial+" forcing kill after 10s", nil, 10*time.Second)
 		_ = cmd.Process.Kill()
 	}
 
 	return nil
 }
 
-// ScrcpyStatus returns a snapshot of the current scrcpy process.
-func (m *AdbManager) ScrcpyStatus() (running bool, serial string, pid int, elapsed time.Duration) {
-	m.scrcpy.mu.Lock()
-	defer m.scrcpy.mu.Unlock()
+// ScrcpyStatus returns the mirror subprocess state for the given
+// device. Pass serial="" to get the first running entry (for
+// backwards-compatible callers that don't care which device).
+func (m *AdbManager) ScrcpyStatus(serial string) (running bool, outSerial string, pid int, elapsed time.Duration) {
+	m.scrcpyMu.Lock()
+	defer m.scrcpyMu.Unlock()
 
-	if m.scrcpy.cmd == nil || m.scrcpy.cmd.Process == nil {
+	if serial != "" {
+		if st, ok := m.scrcpyMap[serial]; ok && st.cmd != nil && st.cmd.Process != nil {
+			return true, st.serial, st.cmd.Process.Pid, time.Since(st.started)
+		}
 		return false, "", 0, 0
 	}
-	return true, m.scrcpy.serial, m.scrcpy.cmd.Process.Pid, time.Since(m.scrcpy.started)
+	// No serial filter — return the first running entry.
+	for _, st := range m.scrcpyMap {
+		if st.cmd != nil && st.cmd.Process != nil {
+			return true, st.serial, st.cmd.Process.Pid, time.Since(st.started)
+		}
+	}
+	return false, "", 0, 0
 }
 
 // ScrcpyShortcut fires a system-level shortcut (home/back/recents/etc.)

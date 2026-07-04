@@ -80,6 +80,13 @@ class AdbToolApp extends StatelessWidget {
         scaffoldBackgroundColor: const Color(0xFF0D1117),
         dividerColor: const Color(0xFF30363D),
         fontFamily: 'System',
+        pageTransitionsTheme: const PageTransitionsTheme(
+          builders: {
+            TargetPlatform.macOS: FadeUpwardsPageTransitionsBuilder(),
+            TargetPlatform.windows: FadeUpwardsPageTransitionsBuilder(),
+            TargetPlatform.linux: FadeUpwardsPageTransitionsBuilder(),
+          },
+        ),
       ),
       theme: ThemeData(
         useMaterial3: true,
@@ -88,6 +95,13 @@ class AdbToolApp extends StatelessWidget {
         scaffoldBackgroundColor: Colors.white,
         dividerColor: const Color(0xFFD0D7DE),
         fontFamily: 'System',
+        pageTransitionsTheme: const PageTransitionsTheme(
+          builders: {
+            TargetPlatform.macOS: FadeUpwardsPageTransitionsBuilder(),
+            TargetPlatform.windows: FadeUpwardsPageTransitionsBuilder(),
+            TargetPlatform.linux: FadeUpwardsPageTransitionsBuilder(),
+          },
+        ),
       ),
       home: ServerBootScreen(),
     );

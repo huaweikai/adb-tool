@@ -37,16 +37,12 @@ class ScreenMirrorScreen extends StatefulWidget {
 }
 
 class _ScreenMirrorScreenState extends State<ScreenMirrorScreen> {
-  /// Stable device identity (ro.serialno). Survives reconnects.
-  /// Handed to `MirrorStateProvider` and `ScrcpySettingsProvider`
-  /// for state lookups; the adb address is resolved internally
-  /// by ApiClient when the mirror state actually starts the
-  /// subprocess.
+  /// Stable device identity (ro.serialno). Each _CachedScreen provides
+  /// its own DeviceSerialScope so this returns the device THIS screen
+  /// instance belongs to.
   String? get _selectedSerial => context.read<DeviceSerialScope>().serial;
 
-  // Scrcpy subprocess state lives in MirrorStateProvider so the offline-
-  // listener hook can mutate it from anywhere. This screen just watches
-  // it for rebuilds and calls into it for start/stop.
+  /// 2s poll timer — catches "user closed the scrcpy SDL window".
   Timer? _pollTimer;
 
   @override
@@ -55,18 +51,11 @@ class _ScreenMirrorScreenState extends State<ScreenMirrorScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final mirror = context.read<MirrorStateProvider>();
-      // refreshForSerial keys the scrcpy status lookup by stable
-      // identity (the ApiClient resolves it to the current adb
-      // address internally).
       final stable = _selectedSerial;
       if (stable != null) {
-        mirror.refreshForSerial(stable);
+        mirror.refresh(stable);
       }
       _startPoll();
-      // Tell the settings provider which device's options to surface
-      // now that we have a build context. ScrcpySettings caches by
-      // saved_devices.serial (= ro.serialno, the stable identity),
-      // so the lookup key is the scope serial, not the adb-serial.
       context.read<ScrcpySettingsProvider>().setActiveSerial(_selectedSerial);
     });
   }
@@ -74,14 +63,14 @@ class _ScreenMirrorScreenState extends State<ScreenMirrorScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Re-key the settings cache when the user picks a different device.
-    // The cache key is the stable identity (saved_devices.serial =
-    // ro.serialno) — same as the initial setActiveSerial call above.
     final s = _selectedSerial;
-    final settings = context.read<ScrcpySettingsProvider>();
-    if (settings.current == null || s != _lastSeenSerial) {
-      settings.setActiveSerial(s);
+    if (s != _lastSeenSerial) {
       _lastSeenSerial = s;
+      final settings = context.read<ScrcpySettingsProvider>();
+      settings.setActiveSerial(s);
+      if (s != null) {
+        context.read<MirrorStateProvider>().refresh(s);
+      }
     }
   }
 
@@ -93,32 +82,15 @@ class _ScreenMirrorScreenState extends State<ScreenMirrorScreen> {
     super.dispose();
   }
 
-  // 2s is enough to catch "user closed the scrcpy SDL window directly"
-  // without hammering the backend. The user's main interaction is
-  // pressing buttons here, not staring at the elapsed counter.
   void _startPoll() {
     _pollTimer?.cancel();
     _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) {
       if (!mounted) return;
-      // Skip the HTTP round-trip when this tab isn't active in the
-      // IndexedStack (the screen stays mounted) or when there's nothing
-      // to monitor — no scrcpy mirror and no windowless recording in
-      // flight. The guard reads the last-known status; a poll that
-      // discovers a stop flips status to stopped, so the *next* tick
-      // skips. _onStart / recording start set status to running
-      // synchronously, so the next tick resumes polling.
       if (!context.read<DeviceScreenActiveScope>().active) return;
-      final mirror = context.read<MirrorStateProvider>();
-      final recording = context.read<ScrcpyRecordStateProvider>();
-      if (!mirror.status.running && !recording.status.running) return;
-      mirror.refresh();
-      // Also poll the windowless recording subprocess — when it's
-      // in flight on the active device, the Start button here must
-      // be disabled. Cheaper than a separate widget listening
-      // (the recording provider has no offline hook because it has
-      // nothing to clean up on its own — the subprocess exits when
-      // the user clicks stop on the recording page).
-      recording.refresh();
+      final stable = _selectedSerial;
+      if (stable == null) return;
+      context.read<MirrorStateProvider>().refresh(stable);
+      context.read<ScrcpyRecordStateProvider>().refresh(serial: stable);
     });
   }
 
@@ -126,25 +98,47 @@ class _ScreenMirrorScreenState extends State<ScreenMirrorScreen> {
     final s = _selectedSerial;
     if (s == null) return;
     final mirror = context.read<MirrorStateProvider>();
-    if (mirror.busy) return;
-    // Block Start when a windowless recording is in flight on the
-    // active device — scrcpy is single-instance per host so we'd
-    // either fail to start the mirror or kill the user's recording.
-    // The reverse is OK (recording kills mirror gracefully, see
-    // adb_scrcpy_record.go), but we don't want the mirror UI to
-    // silently do that without the user seeing it.
-    final recording = context.read<ScrcpyRecordStateProvider>().status;
+    if (mirror.isBusy(s)) return;
+    // Refresh from backend so recording-block check sees current state.
+    await mirror.refresh(s);
+    final recordProvider = context.read<ScrcpyRecordStateProvider>();
+    await recordProvider.refresh(serial: s);
+    final recording = recordProvider.statusFor(s);
     if (recording.running && recording.serial == s) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(tr('scrcpy.recordingCantStartMirror')),
-            duration: const Duration(seconds: 4),
-          ),
-        );
+      if (!mounted) return;
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(tr('scrcpy.recordingBusyTitle')),
+          content: Text(tr('scrcpy.recordingBusyBody')),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(tr('recording.scrcpyBusyCancel')),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(tr('scrcpy.recordingBusyContinue')),
+            ),
+          ],
+        ),
+      );
+      if (ok != true) return;
+      try {
+        await recordProvider.stop(s);
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(tr('recording.stopFailed', {'error': e.toString()})),
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+        return;
       }
-      return;
     }
+    if (!mounted) return;
     final opts = context.read<ScrcpySettingsProvider>().current;
     if (opts == null) {
       return;
@@ -187,8 +181,10 @@ class _ScreenMirrorScreenState extends State<ScreenMirrorScreen> {
   }
 
   Future<void> _onStop() async {
+    final s = _selectedSerial;
+    if (s == null) return;
     final mirror = context.read<MirrorStateProvider>();
-    if (mirror.busy) return;
+    if (mirror.isBusy(s)) return;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -209,7 +205,7 @@ class _ScreenMirrorScreenState extends State<ScreenMirrorScreen> {
     if (ok != true || !mounted) return;
 
     try {
-      await mirror.stop();
+      await mirror.stop(s);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -224,6 +220,7 @@ class _ScreenMirrorScreenState extends State<ScreenMirrorScreen> {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<DeviceSerialScope>();
     final stable = _selectedSerial;
     if (stable == null) {
       return Center(
@@ -238,28 +235,18 @@ class _ScreenMirrorScreenState extends State<ScreenMirrorScreen> {
       );
     }
 
-    // `select` (not `watch`) so this pane only rebuilds when the fields
-    // it actually consumes change. Both providers already de-dup
-    // notifies on no-op polls; combined with the const settings panel
-    // below, this keeps start/stop transitions from cascading into the
-    // ScrcpySettingsPanel subtree.
-    final status =
-        context.select<MirrorStateProvider, ScrcpyStatus>((p) => p.status);
-    final busy = context.select<MirrorStateProvider, bool>((p) => p.busy);
-    final isOurs =
-        context.select<MirrorStateProvider, bool>((p) => p.isOurs(stable));
-    final recording = context
-        .select<ScrcpyRecordStateProvider, ScrcpyRecordStatus>((p) => p.status);
-    final isRunning = status.running && isOurs;
-    // Recording is "blocking" the mirror when it's running on the
-    // active device. Other-device recordings are surfaced as a
-    // banner but don't disable the start button.
+    // Per-device status — each screen instance queries only the status
+    // for its own device serial.
+    final status = context.select<MirrorStateProvider, ScrcpyStatus>(
+        (p) => p.statusFor(stable));
+    final busy = context.select<MirrorStateProvider, bool>(
+        (p) => p.isBusy(stable));
+    final recording = context.select<ScrcpyRecordStateProvider, ScrcpyRecordStatus>(
+        (p) => p.statusFor(stable));
+    final isRunning = status.running;
     final recordingBlocksMirror =
         recording.running && recording.serial == stable;
 
-    // Responsive: side-by-side on wide windows, stacked on narrow ones.
-    // scrcpy itself renders in its own SDL window, so the tab content
-    // can afford to be more verbose than a typical mobile layout.
     return OfflineGuard(
       serial: stable,
       child: LayoutBuilder(
@@ -276,25 +263,6 @@ class _ScreenMirrorScreenState extends State<ScreenMirrorScreen> {
             onStop: _onStop,
           );
           if (constraints.maxWidth >= breakpoint) {
-            // Wide layout:
-            //   Column(
-            //     Expanded(Row(
-            //       Expanded(4): Card(ScrcpySettingsPanel)         // left, scrolls
-            //       Expanded(3): SingleChildScrollView(_RightPane)  // right, scrolls
-            //     ))
-            //   )
-            //
-            // Column + Expanded(Row) gives the Row a definite height. Each
-            // side scrolls independently. The right pane is wrapped in
-            // SingleChildScrollView so the status + button + hint +
-            // shortcut reference table can all be reached by scrolling
-            // the right column when the window is short.
-            //
-            // We deliberately avoid IntrinsicHeight + Row combos: passing
-            // a loose unbounded cross-axis constraint into a Row that
-            // contains a scroll child makes Stack-based children (e.g.
-            // SegmentedButton inside ScrcpySettingsPanel) hit-test with
-            // size=MISSING.
             return Column(
               children: [
                 Expanded(
@@ -315,13 +283,6 @@ class _ScreenMirrorScreenState extends State<ScreenMirrorScreen> {
                         flex: 3,
                         child: Padding(
                           padding: const EdgeInsets.fromLTRB(6, 12, 12, 12),
-                          // _RightPane uses an internal LayoutBuilder:
-                          // when it sees a bounded height (this case), it
-                          // pins status/button/hint and lets
-                          // ScrcpyShortcutReference fill the rest with its
-                          // own internal scroll. No outer SingleChildScrollView
-                          // here — that would conflict with the
-                          // ListView in ScrcpyShortcutReference.
                           child: rightPane,
                         ),
                       ),
@@ -331,11 +292,6 @@ class _ScreenMirrorScreenState extends State<ScreenMirrorScreen> {
               ],
             );
           }
-          // Narrow: outer ListView scrolls; rightPane is rendered as-is
-          // (no inner SingleChildScrollView — that would nest a scroll
-          // view inside another and blow up with "vertical viewport was
-          // given unbounded height"). The ScrcpyShortcutReference is
-          // already part of the rightPane, so no extra entry here.
           return ListView(
             padding: const EdgeInsets.all(12),
             children: [
@@ -378,15 +334,6 @@ class _RightPane extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    // Two layout modes:
-    //   * Bounded height (wide layout: parent is Column > Expanded > Row
-    //     > Expanded). Status / button / hint stay pinned at the top;
-    //     the shortcut reference takes the remaining vertical space
-    //     and scrolls its own list internally.
-    //   * Unbounded height (narrow layout: this widget sits inside an
-    //     outer ListView). We can't use Expanded inside an unbounded
-    //     parent, so we just lay out everything in a single Column and
-    //     let the outer ListView scroll the whole pane.
     return Card(
       margin: const EdgeInsets.fromLTRB(6, 12, 12, 12),
       child: Padding(
@@ -394,9 +341,6 @@ class _RightPane extends StatelessWidget {
         child: LayoutBuilder(builder: (context, constraints) {
           final statusCard = _buildStatusCard(theme, serial, isRunning, elapsed,
               recording, recordingBlocksMirror);
-          // When a recording is blocking the mirror, the start
-          // button stays rendered (so the user can see why nothing
-          // happens) but is disabled with a tooltip explaining.
           final startButton = Row(
             children: [
               Expanded(
@@ -452,8 +396,6 @@ class _RightPane extends StatelessWidget {
             ),
           );
           if (constraints.hasBoundedHeight) {
-            // Wide layout: pin status/button/hint, let the shortcut
-            // reference fill the rest and scroll internally.
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -467,7 +409,6 @@ class _RightPane extends StatelessWidget {
               ],
             );
           }
-          // Narrow layout: stack everything; outer ListView scrolls.
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -532,12 +473,6 @@ class _RightPane extends StatelessWidget {
               ),
             ],
           ),
-          // Recording-on-this-device banner. Sits under the mirror
-          // status so the user can see both: "scrcpy is busy doing
-          // a recording on top of your selected device, that's why
-          // the Start button is grey". For recordings on OTHER
-          // devices, we show a different message (awareness without
-          // disabling local controls).
           if (recording.running) ...[
             const SizedBox(height: 8),
             _buildRecordingBanner(theme, recording,

@@ -256,7 +256,7 @@ class _ActionButtons extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final provider = context.read<EmulatorInstanceProvider>();
+    final provider = context.watch<EmulatorInstanceProvider>();
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -368,31 +368,7 @@ class _ActionButtons extends StatelessWidget {
                         child: Text(tr('instanceCard.logEmpty')),
                       ),
                     )
-                  : Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Theme.of(ctx)
-                            .colorScheme
-                            .surfaceContainerHighest,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Scrollbar(
-                        child: ListView.builder(
-                          itemCount: lines.length,
-                          itemBuilder: (_, i) => Padding(
-                            padding:
-                                const EdgeInsets.symmetric(vertical: 1),
-                            child: Text(
-                              lines[i],
-                              style: const TextStyle(
-                                fontFamily: 'Menlo',
-                                fontSize: 11,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
+                  : _LogContent(lines: lines),
         ),
         actions: [
           TextButton(
@@ -548,5 +524,51 @@ Color _getStatusColor(EmulatorInstanceStatus status) {
       return Colors.grey;
     case EmulatorInstanceStatus.error:
       return Colors.red;
+  }
+}
+
+class _LogContent extends StatefulWidget {
+  final List<String> lines;
+  const _LogContent({required this.lines});
+
+  @override
+  State<_LogContent> createState() => _LogContentState();
+}
+
+class _LogContentState extends State<_LogContent> {
+  final ScrollController _scrollCtrl = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Scrollbar(
+        controller: _scrollCtrl,
+        child: ListView.builder(
+          controller: _scrollCtrl,
+          itemCount: widget.lines.length,
+          itemBuilder: (_, i) => Padding(
+            padding: const EdgeInsets.symmetric(vertical: 1),
+            child: Text(
+              widget.lines[i],
+              style: const TextStyle(
+                fontFamily: 'Menlo',
+                fontSize: 11,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

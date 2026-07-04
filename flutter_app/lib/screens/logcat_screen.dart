@@ -399,6 +399,7 @@ class _LogcatScreenState extends State<LogcatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<DeviceSerialScope>();
     // Watch the LOW-frequency providers only. We deliberately do NOT
     // watch LogcatStateProvider here — its notify rate is ~12.5 Hz
     // during stream floods, and watching it here would rebuild the

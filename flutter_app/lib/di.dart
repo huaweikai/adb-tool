@@ -144,11 +144,10 @@ Future<void> setupDependencies() async {
     RecordingSettingsProvider(db: getIt<AppDatabase>())..load(),
   );
 
-  // ScrcpyRecordStateProvider only needs the ApiClient; it owns the
-  // windowless recording subprocess polling state, mirrors the
-  // MirrorStateProvider pattern but for the recording subprocess.
+  // ScrcpyRecordStateProvider needs ApiClient + DeviceProvider; listens
+  // to onDeviceOffline to clear recording state when device drops.
   getIt.registerSingleton<ScrcpyRecordStateProvider>(
-    ScrcpyRecordStateProvider(getIt<ApiClient>()),
+    ScrcpyRecordStateProvider(getIt<ApiClient>(), getIt<DeviceProvider>()),
   );
 }
 

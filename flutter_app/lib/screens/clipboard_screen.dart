@@ -185,6 +185,7 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<DeviceSerialScope>();
     context.watch<LocaleProvider>();
     final theme = Theme.of(context);
     final entries =

@@ -22,7 +22,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sync"
 	"time"
 )
 
@@ -33,26 +32,14 @@ import (
 var ErrScrcpyBusy = errors.New("scrcpy is in use")
 
 // scrcpyRecordState holds the live windowless-recording scrcpy
-// subprocess. Like the mirror state, there's only one such process
-// per host (one scrcpy at a time). The outputPath is fully-qualified
-// — the backend's StartScrcpyRecording constructs it under
-// ScrcpyRecordingSandboxDir() and passes it to scrcpy as
-// --record=<path>. Scrcpy writes the MP4 to that exact path.
+// subprocess. One per recording device, stored in
+// AdbManager.scrcpyRecordMap. Protected by AdbManager.scrcpyMu.
 type scrcpyRecordState struct {
-	mu         sync.Mutex
 	cmd        *exec.Cmd
 	serial     string
 	outputPath string
 	started    time.Time
 	done       chan struct{} // closed when cmd.Wait returns
-}
-
-func (s *scrcpyRecordState) reset() {
-	s.cmd = nil
-	s.serial = ""
-	s.outputPath = ""
-	s.started = time.Time{}
-	s.done = nil
 }
 
 // scrcpyRecordBusyKind is the discriminator for the 409 response so
@@ -136,8 +123,6 @@ func (m *AdbManager) StartScrcpyRecording(serial string, force bool) (string, er
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return "", fmt.Errorf("create scrcpy sandbox: %w", err)
 	}
-	// Probe writability by creating and immediately closing a temp
-	// file. Cheap; fails fast on read-only mounts.
 	probe, err := os.CreateTemp(dir, ".adb-tool-record-probe-*")
 	if err != nil {
 		return "", fmt.Errorf("scrcpy sandbox not writable: %w", err)
@@ -145,12 +130,6 @@ func (m *AdbManager) StartScrcpyRecording(serial string, force bool) (string, er
 	probe.Close()
 	os.Remove(probe.Name())
 
-	// Filename: nanosecond timestamp avoids collisions even when the
-	// user starts/stops multiple recordings in quick succession. We
-	// keep the legacy `adb-tool-record_` prefix so an existing
-	// tmp-cleanup sweep (the ADB recording flow's
-	// `adb-recording-*.mp4` pattern is a sibling, not a conflict)
-	// stays easy to reason about.
 	outputPath := filepath.Join(dir,
 		fmt.Sprintf("adb-tool-record_%d.mp4", time.Now().UnixNano()))
 
@@ -159,39 +138,31 @@ func (m *AdbManager) StartScrcpyRecording(serial string, force bool) (string, er
 		return "", err
 	}
 
-	m.scrcpyRecord.mu.Lock()
-	defer m.scrcpyRecordUnlock() // see below — keeps the per-state unlock DRY
+	m.scrcpyMu.Lock()
 
-	// Recording already running? Kill and restart. No "force" knob
-	// here — a second recording click is unambiguously "I want a
-	// new one, replace the old".
-	if m.scrcpyRecord.cmd != nil && m.scrcpyRecordProcessAlive() {
-		m.killRecordingLocked("replaced by new recording")
+	// Recording already running on this device? Kill and restart.
+	if old, ok := m.scrcpyRecordMap[serial]; ok && old.cmd != nil && old.cmd.Process != nil && old.cmd.ProcessState == nil {
+		m.killRecordingEntry(old, "replaced by new recording")
+		delete(m.scrcpyRecordMap, serial)
 	}
 
-	// Mirror running? Refuse (force=false) or graceful-kill
-	// (force=true). The kill uses the same terminateScrcpyProcess
-	// helper the existing StartScrcpy uses, so it finalizes any
-	// in-progress mirror recording gracefully — but the mirror
-	// record path is a different code path anyway, so this is
-	// mostly about clean SDL shutdown.
-	if m.scrcpy.cmd != nil && m.scrcpy.cmd.Process != nil {
+	// Same-device mirror conflict check.
+	if mirror, ok := m.scrcpyMap[serial]; ok && mirror.cmd != nil && mirror.cmd.Process != nil {
 		if !force {
+			m.scrcpyMu.Unlock()
 			return "", &scrcpyRecordBusyError{
 				Kind:   scrcpyRecordBusyMirror,
-				Serial: m.scrcpy.serial,
+				Serial: serial,
 			}
 		}
-		m.killMirrorForRecordLocked("preempted by recording")
+		m.killMirrorEntry(mirror, "preempted by recording")
 	}
 
 	args := []string{
 		"-s", serial,
-		"--no-window", // windowless — the whole point of this path
+		"--no-window",
 		"--no-playback",
 		"--record=" + outputPath,
-		// Sensible defaults; users can tweak via the recording
-		// settings page if we ever expose them.
 		"--video-bit-rate", "8M",
 		"--max-size", "1024",
 		"--max-fps", "30",
@@ -205,33 +176,34 @@ func (m *AdbManager) StartScrcpyRecording(serial string, force bool) (string, er
 	configureScrcpySysProc(cmd)
 
 	if err := cmd.Start(); err != nil {
+		m.scrcpyMu.Unlock()
 		return "", fmt.Errorf("start scrcpy recording: %w", err)
 	}
 
 	done := make(chan struct{})
-	m.scrcpyRecord.cmd = cmd
-	m.scrcpyRecord.serial = serial
-	m.scrcpyRecord.outputPath = outputPath
-	m.scrcpyRecord.started = time.Now()
-	m.scrcpyRecord.done = done
+	rec := &scrcpyRecordState{
+		cmd:        cmd,
+		serial:     serial,
+		outputPath: outputPath,
+		started:    time.Now(),
+		done:       done,
+	}
+	m.scrcpyRecordMap[serial] = rec
+	m.scrcpyMu.Unlock()
 
 	Log.Add("scrcpy recording started",
 		fmt.Sprintf("serial=%s arch=%s pid=%d output=%s",
 			serial, paths.Arch, cmd.Process.Pid, outputPath),
 		nil, 0)
 
-	// Same "exited → clear state" goroutine as the mirror, but
-	// isolated to its own state slot. We use a local cmd closure to
-	// avoid a race where this goroutine references a *exec.Cmd that
-	// a later StartScrcpyRecording has already replaced.
 	go func() {
 		waitErr := cmd.Wait()
 		close(done)
 
-		m.scrcpyRecord.mu.Lock()
-		if m.scrcpyRecord.cmd == cmd {
-			elapsed := time.Since(m.scrcpyRecord.started)
-			m.scrcpyRecord.reset()
+		m.scrcpyMu.Lock()
+		if cur, ok := m.scrcpyRecordMap[serial]; ok && cur.cmd == cmd {
+			elapsed := time.Since(cur.started)
+			delete(m.scrcpyRecordMap, serial)
 			result := fmt.Sprintf("serial=%s output=%s exit=%s",
 				serial, outputPath, describeExit(waitErr))
 			if tail := out.tail(800); tail != "" {
@@ -239,47 +211,21 @@ func (m *AdbManager) StartScrcpyRecording(serial string, force bool) (string, er
 			}
 			Log.Add("scrcpy recording exited", result, nil, elapsed)
 		}
-		m.scrcpyRecord.mu.Unlock()
+		m.scrcpyMu.Unlock()
 	}()
 
 	return outputPath, nil
 }
 
-// scrcpyRecordUnlock / scrcpyRecordProcessAlive / killRecordingLocked /
-// killMirrorForRecordLocked — small helpers that keep the lock-handling
-// conventions visible inline. We use the same locking scheme as the
-// mirror code (single mutex per state slot, never touch fields without
-// holding it) so a future refactor can keep both code paths in sync.
-
-// scrcpyRecordUnlock defers correctly: the recorder takes one lock at a
-// time, so defer-friendly wrapper is just Unlock. Kept as a separate
-// name so any future expansion (e.g. ordered mirror + record locks)
-// is a single search-and-replace.
-func (m *AdbManager) scrcpyRecordUnlock() { m.scrcpyRecord.mu.Unlock() }
-
-func (m *AdbManager) scrcpyRecordProcessAlive() bool {
-	cmd := m.scrcpyRecord.cmd
+// killRecordingEntry sends a graceful shutdown to a recording entry
+// and waits up to 10s. Caller must hold m.scrcpyMu.
+func (m *AdbManager) killRecordingEntry(st *scrcpyRecordState, reason string) {
+	cmd := st.cmd
+	done := st.done
 	if cmd == nil || cmd.Process == nil {
-		return false
-	}
-	// cmd.ProcessState is non-nil iff the process has already been
-	// reaped. We don't call Wait here (that would block the mutex
-	// holder on a slow exit); instead rely on the goroutine above
-	// to set state via reset() and trust that a non-nil Process
-	// implies "alive" until then.
-	return cmd.ProcessState == nil
-}
-
-// killRecordingLocked sends a graceful shutdown to the recording
-// subprocess and waits up to 10s for it to finalize the MP4 muxer.
-// Caller must hold m.scrcpyRecord.mu.
-func (m *AdbManager) killRecordingLocked(reason string) {
-	cmd := m.scrcpyRecord.cmd
-	done := m.scrcpyRecord.done
-	if cmd == nil || cmd.Process == nil {
-		m.scrcpyRecord.reset()
 		return
 	}
+	m.killScrcpyServerOnDevice(st.serial)
 	if err := terminateScrcpyProcess(cmd.Process); err != nil {
 		Log.Add("scrcpy recording stop signal", "reason="+reason, err, 0)
 	}
@@ -291,33 +237,19 @@ func (m *AdbManager) killRecordingLocked(reason string) {
 			"reason="+reason+" forcing kill after 10s", nil, 10*time.Second)
 		_ = cmd.Process.Kill()
 	}
-	m.scrcpyRecord.reset()
 }
 
-// killMirrorForRecordLocked graceful-kills the mirror subprocess to
-// free the adb connection for a recording. Used only when force=true
-// on StartScrcpyRecording. The mirror's own state (scrcpy.cmd etc.)
-// is reset by the mirror's exit goroutine — we don't reach across
-// and clear it from here.
-//
-// We hold BOTH the mirror and record locks during this call. Order
-// is consistent (record first, then mirror) to avoid deadlock with
-// any future mirror-side code that also needs to coordinate with
-// recording. (None exists today, but cheap to get right.)
-func (m *AdbManager) killMirrorForRecordLocked(reason string) {
-	// We already hold scrcpyRecord.mu. Take scrcpy.mu (record-then-
-	// mirror order) so a future caller doing mirror-then-record sees
-	// the same order.
-	m.scrcpy.mu.Lock()
-	defer m.scrcpy.mu.Unlock()
-
-	cmd := m.scrcpy.cmd
-	done := m.scrcpy.done
+// killMirrorEntry sends a graceful shutdown to a mirror entry and
+// waits up to 10s. The mirror's own exit goroutine will clean up the
+// map entry. Caller must hold m.scrcpyMu.
+func (m *AdbManager) killMirrorEntry(st *scrcpyState, reason string) {
+	cmd := st.cmd
+	done := st.done
 	if cmd == nil || cmd.Process == nil {
 		return
 	}
 	if err := terminateScrcpyProcess(cmd.Process); err != nil {
-		Log.Add("scrcpy mirror stop signal (preempted by recording)", reason, err, 0)
+		Log.Add("scrcpy mirror stop signal", "reason="+reason, err, 0)
 	}
 	select {
 	case <-done:
@@ -327,51 +259,78 @@ func (m *AdbManager) killMirrorForRecordLocked(reason string) {
 			"reason="+reason+" forcing kill after 10s", nil, 10*time.Second)
 		_ = cmd.Process.Kill()
 	}
-	// Don't reset scrcpy state here — the mirror's own exit
-	// goroutine owns that field. We only need the process gone.
 }
 
-// StopScrcpyRecording gracefully stops the recording subprocess. No-op
-// if nothing is recording. Returns nil even if there was nothing to
-// stop (matches StopScrcpy semantics: stopping a non-running
-// subprocess is a no-op from the user's perspective).
-func (m *AdbManager) StopScrcpyRecording() error {
-	m.scrcpyRecord.mu.Lock()
-	defer m.scrcpyRecord.mu.Unlock()
-
-	cmd := m.scrcpyRecord.cmd
-	if cmd == nil || cmd.Process == nil {
+// StopScrcpyRecording gracefully stops the recording subprocess for
+// the given device. No-op if nothing is recording on that device.
+func (m *AdbManager) StopScrcpyRecording(serial string) error {
+	m.scrcpyMu.Lock()
+	st, ok := m.scrcpyRecordMap[serial]
+	if !ok || st.cmd == nil || st.cmd.Process == nil {
+		m.scrcpyMu.Unlock()
 		return nil
 	}
+	cmd := st.cmd
+	done := st.done
+	m.killScrcpyServerOnDevice(serial)
+	m.scrcpyMu.Unlock()
+
 	if err := terminateScrcpyProcess(cmd.Process); err != nil {
-		Log.Add("scrcpy recording stop signal", "", err, 0)
-		// Don't return — still wait for done so the state clears.
+		Log.Add("scrcpy recording stop signal", "serial="+serial, err, 0)
 	}
-	done := m.scrcpyRecord.done
 	select {
 	case <-done:
-		Log.Add("scrcpy recording stopped", "graceful", nil, 0)
+		Log.Add("scrcpy recording stopped", "serial="+serial+" graceful", nil, 0)
 	case <-time.After(10 * time.Second):
 		Log.Add("scrcpy recording stop timeout",
-			"forcing kill after 10s", nil, 10*time.Second)
+			"serial="+serial+" forcing kill after 10s", nil, 10*time.Second)
 		_ = cmd.Process.Kill()
 	}
-	m.scrcpyRecord.reset()
 	return nil
 }
 
-// ScrcpyRecordingStatus returns a snapshot of the windowless recording
-// subprocess.
-func (m *AdbManager) ScrcpyRecordingStatus() (running bool, serial, outputPath string, pid int, elapsed time.Duration) {
-	m.scrcpyRecord.mu.Lock()
-	defer m.scrcpyRecord.mu.Unlock()
+// killScrcpyServerOnDevice terminates the scrcpy-server process running
+// on the Android device. When scrcpy-server crashes, the local scrcpy
+// client detects the adb stream EOF and triggers its normal cleanup —
+// including flushing and closing any in-progress recording file.
+//
+// This is essential on Windows where the recording path uses
+// --no-window: without an SDL window, taskkill /pid (no /F) cannot
+// deliver WM_CLOSE, so the local process never receives a graceful
+// shutdown signal. Killing the remote server side-steps this entirely.
+//
+// Errors are best-effort: the server may already have exited, or the
+// device may be unreachable. Callers still fall back to
+// terminateScrcpyProcess and hard-kill on timeout.
+func (m *AdbManager) killScrcpyServerOnDevice(serial string) {
+	if serial == "" {
+		return
+	}
+	// pkill -9 for immediate death so the stream breaks cleanly.
+	// The local scrcpy client handles the abrupt disconnect and
+	// runs its own muxer finalization.
+	out, err := m.run("-s", serial, "shell", "pkill", "-9", "-f", "scrcpy")
+	if err != nil {
+		Log.Add("scrcpy-server kill (device)", out, err, 0)
+	}
+}
 
-	if m.scrcpyRecord.cmd == nil || m.scrcpyRecord.cmd.Process == nil {
+// ScrcpyRecordingStatus returns the recording subprocess state for
+// the given device. Pass serial="" to get the first running entry.
+func (m *AdbManager) ScrcpyRecordingStatus(serial string) (running bool, outSerial, outputPath string, pid int, elapsed time.Duration) {
+	m.scrcpyMu.Lock()
+	defer m.scrcpyMu.Unlock()
+
+	if serial != "" {
+		if st, ok := m.scrcpyRecordMap[serial]; ok && st.cmd != nil && st.cmd.Process != nil {
+			return true, st.serial, st.outputPath, st.cmd.Process.Pid, time.Since(st.started)
+		}
 		return false, "", "", 0, 0
 	}
-	return true,
-		m.scrcpyRecord.serial,
-		m.scrcpyRecord.outputPath,
-		m.scrcpyRecord.cmd.Process.Pid,
-		time.Since(m.scrcpyRecord.started)
+	for _, st := range m.scrcpyRecordMap {
+		if st.cmd != nil && st.cmd.Process != nil {
+			return true, st.serial, st.outputPath, st.cmd.Process.Pid, time.Since(st.started)
+		}
+	}
+	return false, "", "", 0, 0
 }
