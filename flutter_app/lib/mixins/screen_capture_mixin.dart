@@ -1,36 +1,21 @@
-// Capture mixin used by the file-browser screen. Pops a save-location
-// dialog for every screenshot (and a video-preview dialog after every
-// recording), independently of any test session. If a test session is
-// currently running on the same device, the screenshot is ALSO archived
-// into the session — the user gets both a local copy and a session entry.
+// Unified screen capture mixin — replaces FileBrowserCaptureMixin and
+// TestSessionCaptureMixin. Configured by [captureMode]:
 //
-// For the test-session screens, see `TestSessionCaptureMixin` (in
-// `lib/mixins/test_session_capture_mixin.dart`) — that one skips the
-// save dialog entirely and writes straight to the session.
+//   - fileBrowser: screenshots go to a user-chosen local file (plus
+//     optionally archived to a running test session); recording stops
+//     cleanly with `onVideoSaved(bytes)`.
+//   - testSession: screenshots are saved directly to the active test
+//     session; recording marks the session and saves video bytes into
+//     the session artifact directory.
 //
 // State management: per-device state lives on the SavedDevices row
-// (recording_owner / recording_started_at / recording_is_saving). The
-// mixin subscribes to that row, mutates it through the DAO, and
+// (recording_owner / recording_started_at / recording_is_saving).
+// The mixin subscribes to that row, mutates it through the DAO, and
 // toggles Android's show_touches developer setting so the recording
-// shows touch feedback. No in-memory service is required — the DB is
-// the single source of truth, which means navigating away and back
-// (which disposes & rebuilds the State) does NOT lose progress.
-//
-// Recording method (v10+): the mixin branches on
-// `RecordingSettingsProvider.method` — adb (legacy `adb screenrecord`)
-// or scrcpy (windowless `scrcpy --no-window --record=…`). The DB row
-// and the per-second elapsed ticker are method-agnostic; only the
-// start/stop and the "where does the file come from" bits differ.
-//
-// Required state members:
-// - `ApiClient get apiClient`
-// - `TestSessionProvider get sessionProvider`
-// - `SavedDevicesDao get savedDevicesDao`
-// - `String? get serial`
-// - `Future<void> onScreenshotSaved(Uint8List bytes, String? localPath)`
-// - `Future<void> onVideoSaved(Uint8List bytes)`
+// shows touch feedback. The DB is the single source of truth; navigating
+// away and back (which disposes & rebuilds the State) does NOT lose
+// progress.
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -42,43 +27,64 @@ import 'package:provider/provider.dart';
 import '../db/database.dart';
 import '../db/dao/saved_devices_dao.dart';
 import '../i18n.dart';
+import '../providers/recording_settings_provider.dart';
+import '../providers/scrcpy_record_state_provider.dart';
+import '../providers/test_session_provider.dart';
 import '../services/api_client.dart';
 import '../services/screen_capture_service.dart';
 import '../services/recording_strategy.dart';
 import '../services/screen_record_owner.dart';
-import '../providers/recording_settings_provider.dart';
-import '../providers/scrcpy_record_state_provider.dart';
-import '../providers/test_session_provider.dart';
 import '../widgets/recording_settings_dialogs.dart';
 import '../widgets/screenshot_watermark.dart';
 import '../widgets/editor_i18n.dart';
 
-mixin FileBrowserCaptureMixin<T extends StatefulWidget> on State<T> {
-  // ── State fields (owned by the implementing State) ──────────────────────
-  bool get screenshotting;
-  set screenshotting(bool value);
+enum CaptureMode { fileBrowser, testSession }
 
-  // 传输状态，State 设置 isTransferring 来启用/禁用传输锁
-  bool isTransferring = false;
+mixin ScreenCaptureMixin<T extends StatefulWidget> on State<T> {
+  // ── Configuration ──────────────────────────────────────────────────────
+  CaptureMode get captureMode;
 
-  // ── 依赖获取（由提供方实现）────────────────────────────────────
+  // ── Dependencies (must be provided by the State) ───────────────────────
   ApiClient get apiClient;
   TestSessionProvider get sessionProvider;
   SavedDevicesDao get savedDevicesDao;
   String? get serial;
 
-  // ── DB-backed recording state (subscribed) ───────────────────────────
+  // ── State fields required from the State ───────────────────────────────
+  bool get screenshotting;
+  set screenshotting(bool value);
+
+  /// True while a file transfer is in progress. Used to gate recording
+  /// and screenshot actions. Only relevant for fileBrowser mode;
+  /// testSession screens can ignore this.
+  bool isTransferring = false;
+
+  // ── Callbacks ──────────────────────────────────────────────────────────
+  /// Called after a screenshot has been saved (either to local file or to
+  /// the session, depending on [captureMode]). [path] is the local file
+  /// path for fileBrowser mode, or the session relative path for
+  /// testSession mode; may be null on failure.
+  Future<void> onScreenshotSaved(Uint8List bytes, String? path);
+
+  /// Called after a video recording has been saved. [path] has the same
+  /// semantics as the screenshot callback above. Only invoked when bytes
+  /// are non-empty.
+  Future<void> onVideoSaved(Uint8List bytes, String? path);
+
+  /// Called when a recording stopped cleanly but produced no usable video.
+  /// Default shows a "recording too short" snackbar.
+  Future<void> onVideoDiscarded() async {
+    _showSnackBar(tr('recordingTooShort'));
+  }
+
+  // ── Recording state ────────────────────────────────────────────────────
+  ScreenCaptureService? _captureService;
+  RecordingStrategy? _strategy;
   SavedDevice? _deviceRow;
   StreamSubscription<SavedDevice?>? _deviceSub;
   Timer? _elapsedTicker;
 
-  // Scrcpy-mode state: the path the recording is being written to
-  // Service handle — same pattern as TestSessionCaptureMixin. The
-  // service is stateless so a single late-final instance is enough.
-  late final ScreenCaptureService _capture =
-      ScreenCaptureService(apiClient);
-
-  // ── Lifecycle hooks ─────────────────────────────────────────────────
+  // ── Lifecycle hooks ────────────────────────────────────────────────────
   void initScreenRecordState() {
     if (_deviceSub != null) return;
     final s = serial;
@@ -92,9 +98,9 @@ mixin FileBrowserCaptureMixin<T extends StatefulWidget> on State<T> {
     _stopTicker();
   }
 
-  /// Force-refresh _deviceRow from DB and trigger setState.
-  /// Safety net: call after any DB write that modifies recording state
-  /// so the UI always updates even if the stream missed the notification.
+  ScreenCaptureService _capture() =>
+      _captureService ??= ScreenCaptureService(apiClient);
+
   Future<void> _syncDeviceRowFromDb() async {
     final s = serial;
     if (s == null) return;
@@ -125,26 +131,7 @@ mixin FileBrowserCaptureMixin<T extends StatefulWidget> on State<T> {
     _elapsedTicker = null;
   }
 
-  // ── 回调（由提供方实现）────────────────────────────────────────
-  /// 截图/录屏保存完成时回调，bytes 是图片/视频原始数据。
-  /// 可选地返回保存的本地路径。
-  Future<void> onScreenshotSaved(Uint8List bytes, String? localPath);
-
-  /// Called after a recording has been pulled from the device AND
-  /// the bytes look usable. Only invoked when `bytes.isNotEmpty`.
-  Future<void> onVideoSaved(Uint8List bytes);
-
-  /// Called when a recording stopped cleanly but produced no usable
-  /// video (bytes empty). Default shows a "recording too short"
-  /// snackbar. Override to customise.
-  Future<void> onVideoDiscarded() async {
-    _showSnackBar(tr('recordingTooShort'));
-  }
-
-  // ── Owner identity ─────────────────────────────────────────────
-  ScreenRecordOwner get recordOwner => ScreenRecordOwner.fileBrowser;
-
-  // ── Read-side helpers ─────────────────────────────────────────
+  // ── Read-side helpers ──────────────────────────────────────────────────
   SavedDevice? get currentDeviceRow => _deviceRow;
 
   bool isAnyOwnerRecording() => _deviceRow?.recordingOwner != null;
@@ -185,7 +172,130 @@ mixin FileBrowserCaptureMixin<T extends StatefulWidget> on State<T> {
         .inSeconds;
   }
 
-  // ── 公开操作方法（由提供方 expose 给 UI）────────────────────────
+  ScreenRecordOwner get recordOwner => captureMode == CaptureMode.testSession
+      ? ScreenRecordOwner.testSession
+      : ScreenRecordOwner.fileBrowser;
+
+  // ── Screenshot ─────────────────────────────────────────────────────────
+  Future<void> takeScreenshot() async {
+    final s = serial;
+    if (s == null || screenshotting) return;
+    if (mounted) setState(() => screenshotting = true);
+    try {
+      final raw = await _capture().takeScreenshotBytes(s);
+      if (raw == null) {
+        if (!mounted) return;
+        setState(() => screenshotting = false);
+        _showSnackBar(tr('screenshotFailed'));
+        return;
+      }
+      var bytes = raw;
+      if (!mounted) return;
+      setState(() => screenshotting = false);
+
+      final opts = await showWatermarkDialog(context);
+      if (opts == null) return;
+      if (opts.addTimestamp) {
+        bytes = await addTimestampWatermark(bytes);
+      }
+      if (opts.stepNumber != null) {
+        bytes = await addStepNumber(bytes, opts.stepNumber!);
+      }
+      if (!mounted) return;
+
+      if (captureMode == CaptureMode.testSession) {
+        // Test session: always save to session, optional editor
+        await _saveTestSessionScreenshot(bytes, opts);
+      } else {
+        // File browser: local file save + optional session archive
+        await _saveFileBrowserScreenshot(bytes, opts);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => screenshotting = false);
+      _showSnackBar('${tr('screenshotFailed')}: $e');
+    }
+  }
+
+  Future<void> _saveTestSessionScreenshot(Uint8List bytes, WatermarkOpts opts) async {
+    if (!opts.skipEdit) {
+      if (!mounted) return;
+      final editorCtx = context;
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ProImageEditor.memory(
+            bytes,
+            configs: kImageEditorConfigs,
+            callbacks: ProImageEditorCallbacks(
+              onImageEditingComplete: (edited) async {
+                final rel = await sessionProvider.saveScreenshotBytes(edited);
+                if (mounted) await onScreenshotSaved(edited, rel);
+                if (editorCtx.mounted) {
+                  Navigator.of(editorCtx).pop(edited);
+                }
+              },
+            ),
+          ),
+        ),
+      );
+    } else {
+      final rel = await sessionProvider.saveScreenshotBytes(bytes);
+      if (mounted) await onScreenshotSaved(bytes, rel);
+    }
+  }
+
+  Future<void> _saveFileBrowserScreenshot(Uint8List bytes, WatermarkOpts opts) async {
+    String? localPath;
+    if (opts.skipEdit) {
+      final location = await getSaveLocation(
+        suggestedName: 'screenshot-${DateTime.now().millisecondsSinceEpoch}.png',
+        confirmButtonText: tr('saveScreenshot'),
+      );
+      if (location != null) {
+        await File(location.path).writeAsBytes(bytes);
+        localPath = location.path;
+      }
+      if (sessionProvider.hasRunningSession) {
+        await sessionProvider.saveScreenshotBytes(bytes);
+      }
+      await onScreenshotSaved(bytes, localPath);
+    } else {
+      if (!mounted) return;
+      final editorCtx = context;
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ProImageEditor.memory(
+            bytes,
+            configs: kImageEditorConfigs,
+            callbacks: ProImageEditorCallbacks(
+              onImageEditingComplete: (edited) async {
+                final location = await getSaveLocation(
+                  suggestedName:
+                      'screenshot-${DateTime.now().millisecondsSinceEpoch}.png',
+                  confirmButtonText: tr('saveScreenshot'),
+                );
+                if (location != null) {
+                  await File(location.path).writeAsBytes(edited);
+                  localPath = location.path;
+                }
+                if (sessionProvider.hasRunningSession) {
+                  await sessionProvider.saveScreenshotBytes(edited);
+                }
+                await onScreenshotSaved(edited, localPath);
+                if (editorCtx.mounted) {
+                  Navigator.of(editorCtx).pop(edited);
+                }
+              },
+            ),
+          ),
+        ),
+      );
+    }
+  }
+
+  // ── Recording ─────────────────────────────────────────────────────────
   Future<void> startRecording() async {
     final s = serial;
     if (s == null) return;
@@ -208,7 +318,7 @@ mixin FileBrowserCaptureMixin<T extends StatefulWidget> on State<T> {
       settings.method,
       serial: s,
       api: apiClient,
-      capture: _capture,
+      capture: _capture(),
       recordState: recordState,
     );
     _strategy = strategy;
@@ -220,6 +330,9 @@ mixin FileBrowserCaptureMixin<T extends StatefulWidget> on State<T> {
         startedAtMs: startedAtMs,
       );
       await strategy.start();
+      if (captureMode == CaptureMode.testSession) {
+        await sessionProvider.markScreenRecordStarted();
+      }
     } on ScrcpyRecordBusyException catch (e) {
       _strategy = null;
       if (!mounted) {
@@ -242,6 +355,9 @@ mixin FileBrowserCaptureMixin<T extends StatefulWidget> on State<T> {
           startedAtMs: startedAtMs,
         );
         await strategy.start(force: true);
+        if (captureMode == CaptureMode.testSession) {
+          await sessionProvider.markScreenRecordStarted();
+        }
         _strategy = strategy;
       } catch (e2) {
         _strategy = null;
@@ -262,8 +378,6 @@ mixin FileBrowserCaptureMixin<T extends StatefulWidget> on State<T> {
     _showSnackBar(tr('recordingStarted'));
   }
 
-  RecordingStrategy? _strategy;
-
   Future<void> stopRecording() async {
     final s = serial;
     if (s == null) return;
@@ -279,13 +393,8 @@ mixin FileBrowserCaptureMixin<T extends StatefulWidget> on State<T> {
       return;
     }
 
-    if (row?.recordingIsSaving ?? false) {
-      return;
-    }
-
-    if (row?.recordingOwner == null) {
-      return;
-    }
+    if (row?.recordingIsSaving ?? false) return;
+    if (row?.recordingOwner == null) return;
 
     final strategy = _strategy;
     _strategy = null;
@@ -296,11 +405,20 @@ mixin FileBrowserCaptureMixin<T extends StatefulWidget> on State<T> {
       final path = await strategy.stop();
       final bytes =
           path != null ? await File(path).readAsBytes() : Uint8List(0);
+      String? saved;
+      if (bytes.isNotEmpty) {
+        if (captureMode == CaptureMode.testSession) {
+          saved = await sessionProvider.saveVideoBytes(bytes);
+        } else {
+          // FileBrowser: onVideoSaved receives raw bytes
+          saved = path;
+        }
+      }
       await savedDevicesDao.clearScreenRecord(s);
       await _syncDeviceRowFromDb();
       await strategy.cleanup();
       if (bytes.isNotEmpty) {
-        await onVideoSaved(bytes);
+        await onVideoSaved(bytes, saved);
       } else {
         await onVideoDiscarded();
       }
@@ -313,112 +431,17 @@ mixin FileBrowserCaptureMixin<T extends StatefulWidget> on State<T> {
     }
   }
 
-  Future<void> takeScreenshot() async {
-    final s = serial;
-    if (s == null || screenshotting) return;
-    if (mounted) setState(() => screenshotting = true);
-    try {
-      final b64 = await apiClient.takeScreenshot(s);
-      if (b64 == null) {
-        if (!mounted) return;
-        setState(() => screenshotting = false);
-        _showSnackBar(tr('screenshotFailed'));
-        return;
-      }
-      if (!mounted) return;
-      setState(() => screenshotting = false);
-      var bytes = base64Decode(b64);
-      if (!mounted) return;
-
-      // 水印选项
-      final opts = await showWatermarkDialog(context);
-      if (opts == null) return;
-      if (opts.addTimestamp) {
-        bytes = await addTimestampWatermark(bytes);
-      }
-      if (opts.stepNumber != null) {
-        bytes = await addStepNumber(bytes, opts.stepNumber!);
-      }
-
-      if (!mounted) return;
-
-      // 保存路径
-      String? localPath;
-      if (opts.skipEdit) {
-        if (sessionProvider.hasRunningSession) {
-          await sessionProvider.saveScreenshotBytes(bytes);
-        }
-        final location = await getSaveLocation(
-          suggestedName: 'screenshot-${DateTime.now().millisecondsSinceEpoch}.png',
-          confirmButtonText: tr('saveScreenshot'),
-        );
-        if (location != null) {
-          await File(location.path).writeAsBytes(bytes);
-          localPath = location.path;
-        }
-        await onScreenshotSaved(bytes, localPath);
-      } else {
-        if (!mounted) return;
-        // Capture the outer context so we can pop the editor route
-        // ourselves after the async callback completes — ProImageEditor
-        // 9.x does not auto-pop once the callback goes async.
-        final editorCtx = context;
-        await Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => ProImageEditor.memory(
-              bytes,
-              configs: kImageEditorConfigs,
-              callbacks: ProImageEditorCallbacks(
-                onImageEditingComplete: (edited) async {
-                  final location = await getSaveLocation(
-                    suggestedName:
-                        'screenshot-${DateTime.now().millisecondsSinceEpoch}.png',
-                    confirmButtonText: tr('saveScreenshot'),
-                  );
-                  if (location != null) {
-                    await File(location.path).writeAsBytes(edited);
-                    localPath = location.path;
-                  }
-                  if (sessionProvider.hasRunningSession) {
-                    await sessionProvider.saveScreenshotBytes(edited);
-                  }
-                  await onScreenshotSaved(edited, localPath);
-                  if (editorCtx.mounted) {
-                    Navigator.of(editorCtx).pop(edited);
-                  }
-                },
-              ),
-            ),
-          ),
-        );
-      }
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => screenshotting = false);
-      _showSnackBar('${tr('screenshotFailed')}: $e');
-    }
-  }
-
+  // ── Formatting ─────────────────────────────────────────────────────────
   String formatSeconds(int total) {
     final m = total ~/ 60;
     final s = total % 60;
     return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
 
-  /// Recording button with five visual states. All state comes from
-  /// the active device's SavedDevices row (no local State fields, so
-  /// navigating away and back doesn't tear the UI down):
-  ///
-  ///   1. another owner is recording  → disabled, "录屏中(在{owner})"
-  ///   2. we are saving (pulling)     → disabled, "保存中..." + spinner
-  ///   3. we are recording            → red stop button with timer
-  ///   4. we are not recording        → red-100 tonal, "录屏"
   Widget buildRecordingButton() {
     final s = serial;
     final row = currentDeviceRow;
 
-    // ── 1. Another surface is recording — read-only hint ───────
     if (row?.recordingOwner != null &&
         row!.recordingOwner != recordOwner.dbValue) {
       final other = ScreenRecordOwnerX.fromDb(row.recordingOwner);
@@ -431,8 +454,7 @@ mixin FileBrowserCaptureMixin<T extends StatefulWidget> on State<T> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.fiber_manual_record,
-                size: 14, color: Colors.grey),
+            const Icon(Icons.fiber_manual_record, size: 14, color: Colors.grey),
             const SizedBox(width: 4),
             Text(
               other == null
@@ -440,15 +462,13 @@ mixin FileBrowserCaptureMixin<T extends StatefulWidget> on State<T> {
                   : tr('recordInProgressOtherFmt',
                       {'owner': tr(other.pageNameKey)}),
               style: TextStyle(
-                color: Colors.grey.shade700,
-                fontSize: 12,
+                color: Colors.grey.shade700, fontSize: 12,
               ),
             ),
           ],
         ),
       );
     }
-    // ── 2. We are saving (pulling) — spinner + "保存中..." ─────
     if (isOurSaving) {
       return FilledButton.tonal(
         onPressed: null,
@@ -460,8 +480,7 @@ mixin FileBrowserCaptureMixin<T extends StatefulWidget> on State<T> {
           mainAxisSize: MainAxisSize.min,
           children: [
             const SizedBox(
-              width: 14,
-              height: 14,
+              width: 14, height: 14,
               child: CircularProgressIndicator(strokeWidth: 2),
             ),
             const SizedBox(width: 6),
@@ -470,7 +489,6 @@ mixin FileBrowserCaptureMixin<T extends StatefulWidget> on State<T> {
         ),
       );
     }
-    // ── 3. We are recording — red stop button with timer ───────
     if (isOurRecording) {
       return FilledButton.tonal(
         onPressed: stopRecording,
@@ -491,7 +509,6 @@ mixin FileBrowserCaptureMixin<T extends StatefulWidget> on State<T> {
         ),
       );
     }
-    // ── 4. Idle — start button ────────────────────────────────
     return FilledButton.tonal(
       onPressed: s == null ? null : startRecording,
       style: FilledButton.styleFrom(

@@ -19,7 +19,7 @@ import '../../utils/time_formatters.dart';
 import '../../widgets/safe_dialog.dart';
 import '../../widgets/session_timeline_item.dart';
 import '../../widgets/offline_guard.dart';
-import '../../mixins/test_session_capture_mixin.dart';
+import '../../mixins/screen_capture_mixin.dart';
 import 'session_preview_widgets.dart';
 
 /// Embedded session workflow widget for the hub's right panel.
@@ -35,7 +35,7 @@ class TestSessionActiveContent extends StatefulWidget {
 }
 
 class _TestSessionActiveContentState extends State<TestSessionActiveContent>
-    with TestSessionCaptureMixin<TestSessionActiveContent> {
+    with ScreenCaptureMixin<TestSessionActiveContent> {
   final bool _busy = false;
   bool _logcatRunning = false;
   int _logcatSeconds = 0;
@@ -53,9 +53,10 @@ class _TestSessionActiveContentState extends State<TestSessionActiveContent>
   @override
   late bool screenshotting;
 
+  @override
+  CaptureMode get captureMode => CaptureMode.testSession;
+
   /// Stable device identity (ro.serialno). Survives reconnects.
-  /// Handed to `ApiClient` directly; the API boundary resolves
-  /// it to the current adb address on demand.
   @override
   String? get serial => context.read<DeviceSerialScope>().serial;
 
@@ -69,7 +70,7 @@ class _TestSessionActiveContentState extends State<TestSessionActiveContent>
       context.read<AppDatabase>().savedDevicesDao;
 
   @override
-  Future<void> onScreenshotSaved(Uint8List bytes, String? localPath) async {
+  Future<void> onScreenshotSaved(Uint8List bytes, String? path) async {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -80,7 +81,7 @@ class _TestSessionActiveContentState extends State<TestSessionActiveContent>
   }
 
   @override
-  Future<void> onVideoSaved(Uint8List bytes, String relativePath) async {
+  Future<void> onVideoSaved(Uint8List bytes, String? path) async {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(

@@ -20,7 +20,7 @@ import '../widgets/file_sheet_actions.dart';
 import '../widgets/info_row.dart';
 import '../widgets/offline_guard.dart';
 import '../mixins/device_reconnect_mixin.dart';
-import '../mixins/file_browser_capture_mixin.dart';
+import '../mixins/screen_capture_mixin.dart';
 import '../providers/test_session_provider.dart';
 import '../providers/locale_provider.dart';
 import '../providers/device_provider.dart';
@@ -50,7 +50,7 @@ class FileBrowserScreen extends StatefulWidget {
 }
 
 class _FileBrowserScreenState extends State<FileBrowserScreen>
-    with FileBrowserCaptureMixin<FileBrowserScreen>, DeviceReconnectMixin<FileBrowserScreen> {
+    with ScreenCaptureMixin<FileBrowserScreen>, DeviceReconnectMixin<FileBrowserScreen> {
   /// Stable device identity (ro.serialno). Survives reconnects —
   /// handed to `ApiClient` directly; the API boundary resolves
   /// it to the current adb address on demand.
@@ -99,7 +99,9 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
     }
   }
 
-  // ── FileBrowserCaptureMixin 实现 ─────────────────────────────
+  // ── ScreenCaptureMixin 实现 ─────────────────────────────────
+  @override
+  CaptureMode get captureMode => CaptureMode.fileBrowser;
   @override
   ApiClient get apiClient => context.read<ApiClient>();
   @override
@@ -112,29 +114,19 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
   String? get serial => _selectedSerial;
 
   @override
-  Future<void> onScreenshotSaved(Uint8List bytes, String? localPath) async {
-    // The mixin has already shown the save dialog and written the file
-    // (when localPath != null). Only confirm with a snackbar here —
-    // showing another getSaveLocation would pop the dialog a second
-    // time. If the user cancelled in the mixin's dialog, localPath is
-    // null and there is nothing to confirm.
-    if (localPath == null) return;
+  Future<void> onScreenshotSaved(Uint8List bytes, String? path) async {
+    if (path == null) return;
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(tr('savedTo', {'path': localPath})),
+        content: Text(tr('savedTo', {'path': path})),
         behavior: SnackBarBehavior.floating,
       ),
     );
   }
 
   @override
-  Future<void> onVideoSaved(Uint8List bytes) async {
-    // The in-app preview is disabled (see lib/widgets/video_preview.dart).
-    // Hand the bytes straight to the user: pop a save-location picker
-    // and write the file. If the user cancels, the bytes are dropped
-    // (the backend's recording is already saved on-device under its
-    // own folder).
+  Future<void> onVideoSaved(Uint8List bytes, String? path) async {
     if (bytes.isEmpty) return;
     if (!mounted) return;
     final location = await getSaveLocation(
