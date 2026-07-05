@@ -4,6 +4,7 @@ part of 'package:adb_tool/i18n.dart';
 const _locSidebarZh = <String, String>{
   'title': 'ADB 工具',
   'devices': '设备',
+  'tools': '工具',
   'noDevices': '没有连接的设备',
   'noDevicesHint': '通过 USB 或 WiFi 连接设备',
   'theme': '主题',
@@ -126,6 +127,7 @@ const _locSidebarZh = <String, String>{
 const _locSidebarEn = <String, String>{
   'title': 'ADB Tool',
   'devices': 'Devices',
+  'tools': 'Tools',
   'noDevices': 'No devices',
   'noDevicesHint': 'Connect via USB or WiFi',
   'theme': 'Theme',

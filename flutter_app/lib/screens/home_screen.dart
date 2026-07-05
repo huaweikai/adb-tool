@@ -13,6 +13,7 @@ import '../providers/test_session_provider.dart';
 import '../providers/emulator_engine_provider.dart';
 import '../providers/emulator_java_provider.dart';
 import '../i18n.dart';
+import '../design/design_tokens.dart';
 import '../widgets/recording_fab.dart';
 import 'device_status_screen.dart';
 import 'logcat_screen.dart';
@@ -63,6 +64,19 @@ const _backendLogKey = '_backend_logs';
 const _testConfigKey = '_test_config';
 const _emulatorKey = '_emulator_settings';
 const _settingsKey = '_settings';
+
+/// Digit keys for keyboard navigation (Cmd/Ctrl+1~9).
+const _navDigitKeys = <LogicalKeyboardKey>[
+  LogicalKeyboardKey.digit1,
+  LogicalKeyboardKey.digit2,
+  LogicalKeyboardKey.digit3,
+  LogicalKeyboardKey.digit4,
+  LogicalKeyboardKey.digit5,
+  LogicalKeyboardKey.digit6,
+  LogicalKeyboardKey.digit7,
+  LogicalKeyboardKey.digit8,
+  LogicalKeyboardKey.digit9,
+];
 
 class _CachedScreen extends StatelessWidget {
   final String? serial;
@@ -447,23 +461,49 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       });
     }
 
-    return Scaffold(
-      body: Column(
-        children: [
-          if (!backendOnline) _buildOfflineBanner(context),
-          if (snapshot.lastDbError != null)
-            _buildDbErrorBanner(context, snapshot.lastDbError!),
-          Expanded(
-            child: Row(
-              children: [
-                _buildResizableSidebar(context, savedDevices, backendOnline),
-                Expanded(child: _buildContent()),
-              ],
-            ),
+    final isMacOS = defaultTargetPlatform == TargetPlatform.macOS;
+
+    return CallbackShortcuts(
+      bindings: {
+        // Toggle sidebar: Cmd/Ctrl+B
+        SingleActivator(LogicalKeyboardKey.keyB, meta: isMacOS, control: !isMacOS):
+            _toggleSidebarCollapsed,
+        // Navigate to device function: Cmd/Ctrl+1~8
+        for (int i = 0; i < NavItem.values.length && i < _navDigitKeys.length; i++)
+          SingleActivator(_navDigitKeys[i], meta: isMacOS, control: !isMacOS):
+            () => _navigateShortcut(i + 1),
+      },
+      child: Focus(
+        autofocus: true,
+        child: Scaffold(
+          body: Column(
+            children: [
+              if (!backendOnline) _buildOfflineBanner(context),
+              if (snapshot.lastDbError != null)
+                _buildDbErrorBanner(context, snapshot.lastDbError!),
+              Expanded(
+                child: Row(
+                  children: [
+                    _buildResizableSidebar(context, savedDevices, backendOnline),
+                    Expanded(child: _buildContent()),
+                  ],
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
+  }
+
+  void _navigateShortcut(int index) {
+    final items = NavItem.values;
+    if (index < 1 || index > items.length) return;
+    final activeSerials = _expandedSerials.toList();
+    if (activeSerials.isEmpty) return;
+    // Use the last expanded device
+    final serial = activeSerials.last;
+    _navigateTo(serial, items[index - 1]);
   }
 
   Widget _buildContent() {
@@ -708,11 +748,24 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.phone_android,
-                              size: 20,
-                              color: isActiveDevice
+                          CircleAvatar(
+                              radius: 12,
+                              backgroundColor: isActiveDevice
                                   ? theme.colorScheme.primary
-                                  : theme.colorScheme.onSurfaceVariant),
+                                  : theme.colorScheme.surfaceContainerHighest,
+                              child: Text(
+                                d.displayName.isNotEmpty
+                                    ? d.displayName[0].toUpperCase()
+                                    : '?',
+                                style: TextStyle(
+                                  fontSize: AppFontSize.sm,
+                                  fontWeight: FontWeight.w600,
+                                  color: isActiveDevice
+                                      ? theme.colorScheme.onPrimary
+                                      : theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ),
                           const SizedBox(height: 2),
                           Container(
                             width: 6,
@@ -824,9 +877,79 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  /// Section header for sidebar zones.
+  Widget _buildSectionHeader(
+    ThemeData theme, {
+    required String title,
+    String? subtitle,
+    List<Widget>? actions,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+          AppSpacing.md, AppSpacing.sm, AppSpacing.sm, AppSpacing.xs),
+      child: Row(
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: AppFontSize.xs,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.5,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          if (subtitle != null) ...[
+            const SizedBox(width: AppSpacing.xs),
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primary.withAlpha(30),
+                borderRadius: BorderRadius.circular(AppRadius.full),
+              ),
+              child: Text(
+                subtitle,
+                style: TextStyle(
+                  fontSize: AppFontSize.xs,
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+            ),
+          ],
+          const Spacer(),
+          if (actions != null) ...actions,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildIconAction(
+    ThemeData theme, {
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onTap,
+    Color? color,
+  }) {
+    final fg = color ?? theme.colorScheme.onSurfaceVariant;
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: Icon(icon, size: 16, color: fg),
+        ),
+      ),
+    );
+  }
+
   Widget _buildSidebar(
       BuildContext context, List<SavedDevice> devices, bool online) {
     final theme = Theme.of(context);
+    final deviceProvider = context.read<DeviceProvider>();
+    final api = context.read<ApiClient>();
+
     return Container(
       width: _sidebarWidth.value,
       decoration: BoxDecoration(
@@ -838,6 +961,35 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         children: [
           _buildHeader(theme),
           const Divider(height: 1),
+          _buildSectionHeader(
+            theme,
+            title: tr('devices'),
+            subtitle: devices.isNotEmpty ? '${devices.length}' : null,
+            actions: [
+              _buildIconAction(theme,
+                  icon: Icons.sync,
+                  tooltip: tr('refresh'),
+                  onTap: () => deviceProvider.refresh(api)),
+              _buildIconAction(theme,
+                  icon: Icons.wifi_tethering,
+                  tooltip: tr('wirelessAdb'),
+                  onTap: _showWirelessAdbDialog),
+              if (widget.onRestart != null)
+                _buildIconAction(theme,
+                    icon: Icons.refresh,
+                    tooltip: tr('restart'),
+                    onTap: () {
+                      widget.onRestart!();
+                      _clearAllState();
+                    }),
+              if (widget.onShutdown != null)
+                _buildIconAction(theme,
+                    icon: Icons.power_settings_new,
+                    tooltip: tr('shutdown'),
+                    color: theme.colorScheme.error,
+                    onTap: () => _confirmShutdown(context)),
+            ],
+          ),
           Expanded(
             child: _DeviceTreeArea(
               expandedSerials: _expandedSerials,
@@ -852,6 +1004,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ),
           ),
           const Divider(height: 1),
+          _buildSectionHeader(
+            theme,
+            title: tr('tools'),
+          ),
           _buildGlobalEntry(
             theme,
             keyName: _testConfigKey,
@@ -866,10 +1022,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             icon: Icons.smartphone,
             label: tr('emulatorSettings.title'),
             badge: 'Android',
-            // Beta tag: emulator Phase 1-4 is feature-incomplete
-            // (no AVD hot-resize, no snapshot UI, no multi-display, see
-            // docs/code-review-feature-emulator-prep.md). Drawing a
-            // visible BETA so users know to expect rough edges.
             extraBadge: 'BETA',
             onTap: _openEmulatorSettings,
           ),
@@ -895,134 +1047,63 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildHeader(ThemeData theme) {
-    final deviceProvider = context.read<DeviceProvider>();
-    final api = context.read<ApiClient>();
-
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: Row(
         children: [
-          Row(
-            children: [
-              Icon(Icons.adb, size: 20, color: theme.colorScheme.primary),
-              const SizedBox(width: 8),
-              // Expanded (not Spacer + loose Text): the title must shrink first
-              // when sidebar is narrow (during drag toward min=200px), otherwise
-              // the right-side language toggle + collapse chevron overflow the row.
-              Expanded(
-                child: Text(
-                  'ADB Tool',
-                  style: theme.textTheme.titleSmall
-                      ?.copyWith(fontWeight: FontWeight.w600),
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
-                ),
-              ),
-              GestureDetector(
-                onTap: () => context.read<LocaleProvider>().toggle(),
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: theme.dividerColor),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(
-                      context.read<LocaleProvider>().currentLang == 'zh'
-                          ? 'EN'
-                          : '文',
-                      style: const TextStyle(fontSize: 10)),
-                ),
-              ),
-              const SizedBox(width: 4),
-              Tooltip(
-                message: tr('collapseSidebar'),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(6),
-                  onTap: _toggleSidebarCollapsed,
-                  child: Padding(
-                    padding: const EdgeInsets.all(4),
-                    child: Icon(Icons.chevron_left,
-                        size: 18, color: theme.colorScheme.onSurfaceVariant),
-                  ),
-                ),
-              ),
-            ],
+          Icon(Icons.adb, size: 20, color: theme.colorScheme.primary),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Text(
+              'ADB Tool',
+              style: theme.textTheme.titleSmall
+                  ?.copyWith(fontWeight: FontWeight.w600),
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
+            ),
           ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _headerAction(
-                theme,
-                icon: Icons.sync,
-                label: tr('refresh'),
-                onTap: () => deviceProvider.refresh(api),
+          Tooltip(
+            message: tr('theme'),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(AppRadius.sm),
+              onTap: () => context.read<ThemeProvider>().toggle(),
+              child: Padding(
+                padding: const EdgeInsets.all(4),
+                child: Icon(Icons.brightness_6, size: 16,
+                    color: theme.colorScheme.onSurfaceVariant),
               ),
-              _headerAction(
-                theme,
-                icon: Icons.wifi_tethering,
-                label: tr('wirelessAdb'),
-                onTap: _showWirelessAdbDialog,
+            ),
+          ),
+          const SizedBox(width: 4),
+          GestureDetector(
+            onTap: () => context.read<LocaleProvider>().toggle(),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+              decoration: BoxDecoration(
+                border: Border.all(color: theme.dividerColor),
+                borderRadius: BorderRadius.circular(AppRadius.sm),
               ),
-              if (widget.onRestart != null)
-                _headerAction(
-                  theme,
-                  icon: Icons.refresh,
-                  label: tr('restart'),
-                  onTap: () {
-                    widget.onRestart!();
-                    _clearAllState();
-                  },
-                ),
-              if (widget.onShutdown != null)
-                _headerAction(
-                  theme,
-                  icon: Icons.power_settings_new,
-                  label: tr('shutdown'),
-                  color: theme.colorScheme.error,
-                  onTap: () => _confirmShutdown(context),
-                ),
-              _headerAction(
-                theme,
-                icon: Icons.brightness_6,
-                label: tr('theme'),
-                onTap: () => context.read<ThemeProvider>().toggle(),
+              child: Text(
+                  context.read<LocaleProvider>().currentLang == 'zh'
+                      ? 'EN'
+                      : '文',
+                  style: const TextStyle(fontSize: AppFontSize.sm)),
+            ),
+          ),
+          const SizedBox(width: 4),
+          Tooltip(
+            message: tr('collapseSidebar'),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(AppRadius.sm),
+              onTap: _toggleSidebarCollapsed,
+              child: Padding(
+                padding: const EdgeInsets.all(4),
+                child: Icon(Icons.chevron_left,
+                    size: 18, color: theme.colorScheme.onSurfaceVariant),
               ),
-            ],
+            ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _headerAction(
-    ThemeData theme, {
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-    Color? color,
-  }) {
-    final foreground = color ?? theme.colorScheme.onSurfaceVariant;
-    return Material(
-      color: theme.colorScheme.surfaceContainerHighest.withAlpha(120),
-      borderRadius: BorderRadius.circular(8),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 14, color: foreground),
-              const SizedBox(width: 5),
-              Text(label, style: TextStyle(fontSize: 11, color: foreground)),
-            ],
-          ),
-        ),
       ),
     );
   }
