@@ -244,6 +244,8 @@ class _ScreenMirrorScreenState extends State<ScreenMirrorScreen> {
     final recording = context.select<ScrcpyRecordStateProvider, ScrcpyRecordStatus>(
         (p) => p.statusFor(stable));
     final isRunning = status.running;
+    final elapsed = context.select<MirrorStateProvider, int>(
+        (p) => p.elapsedFor(stable));
     final recordingBlocksMirror =
         recording.running && recording.serial == stable;
 
@@ -255,7 +257,7 @@ class _ScreenMirrorScreenState extends State<ScreenMirrorScreen> {
           final rightPane = _RightPane(
             serial: stable,
             isRunning: isRunning,
-            elapsed: status.elapsedSeconds,
+            elapsed: elapsed,
             busy: busy,
             recording: recording,
             recordingBlocksMirror: recordingBlocksMirror,
