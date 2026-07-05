@@ -20,6 +20,8 @@ import 'package:provider/provider.dart';
 
 import '../i18n.dart';
 import '../providers/locale_provider.dart';
+import '../design/cards.dart';
+import '../design/design_tokens.dart';
 import '../widgets/cleanup_cache_dialog.dart';
 import '../widgets/recording_settings_section.dart';
 
@@ -50,9 +52,15 @@ class SettingsScreen extends StatelessWidget {
               icon: Icons.cleaning_services,
               label: tr('settings.sectionCache'),
             ),
-            const SizedBox(height: 8),
-            _CacheSection(),
-            const SizedBox(height: 24),
+            const SizedBox(height: AppSpacing.sm),
+            SettingCard(
+              icon: Icons.delete_sweep_outlined,
+              title: tr('settings.cache.cleanup'),
+              description: tr('settings.cache.cleanupDesc'),
+              actionLabel: tr('settings.cache.cleanupButton'),
+              onAction: () => showCleanupCacheDialog(context),
+            ),
+            const SizedBox(height: AppSpacing.xl),
             _SectionHeader(
               icon: Icons.info_outline,
               label: tr('settings.sectionAbout'),
@@ -84,49 +92,6 @@ class _SectionHeader extends StatelessWidget {
               ?.copyWith(fontWeight: FontWeight.w600),
         ),
       ],
-    );
-  }
-}
-
-class _CacheSection extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          children: [
-            Icon(Icons.delete_sweep_outlined,
-                color: theme.colorScheme.onSurfaceVariant),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    tr('settings.cache.cleanup'),
-                    style: theme.textTheme.titleSmall
-                        ?.copyWith(fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    tr('settings.cache.cleanupDesc'),
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 12),
-            FilledButton.tonalIcon(
-              onPressed: () => showCleanupCacheDialog(context),
-              icon: const Icon(Icons.cleaning_services, size: 16),
-              label: Text(tr('settings.cache.cleanupButton')),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

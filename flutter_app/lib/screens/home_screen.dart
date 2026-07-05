@@ -27,6 +27,7 @@ import 'test_session/test_session_hub_screen.dart';
 import 'test_config_screen.dart';
 import '../widgets/wireless_adb_dialog.dart';
 import '../widgets/command_palette.dart';
+import '../widgets/empty_state.dart';
 import 'screen_mirror_screen.dart';
 import 'emulator_settings_screen.dart';
 import 'settings_screen.dart';
@@ -607,20 +608,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildWelcome() {
-    final theme = Theme.of(context);
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.android,
-              size: 64,
-              color: theme.colorScheme.onSurfaceVariant.withAlpha(60)),
-          const SizedBox(height: 16),
-          Text(tr('welcome'),
-              style: theme.textTheme.bodyMedium
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-        ],
-      ),
+    return EmptyState(
+      icon: Icons.android,
+      title: tr('appTitle'),
+      subtitle: tr('welcome'),
     );
   }
 

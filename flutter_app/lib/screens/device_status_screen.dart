@@ -9,6 +9,7 @@ import '../providers/locale_provider.dart';
 import '../services/api_client.dart';
 import '../db/database.dart';
 import '../design/design_tokens.dart';
+import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_view.dart';
 import '../widgets/sparkline.dart';
@@ -154,17 +155,10 @@ class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
     context.watch<DeviceSerialScope>();
     context.watch<LocaleProvider>();
     if (_selectedSerial == null) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.monitor_heart_outlined,
-                size: 48, color: Colors.grey),
-            const SizedBox(height: 12),
-            Text(tr('selectDeviceSidebar'),
-                style: const TextStyle(color: Colors.grey)),
-          ],
-        ),
+      return EmptyState(
+        icon: Icons.monitor_heart_outlined,
+        title: tr('monitorTitle'),
+        subtitle: tr('selectDeviceSidebar'),
       );
     }
 
