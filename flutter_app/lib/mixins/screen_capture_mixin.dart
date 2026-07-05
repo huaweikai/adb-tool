@@ -409,7 +409,6 @@ mixin ScreenCaptureMixin<T extends StatefulWidget> on State<T> {
       if (srcPath != null) {
         if (captureMode == CaptureMode.testSession) {
           savedPath = await sessionProvider.saveVideoFile(srcPath);
-          try { await File(srcPath).delete(); } catch (_) {}
         } else {
           savedPath = srcPath;
         }
@@ -417,11 +416,14 @@ mixin ScreenCaptureMixin<T extends StatefulWidget> on State<T> {
 
       await savedDevicesDao.clearScreenRecord(s);
       await _syncDeviceRowFromDb();
-      await strategy.cleanup();
 
       if (savedPath != null) {
         await onVideoSaved(savedPath);
+        // Consumer has finished with the file (copied to chosen location
+        // or saved to session); now safe to delete the source.
+        await strategy.cleanup();
       } else {
+        await strategy.cleanup();
         await onVideoDiscarded();
       }
     } catch (e) {
