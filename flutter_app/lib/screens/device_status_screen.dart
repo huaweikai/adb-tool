@@ -7,8 +7,11 @@ import '../models/device_status.dart';
 import '../providers/device_provider.dart';
 import '../providers/locale_provider.dart';
 import '../services/api_client.dart';
+import '../db/database.dart';
+import '../design/design_tokens.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_view.dart';
+import '../widgets/sparkline.dart';
 
 class DeviceStatusScreen extends StatefulWidget {
   const DeviceStatusScreen({super.key});
@@ -40,6 +43,10 @@ class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
   String? _error;
   int _consecutiveErrors = 0;
   static const int _maxConsecutiveErrors = 3;
+  static const int _maxHistory = 30;
+
+  final List<double> _cpuHistory = [];
+  final List<double> _memHistory = [];
 
   @override
   void initState() {
@@ -109,6 +116,7 @@ class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
       final status = await api.getDeviceStatus(stable);
       if (!mounted) return;
       _consecutiveErrors = 0;
+      _pushHistory(status);
       setState(() {
         _status = status;
         _loading = false;
@@ -125,6 +133,19 @@ class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
           _autoRefresh = false;
         }
       });
+    }
+  }
+
+  void _pushHistory(DeviceStatus status) {
+    final cpu = _parsePercent(status.cpuUsage) / 100;
+    if (cpu > 0) {
+      _cpuHistory.add(cpu.clamp(0.0, 1.0));
+      if (_cpuHistory.length > _maxHistory) _cpuHistory.removeAt(0);
+    }
+    final mem = _parsePercent(status.memoryUsedPercent) / 100;
+    if (mem > 0) {
+      _memHistory.add(mem.clamp(0.0, 1.0));
+      if (_memHistory.length > _maxHistory) _memHistory.removeAt(0);
     }
   }
 
@@ -248,19 +269,28 @@ class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
         final columns = _gridColumns(constraints.maxWidth, maxColumns: 4);
         return CustomScrollView(
           slivers: [
+            // Summary header
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, AppSpacing.xs),
+                child: _buildSummaryHeader(context, status),
+              ),
+            ),
             SliverPadding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
               sliver: SliverMasonryGrid.count(
                 crossAxisCount: columns,
-                mainAxisSpacing: 12,
-                crossAxisSpacing: 12,
+                mainAxisSpacing: AppSpacing.md,
+                crossAxisSpacing: AppSpacing.md,
                 childCount: 10,
                 itemBuilder: (context, index) =>
                     _buildDashboardItem(context, status, index),
               ),
             ),
             SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.lg),
               sliver: SliverToBoxAdapter(
                 child: _buildProcesses(context, status.topProcesses),
               ),
@@ -271,28 +301,129 @@ class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
     );
   }
 
+  Widget _buildSummaryHeader(BuildContext context, DeviceStatus status) {
+    final theme = Theme.of(context);
+    final deviceProvider = context.read<DeviceProvider>();
+    final serial = _selectedSerial;
+    final device = serial != null
+        ? deviceProvider.savedDevices
+            .where((d) => d.serial == serial)
+            .firstOrNull
+        : null;
+    final healthOk = status.thermalStatus.toLowerCase().contains('cool') ||
+        status.thermalStatus.toLowerCase().contains('normal');
+
+    // Gather summary chips
+    final chips = <Widget>[
+      _summaryChip(theme, Icons.phone_android, device?.displayName ?? serial ?? '--'),
+      if (status.resolution.isNotEmpty)
+        _summaryChip(theme, Icons.aspect_ratio, status.resolution),
+      if (status.uptime.isNotEmpty)
+        _summaryChip(theme, Icons.timer_outlined, status.uptime),
+      if (status.batteryStatus.isNotEmpty)
+        _summaryChip(theme, Icons.battery_charging_full, status.batteryStatus),
+    ];
+
+    return Container(
+      padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: theme.dividerColor),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.monitor_heart_outlined,
+              size: 16, color: theme.colorScheme.primary),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: chips
+                    .map((c) => Padding(
+                          padding:
+                              const EdgeInsets.only(right: AppSpacing.md),
+                          child: c,
+                        ))
+                    .toList(),
+              ),
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          // Health status dot
+          Tooltip(
+            message: status.thermalStatus.isNotEmpty
+                ? '${tr('monitorThermalStatus')}: ${status.thermalStatus}'
+                : '',
+            child: Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: healthOk ? Colors.green : Colors.orange,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _summaryChip(
+      ThemeData theme, IconData icon, String label) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 13, color: theme.colorScheme.onSurfaceVariant),
+        const SizedBox(width: AppSpacing.xs),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: AppFontSize.body,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+          overflow: TextOverflow.ellipsis,
+        ),
+      ],
+    );
+  }
+
   Widget _buildDashboardItem(
     BuildContext context,
     DeviceStatus status,
     int index,
   ) {
+    final cpuPct = _parsePercent(status.cpuUsage) / 100;
+    final memPct = _parsePercent(status.memoryUsedPercent) / 100;
+    final battPct = _parsePercent(status.batteryLevel) / 100;
+
     switch (index) {
       case 0:
         return _metricCard(context, tr('monitorBattery'), Icons.battery_full,
             _value(status.batteryLevel, suffix: '%'),
             subtitle: _join([status.batteryStatus, status.batteryTemperature]),
-            progress: _parsePercent(status.batteryLevel) / 100);
+            progress: battPct,
+            warningThreshold: 0.3,
+            criticalThreshold: 0.15);
       case 1:
         return _metricCard(context, tr('monitorCpuUsage'), Icons.memory,
             _value(status.cpuUsage),
             subtitle: '${tr('monitorCpuLoad')}: ${_value(status.cpuLoad)}',
-            progress: _parsePercent(status.cpuUsage) / 100);
+            progress: cpuPct,
+            warningThreshold: 0.5,
+            criticalThreshold: 0.8,
+            sparkline: _cpuHistory);
       case 2:
         return _metricCard(context, tr('monitorMemory'), Icons.storage,
             _value(status.memoryUsedPercent),
             subtitle:
                 '${tr('monitorAvailable')}: ${_value(status.memoryAvailable)} / ${_value(status.memoryTotal)}',
-            progress: _parsePercent(status.memoryUsedPercent) / 100);
+            progress: memPct,
+            warningThreshold: 0.5,
+            criticalThreshold: 0.8,
+            sparkline: _memHistory);
       case 3:
         return _metricCard(context, tr('monitorStorage'), Icons.folder_outlined,
             _value(status.storageUsedPercent),
@@ -476,12 +607,34 @@ class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
     String value, {
     String subtitle = '',
     double progress = -1,
+    double? warningThreshold,
+    double? criticalThreshold,
+    List<double>? sparkline,
   }) {
     final theme = Theme.of(context);
     final hasProgress = progress >= 0;
+
+    // Threshold-based left border color
+    Color borderColor = Colors.transparent;
+    if (hasProgress && progress >= 0) {
+      if (criticalThreshold != null && progress >= criticalThreshold) {
+        borderColor = theme.colorScheme.error;
+      } else if (warningThreshold != null && progress >= warningThreshold) {
+        borderColor = Colors.orange;
+      } else if (warningThreshold != null) {
+        borderColor = Colors.green;
+      }
+    }
+
     return Card(
       margin: EdgeInsets.zero,
-      child: Padding(
+      clipBehavior: Clip.antiAlias,
+      child: Container(
+        decoration: borderColor != Colors.transparent
+            ? BoxDecoration(
+                border: Border(left: BorderSide(width: 3, color: borderColor)),
+              )
+            : null,
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -519,6 +672,18 @@ class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
                   valueColor: AlwaysStoppedAnimation<Color>(
                       _heatColor(progress * 100, theme)),
                 ),
+              ),
+            ],
+            // Sparkline
+            if (sparkline != null && sparkline.length >= 2) ...[
+              const SizedBox(height: AppSpacing.sm),
+              Sparkline(
+                data: sparkline,
+                height: 24,
+                color: borderColor != Colors.transparent
+                    ? borderColor
+                    : theme.colorScheme.primary,
+                showArea: true,
               ),
             ],
             const SizedBox(height: 4),
