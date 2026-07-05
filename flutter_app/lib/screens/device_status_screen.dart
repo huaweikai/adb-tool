@@ -130,6 +130,7 @@ class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<DeviceSerialScope>();
     context.watch<LocaleProvider>();
     if (_selectedSerial == null) {
       return Center(

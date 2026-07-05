@@ -64,6 +64,15 @@
 //        ip:port, and treating ip:port as the device identity made
 //        one physical device become N "new" devices in the sidebar
 //        with no way to remove them (test_sessions FK crash).
+//   v10 — app_states: add `screenRecordMethod` (default 'adb') and
+//        `scrcpyRecordOutputDir` (nullable). These are the two new
+//        user-facing knobs the recording settings page exposes —
+//        see lib/screens/recording_settings_screen.dart.
+//   v11 — add FK indexes on the five test-session child tables'
+//        `session_id` (events / artifacts / issues / notes / plan_items)
+//        and an index on `saved_devices(address)`. The child-table queries
+//        (`watch*ForSession`) filter by session_id on every timeline /
+//        side-panel render; without an index each is a full table scan.
 import 'dart:io';
 
 import 'package:drift/drift.dart';
@@ -124,13 +133,17 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 9;
+  int get schemaVersion => 11;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
         onCreate: (m) async {
           await m.createAll();
           await _createTestSessionIndices();
+          await customStatement(
+            'CREATE INDEX IF NOT EXISTS idx_saved_devices_address '
+            'ON saved_devices (address)',
+          );
         },
         onUpgrade: (m, from, to) async {
           if (from < 2) {
@@ -149,7 +162,26 @@ class AppDatabase extends _$AppDatabase {
             // v2 → v3: add the screen-record-owner column and a
             // supporting index for the "is anyone recording on this
             // device" query.
-            await m.addColumn(testSessions, testSessions.screenRecordOwner);
+            //
+            // Guard the addColumn: the v2 step above calls
+            // `m.createTable(testSessions)`, which generates DDL from
+            // the *current* Dart table class — and that class already
+            // declares `screenRecordOwner` (the column was added in
+            // v3 but createTable doesn't know the historical schema
+            // boundary). So a fresh v1→v3 upgrade has already created
+            // the column, and a bare `addColumn` here crashes with
+            // "duplicate column name: screen_record_owner". Only add
+            // it when the PRAGMA says the column is absent (the real
+            // v2→v3 upgrade path — table created before the column
+            // existed).
+            final cols = await customSelect(
+              'PRAGMA table_info(test_sessions)',
+            ).get();
+            final hasOwner = cols.any(
+                (row) => row.read<String>('name') == 'screen_record_owner');
+            if (!hasOwner) {
+              await m.addColumn(testSessions, testSessions.screenRecordOwner);
+            }
             await customStatement(
               'CREATE INDEX IF NOT EXISTS idx_sessions_recording_owner '
               'ON test_sessions (device_serial) WHERE screen_record_owner IS NOT NULL',
@@ -215,6 +247,31 @@ class AppDatabase extends _$AppDatabase {
               'UPDATE saved_devices SET address = serial',
             );
           }
+          if (from < 10) {
+            // v9 → v10: screen-recording method + scrcpy output dir.
+            // `screenRecordMethod` defaults to 'adb' so existing users
+            // see no behavior change. `scrcpyRecordOutputDir` is
+            // nullable — the user hasn't picked one yet (the settings
+            // page prompts for it before allowing scrcpy-mode
+            // recording to start).
+            await m.addColumn(appStates, appStates.screenRecordMethod);
+            await m.addColumn(appStates, appStates.scrcpyRecordOutputDir);
+          }
+          if (from < 11) {
+            // v10 → v11: FK indexes. The five test-session child tables
+            // are queried by `session_id` on every timeline / side-panel
+            // render (watch*ForSession); without an index each is a full
+            // table scan that grows with session history. The
+            // `saved_devices(address)` index backs the reconcile path's
+            // `getByAddress` lookup (called once per online device per
+            // refresh). Idempotent — safe to re-run on databases that
+            // already have them via onCreate.
+            await _createTestSessionIndices();
+            await customStatement(
+              'CREATE INDEX IF NOT EXISTS idx_saved_devices_address '
+              'ON saved_devices (address)',
+            );
+          }
         },
         beforeOpen: (details) async {
           await customStatement('PRAGMA foreign_keys = ON');
@@ -232,27 +289,54 @@ class AppDatabase extends _$AppDatabase {
         },
       );
 
-  /// Two SQL indices that drift's table-builder can't express declaratively:
+  /// Indices that drift's table-builder can't express declaratively:
   ///   - partial unique index enforcing "at most one running session per
   ///     device" at the DB level (defence-in-depth alongside the app-level
   ///     check in TestSessionProvider.startSession)
   ///   - composite index for the Hub's "sessions for this device, newest
   ///     first" query
+  ///   - FK indexes on the five test-session child tables' `session_id`
+  ///     column — every `watch*ForSession` query filters by it, so without
+  ///     an index each render is a full table scan that grows with history.
+  /// All idempotent (`IF NOT EXISTS`) so the same method is safe in
+  /// onCreate, the v1→v2 upgrade, and the v11 index backfill.
   Future<void> _createTestSessionIndices() async {
     await customStatement(
       'CREATE UNIQUE INDEX IF NOT EXISTS idx_one_running_per_device '
       'ON test_sessions (device_serial) WHERE status = 0',
     );
-  await customStatement(
-    'CREATE INDEX IF NOT EXISTS idx_sessions_device_started '
-    'ON test_sessions (device_serial, started_at DESC)',
-  );
-  // Partial index: "which device currently has a screen recording open"
-  await customStatement(
-    'CREATE INDEX IF NOT EXISTS idx_sessions_recording_owner '
-    'ON test_sessions (device_serial) WHERE screen_record_owner IS NOT NULL',
-  );
-}
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_sessions_device_started '
+      'ON test_sessions (device_serial, started_at DESC)',
+    );
+    // Partial index: "which device currently has a screen recording open"
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_sessions_recording_owner '
+      'ON test_sessions (device_serial) WHERE screen_record_owner IS NOT NULL',
+    );
+    // FK indexes on the child tables — every watch*ForSession query
+    // filters by session_id; without these the query plan is a SCAN.
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_events_session '
+      'ON test_session_events (session_id)',
+    );
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_artifacts_session '
+      'ON test_session_artifacts (session_id)',
+    );
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_issues_session '
+      'ON test_session_issues (session_id)',
+    );
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_notes_session '
+      'ON test_session_notes (session_id)',
+    );
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_plan_items_session '
+      'ON test_session_plan_items (session_id)',
+    );
+  }
 }
 
 LazyDatabase _openConnection() {

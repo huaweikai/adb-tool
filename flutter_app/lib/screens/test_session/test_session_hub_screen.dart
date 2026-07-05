@@ -66,7 +66,9 @@ class _TestSessionHubScreenState extends State<TestSessionHubScreen> {
       if (s != null) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
-            context.read<TestSessionProvider>().clearCurrentSessionIfDifferentDevice(s);
+            context
+                .read<TestSessionProvider>()
+                .clearCurrentSessionIfDifferentDevice(s);
           }
         });
       }
@@ -78,7 +80,8 @@ class _TestSessionHubScreenState extends State<TestSessionHubScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.usb_off,
-                size: 56, color: theme.colorScheme.onSurfaceVariant.withAlpha(80)),
+                size: 56,
+                color: theme.colorScheme.onSurfaceVariant.withAlpha(80)),
             const SizedBox(height: 16),
             Text(tr('selectDevice'), style: theme.textTheme.titleMedium),
           ],
@@ -86,7 +89,7 @@ class _TestSessionHubScreenState extends State<TestSessionHubScreen> {
       );
     }
 
-    final db = context.read<AppDatabase>();
+    final db = context.watch<AppDatabase>();
 
     return Scaffold(
       resizeToAvoidBottomInset: false,
@@ -156,8 +159,8 @@ class _StartCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final db = context.read<AppDatabase>();
-    final sessionProvider = context.read<TestSessionProvider>();
+    final db = context.watch<AppDatabase>();
+    final sessionProvider = context.watch<TestSessionProvider>();
 
     return StreamBuilder<TestSessionRow?>(
       key: ValueKey('start-card-active:$serial'),
@@ -176,20 +179,23 @@ class _StartCard extends StatelessWidget {
               const SizedBox(height: 16),
               Text(
                 active != null ? tr('continueSession') : tr('newSession'),
-                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                style: theme.textTheme.titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w600),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 12),
               if (active != null) ...[
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
                     color: Colors.green.withAlpha(30),
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Text(
                     '${tr('sessionRunning')} · ${active.name}',
-                    style: TextStyle(fontSize: 12, color: Colors.green.shade300),
+                    style:
+                        TextStyle(fontSize: 12, color: Colors.green.shade300),
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.center,
                   ),
@@ -208,7 +214,8 @@ class _StartCard extends StatelessWidget {
                     ? () => sessionProvider.loadHistoricalSession(active.id)
                     : onNewSession,
                 icon: Icon(active != null ? Icons.play_arrow : Icons.add),
-                label: Text(active != null ? tr('continueSession') : tr('newSession')),
+                label: Text(
+                    active != null ? tr('continueSession') : tr('newSession')),
                 style: FilledButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
@@ -259,7 +266,8 @@ class _HistoryPanel extends StatelessWidget {
   final String serial;
   final void Function(String sessionId) onItemTap;
 
-  const _HistoryPanel({super.key, required this.serial, required this.onItemTap});
+  const _HistoryPanel(
+      {super.key, required this.serial, required this.onItemTap});
 
   @override
   Widget build(BuildContext context) {
@@ -286,11 +294,13 @@ class _HistoryPanel extends StatelessWidget {
               ),
               child: Row(
                 children: [
-                  Icon(Icons.history, color: theme.colorScheme.primary, size: 18),
+                  Icon(Icons.history,
+                      color: theme.colorScheme.primary, size: 18),
                   const SizedBox(width: 8),
                   Text(
                     tr('sessionHistory'),
-                    style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+                    style: theme.textTheme.titleSmall
+                        ?.copyWith(fontWeight: FontWeight.w600),
                   ),
                   const Spacer(),
                   Text(
@@ -306,8 +316,8 @@ class _HistoryPanel extends StatelessWidget {
                   ? Center(
                       child: Text(
                         tr('noHistorySessions'),
-                        style: theme.textTheme.bodyMedium
-                            ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant),
                       ),
                     )
                   : ListView.separated(
@@ -318,7 +328,8 @@ class _HistoryPanel extends StatelessWidget {
                         session: sessions[i],
                         onTap: () => onItemTap(sessions[i].id),
                         onDelete: () => _deleteSession(context, sessions[i]),
-                        onExport: (type) => _exportSession(context, sessions[i], type),
+                        onExport: (type) =>
+                            _exportSession(context, sessions[i], type),
                       ),
                     ),
             ),
@@ -328,7 +339,8 @@ class _HistoryPanel extends StatelessWidget {
     );
   }
 
-  Future<void> _deleteSession(BuildContext context, TestSessionRow session) async {
+  Future<void> _deleteSession(
+      BuildContext context, TestSessionRow session) async {
     final provider = context.read<TestSessionProvider>();
     final messenger = ScaffoldMessenger.of(context);
     final confirmed = await showDialog<bool>(
@@ -349,16 +361,21 @@ class _HistoryPanel extends StatelessWidget {
     if (confirmed != true) return;
     await provider.deleteSession(session.id);
     messenger.showSnackBar(
-      SnackBar(content: Text(tr('sessionDeleted')), behavior: SnackBarBehavior.floating),
+      SnackBar(
+          content: Text(tr('sessionDeleted')),
+          behavior: SnackBarBehavior.floating),
     );
   }
 
-  Future<void> _exportSession(BuildContext context, TestSessionRow session, String exportType) async {
+  Future<void> _exportSession(
+      BuildContext context, TestSessionRow session, String exportType) async {
     final provider = context.read<TestSessionProvider>();
     final messenger = ScaffoldMessenger.of(context);
     try {
       messenger.showSnackBar(
-        SnackBar(content: Text(tr('exportingSession')), behavior: SnackBarBehavior.floating),
+        SnackBar(
+            content: Text(tr('exportingSession')),
+            behavior: SnackBarBehavior.floating),
       );
 
       String? path;
@@ -383,7 +400,9 @@ class _HistoryPanel extends StatelessWidget {
     } catch (e) {
       if (!context.mounted) return;
       messenger.showSnackBar(
-        SnackBar(content: Text('${tr('exportFailed')}: $e'), behavior: SnackBarBehavior.floating),
+        SnackBar(
+            content: Text('${tr('exportFailed')}: $e'),
+            behavior: SnackBarBehavior.floating),
       );
     }
   }
@@ -423,7 +442,8 @@ class _HistoryItem extends StatelessWidget {
                 height: 7,
                 decoration: BoxDecoration(
                   color: session.status == TestSessionStatus.finished
-                      ? Colors.green : Colors.grey,
+                      ? Colors.green
+                      : Colors.grey,
                   shape: BoxShape.circle,
                 ),
               ),
@@ -434,7 +454,8 @@ class _HistoryItem extends StatelessWidget {
                   children: [
                     Text(
                       session.name,
-                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w600, fontSize: 13),
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 3),
@@ -445,10 +466,12 @@ class _HistoryItem extends StatelessWidget {
                         _badge(session.type, theme),
                         Text(
                           elapsed != null
-                              ? tr('sessionElapsed', {'time': _fmtDuration(elapsed)})
+                              ? tr('sessionElapsed',
+                                  {'time': _fmtDuration(elapsed)})
                               : _fmtDate(session.startedAt),
-                          style: theme.textTheme.bodySmall
-                              ?.copyWith(color: theme.colorScheme.onSurfaceVariant, fontSize: 11),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                              fontSize: 11),
                         ),
                       ],
                     ),
@@ -460,8 +483,8 @@ class _HistoryItem extends StatelessWidget {
                 child: PopupMenuButton<String>(
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
-                  icon: Icon(Icons.archive_outlined, size: 16,
-                      color: theme.colorScheme.primary),
+                  icon: Icon(Icons.archive_outlined,
+                      size: 16, color: theme.colorScheme.primary),
                   tooltip: tr('exportSessionTitle'),
                   onSelected: onExport,
                   itemBuilder: (context) => [
@@ -493,8 +516,8 @@ class _HistoryItem extends StatelessWidget {
                 child: IconButton(
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
-                  icon: Icon(Icons.delete_outline, size: 16,
-                      color: theme.colorScheme.error),
+                  icon: Icon(Icons.delete_outline,
+                      size: 16, color: theme.colorScheme.error),
                   onPressed: onDelete,
                   tooltip: tr('deleteSession'),
                 ),
@@ -516,7 +539,8 @@ class _HistoryItem extends StatelessWidget {
       ),
       child: Text(
         text,
-        style: TextStyle(fontSize: 10, color: theme.colorScheme.onPrimaryContainer),
+        style: TextStyle(
+            fontSize: 10, color: theme.colorScheme.onPrimaryContainer),
         overflow: TextOverflow.ellipsis,
       ),
     );
@@ -538,7 +562,8 @@ class _SessionPreviewPanel extends StatefulWidget {
   final String sessionId;
   final VoidCallback onClose;
 
-  const _SessionPreviewPanel({super.key, required this.sessionId, required this.onClose});
+  const _SessionPreviewPanel(
+      {super.key, required this.sessionId, required this.onClose});
 
   @override
   State<_SessionPreviewPanel> createState() => _SessionPreviewPanelState();
@@ -565,7 +590,9 @@ class _SessionPreviewPanelState extends State<_SessionPreviewPanel> {
 
   Future<void> _load() async {
     try {
-      final s = await context.read<TestSessionProvider>().loadHistoricalSession(widget.sessionId);
+      final s = await context
+          .read<TestSessionProvider>()
+          .loadHistoricalSession(widget.sessionId);
       if (!mounted) return;
       setState(() {
         _session = s;
@@ -630,13 +657,15 @@ class _SessionPreviewPanelState extends State<_SessionPreviewPanel> {
                     : Icons.pending,
                 size: 16,
                 color: s.status == TestSessionStatus.finished
-                    ? Colors.green : Colors.orange,
+                    ? Colors.green
+                    : Colors.orange,
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   s.name,
-                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w600, fontSize: 14),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
@@ -648,13 +677,16 @@ class _SessionPreviewPanelState extends State<_SessionPreviewPanel> {
               const SizedBox(width: 12),
               OutlinedButton.icon(
                 onPressed: () {
-                  context.read<TestSessionProvider>().loadHistoricalSession(s.id);
+                  context
+                      .read<TestSessionProvider>()
+                      .loadHistoricalSession(s.id);
                   widget.onClose();
                 },
                 icon: const Icon(Icons.open_in_new, size: 14),
                 label: Text(tr('reopenSession')),
                 style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 ),
               ),
             ],
@@ -662,60 +694,77 @@ class _SessionPreviewPanelState extends State<_SessionPreviewPanel> {
         ),
         // ── Content ───────────────────────────────────────
         Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _infoCard(theme, [
-                  _kv(tr('sessionName'), s.name),
-                  _kv(tr('sessionType'), s.type),
-                  _kv(tr('device'),
-                      s.deviceModel.isEmpty ? s.deviceSerial : '${s.deviceModel} (${s.deviceSerial})'),
-                  if (s.packageName.isNotEmpty) _kv(tr('package'), s.packageName),
-                  _kv(tr('startedAt'), fmtDateTime(s.startedAt)),
-                  if (s.endedAt != null) _kv(tr('endedAt'), fmtDateTime(s.endedAt!)),
-                  _kv(tr('duration'), _fmtDuration(elapsed)),
-                  if (s.note.isNotEmpty) _kv(tr('sessionNote'), s.note),
-                ]),
-                const SizedBox(height: 20),
+          child: Builder(builder: (context) {
+            // Collect the section children into a flat list and hand
+            // them to ListView.builder. The previous SingleChildScrollView
+            // + Column laid out EVERY child (incl. 100+ issues / notes /
+            // artifacts) to measure the column height; ListView only
+            // builds / lays out the visible window.
+            final items = <Widget>[
+              _infoCard(theme, [
+                _kv(tr('sessionName'), s.name),
+                _kv(tr('sessionType'), s.type),
+                _kv(
+                    tr('device'),
+                    s.deviceModel.isEmpty
+                        ? s.deviceSerial
+                        : '${s.deviceModel} (${s.deviceSerial})'),
+                if (s.packageName.isNotEmpty) _kv(tr('package'), s.packageName),
+                _kv(tr('startedAt'), fmtDateTime(s.startedAt)),
+                if (s.endedAt != null)
+                  _kv(tr('endedAt'), fmtDateTime(s.endedAt!)),
+                _kv(tr('duration'), _fmtDuration(elapsed)),
+                if (s.note.isNotEmpty) _kv(tr('sessionNote'), s.note),
+              ]),
+              const SizedBox(height: 20),
 
-                // Test plan
-                _sectionTitle(theme, tr('sessionTestPlan')),
-                if (s.testPlan.isEmpty)
-                  Text(tr('noTestPlan'), style: TextStyle(color: theme.colorScheme.onSurfaceVariant))
-                else
-                  ...s.testPlan.map((item) => _planItem(theme, item)),
+              // Test plan
+              _sectionTitle(theme, tr('sessionTestPlan')),
+              if (s.testPlan.isEmpty)
+                Text(tr('noTestPlan'),
+                    style: TextStyle(color: theme.colorScheme.onSurfaceVariant))
+              else
+                ...s.testPlan.map((item) => _planItem(theme, item)),
 
-                const SizedBox(height: 16),
+              const SizedBox(height: 16),
 
-                // Issues
-                _sectionTitle(theme, '${tr('sessionIssues')} (${s.issues.length})'),
-                if (s.issues.isEmpty)
-                  Text(tr('noIssues'), style: TextStyle(color: theme.colorScheme.onSurfaceVariant))
-                else
-                  ...s.issues.map((issue) => _issueItem(theme, issue)),
+              // Issues
+              _sectionTitle(
+                  theme, '${tr('sessionIssues')} (${s.issues.length})'),
+              if (s.issues.isEmpty)
+                Text(tr('noIssues'),
+                    style: TextStyle(color: theme.colorScheme.onSurfaceVariant))
+              else
+                ...s.issues.map((issue) => _issueItem(theme, issue)),
 
-                const SizedBox(height: 16),
+              const SizedBox(height: 16),
 
-                // Notes
-                _sectionTitle(theme, '${tr('sessionNotes')} (${s.notes.length})'),
-                if (s.notes.isEmpty)
-                  Text(tr('noNotes'), style: TextStyle(color: theme.colorScheme.onSurfaceVariant))
-                else
-                  ...s.notes.map((note) => _noteItem(theme, note)),
+              // Notes
+              _sectionTitle(theme, '${tr('sessionNotes')} (${s.notes.length})'),
+              if (s.notes.isEmpty)
+                Text(tr('noNotes'),
+                    style: TextStyle(color: theme.colorScheme.onSurfaceVariant))
+              else
+                ...s.notes.map((note) => _noteItem(theme, note)),
 
-                const SizedBox(height: 16),
+              const SizedBox(height: 16),
 
-                // Artifacts
-                _sectionTitle(theme, '${tr('sessionArtifacts')} (${s.artifacts.length})'),
-                if (s.artifacts.isEmpty)
-                  Text(tr('noArtifacts'), style: TextStyle(color: theme.colorScheme.onSurfaceVariant))
-                else
-                  ...s.artifacts.map((a) => previewArtifactItem(theme, a, sessionId: s.id)),
-              ],
-            ),
-          ),
+              // Artifacts
+              _sectionTitle(
+                  theme, '${tr('sessionArtifacts')} (${s.artifacts.length})'),
+              if (s.artifacts.isEmpty)
+                Text(tr('noArtifacts'),
+                    style: TextStyle(color: theme.colorScheme.onSurfaceVariant))
+              else
+                ...s.artifacts
+                    .map((a) => previewArtifactItem(theme, a, sessionId: s.id)),
+            ];
+            return ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: items.length,
+              itemBuilder: (context, i) => items[i],
+            );
+          }),
         ),
       ],
     );
@@ -724,7 +773,9 @@ class _SessionPreviewPanelState extends State<_SessionPreviewPanel> {
   Widget _sectionTitle(ThemeData theme, String title) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: Text(title, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+      child: Text(title,
+          style: theme.textTheme.titleSmall
+              ?.copyWith(fontWeight: FontWeight.w600)),
     );
   }
 
@@ -748,7 +799,9 @@ class _SessionPreviewPanelState extends State<_SessionPreviewPanel> {
             SizedBox(
               width: 90,
               child: Text(label,
-                  style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                  style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant)),
             ),
             Expanded(child: Text(value, style: const TextStyle(fontSize: 12))),
           ],
@@ -772,12 +825,18 @@ class _SessionPreviewPanelState extends State<_SessionPreviewPanel> {
                   children: [
                     if (item.flowName.isNotEmpty)
                       Text(item.flowName,
-                          style: TextStyle(fontSize: 11, color: theme.colorScheme.onSurfaceVariant)),
-                    Text(item.step, style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13)),
+                          style: TextStyle(
+                              fontSize: 11,
+                              color: theme.colorScheme.onSurfaceVariant)),
+                    Text(item.step,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w500, fontSize: 13)),
                     if (item.message.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(top: 4),
-                        child: Text(item.message, style: TextStyle(fontSize: 12, color: theme.colorScheme.error)),
+                        child: Text(item.message,
+                            style: TextStyle(
+                                fontSize: 12, color: theme.colorScheme.error)),
                       ),
                   ],
                 ),
@@ -815,16 +874,23 @@ class _SessionPreviewPanelState extends State<_SessionPreviewPanel> {
               Row(
                 children: [
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
                       color: _severityColor(issue.severity).withAlpha(35),
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(_severityLabel(issue.severity),
-                        style: TextStyle(fontSize: 11, color: _severityColor(issue.severity), fontWeight: FontWeight.w600)),
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: _severityColor(issue.severity),
+                            fontWeight: FontWeight.w600)),
                   ),
                   const SizedBox(width: 8),
-                  Expanded(child: Text(issue.title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13))),
+                  Expanded(
+                      child: Text(issue.title,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w600, fontSize: 13))),
                 ],
               ),
               if (issue.actual.isNotEmpty) ...[
@@ -833,7 +899,8 @@ class _SessionPreviewPanelState extends State<_SessionPreviewPanel> {
               ],
               const SizedBox(height: 4),
               Text(fmtDateTime(issue.createdAt),
-                  style: TextStyle(fontSize: 11, color: theme.colorScheme.onSurfaceVariant)),
+                  style: TextStyle(
+                      fontSize: 11, color: theme.colorScheme.onSurfaceVariant)),
             ],
           ),
         ),
@@ -849,38 +916,14 @@ class _SessionPreviewPanelState extends State<_SessionPreviewPanel> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(fmtDateTime(note.createdAt),
-                  style: TextStyle(fontSize: 11, color: theme.colorScheme.onSurfaceVariant)),
+                  style: TextStyle(
+                      fontSize: 11, color: theme.colorScheme.onSurfaceVariant)),
               const SizedBox(height: 4),
               Text(note.content),
             ],
           ),
         ),
       );
-
-  Widget _artifactItem(ThemeData theme, TestSessionArtifact a) => Card(
-        elevation: 0,
-        margin: const EdgeInsets.only(bottom: 6),
-        color: theme.colorScheme.surfaceContainerLow,
-        child: Padding(
-          padding: const EdgeInsets.all(10),
-          child: Row(
-            children: [
-              Icon(_artifactIcon(a.kind), size: 16, color: theme.colorScheme.primary),
-              const SizedBox(width: 8),
-              Expanded(child: Text(a.name, style: const TextStyle(fontSize: 12))),
-              if (a.size > 0)
-                Text(fmtBytes(a.size), style: TextStyle(fontSize: 11, color: theme.colorScheme.onSurfaceVariant)),
-            ],
-          ),
-        ),
-      );
-
-  IconData _artifactIcon(TestSessionArtifactKind k) => switch (k) {
-        TestSessionArtifactKind.screenshot => Icons.image,
-        TestSessionArtifactKind.video => Icons.videocam,
-        TestSessionArtifactKind.log => Icons.list_alt,
-        TestSessionArtifactKind.report => Icons.description,
-      };
 
   Color _severityColor(TestSessionIssueSeverity s) => switch (s) {
         TestSessionIssueSeverity.blocker => Colors.red,
@@ -902,7 +945,6 @@ class _SessionPreviewPanelState extends State<_SessionPreviewPanel> {
     return '${m}m ${s}s';
   }
 }
-
 
 // ── New session dialog (shown in hub's right panel) ───────────────────────────
 
@@ -967,17 +1009,17 @@ class _NewSessionDialogState extends State<_NewSessionDialog> {
     final tr_ = tr;
     try {
       await context.read<TestSessionProvider>().startSession(
-        name: _nameCtrl.text,
-        type: _type,
-        serial: widget.serial,
-        model: device?.model ?? '',
-        brand: device?.brand ?? '',
-        sdk: device?.sdk ?? '',
-        deviceDisplayName: displayName,
-        packageName: _packageCtrl.text,
-        note: _noteCtrl.text,
-        testPlanItems: _buildPlanItems(parseTestFlowText(_flowsCtrl.text)),
-      );
+            name: _nameCtrl.text,
+            type: _type,
+            serial: widget.serial,
+            model: device?.model ?? '',
+            brand: device?.brand ?? '',
+            sdk: device?.sdk ?? '',
+            deviceDisplayName: displayName,
+            packageName: _packageCtrl.text,
+            note: _noteCtrl.text,
+            testPlanItems: _buildPlanItems(parseTestFlowText(_flowsCtrl.text)),
+          );
       if (!mounted) return;
       Navigator.pop(context);
     } catch (e) {
@@ -1035,7 +1077,8 @@ class _NewSessionDialogState extends State<_NewSessionDialog> {
                 // Header
                 Text(
                   tr_('newSession'),
-                  style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                  style: theme.textTheme.titleMedium
+                      ?.copyWith(fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 20),
 
@@ -1068,7 +1111,10 @@ class _NewSessionDialogState extends State<_NewSessionDialog> {
                     tr_('sessionTypeRegression'),
                     tr_('sessionTypeCompatibility'),
                     tr_('sessionTypeOther'),
-                  ].map((item) => DropdownMenuItem(value: item, child: Text(item))).toList(),
+                  ]
+                      .map((item) =>
+                          DropdownMenuItem(value: item, child: Text(item)))
+                      .toList(),
                   onChanged: (value) => setState(() => _type = value ?? _type),
                 ),
                 const SizedBox(height: 14),

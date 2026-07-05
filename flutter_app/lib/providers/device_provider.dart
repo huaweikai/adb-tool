@@ -212,7 +212,8 @@ class DeviceProvider extends ChangeNotifier {
   /// may be transient).
   Device? wifiTransportFor(String stableSerial) {
     final wifiTransports = transportsFor(stableSerial)
-        .where((d) => transportTypeForSerial(d.serial) == DeviceTransportType.wifi)
+        .where(
+            (d) => transportTypeForSerial(d.serial) == DeviceTransportType.wifi)
         .toList();
     // Prefer the legacy `ip:port` form (user-initiated) over the
     // mDNS `_tcp` form (system-initiated, re-created on disconnect).
@@ -475,19 +476,27 @@ class DeviceProvider extends ChangeNotifier {
       // runs and stay set even if persistence throws.
       String? dbError;
       try {
-        for (final device in devices) {
-          if (device.isOnline) {
-            await _reconcileOnlineDevice(device);
+        // Wrap the whole reconcile pass in one transaction so a failure
+        // mid-way (e.g. one device's PK-rename throws) rolls back every
+        // device's writes instead of leaving the table half-reconciled.
+        // Nested transaction() calls inside _reconcileOnlineDevice /
+        // updateAllDevicesConnection become savepoints — drift handles
+        // those transparently.
+        await db.transaction(() async {
+          for (final device in devices) {
+            if (device.isOnline) {
+              await _reconcileOnlineDevice(device);
+            }
           }
-        }
 
-        await db.savedDevicesDao.updateAllDevicesConnection(
-          devices.where((d) => d.isOnline).map(stableIdentityFor).toSet(),
-        );
+          await db.savedDevicesDao.updateAllDevicesConnection(
+            devices.where((d) => d.isOnline).map(stableIdentityFor).toSet(),
+          );
 
-        await db.appStatesDao.updateAppState(
-          lastSuccessfulRefresh: _lastSuccessfulRefresh,
-        );
+          await db.appStatesDao.updateAppState(
+            lastSuccessfulRefresh: _lastSuccessfulRefresh,
+          );
+        });
       } catch (dbErr, dbSt) {
         debugPrint('[DeviceProvider] db persistence failed: $dbErr');
         debugPrint('[DeviceProvider] STACK: $dbSt');

@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -158,6 +159,20 @@ func (m *InstanceManager) UpdateToolchainPaths(emulatorPath, avdManagerPath stri
 	}
 	if avdManagerPath != "" {
 		m.avdManagerPath = avdManagerPath
+	}
+}
+
+// UpdateAndroidSdkPath records the resolved Android SDK path on the
+// instance manager so subsequent emulator / avdmanager subprocess
+// spawns can pass a non-empty ANDROID_SDK_ROOT. main.go always calls
+// InitEmulator with androidHome="" (the engine autodetects it), but
+// without this hook the SDK path never reaches the instance manager
+// and the spawned emulator silently fails to find system images.
+func (m *InstanceManager) UpdateAndroidSdkPath(androidSdk string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if androidSdk != "" {
+		m.androidSdk = androidSdk
 	}
 }
 
@@ -455,10 +470,7 @@ func (m *InstanceManager) createAVDWithAvdManager(inst *Instance) error {
 		cmd.Args = append(cmd.Args, "--skin", skin)
 	}
 
-	cmd.Env = append(os.Environ(),
-		"ANDROID_SDK_ROOT="+m.androidSdk,
-		"JAVA_HOME="+filepath.Dir(m.javaPath),
-	)
+	cmd.Env = buildEmulatorEnv(os.Environ(), m.androidSdk, m.dataDir, m.javaPath)
 
 	if _, err := cmd.CombinedOutput(); err != nil {
 		// Try manual creation as fallback
@@ -662,6 +674,7 @@ func (m *InstanceManager) updateAVDConfig(inst *Instance) error {
 	config := fmt.Sprintf(`AvdId=%s
 avd.ini.displayname=%s
 avd.ini.encoding=UTF-8
+target=%s
 abi.type=%s
 hw.cpu.arch=%s
 hw.cpu.ncore=%d
@@ -671,6 +684,22 @@ hw.sdCard=%s
 hw.gps=yes
 hw.gpu.enabled=yes
 hw.gpu.mode=%s
+hw.accelerometer=yes
+hw.audioInput=yes
+hw.battery=yes
+hw.camera.back=virtualscene
+hw.camera.front=emulated
+hw.dPad=no
+hw.gyroscope=yes
+hw.initialOrientation=portrait
+hw.keyboard=yes
+hw.mainKeys=no
+hw.sensors.light=yes
+hw.sensors.magnetic_field=yes
+hw.sensors.orientation=yes
+hw.sensors.pressure=yes
+hw.sensors.proximity=yes
+hw.trackBall=no
 image.sysdir.1=%s
 path=%s
 path.rel=%s
@@ -684,6 +713,7 @@ hw.screenWidth=%d
 hw.screenHeight=%d
 `, inst.Name,
 		inst.Name,
+		parseImageTarget(inst.ImageID),
 		abi,
 		cpuArch,
 		inst.Config.Cores,
@@ -706,6 +736,106 @@ hw.screenHeight=%d
 	}
 
 	return nil
+}
+
+// buildEmulatorEnv constructs the env slice passed to the emulator
+// child process. Two differences from the obvious
+// `append(os.Environ(), cmdEnv...)`:
+//
+//  1. We strip any existing entries for the keys we're setting. The
+//     Android emulator reads ANDROID_AVD_HOME / ANDROID_SDK_ROOT
+//     via getenv(); on a stale parent env (Flutter desktop app,
+//     macOS GUI launch context, …) duplicate keys can confuse it.
+//     Stripping then re-appending guarantees our values win.
+//
+//  2. JAVA_HOME is set to the *parent of bin/* (the JDK home), not
+//     bin/ itself. Our store keeps the path to the `java` binary
+//     (<filepath>…/bin/java); emulator 36.x on macOS prefers the
+//     JDK home, and pointing JAVA_HOME at …/bin has historically
+//     caused "could not find tools.jar" / no-op JRE selection.
+func buildEmulatorEnv(parentEnv []string, androidSdk, dataDir, javaBin string) []string {
+	type kv struct{ k, v string }
+	// These keys are *always* candidates for stripping from the
+	// parent env. Forcing an empty-string value into the child process
+	// is different from leaving the variable unset — emulator 36.x
+	// on macOS treats the empty-string form as "explicitly invalid"
+	// and refuses to fall back to ANDROID_SDK_ROOT or its default
+	// search paths. We therefore drop any parent entries for these
+	// keys unless we actually have a value to set.
+	//
+	// ANDROID_HOME is on the strip list because Android Studio on
+	// macOS sets it to /Volumes/<external>/Android/sdk (the user's
+	// "real" Studio SDK), which on M-series Mac mini can be
+	// permission-denied if the volume wasn't mounted read-write.
+	// The emulator launcher checks ANDROID_HOME BEFORE
+	// ANDROID_SDK_ROOT and emits FATAL "Broken AVD system path" if
+	// ANDROID_HOME is set to an unreadable directory. We always
+	// want it to use OUR SDK root (ANDROID_SDK_ROOT), not the user's
+	// Studio SDK, so we drop ANDROID_HOME unconditionally.
+	stripAlways := []string{"ANDROID_SDK_ROOT", "ANDROID_AVD_HOME", "ANDROID_HOME", "JAVA_HOME", "DYLD_LIBRARY_PATH"}
+
+	overrides := make([]kv, 0, 4)
+	if androidSdk != "" {
+		overrides = append(overrides, kv{"ANDROID_SDK_ROOT", androidSdk})
+	}
+	if dataDir != "" {
+		overrides = append(overrides, kv{"ANDROID_AVD_HOME", filepath.Join(dataDir, "avd")})
+	}
+	if javaBin != "" {
+		// javaBin is the path to `java` (e.g. <JDK>/bin/java). JAVA_HOME
+		// should be the JDK root (<JDK>), so go up two levels.
+		jdkHome := filepath.Dir(filepath.Dir(javaBin))
+		overrides = append(overrides, kv{"JAVA_HOME", jdkHome})
+	}
+	// Mac-only: Android SDK 36.x puts its dylibs under <SDK>/emulator/lib64
+	// and <SDK>/emulator/lib64/qt/lib but qemu-system-aarch64's @rpath
+	// still expects the old <SDK>/lib64/qt/lib layout. Without this, qemu
+	// dyld-fails on libandroid-emu-tracing.dylib / libQt6*.dylib and
+	// silently crashes with SIGABRT before our wrapper even sees stderr.
+	// We point DYLD_LIBRARY_PATH at the real install locations; the
+	// child process inherits it and dyld resolves @rpath through it.
+	if runtime.GOOS == "darwin" && androidSdk != "" {
+		dylibPaths := []string{
+			filepath.Join(androidSdk, "emulator", "lib64", "qt", "lib"),
+			filepath.Join(androidSdk, "emulator", "lib64"),
+		}
+		// Preserve any parent DYLD_LIBRARY_PATH (e.g. user-set system
+		// library paths) and prepend our SDK paths so they win.
+		existing := os.Getenv("DYLD_LIBRARY_PATH")
+		joined := strings.Join(dylibPaths, ":")
+		if existing != "" {
+			joined = joined + ":" + existing
+		}
+		overrides = append(overrides, kv{"DYLD_LIBRARY_PATH", joined})
+	}
+
+	// Strip-keys set: union of "always strip" + "we set a value".
+	// This drops stale parent entries even when we don't have an
+	// override, so the child sees the key as truly unset.
+	stripSet := make(map[string]bool, len(stripAlways))
+	for _, k := range stripAlways {
+		stripSet[k] = true
+	}
+	for _, o := range overrides {
+		stripSet[o.k] = true
+	}
+
+	result := make([]string, 0, len(parentEnv)+len(overrides))
+	for _, e := range parentEnv {
+		eq := strings.IndexByte(e, '=')
+		if eq < 0 {
+			result = append(result, e)
+			continue
+		}
+		if stripSet[e[:eq]] {
+			continue
+		}
+		result = append(result, e)
+	}
+	for _, o := range overrides {
+		result = append(result, o.k+"="+o.v)
+	}
+	return result
 }
 
 // startEmulator launches the emulator process.
@@ -764,7 +894,7 @@ func (m *InstanceManager) startEmulator(inst *Instance) error {
 	if m.javaPath != "" {
 		cmdEnv = append(cmdEnv, "JAVA_HOME="+filepath.Dir(m.javaPath))
 	}
-	cmd.Env = append(os.Environ(), cmdEnv...)
+	cmd.Env = buildEmulatorEnv(os.Environ(), m.androidSdk, m.dataDir, m.javaPath)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 
@@ -871,6 +1001,17 @@ func (m *InstanceManager) monitorEmulatorProcess(id string, cmd *exec.Cmd, logFi
 		if err := m.checkEmulatorReady(inst.Serial); err == nil {
 			m.markEmulatorReady(id, inst.Serial)
 			return
+		}
+
+		// Second fallback: scan the log file directly for "Boot completed".
+		// bootProgressTracker should have caught this already, but if it
+		// exited early (e.g. instance status flipped) the keyword would be
+		// missed and progress would be stuck mid-bar forever.
+		if data, rerr := os.ReadFile(logPath); rerr == nil {
+			if strings.Contains(string(data), "Boot completed") {
+				m.markEmulatorReady(id, inst.Serial)
+				return
+			}
 		}
 
 		// Liveness: during a normal emulator boot the log can legitimately go

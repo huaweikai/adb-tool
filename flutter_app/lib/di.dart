@@ -35,6 +35,8 @@ import 'providers/emulator_image_provider.dart';
 import 'providers/emulator_instance_provider.dart';
 import 'providers/logcat_state_provider.dart';
 import 'providers/mirror_state_provider.dart';
+import 'providers/recording_settings_provider.dart';
+import 'providers/scrcpy_record_state_provider.dart';
 import 'services/api_client.dart';
 import 'services/log_stream.dart';
 
@@ -133,6 +135,20 @@ Future<void> setupDependencies() async {
       getIt<DeviceProvider>(),
     ),
   );
+
+  // RecordingSettingsProvider needs the DB (AppStates singleton row);
+  // loads method + outputDir on first read so the settings page and
+  // the capture mixin see consistent values without each doing their
+  // own DB hit.
+  getIt.registerSingleton<RecordingSettingsProvider>(
+    RecordingSettingsProvider(db: getIt<AppDatabase>())..load(),
+  );
+
+  // ScrcpyRecordStateProvider needs ApiClient + DeviceProvider; listens
+  // to onDeviceOffline to clear recording state when device drops.
+  getIt.registerSingleton<ScrcpyRecordStateProvider>(
+    ScrcpyRecordStateProvider(getIt<ApiClient>(), getIt<DeviceProvider>()),
+  );
 }
 
 /// Build the Provider list from registered singletons.
@@ -170,6 +186,10 @@ List<SingleChildWidget> get dependencyProviders => [
           value: getIt<LogcatStateProvider>()),
       ChangeNotifierProvider<MirrorStateProvider>.value(
           value: getIt<MirrorStateProvider>()),
+      ChangeNotifierProvider<RecordingSettingsProvider>.value(
+          value: getIt<RecordingSettingsProvider>()),
+      ChangeNotifierProvider<ScrcpyRecordStateProvider>.value(
+          value: getIt<ScrcpyRecordStateProvider>()),
     ];
 
 /// Dispose all singletons. Call only in integration tests.

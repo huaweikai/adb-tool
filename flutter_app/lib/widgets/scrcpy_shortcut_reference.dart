@@ -56,54 +56,76 @@ class ScrcpyShortcutReference extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    // Show only the platform the user is actually running on. The
-    // macOS card uses ⌘ (Command); the Windows card uses Alt. (scrcpy
-    // 4.0's default --shortcut-mod=lalt,lsuper renders as Alt on
-    // Windows and ⌘ on Mac, which is what users intuitively expect.)
     final isMac = Platform.isMacOS;
     final isWin = Platform.isWindows;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          tr('scrcpyRefTitle'),
-          style: theme.textTheme.titleSmall,
-        ),
-        const SizedBox(height: 4),
-        Text(
-          tr('scrcpyRefHint'),
-          style: theme.textTheme.bodySmall
-              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-        ),
-        const SizedBox(height: 10),
-        Expanded(
-            child: isMac
-                ? _OsCard(
-                    osLabel: tr('scrcpyRefPlatformMac'),
-                    mod: '⌘',
-                    modSymbol: '⌘ Command',
-                    shortcuts: _shortcuts,
-                  )
-                : isWin
-                    ? _OsCard(
-                        osLabel: tr('scrcpyRefPlatformWin'),
-                        mod: 'Alt',
-                        modSymbol: 'Alt',
-                        shortcuts: _shortcuts,
-                      )
-                    :
-                    // Linux / other: scrcpy's default shortcut mod is still
-                    // lalt/lsuper, but Super on Linux is the OS key. We show
-                    // Ctrl as a sensible default since most Linux DEs route
-                    // Super to the activities overlay and Ctrl+<key> is
-                    // generally free.
-                    _OsCard(
-                        osLabel: tr('scrcpyRefPlatformOther'),
-                        mod: 'Ctrl',
-                        modSymbol: 'Ctrl',
-                        shortcuts: _shortcuts,
-                      ))
-      ],
+    final osCard = isMac
+        ? _OsCard(
+            osLabel: tr('scrcpyRefPlatformMac'),
+            mod: '⌘',
+            modSymbol: '⌘ Command',
+            shortcuts: _shortcuts,
+          )
+        : isWin
+            ? _OsCard(
+                osLabel: tr('scrcpyRefPlatformWin'),
+                mod: 'Alt',
+                modSymbol: 'Alt',
+                shortcuts: _shortcuts,
+              )
+            : _OsCard(
+                osLabel: tr('scrcpyRefPlatformOther'),
+                mod: 'Ctrl',
+                modSymbol: 'Ctrl',
+                shortcuts: _shortcuts,
+              );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxHeight.isFinite) {
+          // Bounded height (wide layout — inside Expanded). Column +
+          // Expanded(_OsCard) so the _OsCard gets a tight height and
+          // its internal ListView scrolls properly inside the card.
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                tr('scrcpyRefTitle'),
+                style: theme.textTheme.titleSmall,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                tr('scrcpyRefHint'),
+                style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant),
+              ),
+              const SizedBox(height: 10),
+              Expanded(child: osCard),
+            ],
+          );
+        }
+        // Unbounded height (narrow layout — outer ListView scrolls).
+        // A Column + Expanded would throw, and a plain Column would
+        // overflow because _OsCard shrinkWraps to its full content
+        // height. Instead use a shrinkWrap ListView so all items are
+        // laid out sequentially and the outer ListView scrolls them.
+        return ListView(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          children: [
+            Text(
+              tr('scrcpyRefTitle'),
+              style: theme.textTheme.titleSmall,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              tr('scrcpyRefHint'),
+              style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 10),
+            osCard,
+          ],
+        );
+      },
     );
   }
 }

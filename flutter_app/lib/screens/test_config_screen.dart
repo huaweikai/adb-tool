@@ -42,7 +42,6 @@ class _TestConfigScreenState extends State<TestConfigScreen> {
   Widget build(BuildContext context) {
     context.watch<LocaleProvider>();
     final provider = context.watch<TestConfigProvider>();
-    final theme = Theme.of(context);
     final apps = provider.apps;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -51,25 +50,40 @@ class _TestConfigScreenState extends State<TestConfigScreen> {
         Expanded(
           child: apps.isEmpty
               ? _buildEmptyState(context)
-              : ListView(
-                  padding: const EdgeInsets.all(16),
-                  children: [
-                    if (provider.currentApp != null)
-                      _buildCurrentAppCard(context, provider.currentApp!),
-                    if (provider.apps.isNotEmpty && provider.currentApp == null)
-                      _buildNoSelectionCard(context, provider),
-                    const SizedBox(height: 12),
-                    Text(
-                      tr('testConfigAppList'),
-                      style: theme.textTheme.titleSmall
-                          ?.copyWith(fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 10),
-                    ...apps.map((app) => _buildAppCard(context, provider, app)),
-                  ],
-                ),
+              : _buildAppList(context, provider, apps),
         ),
       ],
+    );
+  }
+
+  Widget _buildAppList(BuildContext context, TestConfigProvider provider,
+      List<TestAppConfig> apps) {
+    final theme = Theme.of(context);
+    // Header rows are few (≤4) — pre-build them. App cards are the bulk,
+    // so they're built lazily by the ListView.builder's itemBuilder
+    // (only visible cards are constructed, so 20+ configs don't all
+    // materialise on every rebuild).
+    final headerChildren = <Widget>[
+      if (provider.currentApp != null)
+        _buildCurrentAppCard(context, provider.currentApp!),
+      if (apps.isNotEmpty && provider.currentApp == null)
+        _buildNoSelectionCard(context, provider),
+      const SizedBox(height: 12),
+      Text(
+        tr('testConfigAppList'),
+        style:
+            theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+      ),
+      const SizedBox(height: 10),
+    ];
+    final headerCount = headerChildren.length;
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: headerCount + apps.length,
+      itemBuilder: (ctx, i) {
+        if (i < headerCount) return headerChildren[i];
+        return _buildAppCard(context, provider, apps[i - headerCount]);
+      },
     );
   }
 

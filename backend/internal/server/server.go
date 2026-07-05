@@ -3,11 +3,13 @@ package server
 import (
 	"context"
 	"embed"
+	"fmt"
 	"io/fs"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
@@ -128,6 +130,7 @@ func (s *Server) InitEmulator(emulatorPath, avdManagerPath, javaPath, androidHom
 	// this, InstanceManager keeps an empty emulatorPath and every
 	// startEmulator call returns "emulator path not configured".
 	resolvedEmulator, resolvedAvdmanager := emulatorPath, avdManagerPath
+	var resolvedSDK string
 	if resolvedEmulator == "" || resolvedAvdmanager == "" {
 		if engine, derr := emulator.DetectEmulatorEngine(androidHome, ""); derr == nil {
 			if resolvedEmulator == "" {
@@ -136,11 +139,46 @@ func (s *Server) InitEmulator(emulatorPath, avdManagerPath, javaPath, androidHom
 			if resolvedAvdmanager == "" {
 				resolvedAvdmanager = engine.AvdmanagerPath
 			}
+			// DetectEmulatorEngine also resolves the SDK root (via the
+			// persisted selection, ANDROID_HOME, etc.). Push it down
+			// to the instance manager so ANDROID_SDK_ROOT is non-empty
+			// when we spawn the emulator subprocess — otherwise
+			// emulator 36.x on macOS silently exits before the boot
+			// because it can't resolve system image paths.
+			resolvedSDK = engine.AndroidHome
 			EmulatorEngine = engine
 		}
 	}
 	if resolvedEmulator != "" || resolvedAvdmanager != "" {
 		s.instanceManager.UpdateToolchainPaths(resolvedEmulator, resolvedAvdmanager)
+	}
+	if resolvedSDK != "" {
+		s.instanceManager.UpdateAndroidSdkPath(resolvedSDK)
+
+		// Create a platform-tools symlink under the SDK root so the
+		// emulator launcher validates the path on macOS (it refuses
+		// to continue without a platform-tools subdirectory). The
+		// actual adb binary lives in /tmp/adb-tool-cache/adb, so we
+		// symlink to it. This is safe because FindOrExtractADB is
+		// guaranteed to have run before InitEmulator.
+		ptDir := filepath.Join(resolvedSDK, "platform-tools")
+		if _, statErr := os.Stat(ptDir); os.IsNotExist(statErr) {
+			// FindOrExtractADB puts adb at <tmpdir>/adb-tool-cache/adb
+			adbInCache := filepath.Join(os.TempDir(), "adb-tool-cache", "adb")
+			if runtime.GOOS == "windows" {
+				adbInCache = filepath.Join(os.TempDir(), "adb-tool-cache", "adb.exe")
+			}
+			if _, err := os.Stat(adbInCache); err == nil {
+				if mkErr := os.MkdirAll(ptDir, 0755); mkErr == nil {
+					symlinkTarget := filepath.Join(ptDir, "adb")
+					// Remove stale file/dir at symlink target path
+					os.Remove(symlinkTarget)
+					if lnkErr := os.Symlink(adbInCache, symlinkTarget); lnkErr == nil {
+						fmt.Printf("       platform-tools symlink: %s -> %s\n", symlinkTarget, adbInCache)
+					}
+				}
+			}
+		}
 	}
 
 	// Create status monitor and wire it back into the instance manager
@@ -232,6 +270,7 @@ func (s *Server) Close() {
 //   - handlers_logcat.go    /ws/logs, /api/logcat-recent, /api/session-logcat
 //   - handlers_screen.go    /api/screenshot, /api/screen-record, /api/screen-record-video
 //   - handlers_scrcpy.go    /api/scrcpy/{start,stop,action,status}
+//   - handlers_scrcpy_record.go /api/scrcpy/record/{start,stop,status}
 //   - handlers_wireless.go  /api/adb-wireless-{pair,connect,disconnect,scan}
 //   - handlers_clipboard.go /api/clipboard-{check,install,send,uninstall}
 //   - handlers_meta.go      /api/backend-logs, /api/identify, /api/shutdown, /api/adb-exec
@@ -281,6 +320,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/scrcpy/stop", s.handleScrcpyStop)
 	mux.HandleFunc("/api/scrcpy/action", s.handleScrcpyAction)
 	mux.HandleFunc("/api/scrcpy/status", s.handleScrcpyStatus)
+
+	// Scrcpy windowless recording (--no-window --record=<path>). Used
+	// when the user picks "scrcpy" as their screen-recording method in
+	// the new recording settings page. Mutually exclusive with the
+	// mirror session — see adb_scrcpy_record.go for the conflict rules.
+	mux.HandleFunc("/api/scrcpy/record/start", s.handleScrcpyRecordingStart)
+	mux.HandleFunc("/api/scrcpy/record/stop", s.handleScrcpyRecordingStop)
+	mux.HandleFunc("/api/scrcpy/record/status", s.handleScrcpyRecordingStatus)
 
 	// Wireless ADB
 	mux.HandleFunc("/api/adb-wireless-pair", s.handleAdbWirelessPair)

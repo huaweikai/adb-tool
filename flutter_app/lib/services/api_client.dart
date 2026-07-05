@@ -42,7 +42,8 @@ export 'api/file_api.dart' show FileApi;
 export 'api/packages_api.dart' show PackagesApi;
 export 'api/logcat_api.dart' show LogcatApi;
 export 'api/screen_api.dart' show ScreenApi;
-export 'api/scrcpy_api.dart' show ScrcpyApi, ScrcpyStatus;
+export 'api/scrcpy_api.dart'
+    show ScrcpyApi, ScrcpyStatus, ScrcpyRecordStatus, ScrcpyRecordBusyException;
 export 'api/wireless_api.dart' show WirelessApi;
 export 'api/clipboard_api.dart' show ClipboardApi;
 export 'api/adb_command_api.dart' show AdbCommandApi;

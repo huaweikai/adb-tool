@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -8,7 +9,6 @@ import '../providers/theme_provider.dart';
 import '../providers/device_provider.dart'
     show DeviceSerialScope, DeviceScreenActiveScope, DeviceProvider;
 import '../providers/locale_provider.dart';
-import '../providers/test_config_provider.dart';
 import '../providers/test_session_provider.dart';
 import '../providers/emulator_engine_provider.dart';
 import '../providers/emulator_java_provider.dart';
@@ -27,6 +27,7 @@ import 'test_config_screen.dart';
 import '../widgets/wireless_adb_dialog.dart';
 import 'screen_mirror_screen.dart';
 import 'emulator_settings_screen.dart';
+import 'settings_screen.dart';
 
 enum NavItem {
   status,
@@ -61,6 +62,7 @@ class _NavConfig {
 const _backendLogKey = '_backend_logs';
 const _testConfigKey = '_test_config';
 const _emulatorKey = '_emulator_settings';
+const _settingsKey = '_settings';
 
 class _CachedScreen extends StatelessWidget {
   final String? serial;
@@ -70,12 +72,44 @@ class _CachedScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    context.watch<TestConfigProvider>();
+    // NOTE: do NOT `context.watch<TestConfigProvider>()` here. Every
+    // cached screen in the IndexedStack is mounted (kept alive); a watch
+    // here would rebuild *all* of them on every TestConfigProvider
+    // notify, even the non-active ones. Each screen watches the providers
+    // it actually needs itself, so non-active tabs stay idle.
     return Provider<DeviceSerialScope>.value(
       value: DeviceSerialScope(serial),
       child: child,
     );
   }
+}
+
+/// Narrow value class for [HomeScreen]'s dependency on [DeviceProvider].
+///
+/// `context.select` compares the returned value with `==`. By overriding
+/// `==` here (using [listEquals] for the device list) the screen rebuilds
+/// only when the device list *contents* actually change — not on every
+/// 5s `notifyListeners()` that reassigns the list to a fresh instance
+/// holding identical data. This keeps the `IndexedStack` of cached
+/// per-device screens from rebuilding every poll cycle.
+class _HomeSnapshot {
+  final List<SavedDevice> savedDevices;
+  final bool online;
+  final String? lastDbError;
+
+  const _HomeSnapshot(this.savedDevices, this.online, this.lastDbError);
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is _HomeSnapshot &&
+          online == other.online &&
+          lastDbError == other.lastDbError &&
+          listEquals(savedDevices, other.savedDevices);
+
+  @override
+  int get hashCode =>
+      Object.hash(online, lastDbError, Object.hashAll(savedDevices));
 }
 
 class HomeScreen extends StatefulWidget {
@@ -94,6 +128,10 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Timer? _refreshTimer;
+  // True while the app is backgrounded — gates the self-rescheduling
+  // refresh loop so an in-flight refresh's whenComplete doesn't re-arm
+  // the timer while paused.
+  bool _paused = false;
 
   final Set<String> _expandedSerials = {};
   final Map<String, _CachedScreen> _screens = {};
@@ -125,10 +163,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final dp = context.read<DeviceProvider>();
     final db = dp.db;
 
-    final activeKey = await db.appStatesDao.getActiveKey();
-    final expandedSerials = await db.appStatesDao.getExpandedSerials();
-    final sidebarWidth = await db.appStatesDao.getSidebarWidth();
-    final sidebarCollapsed = await db.appStatesDao.getSidebarCollapsed();
+    // Read the singleton row ONCE instead of four times — the previous
+    // getActiveKey / getExpandedSerials / getSidebarWidth /
+    // getSidebarCollapsed calls each issued their own SELECT against
+    // app_states on every app launch.
+    final state = await db.appStatesDao.getAppState();
+    final activeKey = state.activeKey;
+    final expandedSerials = db.appStatesDao.expandedSerialsFromState(state);
+    final sidebarWidth = state.sidebarWidth;
+    final sidebarCollapsed = state.sidebarCollapsed;
 
     if (!mounted) return;
 
@@ -161,17 +204,36 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _startRefresh() async {
-    final api = context.read<ApiClient>();
+    // Kick off the first refresh immediately; the loop self-schedules
+    // the next one 5s after each refresh COMPLETES (single-shot, not
+    // Timer.periodic). The previous periodic timer fired every 5s from
+    // tick START, so a slow backend shrank the gap between refreshes
+    // toward zero; this keeps a fixed 5s rest after each refresh.
+    _runRefresh();
+  }
+
+  void _scheduleNextRefresh() {
+    _refreshTimer?.cancel();
+    _refreshTimer = Timer(const Duration(seconds: 5), _runRefresh);
+  }
+
+  void _runRefresh() {
+    if (!mounted || _paused) return;
     final dp = context.read<DeviceProvider>();
-    dp.refresh(api);
-    _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
-      context.read<DeviceProvider>().refresh(context.read<ApiClient>());
+    final api = context.read<ApiClient>();
+    // refresh() returns the in-flight future if one is already running
+    // (the provider's _refreshing guard), so concurrent ticks are a
+    // no-op — but we still attach whenComplete so the loop reschedules
+    // exactly once per completed refresh.
+    dp.refresh(api).whenComplete(() {
+      if (mounted && !_paused) _scheduleNextRefresh();
     });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _paused = true;
     _refreshTimer?.cancel();
     _sidebarWidth.dispose();
     super.dispose();
@@ -179,8 +241,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      context.read<DeviceProvider>().refresh(context.read<ApiClient>());
+    // Pause the 5s polling loop while the app is backgrounded so we
+    // don't keep hitting the backend + reconciling the DB from off-
+    // screen. The loop is restarted on resume.
+    if (state == AppLifecycleState.paused) {
+      _paused = true;
+      _refreshTimer?.cancel();
+      _refreshTimer = null;
+    } else if (state == AppLifecycleState.resumed) {
+      _paused = false;
+      _runRefresh();
     }
   }
 
@@ -255,7 +325,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     int removed = 0;
     for (final k in keys) {
       if (removed >= toRemove) break;
-      if (k == _activeKey || k == _backendLogKey || k == _emulatorKey) continue;
+      if (k == _activeKey ||
+          k == _backendLogKey ||
+          k == _emulatorKey ||
+          k == _settingsKey) continue;
       _screens.remove(k);
       removed++;
     }
@@ -291,6 +364,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     setState(() => _activeKey = _emulatorKey);
   }
 
+  void _openSettings() {
+    if (!_screens.containsKey(_settingsKey)) {
+      _screens[_settingsKey] = const _CachedScreen(
+        serial: null,
+        child: SettingsScreen(),
+      );
+    }
+    setState(() => _activeKey = _settingsKey);
+  }
+
   /// Restore the active page from saved _activeKey
   void _restoreActivePage(List<SavedDevice> savedDevices) {
     if (_activeKey == null) return;
@@ -306,6 +389,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
     if (_activeKey == _emulatorKey) {
       _openEmulatorSettings();
+      return;
+    }
+    if (_activeKey == _settingsKey) {
+      _openSettings();
       return;
     }
 
@@ -345,10 +432,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    final deviceProvider = context.watch<DeviceProvider>();
+    final snapshot = context.select<DeviceProvider, _HomeSnapshot>(
+      (p) => _HomeSnapshot(p.savedDevices, p.online, p.lastDbError),
+    );
     context.watch<LocaleProvider>();
-    final savedDevices = deviceProvider.savedDevices;
-    final backendOnline = deviceProvider.online;
+    final savedDevices = snapshot.savedDevices;
+    final backendOnline = snapshot.online;
 
     // Restore page from saved state when devices are loaded
     if (savedDevices.isNotEmpty && _activeKey != null && !_restoredFromState) {
@@ -362,8 +451,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       body: Column(
         children: [
           if (!backendOnline) _buildOfflineBanner(context),
-          if (deviceProvider.lastDbError != null)
-            _buildDbErrorBanner(context, deviceProvider.lastDbError!),
+          if (snapshot.lastDbError != null)
+            _buildDbErrorBanner(context, snapshot.lastDbError!),
           Expanded(
             child: Row(
               children: [
@@ -659,6 +748,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
           _buildCollapsedGlobalEntry(
             theme,
+            icon: Icons.settings,
+            tooltip: tr('settings.title'),
+            isActive: _activeKey == _settingsKey,
+            onTap: () => _expandAndOpen(_openSettings),
+          ),
+          _buildCollapsedGlobalEntry(
+            theme,
             icon: Icons.terminal,
             tooltip: tr('backendLogs'),
             isActive: _activeKey == _backendLogKey,
@@ -776,6 +872,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             // visible BETA so users know to expect rough edges.
             extraBadge: 'BETA',
             onTap: _openEmulatorSettings,
+          ),
+          _buildGlobalEntry(
+            theme,
+            keyName: _settingsKey,
+            icon: Icons.settings,
+            label: tr('settings.title'),
+            badge: 'Settings',
+            onTap: _openSettings,
           ),
           _buildGlobalEntry(
             theme,
@@ -1013,6 +1117,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   void _clearAllState() {
+    _paused = true;
     _refreshTimer?.cancel();
     _refreshTimer = null;
     _screens.clear();
@@ -1196,12 +1301,11 @@ class _DeviceTreeArea extends StatelessWidget {
                 children: [
                   Icon(Icons.phone_android,
                       size: 40,
-                      color: theme.colorScheme.onSurfaceVariant
-                          .withAlpha(100)),
+                      color: theme.colorScheme.onSurfaceVariant.withAlpha(100)),
                   const SizedBox(height: 8),
                   Text(tr('noDevices'),
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant)),
                   const SizedBox(height: 4),
                   Text(tr('noDevicesHint'),
                       style: TextStyle(
@@ -1248,8 +1352,7 @@ class _DeviceTreeArea extends StatelessWidget {
     // disconnect button on the serial string itself (e.g. `contains(':')`)
     // — the stable identity never contains ':' once the row is
     // upgraded past v9 migration, so the button would vanish.
-    final hasWifi =
-        context.read<DeviceProvider>().hasWifiTransport(d.serial);
+    final hasWifi = context.read<DeviceProvider>().hasWifiTransport(d.serial);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1330,8 +1433,7 @@ class _DeviceTreeArea extends StatelessWidget {
                   // device currently has a live Wi-Fi transport to
                   // disconnect from. The disconnect target is the
                   // `ip:port` of that transport, not the saved PK.
-                  if (isConnected && hasWifi)
-                    _disconnectButton(context, d),
+                  if (isConnected && hasWifi) _disconnectButton(context, d),
                 ],
               ),
             ),

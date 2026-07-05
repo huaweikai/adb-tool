@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../mixins/device_reconnect_mixin.dart';
 import '../db/database.dart';
 import '../services/api_client.dart';
 import '../i18n.dart';
@@ -15,7 +16,8 @@ class ClipboardScreen extends StatefulWidget {
   State<ClipboardScreen> createState() => _ClipboardScreenState();
 }
 
-class _ClipboardScreenState extends State<ClipboardScreen> {
+class _ClipboardScreenState extends State<ClipboardScreen>
+    with DeviceReconnectMixin<ClipboardScreen> {
   /// Stable device identity (ro.serialno) — what the screen is
   /// "about". Survives wireless reconnects. Handed directly to
   /// `ApiClient`; the API boundary resolves it to the current
@@ -36,6 +38,18 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
   void initState() {
     super.initState();
     _checkInstalled();
+  }
+
+  // ── DeviceReconnectMixin 实现 ─────────────────────────────────
+
+  @override
+  String? get reconnectSerial => _selectedSerial;
+
+  @override
+  void onDeviceReconnected() {
+    if (!_helperInstalled && !_checkingInstalled) {
+      _checkInstalled();
+    }
   }
 
   @override
@@ -148,9 +162,7 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
     });
 
     try {
-      await context
-          .read<ApiClient>()
-          .uninstallClipboardHelper(stable);
+      await context.read<ApiClient>().uninstallClipboardHelper(stable);
       if (!mounted) return;
       setState(() {
         _helperInstalled = false;
@@ -187,9 +199,12 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<DeviceSerialScope>();
     context.watch<LocaleProvider>();
     final theme = Theme.of(context);
-    final entries = context.watch<ClipboardHistoryProvider>().entries;
+    final entries =
+        context.select<ClipboardHistoryProvider, List<SentClipboardEntryData>>(
+            (p) => p.entries);
 
     if (_selectedSerial == null) {
       return Center(
@@ -200,9 +215,14 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
     }
 
     // Watch device connection so the input card / buttons reflect the
-    // disabled state when the device goes offline mid-edit.
-    final isOnline =
-        context.watch<DeviceProvider>().isDeviceConnected(_selectedSerial!);
+    // disabled state when the device goes offline mid-edit. `select`
+    // narrows to this device's connection bool so the screen doesn't
+    // rebuild on every 5s DeviceProvider poll when state is unchanged.
+    // Read the serial outside the selector callback — calling
+    // context.read inside a select callback is forbidden by Provider.
+    final serial = _selectedSerial!;
+    final isOnline = context
+        .select<DeviceProvider, bool>((p) => p.isDeviceConnected(serial));
 
     return CustomScrollView(
       slivers: [
@@ -329,7 +349,8 @@ class _ClipboardScreenState extends State<ClipboardScreen> {
                             horizontal: 6, vertical: 2),
                         child: Text(tr('clearInput'),
                             style: TextStyle(
-                                fontSize: 11, color: theme.colorScheme.primary)),
+                                fontSize: 11,
+                                color: theme.colorScheme.primary)),
                       ),
                     );
                   },

@@ -17,19 +17,25 @@
 // the single source of truth, which means navigating away and back
 // (which disposes & rebuilds the State) does NOT lose progress.
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:pro_image_editor/pro_image_editor.dart';
+import 'package:provider/provider.dart';
 
 import '../db/database.dart';
 import '../db/dao/saved_devices_dao.dart';
 import '../i18n.dart';
+import '../providers/recording_settings_provider.dart';
+import '../providers/scrcpy_record_state_provider.dart';
 import '../providers/test_session_provider.dart';
 import '../services/api_client.dart';
 import '../services/screen_capture_service.dart';
+import '../services/recording_strategy.dart';
 import '../services/screen_record_owner.dart';
 import '../widgets/editor_i18n.dart';
+import '../widgets/recording_settings_dialogs.dart';
 import '../widgets/screenshot_watermark.dart';
 
 mixin TestSessionCaptureMixin<T extends StatefulWidget> on State<T> {
@@ -62,6 +68,7 @@ mixin TestSessionCaptureMixin<T extends StatefulWidget> on State<T> {
   /// cancelled when no recording, when the widget disposes, or when
   /// the active serial changes.
   Timer? _elapsedTicker;
+
 
   // ── Lifecycle hooks (must be called by the State) ─────────────────────
   /// Subscribe to the active device's row. Call from `initState` after
@@ -262,12 +269,10 @@ mixin TestSessionCaptureMixin<T extends StatefulWidget> on State<T> {
   Future<void> startRecording() async {
     final s = serial;
     if (s == null) return;
-    // Always read the fresh row from DB — _deviceRow may still be null if
-    // the stream hasn't emitted yet after a State rebuild.
+    final settings = context.read<RecordingSettingsProvider>();
+    final recordState = context.read<ScrcpyRecordStateProvider>();
     final row = await savedDevicesDao.getBySerial(s);
     if (row?.recordingOwner != null) {
-      // Already recording on this device — refuse unless we are
-      // somehow stale.
       final rowOwner = ScreenRecordOwnerX.fromDb(row!.recordingOwner!);
       if (rowOwner != null && rowOwner != recordOwner) {
         _showSnackBar(tr('recordInProgressOtherFmt',
@@ -279,49 +284,77 @@ mixin TestSessionCaptureMixin<T extends StatefulWidget> on State<T> {
     }
 
     final startedAtMs = DateTime.now().millisecondsSinceEpoch;
+    final strategy = RecordingStrategy.create(
+      settings.method,
+      serial: s,
+      api: apiClient,
+      capture: _capture,
+      recordState: recordState,
+    );
+    _strategy = strategy;
+
     try {
-      // Stamp the device row FIRST so the other surface sees us
-      // as soon as possible (the row triggers their stream).
       await savedDevicesDao.setScreenRecord(
         s,
         owner: recordOwner.dbValue,
         startedAtMs: startedAtMs,
       );
-      // Best-effort: enable Android touch feedback. Failure here
-      // doesn't block the recording itself.
-      try {
-        await apiClient.setShowTouches(s, true);
-      } catch (e) {
-        debugPrint('[ScreenRecord] show_touches on failed: $e');
-      }
-      // Actually fire the adb-side screenrecord.
-      await _capture.startScreenRecord(s);
-      // Session-side bookkeeping: append a "recording started"
-      // event to the active session's timeline.
+      await strategy.start();
       if (sessionProvider.hasRunningSession) {
         await sessionProvider.markScreenRecordStarted();
       }
-      _showSnackBar(tr('recordingStarted'));
+    } on ScrcpyRecordBusyException catch (e) {
+      _strategy = null;
+      if (!mounted) {
+        try { await savedDevicesDao.clearScreenRecord(s); } catch (_) {}
+        return;
+      }
+      final ok = await showScrcpyBusyConfirmDialog(
+        context,
+        busy: e,
+        activeSerial: s,
+      );
+      if (ok != true) {
+        try { await savedDevicesDao.clearScreenRecord(s); } catch (_) {}
+        return;
+      }
+      try {
+        await savedDevicesDao.setScreenRecord(
+          s,
+          owner: recordOwner.dbValue,
+          startedAtMs: startedAtMs,
+        );
+        await strategy.start(force: true);
+        if (sessionProvider.hasRunningSession) {
+          await sessionProvider.markScreenRecordStarted();
+        }
+        _strategy = strategy;
+      } catch (e2) {
+        _strategy = null;
+        try { await savedDevicesDao.clearScreenRecord(s); } catch (_) {}
+        try { await strategy.cleanup(); } catch (_) {}
+        if (!mounted) return;
+        _showSnackBar('${tr('recording.startFailed')}: $e2');
+        return;
+      }
     } catch (e) {
-      // Failure: roll back the DB row so the device doesn't show
-      // "recording in progress" forever.
-      try {
-        await savedDevicesDao.clearScreenRecord(s);
-      } catch (_) {}
-      try {
-        await apiClient.setShowTouches(s, false);
-      } catch (_) {}
+      _strategy = null;
+      try { await savedDevicesDao.clearScreenRecord(s); } catch (_) {}
+      try { await strategy.cleanup(); } catch (_) {}
       if (!mounted) return;
       _showSnackBar('${tr('recordingFailed')}: $e');
+      return;
     }
+    _showSnackBar(tr('recordingStarted'));
   }
+
+  RecordingStrategy? _strategy;
 
   Future<void> stopRecording() async {
     final s = serial;
     if (s == null) return;
     final row = _deviceRow;
 
-    // Refuse if the recording doesn't belong to us.
     if (row?.recordingOwner != null &&
         row!.recordingOwner != recordOwner.dbValue) {
       final other = ScreenRecordOwnerX.fromDb(row.recordingOwner);
@@ -332,56 +365,39 @@ mixin TestSessionCaptureMixin<T extends StatefulWidget> on State<T> {
       return;
     }
 
-    // Already saving — second click is a no-op.
     if (row?.recordingIsSaving ?? false) {
       return;
     }
 
-    // No active recording at all — also a no-op.
     if (row?.recordingOwner == null) {
       return;
     }
 
+    final strategy = _strategy;
+    _strategy = null;
+    if (strategy == null) return;
+
     try {
-      // Flip to saving BEFORE we touch adb so the UI shows the
-      // "保存中..." spinner for the duration of the pull.
       await savedDevicesDao.setScreenRecordSaving(s, true);
-      final bytes = await _capture.stopScreenRecordAndPull(s);
-      if (!mounted) {
-        // Widget gone: still clean up.
-        try {
-          await savedDevicesDao.clearScreenRecord(s);
-        } catch (_) {}
-        try {
-          await apiClient.setShowTouches(s, false);
-        } catch (_) {}
-        return;
-      }
+      final path = await strategy.stop();
+      final bytes =
+          path != null ? await File(path).readAsBytes() : Uint8List(0);
       String? rel;
-      final hasUsableBytes = bytes.isNotEmpty;
-      if (hasUsableBytes) {
+      if (bytes.isNotEmpty) {
         rel = await sessionProvider.saveVideoBytes(bytes);
       }
       await savedDevicesDao.clearScreenRecord(s);
       await _syncDeviceRowFromDb();
-      try {
-        await apiClient.setShowTouches(s, false);
-      } catch (e) {
-        debugPrint('[ScreenRecord] show_touches off failed: $e');
-      }
-      if (hasUsableBytes && rel != null && rel.isNotEmpty) {
+      await strategy.cleanup();
+      if (bytes.isNotEmpty && rel != null && rel.isNotEmpty) {
         await onVideoSaved(bytes, rel);
       } else {
         await onVideoDiscarded();
       }
     } catch (e) {
-      try {
-        await savedDevicesDao.clearScreenRecord(s);
-        await _syncDeviceRowFromDb();
-      } catch (_) {}
-      try {
-        await apiClient.setShowTouches(s, false);
-      } catch (_) {}
+      try { await savedDevicesDao.clearScreenRecord(s); } catch (_) {}
+      try { await _syncDeviceRowFromDb(); } catch (_) {}
+      try { await strategy.cleanup(); } catch (_) {}
       if (!mounted) return;
       _showSnackBar('${tr('recordingStopFailed')}: $e');
     }

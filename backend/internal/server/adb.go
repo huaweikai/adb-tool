@@ -22,12 +22,14 @@ type AdbManager struct {
 	recordSerial string
 	recordDone   chan error
 
-	// scrcpy bundles the screen-mirror subprocess. Single-instance per
-	// host (one scrcpy SDL window at a time), so we keep one cmd rather
-	// than a per-device map. Access only via scrcpy.mu — never touch
-	// these fields directly from outside adb_scrcpy.go.
-	scrcpy    scrcpyState
-	scrcpyFS  embed.FS // injected by NewAdbManager, sourced from main's embed_scrcpy_*.go
+	// scrcpy per-device state — one mirror and one recording per
+	// device, keyed by serial (ro.serialno). Different devices can
+	// run concurrently; same-device mirror + recording are mutually
+	// exclusive. scrcpyMu protects both maps.
+	scrcpyMap       map[string]*scrcpyState
+	scrcpyRecordMap map[string]*scrcpyRecordState
+	scrcpyMu        sync.Mutex
+	scrcpyFS        embed.FS // injected by NewAdbManager, sourced from main's embed_scrcpy_*.go
 
 	propsMu        sync.Mutex
 	propsCache     map[string]cachedDeviceProps
@@ -37,9 +39,11 @@ type AdbManager struct {
 
 func NewAdbManager(adbPath string, scrcpyFS embed.FS) *AdbManager {
 	return &AdbManager{
-		adbPath:    adbPath,
-		scrcpyFS:   scrcpyFS,
-		propsCache: make(map[string]cachedDeviceProps),
+		adbPath:         adbPath,
+		scrcpyMap:       make(map[string]*scrcpyState),
+		scrcpyRecordMap: make(map[string]*scrcpyRecordState),
+		scrcpyFS:        scrcpyFS,
+		propsCache:      make(map[string]cachedDeviceProps),
 	}
 }
 func (m *AdbManager) AdbPath() string {
@@ -88,6 +92,23 @@ func (m *AdbManager) Close() {
 			Log.Add("screenrecord wait", "", err, 0)
 		}
 	}
+	// Kill all per-device scrcpy mirror and recording processes.
+	m.scrcpyMu.Lock()
+	for serial, st := range m.scrcpyMap {
+		if st.cmd != nil && st.cmd.Process != nil {
+			Log.Add("scrcpy mirror kill (close)", "serial="+serial, nil, 0)
+			_ = st.cmd.Process.Kill()
+		}
+	}
+	m.scrcpyMap = make(map[string]*scrcpyState)
+	for serial, st := range m.scrcpyRecordMap {
+		if st.cmd != nil && st.cmd.Process != nil {
+			Log.Add("scrcpy recording kill (close)", "serial="+serial, nil, 0)
+			_ = st.cmd.Process.Kill()
+		}
+	}
+	m.scrcpyRecordMap = make(map[string]*scrcpyRecordState)
+	m.scrcpyMu.Unlock()
 	if _, err := m.runRaw("kill-server"); err != nil {
 		Log.Add("adb kill-server", "", err, 0)
 	}

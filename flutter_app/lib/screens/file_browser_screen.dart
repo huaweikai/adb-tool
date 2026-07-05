@@ -19,6 +19,7 @@ import '../widgets/transfer_progress_overlay.dart';
 import '../widgets/file_sheet_actions.dart';
 import '../widgets/info_row.dart';
 import '../widgets/offline_guard.dart';
+import '../mixins/device_reconnect_mixin.dart';
 import '../mixins/file_browser_capture_mixin.dart';
 import '../providers/test_session_provider.dart';
 import '../providers/locale_provider.dart';
@@ -49,7 +50,7 @@ class FileBrowserScreen extends StatefulWidget {
 }
 
 class _FileBrowserScreenState extends State<FileBrowserScreen>
-    with FileBrowserCaptureMixin<FileBrowserScreen> {
+    with FileBrowserCaptureMixin<FileBrowserScreen>, DeviceReconnectMixin<FileBrowserScreen> {
   /// Stable device identity (ro.serialno). Survives reconnects —
   /// handed to `ApiClient` directly; the API boundary resolves
   /// it to the current adb address on demand.
@@ -84,6 +85,18 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
     screenshotting = false;
     initScreenRecordState();
     _loadFiles();
+  }
+
+  // ── DeviceReconnectMixin 实现 ─────────────────────────────────
+
+  @override
+  String? get reconnectSerial => _selectedSerial;
+
+  @override
+  void onDeviceReconnected() {
+    if (_error != null || (_files.isEmpty && !_loading)) {
+      _loadFiles();
+    }
   }
 
   // ── FileBrowserCaptureMixin 实现 ─────────────────────────────
@@ -695,6 +708,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
   }
 
   Future<void> _onDropFile(DropDoneDetails details) async {
+    if (!context.read<DeviceScreenActiveScope>().active) return;
     if (isTransferring) return;
     final deviceSerial = _selectedSerial;
     if (deviceSerial == null) return;
@@ -785,6 +799,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
 
   @override
   Widget build(BuildContext context) {
+    context.watch<DeviceSerialScope>();
     context.watch<LocaleProvider>();
     context.watch<TestConfigProvider>();
     // The mixin's initScreenRecordState() opened a stream subscription

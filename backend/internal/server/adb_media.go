@@ -69,7 +69,7 @@ func (m *AdbManager) StartScreenRecord(serial string) error {
 	return nil
 }
 
-func (m *AdbManager) StopScreenRecord(serial string) error {
+func (m *AdbManager) StopScreenRecord(serial string) (string, error) {
 	defer func() {
 		if _, err := m.run("-s", serial, "shell", "settings", "put", "system", "show_touches", "0"); err != nil {
 			Log.Add("screenrecord show_touches off", "", err, 0)
@@ -78,25 +78,13 @@ func (m *AdbManager) StopScreenRecord(serial string) error {
 
 	cmd, done := m.recordProcess(serial)
 	if cmd == nil {
-		return m.waitRecordedVideo(serial, 2*time.Second)
+		return m.pullRecordedVideoToHost(serial, 2*time.Second)
 	}
 
-	// Stop screenrecord by sending SIGINT from the DEVICE side.
-	// This avoids cross-platform signal forwarding issues:
-	//   - Windows os.Interrupt = CTRL_C_EVENT, adb may not forward it reliably
-	//   - Unix SIGINT is forwarded fine, but device-side kill is cleaner
-	// Using "kill -INT $(pgrep screenrecord)" sends SIGINT to the screenrecord
-	// process, which causes it to flush buffers and finalize the MP4 muxer —
-	// exactly what Ctrl+C does.
 	m.killScreenRecordOnDevice(serial)
 
-	// Wait for the local adb subprocess to exit.
-	// The subprocess exits automatically once the remote screenrecord exits,
-	// so we don't need a separate "wait for remote" step.
 	if err := waitRecordDone(done, 8*time.Second); err != nil {
 		Log.Add("screenrecord local wait", "", err, 0)
-		// Fallback: kill the local adb process if it didn't exit.
-		// This can happen if the device-side kill failed.
 		if cmd.Process != nil {
 			if killErr := cmd.Process.Kill(); killErr != nil {
 				Log.Add("screenrecord local kill", "", killErr, 0)
@@ -109,18 +97,38 @@ func (m *AdbManager) StopScreenRecord(serial string) error {
 
 	m.clearRecord(serial, cmd)
 
-	// KEY FIX: Force Android filesystem sync before waiting for the file.
-	// screenrecord exits, but Android's buffer cache may not have flushed
-	// the MP4 data to storage yet. Run sync multiple times — some slow
-	// storage controllers need more than one round to actually flush.
-	// Errors are best-effort: sync may not be available on all devices.
 	for i := 0; i < 3; i++ {
 		if _, err := m.run("-s", serial, "shell", "sync"); err != nil {
 			Log.Add(fmt.Sprintf("screenrecord sync round %d", i+1), "", err, 0)
 		}
 	}
 
-	return m.waitRecordedVideo(serial, 20*time.Second)
+	return m.pullRecordedVideoToHost(serial, 20*time.Second)
+}
+
+func adbRecordingsDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("no home dir for adb recordings: %w", err)
+	}
+	dir := filepath.Join(home, ".adb-tool", "adb_recordings")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", fmt.Errorf("create adb recordings sandbox: %w", err)
+	}
+	return dir, nil
+}
+
+func (m *AdbManager) pullRecordedVideoToHost(serial string, timeout time.Duration) (string, error) {
+	dir, err := adbRecordingsDir()
+	if err != nil {
+		return "", err
+	}
+	hostPath := filepath.Join(dir, fmt.Sprintf("adb-tool-record_%d.mp4", time.Now().UnixNano()))
+	if _, err := m.run("-s", serial, "pull", recordedVideoPath, hostPath); err != nil {
+		return "", err
+	}
+	go m.CleanRecordedVideo(serial)
+	return hostPath, nil
 }
 
 // killScreenRecordOnDevice sends SIGINT to the running screenrecord process

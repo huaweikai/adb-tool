@@ -45,7 +45,6 @@ func (s *Server) handleScreenRecord(w http.ResponseWriter, r *http.Request) {
 			s.recordingSerial = ""
 			s.recordStarted = time.Time{}
 			s.recordMu.Unlock()
-			// Best-effort cleanup — ignore errors (process may already be dead).
 			s.adb.StopScreenRecord(staleSerial)
 		} else {
 			s.recordMu.Unlock()
@@ -71,7 +70,7 @@ func (s *Server) handleScreenRecord(w http.ResponseWriter, r *http.Request) {
 		started := s.recordStarted
 		s.recordMu.Unlock()
 
-		err := s.adb.StopScreenRecord(serial)
+		path, err := s.adb.StopScreenRecord(serial)
 
 		s.recordMu.Lock()
 		if s.recordingSerial == serial {
@@ -89,6 +88,7 @@ func (s *Server) handleScreenRecord(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]interface{}{
 			"status":  "stopped",
 			"elapsed": elapsed,
+			"path":    path,
 		})
 
 	case "status":

@@ -10,6 +10,7 @@ import '../widgets/offline_guard.dart';
 import '../providers/locale_provider.dart';
 import '../providers/device_provider.dart';
 import 'package:provider/provider.dart';
+import '../mixins/device_reconnect_mixin.dart';
 
 class AppManagerScreen extends StatefulWidget {
   const AppManagerScreen({
@@ -20,7 +21,8 @@ class AppManagerScreen extends StatefulWidget {
   State<AppManagerScreen> createState() => _AppManagerScreenState();
 }
 
-class _AppManagerScreenState extends State<AppManagerScreen> {
+class _AppManagerScreenState extends State<AppManagerScreen>
+    with DeviceReconnectMixin<AppManagerScreen> {
   /// Stable device identity (ro.serialno). Survives reconnects —
   /// handed to `ApiClient` directly; the API boundary resolves
   /// it to the current adb address on demand.
@@ -41,6 +43,18 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
   void initState() {
     super.initState();
     _loadPackages();
+  }
+
+  // ── DeviceReconnectMixin 实现 ─────────────────────────────────
+
+  @override
+  String? get reconnectSerial => _selectedSerial;
+
+  @override
+  void onDeviceReconnected() {
+    if (_error != null || (_allPackages.isEmpty && !_loading)) {
+      _loadPackages();
+    }
   }
 
   Future<void> _loadPackages() async {
@@ -219,6 +233,7 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
   }
 
   Future<void> _onDropApk(DropDoneDetails details) async {
+    if (!context.read<DeviceScreenActiveScope>().active) return;
     if (_installing) return;
     final deviceSerial = _selectedSerial;
     if (deviceSerial == null) return;
@@ -342,6 +357,7 @@ class _AppManagerScreenState extends State<AppManagerScreen> {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<DeviceSerialScope>();
     context.watch<LocaleProvider>();
     if (_selectedSerial == null) {
       return Center(

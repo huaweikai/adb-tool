@@ -42,6 +42,14 @@ class _TestSessionActiveContentState extends State<TestSessionActiveContent>
   Timer? _logcatTimer;
   StreamSubscription<String>? _recordingInterruptedSub;
 
+  // Lazily-instantiated stream-backed section widgets. Cached by identity
+  // so a `TestSessionProvider.notifyListeners()` (note / issue / screenshot
+  // mutation) rebuilds the toolbar only — the timeline and side panel
+  // subscribe to their own drift streams and rebuild independently of the
+  // provider's notify cycle. See `_TimelineBody` / `_SidePanelBody`.
+  _TimelineBody? _timeline;
+  _SidePanelBody? _sidePanel;
+
   @override
   late bool screenshotting;
 
@@ -110,6 +118,26 @@ class _TestSessionActiveContentState extends State<TestSessionActiveContent>
   }
 
   @override
+  void didUpdateWidget(covariant TestSessionActiveContent oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // The cached section widgets (_timeline / _sidePanel) bind to a
+    // specific session id in their initState — their drift stream
+    // subscriptions are keyed on `widget.sessionId` captured once at
+    // creation. If the parent ever reuses this State with a different
+    // resumeSessionId (rather than disposing + recreating it, which is
+    // what the hub currently does via its ValueKey), discard the cache
+    // so the next build reconstructs the children against the new
+    // session. The ValueKey on each child then forces Flutter to
+    // dispose the old element (cancelling its stream sub) and mount a
+    // fresh one — without the key the old State would be reused and
+    // its late-final stream would stay pinned to the old session.
+    if (oldWidget.resumeSessionId != widget.resumeSessionId) {
+      _timeline = null;
+      _sidePanel = null;
+    }
+  }
+
+  @override
   void dispose() {
     disposeScreenRecordState();
     _logcatTimer?.cancel();
@@ -132,6 +160,27 @@ class _TestSessionActiveContentState extends State<TestSessionActiveContent>
     if (session == null || session.id != widget.resumeSessionId) {
       return const Center(child: CircularProgressIndicator());
     }
+
+    // Lazily cache the stream-backed section widgets on the first build
+    // that sees a loaded session. Subsequent parent rebuilds return the
+    // same instances, so TestSessionProvider.notifyListeners() (fired on
+    // any mutation) skips these subtrees — only their own drift streams
+    // re-render them, and only when the rows they depend on change.
+    _timeline ??= _TimelineBody(
+      key: ValueKey('timeline:${widget.resumeSessionId}'),
+      sessionId: session.id,
+      initialEvents: session.events,
+      onTapAttachment: _showAttachmentPreview,
+    );
+    _sidePanel ??= _SidePanelBody(
+      key: ValueKey('sidepanel:${widget.resumeSessionId}'),
+      sessionId: session.id,
+      initialPlan: session.testPlan,
+      initialIssues: session.issues,
+      initialNotes: session.notes,
+      initialArtifacts: session.artifacts,
+      onUpdatePlanItem: _updatePlanItem,
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -234,9 +283,9 @@ class _TestSessionActiveContentState extends State<TestSessionActiveContent>
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Expanded(flex: 3, child: _buildTimeline(theme, session)),
+              Expanded(flex: 3, child: _timeline!),
               VerticalDivider(width: 1, color: theme.dividerColor),
-              Expanded(flex: 2, child: _buildSidePanel(theme, session)),
+              Expanded(flex: 2, child: _sidePanel!),
             ],
           ),
         ),
@@ -296,96 +345,6 @@ class _TestSessionActiveContentState extends State<TestSessionActiveContent>
       label: Text(tr('screenshot'), style: const TextStyle(fontSize: 11)),
       style: FilledButton.styleFrom(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6)),
-    );
-  }
-
-  Widget _buildTimeline(ThemeData theme, TestSession session) {
-    final total = session.events.length;
-    return ListView.separated(
-      padding: const EdgeInsets.all(12),
-      itemCount: total + 1,
-      separatorBuilder: (_, __) => const SizedBox(height: 8),
-      itemBuilder: (ctx, i) {
-        if (i == 0)
-          return Text(tr('sessionTimeline'),
-              style: theme.textTheme.titleSmall
-                  ?.copyWith(fontWeight: FontWeight.w600));
-        final eventIdx = i - 1;
-        final event = session.events[eventIdx];
-        // Only the session-level first/last (sessionCreated/sessionFinished)
-        // are protected. Pair events (e.g. logcatStarted without a matching
-        // logcatStopped) are deletable — provider auto-fills the missing end.
-        final canDelete = false;
-        return SessionTimelineItem(
-          theme: theme,
-          event: event,
-          canDelete: canDelete,
-          eventTitle: (t) => sessionEventTitle(t, tr),
-          eventColor: sessionEventColor,
-          onDelete: canDelete ? () => _confirmDeleteEvent(event) : null,
-          onTapAttachment: event.filePath != null
-              ? () => _showAttachmentPreview(event)
-              : null,
-        );
-      },
-    );
-  }
-
-  Widget _buildSidePanel(ThemeData theme, TestSession session) {
-    return ListView(
-      padding: const EdgeInsets.all(12),
-      children: [
-        // Test plan
-        previewSectionTitle(
-            theme, '${tr('sessionTestPlan')} (${session.testPlan.length})'),
-        if (session.testPlan.isEmpty)
-          Text(tr('noTestPlan'),
-              style: TextStyle(
-                  color: theme.colorScheme.onSurfaceVariant, fontSize: 12))
-        else
-          ...session.testPlan.map((item) => previewPlanItem(
-                theme,
-                item,
-                onStatusChange: !_busy ? () => _updatePlanItem(item.id) : null,
-              )),
-
-        const SizedBox(height: 16),
-
-        // Issues
-        previewSectionTitle(
-            theme, '${tr('sessionIssues')} (${session.issues.length})'),
-        if (session.issues.isEmpty)
-          Text(tr('noIssues'),
-              style: TextStyle(
-                  color: theme.colorScheme.onSurfaceVariant, fontSize: 12))
-        else
-          ...session.issues.map((issue) => previewIssueItem(theme, issue)),
-
-        const SizedBox(height: 16),
-
-        // Notes
-        previewSectionTitle(
-            theme, '${tr('sessionNotes')} (${session.notes.length})'),
-        if (session.notes.isEmpty)
-          Text(tr('noNotes'),
-              style: TextStyle(
-                  color: theme.colorScheme.onSurfaceVariant, fontSize: 12))
-        else
-          ...session.notes.map((note) => previewNoteItem(theme, note)),
-
-        const SizedBox(height: 16),
-
-        // Artifacts
-        previewSectionTitle(
-            theme, '${tr('sessionArtifacts')} (${session.artifacts.length})'),
-        if (session.artifacts.isEmpty)
-          Text(tr('noArtifacts'),
-              style: TextStyle(
-                  color: theme.colorScheme.onSurfaceVariant, fontSize: 12))
-        else
-          ...session.artifacts
-              .map((a) => previewArtifactItem(theme, a, sessionId: session.id)),
-      ],
     );
   }
 
@@ -660,39 +619,6 @@ class _TestSessionActiveContentState extends State<TestSessionActiveContent>
     // Stream update will cause hub to rebuild and switch back to start card
   }
 
-  Future<void> _confirmDeleteEvent(TestSessionEvent event) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(tr('deleteEvent')),
-        content: Text(tr('deleteEventConfirm', {'title': event.title})),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: Text(tr('cancel'))),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(tr('delete')),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-    try {
-      await sessionProvider.deleteEvent(event.id);
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$e'), behavior: SnackBarBehavior.floating),
-      );
-    }
-  }
-
-  static bool _isSessionBoundaryEvent(TestSessionEvent event) {
-    return event.type == TestSessionEventType.sessionCreated ||
-        event.type == TestSessionEventType.sessionFinished;
-  }
-
   Future<void> _showAttachmentPreview(TestSessionEvent event) async {
     if (event.filePath == null) return;
     final theme = Theme.of(context);
@@ -866,6 +792,280 @@ class _ElapsedLabelState extends State<_ElapsedLabel> {
     return Text(
       fmtElapsed(DateTime.now().difference(widget.startedAt)),
       style: widget.style,
+    );
+  }
+}
+
+// ── Row → model converters (mirror TestSessionProvider._rowToModel) ──────
+// The provider hydrates a whole TestSession from these rows; the
+// stream-backed sections below rehydrate each child list independently so
+// a note mutation no longer rebuilds the event list / issues / plan.
+TestSessionEvent _eventFromRow(TestSessionEventRow e) => TestSessionEvent(
+      id: e.id,
+      type: e.type,
+      time: e.time,
+      title: e.title,
+      detail: e.detail,
+      filePath: e.filePath,
+    );
+
+TestSessionArtifact _artifactFromRow(TestSessionArtifactRow a) =>
+    TestSessionArtifact(
+      id: a.id,
+      kind: a.kind,
+      name: a.name,
+      path: a.path,
+      createdAt: a.createdAt,
+      size: a.size,
+    );
+
+TestSessionNote _noteFromRow(TestSessionNoteRow n) => TestSessionNote(
+      id: n.id,
+      createdAt: n.createdAt,
+      content: n.content,
+    );
+
+TestSessionIssue _issueFromRow(TestSessionIssueRow i) => TestSessionIssue(
+      id: i.id,
+      createdAt: i.createdAt,
+      title: i.title,
+      type: i.type,
+      severity: i.severity,
+      steps: i.steps,
+      expected: i.expected,
+      actual: i.actual,
+      note: i.note,
+      relatedArtifactIds: const [],
+    );
+
+TestSessionPlanItem _planItemFromRow(TestSessionPlanItemRow p) =>
+    TestSessionPlanItem(
+      id: p.id,
+      flowName: p.flowName,
+      step: p.step,
+      status: p.status,
+      message: p.message,
+      startedAt: p.startedAt,
+      updatedAt: p.updatedAt,
+    );
+
+/// Stream-driven, virtualized timeline. Subscribes to
+/// `watchEventsForSession` once (in initState) so the parent's
+/// `TestSessionProvider.notifyListeners()` — fired on every note / issue /
+/// screenshot mutation — does NOT rebuild this list. Only an actual
+/// change to the events table re-renders it.
+class _TimelineBody extends StatefulWidget {
+  final String sessionId;
+  final List<TestSessionEvent> initialEvents;
+  final void Function(TestSessionEvent) onTapAttachment;
+
+  const _TimelineBody({
+    super.key,
+    required this.sessionId,
+    required this.initialEvents,
+    required this.onTapAttachment,
+  });
+
+  @override
+  State<_TimelineBody> createState() => _TimelineBodyState();
+}
+
+class _TimelineBodyState extends State<_TimelineBody> {
+  late final Stream<List<TestSessionEvent>> _stream;
+
+  @override
+  void initState() {
+    super.initState();
+    final provider = context.read<TestSessionProvider>();
+    _stream = provider
+        .watchEventsForSession(widget.sessionId)
+        .map((rows) => rows.map(_eventFromRow).toList());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Watch locale HERE (not only in the parent): the parent caches this
+    // widget by identity, so without its own LocaleProvider dependency
+    // its translations would go stale on a language toggle.
+    context.watch<LocaleProvider>();
+    final theme = Theme.of(context);
+    return StreamBuilder<List<TestSessionEvent>>(
+      initialData: widget.initialEvents,
+      stream: _stream,
+      builder: (context, snapshot) {
+        final events = snapshot.data ?? widget.initialEvents;
+        final total = events.length;
+        return ListView.separated(
+          padding: const EdgeInsets.all(12),
+          itemCount: total + 1,
+          separatorBuilder: (_, __) => const SizedBox(height: 8),
+          itemBuilder: (ctx, i) {
+            if (i == 0) {
+              return Text(tr('sessionTimeline'),
+                  style: theme.textTheme.titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w600));
+            }
+            final event = events[i - 1];
+            return SessionTimelineItem(
+              theme: theme,
+              event: event,
+              canDelete: false,
+              eventTitle: (t) => sessionEventTitle(t, tr),
+              eventColor: sessionEventColor,
+              onTapAttachment: event.filePath != null
+                  ? () => widget.onTapAttachment(event)
+                  : null,
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+/// Stream-driven, virtualized side panel. Each section subscribes to its
+/// own drift stream, so adding a note rebuilds only the notes sliver —
+/// not the timeline, toolbar, issues, or plan items. Rendered as a
+/// `CustomScrollView` of `SliverList`s so 100+ items stay virtualized
+/// (the previous `ListView(children: [...spread...])` rendered every
+/// item eagerly).
+class _SidePanelBody extends StatefulWidget {
+  final String sessionId;
+  final List<TestSessionPlanItem> initialPlan;
+  final List<TestSessionIssue> initialIssues;
+  final List<TestSessionNote> initialNotes;
+  final List<TestSessionArtifact> initialArtifacts;
+  final void Function(String itemId) onUpdatePlanItem;
+
+  const _SidePanelBody({
+    super.key,
+    required this.sessionId,
+    required this.initialPlan,
+    required this.initialIssues,
+    required this.initialNotes,
+    required this.initialArtifacts,
+    required this.onUpdatePlanItem,
+  });
+
+  @override
+  State<_SidePanelBody> createState() => _SidePanelBodyState();
+}
+
+class _SidePanelBodyState extends State<_SidePanelBody> {
+  late final Stream<List<TestSessionPlanItem>> _planStream;
+  late final Stream<List<TestSessionIssue>> _issuesStream;
+  late final Stream<List<TestSessionNote>> _notesStream;
+  late final Stream<List<TestSessionArtifact>> _artifactsStream;
+
+  @override
+  void initState() {
+    super.initState();
+    final provider = context.read<TestSessionProvider>();
+    final id = widget.sessionId;
+    _planStream = provider
+        .watchPlanItemsForSession(id)
+        .map((rows) => rows.map(_planItemFromRow).toList());
+    _issuesStream = provider
+        .watchIssuesForSession(id)
+        .map((rows) => rows.map(_issueFromRow).toList());
+    _notesStream = provider
+        .watchNotesForSession(id)
+        .map((rows) => rows.map(_noteFromRow).toList());
+    _artifactsStream = provider
+        .watchArtifactsForSession(id)
+        .map((rows) => rows.map(_artifactFromRow).toList());
+  }
+
+  /// Builds one section as a single `SliverList` whose index 0 is the
+  /// (live-count) title and index 1..N are the items (or an empty hint).
+  /// Wrapping title + items in one sliver keeps the count in sync with
+  /// the stream without a second subscription.
+  Widget _sectionSliver<T>({
+    required Stream<List<T>> stream,
+    required List<T> initial,
+    required String titleKey,
+    required String emptyKey,
+    required Widget Function(ThemeData, T) itemBuilder,
+    required ThemeData theme,
+  }) {
+    return StreamBuilder<List<T>>(
+      initialData: initial,
+      stream: stream,
+      builder: (context, snap) {
+        final items = snap.data ?? initial;
+        final empty = items.isEmpty;
+        return SliverList(
+          delegate: SliverChildBuilderDelegate(
+            (ctx, i) {
+              if (i == 0) {
+                return previewSectionTitle(
+                    theme, '${tr(titleKey)} (${items.length})');
+              }
+              if (empty) {
+                return Text(tr(emptyKey),
+                    style: TextStyle(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        fontSize: 12));
+              }
+              return itemBuilder(theme, items[i - 1]);
+            },
+            childCount: empty ? 2 : items.length + 1,
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    context.watch<LocaleProvider>();
+    final theme = Theme.of(context);
+    // CustomScrollView has no `padding` param (unlike ListView); wrap in
+    // Padding so the 12px outer inset is preserved without per-sliver
+    // SliverPadding boilerplate.
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: CustomScrollView(
+        slivers: [
+          _sectionSliver(
+            stream: _planStream,
+            initial: widget.initialPlan,
+            titleKey: 'sessionTestPlan',
+            emptyKey: 'noTestPlan',
+            theme: theme,
+            itemBuilder: (theme, item) => previewPlanItem(theme, item,
+                onStatusChange: () => widget.onUpdatePlanItem(item.id)),
+          ),
+          const SliverToBoxAdapter(child: SizedBox(height: 16)),
+          _sectionSliver(
+            stream: _issuesStream,
+            initial: widget.initialIssues,
+            titleKey: 'sessionIssues',
+            emptyKey: 'noIssues',
+            theme: theme,
+            itemBuilder: previewIssueItem,
+          ),
+          const SliverToBoxAdapter(child: SizedBox(height: 16)),
+          _sectionSliver(
+            stream: _notesStream,
+            initial: widget.initialNotes,
+            titleKey: 'sessionNotes',
+            emptyKey: 'noNotes',
+            theme: theme,
+            itemBuilder: previewNoteItem,
+          ),
+          const SliverToBoxAdapter(child: SizedBox(height: 16)),
+          _sectionSliver(
+            stream: _artifactsStream,
+            initial: widget.initialArtifacts,
+            titleKey: 'sessionArtifacts',
+            emptyKey: 'noArtifacts',
+            theme: theme,
+            itemBuilder: (theme, a) =>
+                previewArtifactItem(theme, a, sessionId: widget.sessionId),
+          ),
+        ],
+      ),
     );
   }
 }

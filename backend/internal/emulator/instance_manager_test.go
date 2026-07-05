@@ -154,6 +154,9 @@ func TestUpdateAVDConfigWritesFlatEmulatorKeys(t *testing.T) {
 		"hw.lcd.width=1080\n",
 		"hw.lcd.height=1920\n",
 		"hw.lcd.density=420\n",
+		// target= must be present — emulator 36.x's avdInfo_getApiLevel
+		// NULL-derefs without it (SIGSEGV at 0x98 in avdInfo_getApiLevel).
+		"target=android-30\n",
 	} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("config.ini missing %q: %q", required, text)

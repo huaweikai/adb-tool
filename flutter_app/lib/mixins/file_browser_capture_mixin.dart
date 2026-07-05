@@ -16,6 +16,12 @@
 // the single source of truth, which means navigating away and back
 // (which disposes & rebuilds the State) does NOT lose progress.
 //
+// Recording method (v10+): the mixin branches on
+// `RecordingSettingsProvider.method` — adb (legacy `adb screenrecord`)
+// or scrcpy (windowless `scrcpy --no-window --record=…`). The DB row
+// and the per-second elapsed ticker are method-agnostic; only the
+// start/stop and the "where does the file come from" bits differ.
+//
 // Required state members:
 // - `ApiClient get apiClient`
 // - `TestSessionProvider get sessionProvider`
@@ -31,13 +37,19 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:pro_image_editor/pro_image_editor.dart';
+import 'package:provider/provider.dart';
 
 import '../db/database.dart';
 import '../db/dao/saved_devices_dao.dart';
 import '../i18n.dart';
 import '../services/api_client.dart';
+import '../services/screen_capture_service.dart';
+import '../services/recording_strategy.dart';
 import '../services/screen_record_owner.dart';
+import '../providers/recording_settings_provider.dart';
+import '../providers/scrcpy_record_state_provider.dart';
 import '../providers/test_session_provider.dart';
+import '../widgets/recording_settings_dialogs.dart';
 import '../widgets/screenshot_watermark.dart';
 import '../widgets/editor_i18n.dart';
 
@@ -59,6 +71,12 @@ mixin FileBrowserCaptureMixin<T extends StatefulWidget> on State<T> {
   SavedDevice? _deviceRow;
   StreamSubscription<SavedDevice?>? _deviceSub;
   Timer? _elapsedTicker;
+
+  // Scrcpy-mode state: the path the recording is being written to
+  // Service handle — same pattern as TestSessionCaptureMixin. The
+  // service is stateless so a single late-final instance is enough.
+  late final ScreenCaptureService _capture =
+      ScreenCaptureService(apiClient);
 
   // ── Lifecycle hooks ─────────────────────────────────────────────────
   void initScreenRecordState() {
@@ -171,8 +189,8 @@ mixin FileBrowserCaptureMixin<T extends StatefulWidget> on State<T> {
   Future<void> startRecording() async {
     final s = serial;
     if (s == null) return;
-    // Always read the fresh row from DB — _deviceRow may still be null if
-    // the stream hasn't emitted yet after a State rebuild.
+    final settings = context.read<RecordingSettingsProvider>();
+    final recordState = context.read<ScrcpyRecordStateProvider>();
     final row = await savedDevicesDao.getBySerial(s);
     if (row?.recordingOwner != null) {
       final rowOwner = ScreenRecordOwnerX.fromDb(row!.recordingOwner!);
@@ -186,36 +204,65 @@ mixin FileBrowserCaptureMixin<T extends StatefulWidget> on State<T> {
     }
 
     final startedAtMs = DateTime.now().millisecondsSinceEpoch;
+    final strategy = RecordingStrategy.create(
+      settings.method,
+      serial: s,
+      api: apiClient,
+      capture: _capture,
+      recordState: recordState,
+    );
+    _strategy = strategy;
+
     try {
-      // Stamp the device row FIRST.
       await savedDevicesDao.setScreenRecord(
         s,
         owner: recordOwner.dbValue,
         startedAtMs: startedAtMs,
       );
-      try {
-        await apiClient.setShowTouches(s, true);
-      } catch (e) {
-        debugPrint('[ScreenRecord] show_touches on failed: $e');
+      await strategy.start();
+    } on ScrcpyRecordBusyException catch (e) {
+      _strategy = null;
+      if (!mounted) {
+        try { await savedDevicesDao.clearScreenRecord(s); } catch (_) {}
+        return;
       }
-      await apiClient.screenRecordAction(s, 'start');
-      // NOTE: we do NOT call sessionProvider.markScreenRecordStarted() here.
-      // Only the test-session mixin (which actually owns the session's
-      // video artifacts) should insert a "开始录屏" event into the session
-      // timeline. A recording started from the file browser is a
-      // standalone action — it has nothing to do with the session.
-      _showSnackBar(tr('recordingStarted'));
+      final ok = await showScrcpyBusyConfirmDialog(
+        context,
+        busy: e,
+        activeSerial: s,
+      );
+      if (ok != true) {
+        try { await savedDevicesDao.clearScreenRecord(s); } catch (_) {}
+        return;
+      }
+      try {
+        await savedDevicesDao.setScreenRecord(
+          s,
+          owner: recordOwner.dbValue,
+          startedAtMs: startedAtMs,
+        );
+        await strategy.start(force: true);
+        _strategy = strategy;
+      } catch (e2) {
+        _strategy = null;
+        try { await savedDevicesDao.clearScreenRecord(s); } catch (_) {}
+        try { await strategy.cleanup(); } catch (_) {}
+        if (!mounted) return;
+        _showSnackBar('${tr('recording.startFailed')}: $e2');
+        return;
+      }
     } catch (e) {
-      try {
-        await savedDevicesDao.clearScreenRecord(s);
-      } catch (_) {}
-      try {
-        await apiClient.setShowTouches(s, false);
-      } catch (_) {}
+      _strategy = null;
+      try { await savedDevicesDao.clearScreenRecord(s); } catch (_) {}
+      try { await strategy.cleanup(); } catch (_) {}
       if (!mounted) return;
       _showSnackBar('${tr('recordingFailed')}: $e');
+      return;
     }
+    _showSnackBar(tr('recordingStarted'));
   }
+
+  RecordingStrategy? _strategy;
 
   Future<void> stopRecording() async {
     final s = serial;
@@ -240,40 +287,27 @@ mixin FileBrowserCaptureMixin<T extends StatefulWidget> on State<T> {
       return;
     }
 
+    final strategy = _strategy;
+    _strategy = null;
+    if (strategy == null) return;
+
     try {
       await savedDevicesDao.setScreenRecordSaving(s, true);
-      await apiClient.screenRecordAction(s, 'stop');
-      if (!mounted) {
-        try {
-          await savedDevicesDao.clearScreenRecord(s);
-        } catch (_) {}
-        try {
-          await apiClient.setShowTouches(s, false);
-        } catch (_) {}
-        return;
-      }
+      final path = await strategy.stop();
       final bytes =
-          Uint8List.fromList(await apiClient.pullRecordedVideo(s));
+          path != null ? await File(path).readAsBytes() : Uint8List(0);
       await savedDevicesDao.clearScreenRecord(s);
       await _syncDeviceRowFromDb();
-      try {
-        await apiClient.setShowTouches(s, false);
-      } catch (e) {
-        debugPrint('[ScreenRecord] show_touches off failed: $e');
-      }
+      await strategy.cleanup();
       if (bytes.isNotEmpty) {
         await onVideoSaved(bytes);
       } else {
         await onVideoDiscarded();
       }
     } catch (e) {
-      try {
-        await savedDevicesDao.clearScreenRecord(s);
-        await _syncDeviceRowFromDb();
-      } catch (_) {}
-      try {
-        await apiClient.setShowTouches(s, false);
-      } catch (_) {}
+      try { await savedDevicesDao.clearScreenRecord(s); } catch (_) {}
+      try { await _syncDeviceRowFromDb(); } catch (_) {}
+      try { await strategy.cleanup(); } catch (_) {}
       if (!mounted) return;
       _showSnackBar('${tr('recordingStopFailed')}: $e');
     }

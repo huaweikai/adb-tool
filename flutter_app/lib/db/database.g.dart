@@ -670,6 +670,20 @@ class $AppStatesTable extends AppStates
       defaultConstraints: GeneratedColumn.constraintIsAlways(
           'CHECK ("sidebar_collapsed" IN (0, 1))'),
       defaultValue: const Constant(false));
+  static const VerificationMeta _screenRecordMethodMeta =
+      const VerificationMeta('screenRecordMethod');
+  @override
+  late final GeneratedColumn<String> screenRecordMethod =
+      GeneratedColumn<String>('screen_record_method', aliasedName, false,
+          type: DriftSqlType.string,
+          requiredDuringInsert: false,
+          defaultValue: const Constant('adb'));
+  static const VerificationMeta _scrcpyRecordOutputDirMeta =
+      const VerificationMeta('scrcpyRecordOutputDir');
+  @override
+  late final GeneratedColumn<String> scrcpyRecordOutputDir =
+      GeneratedColumn<String>('scrcpy_record_output_dir', aliasedName, true,
+          type: DriftSqlType.string, requiredDuringInsert: false);
   @override
   List<GeneratedColumn> get $columns => [
         id,
@@ -680,7 +694,9 @@ class $AppStatesTable extends AppStates
         selectedSDKPath,
         selectedJavaPath,
         sidebarWidth,
-        sidebarCollapsed
+        sidebarCollapsed,
+        screenRecordMethod,
+        scrcpyRecordOutputDir
       ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -743,6 +759,19 @@ class $AppStatesTable extends AppStates
           sidebarCollapsed.isAcceptableOrUnknown(
               data['sidebar_collapsed']!, _sidebarCollapsedMeta));
     }
+    if (data.containsKey('screen_record_method')) {
+      context.handle(
+          _screenRecordMethodMeta,
+          screenRecordMethod.isAcceptableOrUnknown(
+              data['screen_record_method']!, _screenRecordMethodMeta));
+    }
+    if (data.containsKey('scrcpy_record_output_dir')) {
+      context.handle(
+          _scrcpyRecordOutputDirMeta,
+          scrcpyRecordOutputDir.isAcceptableOrUnknown(
+              data['scrcpy_record_output_dir']!,
+              _scrcpyRecordOutputDirMeta));
+    }
     return context;
   }
 
@@ -771,6 +800,11 @@ class $AppStatesTable extends AppStates
           .read(DriftSqlType.int, data['${effectivePrefix}sidebar_width'])!,
       sidebarCollapsed: attachedDatabase.typeMapping.read(
           DriftSqlType.bool, data['${effectivePrefix}sidebar_collapsed'])!,
+      screenRecordMethod: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}screen_record_method'])!,
+      scrcpyRecordOutputDir: attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}scrcpy_record_output_dir']),
     );
   }
 
@@ -790,6 +824,8 @@ class AppState extends DataClass implements Insertable<AppState> {
   final String? selectedJavaPath;
   final int sidebarWidth;
   final bool sidebarCollapsed;
+  final String screenRecordMethod;
+  final String? scrcpyRecordOutputDir;
   const AppState(
       {required this.id,
       this.activeSerial,
@@ -799,7 +835,9 @@ class AppState extends DataClass implements Insertable<AppState> {
       this.selectedSDKPath,
       this.selectedJavaPath,
       required this.sidebarWidth,
-      required this.sidebarCollapsed});
+      required this.sidebarCollapsed,
+      required this.screenRecordMethod,
+      this.scrcpyRecordOutputDir});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -823,6 +861,11 @@ class AppState extends DataClass implements Insertable<AppState> {
     }
     map['sidebar_width'] = Variable<int>(sidebarWidth);
     map['sidebar_collapsed'] = Variable<bool>(sidebarCollapsed);
+    map['screen_record_method'] = Variable<String>(screenRecordMethod);
+    if (!nullToAbsent || scrcpyRecordOutputDir != null) {
+      map['scrcpy_record_output_dir'] =
+          Variable<String>(scrcpyRecordOutputDir);
+    }
     return map;
   }
 
@@ -847,6 +890,10 @@ class AppState extends DataClass implements Insertable<AppState> {
           : Value(selectedJavaPath),
       sidebarWidth: Value(sidebarWidth),
       sidebarCollapsed: Value(sidebarCollapsed),
+      screenRecordMethod: Value(screenRecordMethod),
+      scrcpyRecordOutputDir: scrcpyRecordOutputDir == null && nullToAbsent
+          ? const Value.absent()
+          : Value(scrcpyRecordOutputDir),
     );
   }
 
@@ -864,6 +911,10 @@ class AppState extends DataClass implements Insertable<AppState> {
       selectedJavaPath: serializer.fromJson<String?>(json['selectedJavaPath']),
       sidebarWidth: serializer.fromJson<int>(json['sidebarWidth']),
       sidebarCollapsed: serializer.fromJson<bool>(json['sidebarCollapsed']),
+      screenRecordMethod:
+          serializer.fromJson<String>(json['screenRecordMethod'] ?? 'adb'),
+      scrcpyRecordOutputDir:
+          serializer.fromJson<String?>(json['scrcpyRecordOutputDir']),
     );
   }
   @override
@@ -880,6 +931,9 @@ class AppState extends DataClass implements Insertable<AppState> {
       'selectedJavaPath': serializer.toJson<String?>(selectedJavaPath),
       'sidebarWidth': serializer.toJson<int>(sidebarWidth),
       'sidebarCollapsed': serializer.toJson<bool>(sidebarCollapsed),
+      'screenRecordMethod': serializer.toJson<String>(screenRecordMethod),
+      'scrcpyRecordOutputDir':
+          serializer.toJson<String?>(scrcpyRecordOutputDir),
     };
   }
 
@@ -892,7 +946,9 @@ class AppState extends DataClass implements Insertable<AppState> {
           Value<String?> selectedSDKPath = const Value.absent(),
           Value<String?> selectedJavaPath = const Value.absent(),
           int? sidebarWidth,
-          bool? sidebarCollapsed}) =>
+          bool? sidebarCollapsed,
+          String? screenRecordMethod,
+          Value<String?> scrcpyRecordOutputDir = const Value.absent()}) =>
       AppState(
         id: id ?? this.id,
         activeSerial:
@@ -910,6 +966,10 @@ class AppState extends DataClass implements Insertable<AppState> {
             : this.selectedJavaPath,
         sidebarWidth: sidebarWidth ?? this.sidebarWidth,
         sidebarCollapsed: sidebarCollapsed ?? this.sidebarCollapsed,
+        screenRecordMethod: screenRecordMethod ?? this.screenRecordMethod,
+        scrcpyRecordOutputDir: scrcpyRecordOutputDir.present
+            ? scrcpyRecordOutputDir.value
+            : this.scrcpyRecordOutputDir,
       );
   AppState copyWithCompanion(AppStatesCompanion data) {
     return AppState(
@@ -936,6 +996,12 @@ class AppState extends DataClass implements Insertable<AppState> {
       sidebarCollapsed: data.sidebarCollapsed.present
           ? data.sidebarCollapsed.value
           : this.sidebarCollapsed,
+      screenRecordMethod: data.screenRecordMethod.present
+          ? data.screenRecordMethod.value
+          : this.screenRecordMethod,
+      scrcpyRecordOutputDir: data.scrcpyRecordOutputDir.present
+          ? data.scrcpyRecordOutputDir.value
+          : this.scrcpyRecordOutputDir,
     );
   }
 
@@ -950,7 +1016,9 @@ class AppState extends DataClass implements Insertable<AppState> {
           ..write('selectedSDKPath: $selectedSDKPath, ')
           ..write('selectedJavaPath: $selectedJavaPath, ')
           ..write('sidebarWidth: $sidebarWidth, ')
-          ..write('sidebarCollapsed: $sidebarCollapsed')
+          ..write('sidebarCollapsed: $sidebarCollapsed, ')
+          ..write('screenRecordMethod: $screenRecordMethod, ')
+          ..write('scrcpyRecordOutputDir: $scrcpyRecordOutputDir')
           ..write(')'))
         .toString();
   }
@@ -965,7 +1033,9 @@ class AppState extends DataClass implements Insertable<AppState> {
       selectedSDKPath,
       selectedJavaPath,
       sidebarWidth,
-      sidebarCollapsed);
+      sidebarCollapsed,
+      screenRecordMethod,
+      scrcpyRecordOutputDir);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -978,7 +1048,9 @@ class AppState extends DataClass implements Insertable<AppState> {
           other.selectedSDKPath == this.selectedSDKPath &&
           other.selectedJavaPath == this.selectedJavaPath &&
           other.sidebarWidth == this.sidebarWidth &&
-          other.sidebarCollapsed == this.sidebarCollapsed);
+          other.sidebarCollapsed == this.sidebarCollapsed &&
+          other.screenRecordMethod == this.screenRecordMethod &&
+          other.scrcpyRecordOutputDir == this.scrcpyRecordOutputDir);
 }
 
 class AppStatesCompanion extends UpdateCompanion<AppState> {
@@ -991,6 +1063,8 @@ class AppStatesCompanion extends UpdateCompanion<AppState> {
   final Value<String?> selectedJavaPath;
   final Value<int> sidebarWidth;
   final Value<bool> sidebarCollapsed;
+  final Value<String> screenRecordMethod;
+  final Value<String?> scrcpyRecordOutputDir;
   const AppStatesCompanion({
     this.id = const Value.absent(),
     this.activeSerial = const Value.absent(),
@@ -1001,6 +1075,8 @@ class AppStatesCompanion extends UpdateCompanion<AppState> {
     this.selectedJavaPath = const Value.absent(),
     this.sidebarWidth = const Value.absent(),
     this.sidebarCollapsed = const Value.absent(),
+    this.screenRecordMethod = const Value.absent(),
+    this.scrcpyRecordOutputDir = const Value.absent(),
   });
   AppStatesCompanion.insert({
     this.id = const Value.absent(),
@@ -1012,6 +1088,8 @@ class AppStatesCompanion extends UpdateCompanion<AppState> {
     this.selectedJavaPath = const Value.absent(),
     this.sidebarWidth = const Value.absent(),
     this.sidebarCollapsed = const Value.absent(),
+    this.screenRecordMethod = const Value.absent(),
+    this.scrcpyRecordOutputDir = const Value.absent(),
   }) : expandedSerials = Value(expandedSerials);
   static Insertable<AppState> custom({
     Expression<int>? id,
@@ -1023,6 +1101,8 @@ class AppStatesCompanion extends UpdateCompanion<AppState> {
     Expression<String>? selectedJavaPath,
     Expression<int>? sidebarWidth,
     Expression<bool>? sidebarCollapsed,
+    Expression<String>? screenRecordMethod,
+    Expression<String>? scrcpyRecordOutputDir,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -1035,6 +1115,9 @@ class AppStatesCompanion extends UpdateCompanion<AppState> {
       if (selectedJavaPath != null) 'selected_java_path': selectedJavaPath,
       if (sidebarWidth != null) 'sidebar_width': sidebarWidth,
       if (sidebarCollapsed != null) 'sidebar_collapsed': sidebarCollapsed,
+      if (screenRecordMethod != null) 'screen_record_method': screenRecordMethod,
+      if (scrcpyRecordOutputDir != null)
+        'scrcpy_record_output_dir': scrcpyRecordOutputDir,
     });
   }
 
@@ -1047,7 +1130,9 @@ class AppStatesCompanion extends UpdateCompanion<AppState> {
       Value<String?>? selectedSDKPath,
       Value<String?>? selectedJavaPath,
       Value<int>? sidebarWidth,
-      Value<bool>? sidebarCollapsed}) {
+      Value<bool>? sidebarCollapsed,
+      Value<String>? screenRecordMethod,
+      Value<String?>? scrcpyRecordOutputDir}) {
     return AppStatesCompanion(
       id: id ?? this.id,
       activeSerial: activeSerial ?? this.activeSerial,
@@ -1059,6 +1144,8 @@ class AppStatesCompanion extends UpdateCompanion<AppState> {
       selectedJavaPath: selectedJavaPath ?? this.selectedJavaPath,
       sidebarWidth: sidebarWidth ?? this.sidebarWidth,
       sidebarCollapsed: sidebarCollapsed ?? this.sidebarCollapsed,
+      screenRecordMethod: screenRecordMethod ?? this.screenRecordMethod,
+      scrcpyRecordOutputDir: scrcpyRecordOutputDir ?? this.scrcpyRecordOutputDir,
     );
   }
 
@@ -1093,6 +1180,13 @@ class AppStatesCompanion extends UpdateCompanion<AppState> {
     if (sidebarCollapsed.present) {
       map['sidebar_collapsed'] = Variable<bool>(sidebarCollapsed.value);
     }
+    if (screenRecordMethod.present) {
+      map['screen_record_method'] = Variable<String>(screenRecordMethod.value);
+    }
+    if (scrcpyRecordOutputDir.present) {
+      map['scrcpy_record_output_dir'] =
+          Variable<String>(scrcpyRecordOutputDir.value);
+    }
     return map;
   }
 
@@ -1107,7 +1201,9 @@ class AppStatesCompanion extends UpdateCompanion<AppState> {
           ..write('selectedSDKPath: $selectedSDKPath, ')
           ..write('selectedJavaPath: $selectedJavaPath, ')
           ..write('sidebarWidth: $sidebarWidth, ')
-          ..write('sidebarCollapsed: $sidebarCollapsed')
+          ..write('sidebarCollapsed: $sidebarCollapsed, ')
+          ..write('screenRecordMethod: $screenRecordMethod, ')
+          ..write('scrcpyRecordOutputDir: $scrcpyRecordOutputDir')
           ..write(')'))
         .toString();
   }

@@ -141,6 +141,13 @@ func findSDKTool(sdkPath, name string) string {
 // work with: either it has an emulator binary already, or it has a usable
 // toolchain (so the user can install the emulator with sdkmanager).
 func sdkPathIsAcceptable(sdkPath string) bool {
+	// Reject unreadable paths outright — on macOS, Android Studio
+	// often sets ANDROID_HOME to a path on an external volume that
+	// may not be mounted or readable.  The emulator launcher
+	// validates readability before falling back, so we should too.
+	if _, err := os.Stat(sdkPath); err != nil {
+		return false
+	}
 	return sdkPathHasEmulator(sdkPath) || SdkPathHasToolchain(sdkPath)
 }
 

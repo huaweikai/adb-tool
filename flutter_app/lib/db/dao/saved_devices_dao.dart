@@ -188,14 +188,64 @@ class SavedDevicesDao extends DatabaseAccessor<AppDatabase>
   /// Reconcile all stored devices with a fresh list of currently-online
   /// stable identities. Legacy rows keyed by adb serial also match the same
   /// value until they can be upgraded during online reconciliation.
+  ///
+  /// Issues at most three UPDATEs (online-flip / offline-flip /
+  /// recording-clear) regardless of device count — the previous loop
+  /// issued one UPDATE per changed device (N statements, no transaction,
+  /// so a mid-loop failure left the table half-reconciled). Only rows
+  /// whose connection state actually changes are touched, so idle polls
+  /// (nothing plugged/unplugged) write nothing and don't trigger watch
+  /// streams.
   Future<void> updateAllDevicesConnection(Set<String> onlineSerials) async {
     final allDevices = await getAllSavedDevices();
+    final now = DateTime.now();
+    final toOnline = <String>[];
+    final toOffline = <String>[];
     for (final device in allDevices) {
       final isOnline = onlineSerials.contains(device.serial);
-      if (device.isConnected != isOnline) {
-        await updateDeviceConnection(device.serial, isOnline);
+      if (isOnline && !device.isConnected) {
+        toOnline.add(device.serial);
+      } else if (!isOnline && device.isConnected) {
+        toOffline.add(device.serial);
       }
     }
+    if (toOnline.isEmpty && toOffline.isEmpty) return;
+
+    await transaction(() async {
+      if (toOnline.isNotEmpty) {
+        await (update(savedDevices)..where((t) => t.serial.isIn(toOnline)))
+            .write(
+          SavedDevicesCompanion(
+            isConnected: const Value(true),
+            lastSeenAt: Value(now),
+          ),
+        );
+      }
+      if (toOffline.isNotEmpty) {
+        await (update(savedDevices)..where((t) => t.serial.isIn(toOffline)))
+            .write(
+          const SavedDevicesCompanion(
+            isConnected: Value(false),
+            lastSeenAt: Value(null),
+          ),
+        );
+        // Clear stale recording state for the newly-offline devices that
+        // were mid-recording. The `recording_owner IS NOT NULL` guard makes
+        // this a 0-row no-op when nothing was recording (matches the old
+        // per-device clearScreenRecord side-effect, without writing null
+        // over already-null fields).
+        await (update(savedDevices)
+              ..where((t) =>
+                  t.serial.isIn(toOffline) & t.recordingOwner.isNotNull()))
+            .write(
+          const SavedDevicesCompanion(
+            recordingOwner: Value(null),
+            recordingStartedAt: Value(null),
+            recordingIsSaving: Value(false),
+          ),
+        );
+      }
+    });
   }
 
   /// Delete a saved device. Also drops:

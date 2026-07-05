@@ -1,13 +1,32 @@
-name: Build Release
+name: Build & Release
 
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
 
 jobs:
-  build-windows:
-    runs-on: windows-latest
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Android helper (optional)
+        run: |
+          if [ -d adb_tool_app ]; then
+            cd adb_tool_app
+            ./gradlew assembleRelease || true
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: adb_tool_app/app/build/outputs/apk/**/release/*.apk
+
+  macos-arm64:
+    runs-on: macos-14
+    needs: android
     steps:
       - uses: actions/checkout@v4
 
@@ -18,107 +37,108 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
-          channel: 'stable'
+          channel: stable
 
-      - name: Install WiX Toolset
+      - name: Read version from pubspec
+        id: ver
         run: |
-          dotnet tool install --global wix --version 5.0.2
-          echo "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          VERSION=$(grep '^version:' flutter_app/pubspec.yaml | awk '{print $2}' | sed 's/+.*//')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Using version: $VERSION"
 
-      - name: Add WiX UI extension
-        run: wix extension add WixToolset.UI.wixext/5.0.2
-
-      - name: Flutter pub get
-        working-directory: flutter_app
-        run: flutter pub get
-
-      - name: Build Windows MSI (amd64 + arm64)
-        run: |
-          $version = "${{ github.ref_name }}"
-          $version = $version.TrimStart('v')
-          .\scripts\build.ps1 -Mode Release -GoArch all -ProductVersion $version
+      - name: Build macOS
+        env:
+          PRODUCT_VERSION: ${{ steps.ver.outputs.version }}
+        run: PRODUCT_VERSION="$PRODUCT_VERSION" bash scripts/build.sh
 
       - uses: actions/upload-artifact@v4
         with:
-          name: adb-tool-windows
+          name: macos-arm64
+          path: dist/macos/*.dmg
+
+  macos-amd64:
+    # Intel x86_64 runner — macos-13 was retired 2025-12, GitHub's current
+    # Intel option is macos-15-intel (expected available until 2027-08).
+    # build.sh runs native x86_64 build on this host, no Rosetta needed.
+    runs-on: macos-15-intel
+    needs: android
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          check-latest: true
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Read version from pubspec
+        id: ver
+        run: |
+          VERSION=$(grep '^version:' flutter_app/pubspec.yaml | awk '{print $2}' | sed 's/+.*//')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Using version: $VERSION"
+
+      - name: Build macOS
+        env:
+          PRODUCT_VERSION: ${{ steps.ver.outputs.version }}
+        run: PRODUCT_VERSION="$PRODUCT_VERSION" bash scripts/build.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-amd64
+          path: dist/macos/*.dmg
+
+  windows:
+    runs-on: windows-latest
+    needs: android
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          check-latest: true
+
+      - uses: subosito/flutter-action@v2
+
+      - name: Install WiX
+        run: dotnet tool install --global wix
+
+      - name: Read version from pubspec
+        id: ver
+        shell: pwsh
+        run: |
+          $v = (Select-String -Path flutter_app/pubspec.yaml -Pattern '^version:' | ForEach-Object { ($_.Line -split '\s+')[1] }) -replace '\+.*$',''
+          "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Using version: $v"
+
+      - name: Build Windows
+        env:
+          PRODUCT_VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          powershell -ExecutionPolicy Bypass -File scripts/build.ps1 -Mode Release -ProductVersion "$env:PRODUCT_VERSION"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
           path: dist/windows/*.msi
 
-  build-macos-arm64:
-    # Apple Silicon runner,原生 arm64,不碰 Rosetta,codesign/xcodebuild 都稳
-    runs-on: macos-14
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: backend/go.mod
-          check-latest: true
-
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: 'stable'
-
-      - name: Build Go backend (disabled; build.sh handles it)
-        run: echo "Go backend built by scripts/build.sh --arch arm64"
-
-      - name: Flutter pub get
-        working-directory: flutter_app
-        run: flutter pub get
-
-      - name: Build macOS .app (arm64)
-        run: bash scripts/build.sh --platform macos --mode release --arch arm64
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: adb-tool-macos-arm64
-          path: dist/macos/*.dmg
-
-  build-macos-amd64:
-    # Intel x86_64 runner, 原生 amd64 —— macos-13 runner 已于 2025-12
-    # 下线,GitHub 当前的 Intel 选项是 macos-15-intel(预计可用到 2027-08,
-    # 之后托管 macOS runner 全面转向 arm64)。保持 --arch amd64,build.sh
-    # 在 Intel runner 上跑 native x86_64 build,不需要 Rosetta。
-    runs-on: macos-15-intel
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: backend/go.mod
-          check-latest: true
-
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: 'stable'
-
-      - name: Build Go backend (disabled; build.sh handles it)
-        run: echo "Go backend built by scripts/build.sh --arch amd64"
-
-      - name: Flutter pub get
-        working-directory: flutter_app
-        run: flutter pub get
-
-      - name: Build macOS .app (amd64)
-        run: bash scripts/build.sh --platform macos --mode release --arch amd64
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: adb-tool-macos-amd64
-          path: dist/macos/*.dmg
-
-  create-release:
-    needs: [build-windows, build-macos-arm64, build-macos-amd64]
+  release:
     runs-on: ubuntu-latest
+    needs: [macos-arm64, macos-amd64, windows]
+
     permissions:
       contents: write
+
     steps:
       - uses: actions/download-artifact@v4
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v2
         with:
           files: |
-            adb-tool-windows/*.msi
-            adb-tool-macos-arm64/*.dmg
-            adb-tool-macos-amd64/*.dmg
-          generate_release_notes: true
+            macos-arm64/**/*.dmg
+            macos-amd64/**/*.dmg
+            windows/**/*.msi
