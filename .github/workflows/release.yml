@@ -34,6 +34,7 @@ jobs:
         with:
           go-version-file: backend/go.mod
           check-latest: true
+          cache-dependency-path: backend/go.sum
 
       - uses: subosito/flutter-action@v2
         with:
@@ -69,6 +70,7 @@ jobs:
         with:
           go-version-file: backend/go.mod
           check-latest: true
+          cache-dependency-path: backend/go.sum
 
       - uses: subosito/flutter-action@v2
         with:
@@ -101,11 +103,15 @@ jobs:
         with:
           go-version-file: backend/go.mod
           check-latest: true
+          cache-dependency-path: backend/go.sum
 
       - uses: subosito/flutter-action@v2
 
-      - name: Install WiX
-        run: dotnet tool install --global wix
+      - name: Install WiX v5
+        run: |
+          dotnet tool update --global wix --version 5.0.2 2>$null
+          dotnet tool install --global wix --version 5.0.2 2>$null
+          wix --version
 
       - name: Read version from pubspec
         id: ver

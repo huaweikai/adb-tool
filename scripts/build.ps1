@@ -56,9 +56,11 @@ function Build-MSI {
 
   $runner="$Root/flutter_app/build/windows/x64/runner/Release"
 
-  # Ensure WiX v5 is available (pre-installed on CI, convenience for local dev).
-  if (-not (Get-Command wix -ErrorAction SilentlyContinue)) {
-    dotnet tool install --global wix 2>$null
+  # Ensure WiX v5 is available — update if installed, install if not.
+  # v7 requires an OSMF EULA and breaks WixToolset.UI.wixext/5.0.2.
+  dotnet tool update --global wix --version 5.0.2 2>$null
+  if (-not $?) {
+    dotnet tool install --global wix --version 5.0.2 2>$null
   }
 
   wix extension add WixToolset.UI.wixext/5.0.2
