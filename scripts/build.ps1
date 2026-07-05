@@ -116,11 +116,13 @@ function Expand-WixTemplate {
   }
 
   # 2) Emit non-top-level <Directory> entries as <DirectoryRef> wrappers
-  #    so they nest under their parent.
+  #    so they nest under their parent. Skip entries whose parent is root
+  #    ('' → INSTALLFOLDER) — those are already in __APP_DIRECTORIES__.
   Get-ChildItem $Dir -Recurse -Directory | Sort-Object FullName | ForEach-Object {
     $rel = $_.FullName.Substring($root.Length).TrimStart([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar) -replace '\\','/'
     $idx = $rel.LastIndexOf('/')
-    $parentRel = if ($idx -ge 0) { $rel.Substring(0, $idx) } else { '' }
+    if ($idx -lt 0) { return }
+    $parentRel = $rel.Substring(0, $idx)
     $parentId = $dirIds[$parentRel]
     $dirId = $dirIds[$rel]
     $escName = [Security.SecurityElement]::Escape($_.Name)
