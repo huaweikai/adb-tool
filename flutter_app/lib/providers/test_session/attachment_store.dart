@@ -61,7 +61,7 @@ class SessionAttachmentStore {
     );
   }
 
-  /// Write an MP4 video. Returns the relative path.
+  /// Write an MP4 video from raw bytes. Returns the relative path.
   Future<TestSessionArtifactDescriptor> writeVideo({
     required String sessionId,
     required List<int> bytes,
@@ -74,6 +74,25 @@ class SessionAttachmentStore {
       name: name,
       relativePath: _relativePath(sessionId, 'videos', name),
       size: bytes.length,
+    );
+  }
+
+  /// Copy an existing MP4 video file into the session directory.
+  /// Avoids the read-into-memory round trip of [writeVideo].
+  Future<TestSessionArtifactDescriptor> writeVideoFile({
+    required String sessionId,
+    required String sourcePath,
+    required DateTime now,
+  }) async {
+    final src = File(sourcePath);
+    final name = '${SessionFormatters.fileDate(now)}.mp4';
+    final file = await _fileFor(sessionId, 'videos', name);
+    await src.copy(file.path);
+    final stat = await file.stat();
+    return TestSessionArtifactDescriptor(
+      name: name,
+      relativePath: _relativePath(sessionId, 'videos', name),
+      size: stat.size,
     );
   }
 

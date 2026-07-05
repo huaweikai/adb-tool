@@ -81,7 +81,7 @@ class _TestSessionActiveContentState extends State<TestSessionActiveContent>
   }
 
   @override
-  Future<void> onVideoSaved(Uint8List bytes, String? path) async {
+  Future<void> onVideoSaved(String path) async {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(

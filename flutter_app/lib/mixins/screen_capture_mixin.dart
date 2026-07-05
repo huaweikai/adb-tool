@@ -66,10 +66,11 @@ mixin ScreenCaptureMixin<T extends StatefulWidget> on State<T> {
   /// testSession mode; may be null on failure.
   Future<void> onScreenshotSaved(Uint8List bytes, String? path);
 
-  /// Called after a video recording has been saved. [path] has the same
-  /// semantics as the screenshot callback above. Only invoked when bytes
-  /// are non-empty.
-  Future<void> onVideoSaved(Uint8List bytes, String? path);
+  /// Called after a video recording has been saved. [path] is the local
+  /// file path of the recorded video. The mixin has already handled
+  /// session-side saving if in testSession mode.
+  /// Only invoked when [path] is non-null.
+  Future<void> onVideoSaved(String path);
 
   /// Called when a recording stopped cleanly but produced no usable video.
   /// Default shows a "recording too short" snackbar.
@@ -402,23 +403,24 @@ mixin ScreenCaptureMixin<T extends StatefulWidget> on State<T> {
 
     try {
       await savedDevicesDao.setScreenRecordSaving(s, true);
-      final path = await strategy.stop();
-      final bytes =
-          path != null ? await File(path).readAsBytes() : Uint8List(0);
-      String? saved;
-      if (bytes.isNotEmpty) {
+      final srcPath = await strategy.stop();
+      String? savedPath;
+
+      if (srcPath != null) {
         if (captureMode == CaptureMode.testSession) {
-          saved = await sessionProvider.saveVideoBytes(bytes);
+          savedPath = await sessionProvider.saveVideoFile(srcPath);
+          try { await File(srcPath).delete(); } catch (_) {}
         } else {
-          // FileBrowser: onVideoSaved receives raw bytes
-          saved = path;
+          savedPath = srcPath;
         }
       }
+
       await savedDevicesDao.clearScreenRecord(s);
       await _syncDeviceRowFromDb();
       await strategy.cleanup();
-      if (bytes.isNotEmpty) {
-        await onVideoSaved(bytes, saved);
+
+      if (savedPath != null) {
+        await onVideoSaved(savedPath);
       } else {
         await onVideoDiscarded();
       }

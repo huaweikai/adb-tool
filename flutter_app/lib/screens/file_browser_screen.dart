@@ -126,15 +126,16 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
   }
 
   @override
-  Future<void> onVideoSaved(Uint8List bytes, String? path) async {
-    if (bytes.isEmpty) return;
+  Future<void> onVideoSaved(String path) async {
     if (!mounted) return;
+    final src = File(path);
+    if (!await src.exists()) return;
     final location = await getSaveLocation(
       suggestedName: 'screen-record-${DateTime.now().millisecondsSinceEpoch}.mp4',
       confirmButtonText: tr('saveRecording'),
     );
     if (location == null) return;
-    await File(location.path).writeAsBytes(bytes);
+    await src.copy(location.path);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(

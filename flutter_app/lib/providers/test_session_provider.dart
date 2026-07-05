@@ -747,6 +747,41 @@ class TestSessionProvider extends ChangeNotifier {
     return desc.relativePath;
   }
 
+  /// Copy an existing video file into the session artifact directory.
+  /// Returns the relative path. Avoids reading the file into memory.
+  Future<String> saveVideoFile(String sourcePath) async {
+    final id = _requireActiveId();
+    final now = DateTime.now();
+    final desc = await _attachments.writeVideoFile(
+      sessionId: id,
+      sourcePath: sourcePath,
+      now: now,
+    );
+    final artifactId = SessionFormatters.id(now);
+    await _db.transaction(() async {
+      await _dao.insertArtifact(TestSessionArtifactsCompanion.insert(
+        id: artifactId,
+        sessionId: id,
+        kind: TestSessionArtifactKind.video,
+        name: desc.name,
+        path: desc.relativePath,
+        createdAt: now,
+        size: Value(desc.size),
+      ));
+      await _dao.insertEvent(TestSessionEventsCompanion.insert(
+        id: SessionFormatters.id(now),
+        sessionId: id,
+        type: TestSessionEventType.screenRecordStopped,
+        time: now,
+        title: _t('eventScreenRecordSaved'),
+        detail: Value(desc.name),
+        filePath: Value(desc.relativePath),
+      ));
+    });
+    await _refreshCurrentHydrated();
+    return desc.relativePath;
+  }
+
   Future<String> saveLogcat(String content) async {
     final id = _requireActiveId();
     final now = DateTime.now();
