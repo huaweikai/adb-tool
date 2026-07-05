@@ -63,16 +63,6 @@ ThemeData _buildDarkTheme() {
       margin: EdgeInsets.zero,
       clipBehavior: Clip.antiAlias,
     ),
-    inputDecorationTheme: InputDecorationTheme(
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(AppRadius.sm),
-      ),
-      contentPadding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.md,
-        vertical: AppSpacing.sm,
-      ),
-      isDense: true,
-    ),
     dividerTheme: const DividerThemeData(
       thickness: 1,
       indent: AppSpacing.md,
@@ -100,16 +90,6 @@ ThemeData _buildLightTheme() {
       elevation: AppElevation.card,
       margin: EdgeInsets.zero,
       clipBehavior: Clip.antiAlias,
-    ),
-    inputDecorationTheme: InputDecorationTheme(
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(AppRadius.sm),
-      ),
-      contentPadding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.md,
-        vertical: AppSpacing.sm,
-      ),
-      isDense: true,
     ),
     dividerTheme: const DividerThemeData(
       thickness: 1,
