@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import '../models/device.dart';
 import '../services/api_client.dart';
 import '../services/log_stream.dart';
+import '../providers/crash_notifier_provider.dart';
 import 'device_provider.dart';
 
 /// Per-device UI state for the logcat screen.
@@ -157,7 +158,8 @@ class LogcatDeviceState {
 /// most one [notifyListeners] per frame, so a flood of log lines doesn't
 /// thrash the widget tree.
 class LogcatStateProvider extends ChangeNotifier {
-  LogcatStateProvider(this._svc, this._api, this._deviceProvider) {
+  LogcatStateProvider(this._svc, this._api, this._deviceProvider,
+      this._crashNotifier) {
     // When a device goes offline, any in-flight local recording is dead —
     // the adb logcat subprocess on the host lost its upstream pipe. Best-
     // effort stop so the UI state doesn't get stuck in "recording" limbo
@@ -189,6 +191,7 @@ class LogcatStateProvider extends ChangeNotifier {
   final LogStreamService _svc;
   final ApiClient _api;
   final DeviceProvider _deviceProvider;
+  final CrashNotifierProvider _crashNotifier;
   final Map<String, LogcatDeviceState> _states = {};
   final Map<String, StreamSubscription<List<LogEntry>>> _logSubs = {};
   final Map<String, StreamSubscription<bool>> _connSubs = {};
@@ -229,6 +232,7 @@ class LogcatStateProvider extends ChangeNotifier {
     _svc.connect(serial, state.filter);
     state.streaming = true;
     _wireSubscriptions(serial);
+    _crashNotifier.attach(serial);
     _notify();
   }
 
@@ -245,6 +249,7 @@ class LogcatStateProvider extends ChangeNotifier {
     _logSubs.remove(serial)?.cancel();
     _connSubs.remove(serial)?.cancel();
     _svc.stop(serial);
+    _crashNotifier.detach(serial);
     _notify();
   }
 

@@ -37,6 +37,8 @@ import 'providers/logcat_state_provider.dart';
 import 'providers/mirror_state_provider.dart';
 import 'providers/recording_settings_provider.dart';
 import 'providers/scrcpy_record_state_provider.dart';
+import 'providers/crash_notification_pref.dart';
+import 'providers/crash_notifier_provider.dart';
 import 'services/api_client.dart';
 import 'services/log_stream.dart';
 
@@ -116,14 +118,23 @@ Future<void> setupDependencies() async {
     EmulatorInstanceProvider(api: getIt<ApiClient>()),
   );
 
-  // LogcatStateProvider needs LogStreamService + ApiClient (for the
-  // save-to-local recording endpoint) + DeviceProvider (to auto-stop
-  // in-flight recordings when their target device goes offline).
+  // ── Crash notification (before LogcatStateProvider — it depends on this) ─
+  getIt.registerSingleton<CrashNotificationPref>(CrashNotificationPref());
+  getIt.registerSingleton<CrashNotifierProvider>(
+    CrashNotifierProvider(
+      logStream: getIt<LogStreamService>(),
+      pref: getIt<CrashNotificationPref>(),
+    ),
+  );
+
+  // LogcatStateProvider needs LogStreamService + ApiClient + DeviceProvider
+  // + CrashNotifierProvider (for crash toast wiring).
   getIt.registerSingleton<LogcatStateProvider>(
     LogcatStateProvider(
       getIt<LogStreamService>(),
       getIt<ApiClient>(),
       getIt<DeviceProvider>(),
+      getIt<CrashNotifierProvider>(),
     ),
   );
 
@@ -190,6 +201,8 @@ List<SingleChildWidget> get dependencyProviders => [
           value: getIt<RecordingSettingsProvider>()),
       ChangeNotifierProvider<ScrcpyRecordStateProvider>.value(
           value: getIt<ScrcpyRecordStateProvider>()),
+      ChangeNotifierProvider<CrashNotificationPref>.value(
+          value: getIt<CrashNotificationPref>()),
     ];
 
 /// Dispose all singletons. Call only in integration tests.

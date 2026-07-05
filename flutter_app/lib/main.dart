@@ -9,9 +9,13 @@ import 'i18n.dart';
 import 'providers/theme_provider.dart';
 import 'providers/locale_provider.dart';
 import 'providers/test_session_provider.dart';
+import 'providers/crash_notification_pref.dart';
+import 'providers/crash_notifier_provider.dart';
 import 'services/api_client.dart';
 import 'services/server_launcher.dart';
 import 'utils/legacy_session_cleanup.dart';
+
+final _messengerKey = GlobalKey<ScaffoldMessengerState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -67,10 +71,12 @@ class AdbToolApp extends StatelessWidget {
         context
             .read<TestSessionProvider>()
             .setTranslator(tr, language: currentLang);
+        context.read<CrashNotifierProvider>().messengerKey = _messengerKey;
       }
     });
     return MaterialApp(
       title: 'ADB Tool',
+      scaffoldMessengerKey: _messengerKey,
       debugShowCheckedModeBanner: false,
       themeMode: themeProvider.themeMode,
       darkTheme: ThemeData(

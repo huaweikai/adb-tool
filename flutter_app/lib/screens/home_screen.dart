@@ -12,6 +12,8 @@ import '../providers/locale_provider.dart';
 import '../providers/test_session_provider.dart';
 import '../providers/emulator_engine_provider.dart';
 import '../providers/emulator_java_provider.dart';
+import '../providers/crash_notification_pref.dart';
+import '../providers/crash_notifier_provider.dart';
 import '../i18n.dart';
 import '../widgets/recording_fab.dart';
 import 'device_status_screen.dart';
@@ -889,6 +891,38 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             badge: 'Go',
             onTap: _openBackendLogs,
           ),
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              children: [
+                Icon(Icons.bug_report,
+                    size: 16, color: theme.colorScheme.onSurfaceVariant),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(tr('crashToastPrefLabel'),
+                          style: TextStyle(fontSize: 12)),
+                      Text(tr('crashToastPrefDescription'),
+                          style: TextStyle(
+                              fontSize: 10,
+                              color: theme.colorScheme.onSurfaceVariant)),
+                    ],
+                  ),
+                ),
+                Consumer<CrashNotificationPref>(
+                  builder: (_, pref, __) => Switch(
+                    value: pref.enabled,
+                    onChanged: (_) => pref.toggle(),
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
         ],
       ),
     );

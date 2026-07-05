@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../models/device.dart';
+import '../models/crash_event.dart';
 import '../providers/device_provider.dart';
 
 /// Per-device WebSocket channel for logcat streaming.
@@ -37,6 +38,7 @@ class _DeviceLogChannel {
 
   final _controller = StreamController<List<LogEntry>>.broadcast();
   final _connectionController = StreamController<bool>.broadcast();
+  final _crashController = StreamController<CrashEvent>.broadcast();
 
   static const _maxBackoffSeconds = 30;
 
@@ -48,6 +50,7 @@ class _DeviceLogChannel {
 
   Stream<List<LogEntry>> get stream => _controller.stream;
   Stream<bool> get connectionState => _connectionController.stream;
+  Stream<CrashEvent> get crashStream => _crashController.stream;
 
   void start() {
     _doConnect();
@@ -86,6 +89,13 @@ class _DeviceLogChannel {
         try {
           final msg = json.decode(data as String) as Map<String, dynamic>;
           final f = filter;
+          if (msg['type'] == 'crash') {
+            final crash = msg['crash'];
+            if (crash is Map<String, dynamic>) {
+              _crashController.add(CrashEvent.fromJson(crash));
+            }
+            return;
+          }
           if (msg['type'] == 'log') {
             final entry = LogEntry.parse(msg['data'] as String);
             if (entry.matchesFilter(f)) {
@@ -166,6 +176,7 @@ class _DeviceLogChannel {
     stop();
     await _controller.close();
     await _connectionController.close();
+    await _crashController.close();
   }
 }
 
@@ -194,6 +205,10 @@ class LogStreamService {
   /// Empty stream if the device has not been connected yet.
   Stream<List<LogEntry>> streamFor(String serial) =>
       _channels[serial]?.stream ?? const Stream.empty();
+
+  /// Returns the crash event stream for a specific device.
+  Stream<CrashEvent> crashStreamFor(String serial) =>
+      _channels[serial]?.crashStream ?? const Stream.empty();
 
   /// Returns the WebSocket connection-state stream for a specific device.
   Stream<bool> connectionStateFor(String serial) =>

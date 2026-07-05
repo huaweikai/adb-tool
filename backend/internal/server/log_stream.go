@@ -20,11 +20,12 @@ type WsCommand struct {
 }
 
 // WsMessage is the outbound frame. Type is "logs" / "status" /
-// "error" / "pong".
+// "error" / "pong" / "crash".
 type WsMessage struct {
-	Type  string   `json:"type"`
-	Data  string   `json:"data,omitempty"`
-	Lines []string `json:"lines,omitempty"`
+	Type  string      `json:"type"`
+	Data  string      `json:"data,omitempty"`
+	Lines []string    `json:"lines,omitempty"`
+	Crash *CrashEvent `json:"crash,omitempty"`
 }
 
 // LogSession is the per-WebSocket-connection state for the logcat
@@ -39,7 +40,6 @@ type WsMessage struct {
 type LogSession struct {
 	conn      *websocket.Conn
 	logcatMgr *LogcatStreamManager
-	adb       *AdbManager // for ClearLogcat (device-side buffer) only
 	writeMu   sync.Mutex
 	mu        sync.Mutex
 
@@ -47,25 +47,27 @@ type LogSession struct {
 	paused  bool
 	filters LogFilter
 
-	// Active subscription; nil if not started.
+	// Active line subscription; nil if not started.
 	sub *LineSubscription
 
+	// Active crash subscription; nil if not started.
+	crashSub *CrashSubscription
+
 	// Reader goroutine lifecycle.
-	readerCancel context.CancelFunc
-	readerDone   chan struct{}
+	readerCancel  context.CancelFunc
+	readerDone    chan struct{}
+	crashCancel   context.CancelFunc
+	crashReaderDone chan struct{}
 
 	// Lines accumulated while paused. Drop-old beyond 5000.
 	pauseBuffer []string
 }
 
 // NewLogSession wires a WS connection to the shared logcat manager.
-// adb is kept only for ClearLogcat (device-side logcat buffer reset);
-// line streaming goes through the manager.
-func NewLogSession(conn *websocket.Conn, mgr *LogcatStreamManager, adb *AdbManager) *LogSession {
+func NewLogSession(conn *websocket.Conn, mgr *LogcatStreamManager) *LogSession {
 	return &LogSession{
 		conn:        conn,
 		logcatMgr:   mgr,
-		adb:         adb,
 		pauseBuffer: make([]string, 0, 1000),
 	}
 }
@@ -142,9 +144,18 @@ func (s *LogSession) startSubscription(serial string, filters LogFilter) {
 		return
 	}
 
+	crashSub, err := s.logcatMgr.SubscribeCrash(serial)
+	if err != nil {
+		s.sendMsg("error", "crash subscribe failed: "+err.Error())
+		sub.Cancel()
+		return
+	}
+
 	s.mu.Lock()
 	subCopy := sub
 	s.sub = &subCopy
+	crashSubCopy := crashSub
+	s.crashSub = &crashSubCopy
 	s.serial = serial
 	s.filters = filters
 	s.pauseBuffer = s.pauseBuffer[:0]
@@ -161,18 +172,33 @@ func (s *LogSession) startSubscription(serial string, filters LogFilter) {
 	s.mu.Unlock()
 
 	go s.readerLoop(ctx, subCopy, done)
+
+	crashCtx, crashCancel := context.WithCancel(context.Background())
+	s.mu.Lock()
+	s.crashCancel = crashCancel
+	crashDone := make(chan struct{})
+	s.crashReaderDone = crashDone
+	s.mu.Unlock()
+
+	go s.crashReaderLoop(crashCtx, crashSubCopy, crashDone)
 }
 
-// stopSubscription cancels the reader goroutine and releases the
-// manager subscription. Idempotent.
+// stopSubscription cancels the reader goroutines and releases the
+// manager subscriptions. Idempotent.
 func (s *LogSession) stopSubscription() {
 	s.mu.Lock()
 	cancel := s.readerCancel
 	done := s.readerDone
 	s.readerCancel = nil
 	s.readerDone = nil
+	crashCancel := s.crashCancel
+	crashDone := s.crashReaderDone
+	s.crashCancel = nil
+	s.crashReaderDone = nil
 	sub := s.sub
 	s.sub = nil
+	crashSub := s.crashSub
+	s.crashSub = nil
 	s.serial = ""
 	s.mu.Unlock()
 
@@ -184,6 +210,15 @@ func (s *LogSession) stopSubscription() {
 	}
 	if sub != nil {
 		sub.Cancel()
+	}
+	if crashCancel != nil {
+		crashCancel()
+	}
+	if crashDone != nil {
+		<-crashDone
+	}
+	if crashSub != nil {
+		crashSub.Cancel()
 	}
 	s.sendMsg("status", "stopped")
 }
@@ -250,6 +285,25 @@ func (s *LogSession) readerLoop(ctx context.Context, sub LineSubscription, done 
 	}
 }
 
+// crashReaderLoop pulls crash events from the subscription channel
+// and forwards them to the WS client. Crash events are rare, so this
+// loop just blocks on the channel and sends each event individually.
+func (s *LogSession) crashReaderLoop(ctx context.Context, sub CrashSubscription, done chan struct{}) {
+	defer close(done)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case ev, ok := <-sub.Events:
+			if !ok {
+				return
+			}
+			s.sendCrash(ev)
+		}
+	}
+}
+
 // flushPauseBuffer drains the pause buffer into a single batch and
 // sends it. Called on resume.
 func (s *LogSession) flushPauseBuffer() {
@@ -265,22 +319,16 @@ func (s *LogSession) flushPauseBuffer() {
 	s.sendLogs(buf)
 }
 
-// handleClear resets the local pause buffer and tells the device to
-// clear its logcat buffer. Note: the manager's ring buffer is NOT
-// cleared (that would affect other sessions), so the next subscribe
-// from this session still replays recent lines from the ring.
+// handleClear resets the local pause buffer only. The device-side
+// logcat buffer is NOT cleared — the shared manager process is
+// always reading it, and a `logcat -c` would tear out lines from
+// under other sessions. The manager's ring buffer is also NOT
+// cleared, so the next subscribe still replays recent lines.
 func (s *LogSession) handleClear() {
 	s.mu.Lock()
 	s.pauseBuffer = s.pauseBuffer[:0]
-	serial := s.serial
 	s.mu.Unlock()
 
-	if serial != "" && s.adb != nil {
-		if err := s.adb.ClearLogcat(serial); err != nil {
-			s.sendMsg("error", "failed to clear logcat: "+err.Error())
-			return
-		}
-	}
 	s.sendMsg("status", "cleared")
 }
 
@@ -296,8 +344,8 @@ func (s *LogSession) setFilters(f LogFilter) {
 	s.mu.Unlock()
 }
 
-// sendMsg / sendLogs / writeJSON — WS write plumbing. Concurrent
-// callers (Run + readerLoop) are serialized by writeMu.
+// sendMsg / sendLogs / sendCrash / writeJSON — WS write plumbing. Concurrent
+// callers (Run + readerLoop + crashReaderLoop) are serialized by writeMu.
 
 func (s *LogSession) sendMsg(msgType, data string) {
 	s.writeJSON(WsMessage{Type: msgType, Data: data})
@@ -310,6 +358,10 @@ func (s *LogSession) sendLogs(lines []string) {
 	copied := make([]string, len(lines))
 	copy(copied, lines)
 	s.writeJSON(WsMessage{Type: "logs", Lines: copied})
+}
+
+func (s *LogSession) sendCrash(ev CrashEvent) {
+	s.writeJSON(WsMessage{Type: "crash", Crash: &ev})
 }
 
 func (s *LogSession) writeJSON(msg WsMessage) {
@@ -375,17 +427,18 @@ func matchFiltersLine(line string, f LogFilter) bool {
 			}
 		}
 	}
-	if f.PackageName != "" && !strings.Contains(line, f.PackageName) {
-		return false
-	}
+	// PackagePid is the precise filter (exact PID-column match). When it
+	// is set, skip the PackageName substring check — logcat lines rarely
+	// contain the full package name as literal text, so the substring
+	// check would reject all lines and make the PID filter useless.
 	if f.PackagePid != "" {
-		// Exact PID-column match, not substring. Substring " 1234 "
-		// would also match when TID == filter PID (and could match
-		// incidental " 1234 " elsewhere in the line). The PID column
-		// is what the old `adb logcat --pid=` filter checked.
 		if extractLogcatPID(line) != f.PackagePid {
 			return false
 		}
+		return true
+	}
+	if f.PackageName != "" && !strings.Contains(line, f.PackageName) {
+		return false
 	}
 	return true
 }

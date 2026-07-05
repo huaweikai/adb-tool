@@ -19,7 +19,7 @@ func (s *Server) handleLogStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session := NewLogSession(conn, s.logcatMgr, s.adb)
+	session := NewLogSession(conn, s.logcatMgr)
 	session.Run()
 }
 

@@ -51,6 +51,70 @@ HTTP 状态码含义：
 
 `/ws/logs` 是 WebSocket 接口，不使用 HTTP JSON envelope。连接建立后的消息仍按 WebSocket 消息格式传输。
 
+`/ws/devices` 是 WebSocket 接口，不使用 HTTP JSON envelope。用于推送设备列表变更，详情见下文。
+
+## WebSocket 端点
+
+### `/ws/logs` — 实时 logcat 流 + crash/ANR 通知
+
+客户端发送 JSON 命令帧控制订阅：
+
+```json
+{"action":"start","serial":"<adb-serial>","filters":{}}
+{"action":"stop"}
+{"action":"pause"}
+{"action":"resume"}
+{"action":"clear"}
+{"action":"filter","filters":{}}
+{"action":"ping"}
+```
+
+服务端发送 JSON 消息帧，通过 `type` 区分消息类型：
+
+| type | 含义 | 附加字段 |
+|---|---|---|
+| `"status"` | 流状态变更 | `data`：状态字符串 |
+| `"error"` | 错误 | `data`：错误信息 |
+| `"pong"` | ping 响应 | — |
+| `"logs"` | 批量日志行 | `lines`：字符串数组 |
+| `"crash"` | 崩溃/ANR/Native 检测 | `crash`：CrashEvent 对象 |
+
+CrashEvent 结构：
+
+```json
+{
+  "type": "crash",
+  "crash": {
+    "type": "crash",
+    "serial": "<adb-serial>",
+    "package": "com.example.app",
+    "summary": "FATAL EXCEPTION: main",
+    "stackTrace": "AndroidRuntime: FATAL EXCEPTION: main\n...",
+    "detectedAt": "2026-07-05T12:00:00Z"
+  }
+}
+```
+
+`crash.type` 取值：`"crash"` / `"anr"` / `"native"`。
+
+### `/ws/devices` — 设备列表实时推送
+
+客户端连接后无需发送任何命令帧。服务端主动推送：
+
+**首次连接**：立即发送快照
+
+```json
+{"type":"snapshot","devices":[{"serial":"...","state":"device",...}]}
+```
+
+**后续变更**：增量推送
+
+```json
+{"type":"change","current":[{...}],"added":["serial1"],"removed":["serial2"]}
+```
+
+`current` 是当前完整设备列表，`added` / `removed` 是自上次事件以来新增 / 消失的 serial。
+
 ## 主要接口 data 字段
 
 ### 设备与基础信息

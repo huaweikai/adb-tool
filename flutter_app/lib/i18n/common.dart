@@ -62,6 +62,15 @@ const _locCommonZh = <String, String>{
   'recordInProgressOtherFmt': '录屏中(在{owner})',
   'recordingTooShort': '录屏过短，请至少录制 1 秒',
   'recordingActiveDevices': '{count} 个设备正在录屏',
+
+  // ── Crash notification ────────────────────────────────────────────
+  'crashToastTitle': '{kind}: {package}',
+  'crashViewAction': '查看',
+  'crashToastPrefLabel': 'Crash 通知',
+  'crashToastPrefDescription': '弹窗提示捕获到的崩溃和 ANR 事件',
+  'crashKindCrash': '崩溃',
+  'crashKindAnr': 'ANR',
+  'crashKindNative': 'Native',
 };
 
 const _locCommonEn = <String, String>{
@@ -119,4 +128,12 @@ const _locCommonEn = <String, String>{
   'recordInProgressOtherFmt': 'Recording in progress (in {owner})',
   'recordingTooShort': 'Recording too short — keep recording for at least 1 second',
   'recordingActiveDevices': '{count} devices recording',
+
+  'crashToastTitle': '{kind}: {package}',
+  'crashViewAction': 'View',
+  'crashToastPrefLabel': 'Crash Notifications',
+  'crashToastPrefDescription': 'Show a popup when a crash or ANR is detected',
+  'crashKindCrash': 'Crash',
+  'crashKindAnr': 'ANR',
+  'crashKindNative': 'Native',
 };

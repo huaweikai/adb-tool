@@ -45,6 +45,11 @@ type Server struct {
 	eventStream  *AdbEventStream
 	streamCancel context.CancelFunc
 
+	// deviceEventHub fans device-list changes to connected /ws/devices
+	// clients. Protected by devHubMu.
+	devHubMu    sync.Mutex
+	devHubSubs  map[chan<- trackDeviceChange]struct{}
+
 	// Emulator components
 	instanceManager *emulator.InstanceManager
 	statusMonitor   *emulator.StatusMonitor
@@ -61,21 +66,6 @@ func New(adbPath string, webFS fs.FS, clipboardApk []byte, scrcpyFS embed.FS) *S
 
 	logcatMgr := NewLogcatStreamManager(adb)
 
-	// Wire device add/remove → logcat watcher start/stop. The
-	// callback runs on the event-stream's read-loop goroutine;
-	// Ensure/Close are non-blocking (acquire a mutex, return), so
-	// a slow consumer here can't stall the stream.
-	eventStream := NewAdbEventStream(0, func(change trackDeviceChange) {
-		for _, serial := range change.Added {
-			logcatMgr.Ensure(serial)
-		}
-		for _, serial := range change.Removed {
-			logcatMgr.Close(serial)
-		}
-	})
-
-	streamCtx, streamCancel := context.WithCancel(context.Background())
-
 	s := &Server{
 		adb:           adb,
 		webFS:         webFS,
@@ -83,13 +73,28 @@ func New(adbPath string, webFS fs.FS, clipboardApk []byte, scrcpyFS embed.FS) *S
 		sessionLogcat: &SessionLogcat{},
 		localRecorder: NewLocalRecorder(),
 		logcatMgr:     logcatMgr,
-		eventStream:   eventStream,
-		streamCancel:  streamCancel,
+		devHubSubs:    make(map[chan<- trackDeviceChange]struct{}),
 		startedAt:     time.Now(),
 		upgrader: websocket.Upgrader{
 			CheckOrigin: isAllowedWebSocketOrigin,
 		},
 	}
+
+	// Wire device add/remove → logcat watcher start/stop AND
+	// fan-out to connected /ws/devices clients.
+	eventStream := NewAdbEventStream(0, func(change trackDeviceChange) {
+		for _, serial := range change.Added {
+			logcatMgr.Ensure(serial)
+		}
+		for _, serial := range change.Removed {
+			logcatMgr.Close(serial)
+		}
+		s.broadcastDeviceChange(change)
+	})
+	s.eventStream = eventStream
+
+	streamCtx, streamCancel := context.WithCancel(context.Background())
+	s.streamCancel = streamCancel
 
 	go eventStream.Run(streamCtx)
 	return s
@@ -257,11 +262,46 @@ func (s *Server) Close() {
 	})
 }
 
+// broadcastDeviceChange fans a device-list change to every registered
+// /ws/devices client. Non-blocking: slow consumers see a dropped event
+// (send-on-full == best-effort fan-out). The next event they receive
+// will be the full snapshot from the subsequent track-devices tick.
+func (s *Server) broadcastDeviceChange(change trackDeviceChange) {
+	s.devHubMu.Lock()
+	subs := make([]chan<- trackDeviceChange, 0, len(s.devHubSubs))
+	for ch := range s.devHubSubs {
+		subs = append(subs, ch)
+	}
+	s.devHubMu.Unlock()
+
+	for _, ch := range subs {
+		select {
+		case ch <- change:
+		default:
+		}
+	}
+}
+
+// registerDeviceWS adds a channel to the device-event fan-out set.
+func (s *Server) registerDeviceWS(ch chan<- trackDeviceChange) {
+	s.devHubMu.Lock()
+	s.devHubSubs[ch] = struct{}{}
+	s.devHubMu.Unlock()
+}
+
+// unregisterDeviceWS removes a channel from the fan-out set and closes it.
+func (s *Server) unregisterDeviceWS(ch chan<- trackDeviceChange) {
+	s.devHubMu.Lock()
+	delete(s.devHubSubs, ch)
+	close(ch)
+	s.devHubMu.Unlock()
+}
+
 // Handler returns the HTTP handler for the server. Route registration is split
 // into logical groups — each handlers_*.go file owns the routes for its domain.
 //
 // Layout:
-//   - handlers_devices.go   /api/devices, /api/info, /api/device-detail, /api/device-status,
+//   - handlers_devices.go   /api/devices, /ws/devices, /api/info, /api/device-detail, /api/device-status,
 //     /api/clear, /api/package-pid, /api/running-packages, /api/adb-path
 //   - handlers_files.go     /api/files, /api/file-content, /api/pull-file, /api/push-file,
 //     /api/file-delete, /api/file-rename, /api/file-mkdir,
@@ -280,6 +320,7 @@ func (s *Server) Handler() http.Handler {
 
 	// Devices & system
 	mux.HandleFunc("/api/devices", s.handleDevices)
+	mux.HandleFunc("/ws/devices", s.handleDeviceWS)
 	mux.HandleFunc("/api/clear", s.handleClear)
 	mux.HandleFunc("/api/info", s.handleDeviceInfo)
 	mux.HandleFunc("/api/package-pid", s.handlePackagePID)

@@ -138,3 +138,47 @@ func (s *Server) handleDeviceStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, map[string]interface{}{"status": status})
 }
+
+// handleDeviceWS streams device-list changes over a WebSocket.
+//
+// Protocol: server sends JSON frames with type "snapshot" (full
+// device list, on connect) or "change" (added/removed serials).
+//
+//   - {"type":"snapshot","devices":[...]}
+//   - {"type":"change","current":[...],"added":["serial1"],"removed":["serial2"]}
+//
+// The client can replace its device list from "snapshot" and then
+// apply incremental "change" events to stay in sync without polling.
+func (s *Server) handleDeviceWS(w http.ResponseWriter, r *http.Request) {
+	conn, err := s.upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		Log.Add("ws device upgrade failed", fmt.Sprintf("remote=%s", r.RemoteAddr), err, 0)
+		writeAPIError(w, http.StatusBadRequest, "websocket upgrade failed")
+		return
+	}
+	defer conn.Close()
+
+	ch := make(chan trackDeviceChange, 8)
+	s.registerDeviceWS(ch)
+	defer s.unregisterDeviceWS(ch)
+
+	// Send current snapshot on connect so the client has a base right away.
+	if snap := s.eventStream.Snapshot(); len(snap) > 0 {
+		_ = conn.WriteJSON(map[string]interface{}{
+			"type":    "snapshot",
+			"devices": snap,
+		})
+	}
+
+	for change := range ch {
+		msg := map[string]interface{}{
+			"type":    "change",
+			"current": change.Current,
+			"added":   change.Added,
+			"removed": change.Removed,
+		}
+		if err := conn.WriteJSON(msg); err != nil {
+			return
+		}
+	}
+}
