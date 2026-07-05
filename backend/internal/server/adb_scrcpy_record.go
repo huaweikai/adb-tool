@@ -191,6 +191,10 @@ func (m *AdbManager) StartScrcpyRecording(serial string, force bool) (string, er
 	m.scrcpyRecordMap[serial] = rec
 	m.scrcpyMu.Unlock()
 
+	if _, err := m.run("-s", serial, "shell", "settings", "put", "system", "show_touches", "1"); err != nil {
+		Log.Add("scrcpy recording show_touches on", "serial="+serial, err, 0)
+	}
+
 	Log.Add("scrcpy recording started",
 		fmt.Sprintf("serial=%s arch=%s pid=%d output=%s",
 			serial, paths.Arch, cmd.Process.Pid, outputPath),
@@ -217,8 +221,20 @@ func (m *AdbManager) StartScrcpyRecording(serial string, force bool) (string, er
 	return outputPath, nil
 }
 
-// killRecordingEntry sends a graceful shutdown to a recording entry
-// and waits up to 10s. Caller must hold m.scrcpyMu.
+// killRecordingEntry stops a recording by terminating the device-side
+// scrcpy-server, which causes the local scrcpy client to detect the
+// adb stream EOF, finalize the MP4, and exit on its own.
+//
+// On Windows with --no-window, taskkill /pid cannot deliver WM_CLOSE
+// (no window to receive it), so we cannot signal the local process
+// directly. Instead we kill the remote server and let the local
+// process exit naturally after finalizing the recording.
+//
+// After the process exits, we manually restore show_touches because
+// scrcpy's built-in cleanup may not run when the server is killed
+// externally.
+//
+// Caller must hold m.scrcpyMu.
 func (m *AdbManager) killRecordingEntry(st *scrcpyRecordState, reason string) {
 	cmd := st.cmd
 	done := st.done
@@ -226,17 +242,15 @@ func (m *AdbManager) killRecordingEntry(st *scrcpyRecordState, reason string) {
 		return
 	}
 	m.killScrcpyServerOnDevice(st.serial)
-	if err := terminateScrcpyProcess(cmd.Process); err != nil {
-		Log.Add("scrcpy recording stop signal", "reason="+reason, err, 0)
-	}
 	select {
 	case <-done:
 		Log.Add("scrcpy recording stopped", "reason="+reason+" graceful", nil, 0)
-	case <-time.After(10 * time.Second):
+	case <-time.After(15 * time.Second):
 		Log.Add("scrcpy recording stop timeout",
-			"reason="+reason+" forcing kill after 10s", nil, 10*time.Second)
+			"reason="+reason+" forcing kill after 15s", nil, 15*time.Second)
 		_ = cmd.Process.Kill()
 	}
+	m.restoreShowTouches(st.serial)
 }
 
 // killMirrorEntry sends a graceful shutdown to a mirror entry and
@@ -262,7 +276,11 @@ func (m *AdbManager) killMirrorEntry(st *scrcpyState, reason string) {
 }
 
 // StopScrcpyRecording gracefully stops the recording subprocess for
-// the given device. No-op if nothing is recording on that device.
+// the given device. Kills the device-side scrcpy-server so the local
+// scrcpy client detects the disconnect, finalizes the MP4, and exits.
+// After the process exits, manually restores show_touches because
+// scrcpy's built-in cleanup may not run when the server is killed
+// externally. No-op if nothing is recording on that device.
 func (m *AdbManager) StopScrcpyRecording(serial string) error {
 	m.scrcpyMu.Lock()
 	st, ok := m.scrcpyRecordMap[serial]
@@ -275,43 +293,44 @@ func (m *AdbManager) StopScrcpyRecording(serial string) error {
 	m.killScrcpyServerOnDevice(serial)
 	m.scrcpyMu.Unlock()
 
-	if err := terminateScrcpyProcess(cmd.Process); err != nil {
-		Log.Add("scrcpy recording stop signal", "serial="+serial, err, 0)
-	}
 	select {
 	case <-done:
 		Log.Add("scrcpy recording stopped", "serial="+serial+" graceful", nil, 0)
-	case <-time.After(10 * time.Second):
+	case <-time.After(15 * time.Second):
 		Log.Add("scrcpy recording stop timeout",
-			"serial="+serial+" forcing kill after 10s", nil, 10*time.Second)
+			"serial="+serial+" forcing kill after 15s", nil, 15*time.Second)
 		_ = cmd.Process.Kill()
 	}
+	m.restoreShowTouches(serial)
 	return nil
 }
 
-// killScrcpyServerOnDevice terminates the scrcpy-server process running
-// on the Android device. When scrcpy-server crashes, the local scrcpy
-// client detects the adb stream EOF and triggers its normal cleanup —
-// including flushing and closing any in-progress recording file.
+// killScrcpyServerOnDevice sends SIGTERM to the scrcpy-server process
+// on the Android device. This causes the local scrcpy client to detect
+// the adb stream EOF, finalize the recording MP4, and exit.
 //
-// This is essential on Windows where the recording path uses
-// --no-window: without an SDL window, taskkill /pid (no /F) cannot
-// deliver WM_CLOSE, so the local process never receives a graceful
-// shutdown signal. Killing the remote server side-steps this entirely.
-//
-// Errors are best-effort: the server may already have exited, or the
-// device may be unreachable. Callers still fall back to
-// terminateScrcpyProcess and hard-kill on timeout.
+// This is the primary shutdown mechanism for recording on Windows,
+// where --no-window means taskkill /pid cannot deliver WM_CLOSE.
 func (m *AdbManager) killScrcpyServerOnDevice(serial string) {
 	if serial == "" {
 		return
 	}
-	// pkill -9 for immediate death so the stream breaks cleanly.
-	// The local scrcpy client handles the abrupt disconnect and
-	// runs its own muxer finalization.
-	out, err := m.run("-s", serial, "shell", "pkill", "-9", "-f", "scrcpy")
+	out, err := m.run("-s", serial, "shell", "pkill", "-f", "scrcpy")
 	if err != nil {
 		Log.Add("scrcpy-server kill (device)", out, err, 0)
+	}
+}
+
+// restoreShowTouches manually resets the Android show_touches developer
+// setting to 0. This is necessary because scrcpy's built-in cleanup
+// (which normally restores device state on exit) may not run when the
+// server is killed externally via pkill.
+func (m *AdbManager) restoreShowTouches(serial string) {
+	if serial == "" {
+		return
+	}
+	if _, err := m.run("-s", serial, "shell", "settings", "put", "system", "show_touches", "0"); err != nil {
+		Log.Add("scrcpy recording show_touches restore", "serial="+serial, err, 0)
 	}
 }
 
