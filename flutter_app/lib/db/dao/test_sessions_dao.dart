@@ -89,6 +89,13 @@ class TestSessionsDao extends DatabaseAccessor<AppDatabase>
         .watch();
   }
 
+  Future<int> countIssuesForSession(String sessionId) {
+    return (select(testSessionIssues)
+          ..where((t) => t.sessionId.equals(sessionId)))
+        .get()
+        .then((rows) => rows.length);
+  }
+
   Stream<List<TestSessionNoteRow>> watchNotesForSession(String sessionId) {
     return (select(testSessionNotes)
           ..where((t) => t.sessionId.equals(sessionId))

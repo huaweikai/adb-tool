@@ -43,6 +43,24 @@ void main() {
       expect(id1, isNot(equals(id2)));
     });
 
+    test('issueId is unique per session', () {
+      final s1 = '20250618_143022_session1';
+      final s2 = '20250618_143022_session2';
+
+      final i1 = SessionFormatters.issueId(s1, 1);
+      final i2 = SessionFormatters.issueId(s2, 1);
+
+      expect(i1, isNot(equals(i2)));
+      expect(i1, equals('${s1}_ISSUE-001'));
+      expect(i2, equals('${s2}_ISSUE-001'));
+    });
+
+    test('issueId includes session prefix and issue number', () {
+      final sid = '20250618_143022_缺陷复现测试';
+      expect(SessionFormatters.issueId(sid, 1), equals('${sid}_ISSUE-001'));
+      expect(SessionFormatters.issueId(sid, 10), equals('${sid}_ISSUE-010'));
+    });
+
     test('issueNumber pads correctly', () {
       expect(SessionFormatters.issueNumber(1), equals('001'));
       expect(SessionFormatters.issueNumber(10), equals('010'));

@@ -36,7 +36,8 @@ class SessionFormatters {
 
   static String id(DateTime time) => '${time.microsecondsSinceEpoch}';
 
-  static String issueId(int index) => 'ISSUE-${issueNumber(index)}';
+  static String issueId(String sessionId, int index) =>
+      '${sessionId}_ISSUE-${issueNumber(index)}';
 
   static String issueNumber(int index) => index.toString().padLeft(3, '0');
 

@@ -188,6 +188,7 @@ abstract class ApiBase {
             );
 
   String resolveAdbSerial(String stableSerial) {
+    if (stableSerial.isEmpty) return stableSerial;
     final resolved = deviceProvider?.onlineAddressFor(stableSerial) ??
         (deviceProvider == null ? stableSerial : null);
     if (resolved == null || resolved.isEmpty) {

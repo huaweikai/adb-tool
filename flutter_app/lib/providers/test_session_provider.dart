@@ -543,31 +543,30 @@ class TestSessionProvider extends ChangeNotifier {
   }) async {
     final id = _requireActiveId();
     final now = DateTime.now();
-    final issueNumber = (await _dao.watchIssuesForSession(id).first).length + 1;
-    final issueId = SessionFormatters.issueId(issueNumber);
-
-    // Snapshot the most-recent logcat to disk first; this is best-effort
-    // (a failure here shouldn't block issue creation).
-    String? snapshotRelPath;
-    String? snapshotName;
-    if (recentLogContent.trim().isNotEmpty) {
-      final snap = await _attachments.writeIssueRecentLog(
-        sessionId: id,
-        issueId: issueId,
-        content: recentLogContent,
-        now: now,
-      );
-      snapshotRelPath = snap.relativePath;
-      snapshotName = snap.name;
-    }
+    late final String issueId;
 
     await _db.transaction(() async {
+      final issueNumber = await _dao.countIssuesForSession(id) + 1;
+      issueId = SessionFormatters.issueId(id, issueNumber);
+
+      // Snapshot the most-recent logcat to disk; best-effort.
+      String? snapshotRelPath;
+      String? snapshotName;
+      if (recentLogContent.trim().isNotEmpty) {
+        final snap = await _attachments.writeIssueRecentLog(
+          sessionId: id,
+          issueId: issueId,
+          content: recentLogContent,
+          now: now,
+        );
+        snapshotRelPath = snap.relativePath;
+        snapshotName = snap.name;
+      }
+
       // 1. Optional log snapshot artifact.
-      String? snapshotArtifactId;
       if (snapshotRelPath != null) {
-        snapshotArtifactId = SessionFormatters.id(now);
         await _dao.insertArtifact(TestSessionArtifactsCompanion.insert(
-          id: snapshotArtifactId,
+          id: SessionFormatters.id(now),
           sessionId: id,
           kind: TestSessionArtifactKind.log,
           name: snapshotName!,

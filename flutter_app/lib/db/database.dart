@@ -133,7 +133,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 11;
+  int get schemaVersion => 12;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -270,6 +270,16 @@ class AppDatabase extends _$AppDatabase {
             await customStatement(
               'CREATE INDEX IF NOT EXISTS idx_saved_devices_address '
               'ON saved_devices (address)',
+            );
+          }
+          if (from < 12) {
+            // v11 → v12: issue IDs now include session prefix to avoid
+            // cross-session PK collisions. Old format: `ISSUE-001`;
+            // new format: `{sessionId}_ISSUE-001`. Migrate existing rows.
+            await customStatement(
+              "UPDATE test_session_issues "
+              "SET id = session_id || '_' || id "
+              "WHERE id LIKE 'ISSUE-%'",
             );
           }
         },
