@@ -176,5 +176,5 @@ class _AboutRow extends StatelessWidget {
 // ask for a single string. Keep these in sync with pubspec.yaml's
 // `version:` field by hand (the CI release script does the
 // counterpart bump on the artifact side).
-const String kAppVersion = '1.1.0';
-const String kAppBuild = '3';
+const String kAppVersion = '1.2.0';
+const String kAppBuild = '5';
