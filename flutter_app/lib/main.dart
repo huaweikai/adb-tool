@@ -73,36 +73,8 @@ class AdbToolApp extends StatelessWidget {
       title: 'ADB Tool',
       debugShowCheckedModeBanner: false,
       themeMode: themeProvider.themeMode,
-      darkTheme: ThemeData(
-        useMaterial3: true,
-        brightness: Brightness.dark,
-        colorSchemeSeed: Colors.blue,
-        scaffoldBackgroundColor: const Color(0xFF0D1117),
-        dividerColor: const Color(0xFF30363D),
-        fontFamily: 'System',
-        pageTransitionsTheme: const PageTransitionsTheme(
-          builders: {
-            TargetPlatform.macOS: FadeUpwardsPageTransitionsBuilder(),
-            TargetPlatform.windows: FadeUpwardsPageTransitionsBuilder(),
-            TargetPlatform.linux: FadeUpwardsPageTransitionsBuilder(),
-          },
-        ),
-      ),
-      theme: ThemeData(
-        useMaterial3: true,
-        brightness: Brightness.light,
-        colorSchemeSeed: Colors.blue,
-        scaffoldBackgroundColor: Colors.white,
-        dividerColor: const Color(0xFFD0D7DE),
-        fontFamily: 'System',
-        pageTransitionsTheme: const PageTransitionsTheme(
-          builders: {
-            TargetPlatform.macOS: FadeUpwardsPageTransitionsBuilder(),
-            TargetPlatform.windows: FadeUpwardsPageTransitionsBuilder(),
-            TargetPlatform.linux: FadeUpwardsPageTransitionsBuilder(),
-          },
-        ),
-      ),
+      darkTheme: themeProvider.darkTheme,
+      theme: themeProvider.lightTheme,
       home: ServerBootScreen(),
     );
   }

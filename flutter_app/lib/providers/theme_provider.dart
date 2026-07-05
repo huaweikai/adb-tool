@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import '../design/design_tokens.dart';
+
 String get prefsPath {
   final home = Platform.environment['HOME'] ??
       Platform.environment['USERPROFILE'] ??
@@ -37,6 +39,86 @@ void savePrefs(Map<String, dynamic> data) {
   } catch (_) {}
 }
 
+const Color _darkScaffoldBg = Color(0xFF0D1117);
+const Color _darkDivider = Color(0xFF30363D);
+const Color _lightDivider = Color(0xFFD0D7DE);
+
+ThemeData _buildDarkTheme() {
+  return ThemeData(
+    useMaterial3: true,
+    brightness: Brightness.dark,
+    colorSchemeSeed: Colors.blue,
+    scaffoldBackgroundColor: _darkScaffoldBg,
+    dividerColor: _darkDivider,
+    fontFamily: 'System',
+    pageTransitionsTheme: const PageTransitionsTheme(
+      builders: {
+        TargetPlatform.macOS: FadeUpwardsPageTransitionsBuilder(),
+        TargetPlatform.windows: FadeUpwardsPageTransitionsBuilder(),
+        TargetPlatform.linux: FadeUpwardsPageTransitionsBuilder(),
+      },
+    ),
+    cardTheme: const CardThemeData(
+      elevation: AppElevation.card,
+      margin: EdgeInsets.zero,
+      clipBehavior: Clip.antiAlias,
+    ),
+    inputDecorationTheme: InputDecorationTheme(
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+      ),
+      contentPadding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.sm,
+      ),
+      isDense: true,
+    ),
+    dividerTheme: const DividerThemeData(
+      thickness: 1,
+      indent: AppSpacing.md,
+      endIndent: AppSpacing.md,
+    ),
+  );
+}
+
+ThemeData _buildLightTheme() {
+  return ThemeData(
+    useMaterial3: true,
+    brightness: Brightness.light,
+    colorSchemeSeed: Colors.blue,
+    scaffoldBackgroundColor: Colors.white,
+    dividerColor: _lightDivider,
+    fontFamily: 'System',
+    pageTransitionsTheme: const PageTransitionsTheme(
+      builders: {
+        TargetPlatform.macOS: FadeUpwardsPageTransitionsBuilder(),
+        TargetPlatform.windows: FadeUpwardsPageTransitionsBuilder(),
+        TargetPlatform.linux: FadeUpwardsPageTransitionsBuilder(),
+      },
+    ),
+    cardTheme: const CardThemeData(
+      elevation: AppElevation.card,
+      margin: EdgeInsets.zero,
+      clipBehavior: Clip.antiAlias,
+    ),
+    inputDecorationTheme: InputDecorationTheme(
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+      ),
+      contentPadding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.sm,
+      ),
+      isDense: true,
+    ),
+    dividerTheme: const DividerThemeData(
+      thickness: 1,
+      indent: AppSpacing.md,
+      endIndent: AppSpacing.md,
+    ),
+  );
+}
+
 class ThemeProvider extends ChangeNotifier {
   ThemeMode _themeMode = ThemeMode.dark;
 
@@ -49,6 +131,8 @@ class ThemeProvider extends ChangeNotifier {
 
   ThemeMode get themeMode => _themeMode;
   bool get isDark => _themeMode == ThemeMode.dark;
+  ThemeData get darkTheme => _buildDarkTheme();
+  ThemeData get lightTheme => _buildLightTheme();
 
   void toggle() {
     _themeMode = isDark ? ThemeMode.light : ThemeMode.dark;
