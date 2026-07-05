@@ -69,9 +69,8 @@ ThemeData _buildDarkTheme() {
       ),
       contentPadding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.md,
-        vertical: AppSpacing.sm,
+        vertical: AppSpacing.md,
       ),
-      isDense: true,
     ),
     dividerTheme: const DividerThemeData(
       thickness: 1,
@@ -107,9 +106,8 @@ ThemeData _buildLightTheme() {
       ),
       contentPadding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.md,
-        vertical: AppSpacing.sm,
+        vertical: AppSpacing.md,
       ),
-      isDense: true,
     ),
     dividerTheme: const DividerThemeData(
       thickness: 1,
