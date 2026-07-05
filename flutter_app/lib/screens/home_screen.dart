@@ -26,6 +26,7 @@ import 'adb_command_screen.dart';
 import 'test_session/test_session_hub_screen.dart';
 import 'test_config_screen.dart';
 import '../widgets/wireless_adb_dialog.dart';
+import '../widgets/command_palette.dart';
 import 'screen_mirror_screen.dart';
 import 'emulator_settings_screen.dart';
 import 'settings_screen.dart';
@@ -465,6 +466,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     return CallbackShortcuts(
       bindings: {
+        // Command palette: Cmd/Ctrl+K
+        SingleActivator(LogicalKeyboardKey.keyK, meta: isMacOS, control: !isMacOS):
+            _openCommandPalette,
         // Toggle sidebar: Cmd/Ctrl+B
         SingleActivator(LogicalKeyboardKey.keyB, meta: isMacOS, control: !isMacOS):
             _toggleSidebarCollapsed,
@@ -501,9 +505,60 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (index < 1 || index > items.length) return;
     final activeSerials = _expandedSerials.toList();
     if (activeSerials.isEmpty) return;
-    // Use the last expanded device
     final serial = activeSerials.last;
     _navigateTo(serial, items[index - 1]);
+  }
+
+  void _openCommandPalette() {
+    final devices = context.read<DeviceProvider>().savedDevices;
+    final list = <PaletteItem>[];
+
+    // Per-device function pages
+    for (final device in devices) {
+      for (final item in NavItem.values) {
+        final icon = _navConfig[item]!.icon;
+        list.add(PaletteItem(
+          title: navLabel(item),
+          subtitle: device.displayName,
+          icon: icon,
+          onSelect: () => _navigateTo(device.serial, item),
+        ));
+      }
+    }
+
+    // Global entries
+    list.add(PaletteItem(
+      title: tr('testConfigCenter'),
+      subtitle: tr('config'),
+      icon: Icons.tune,
+      onSelect: _openTestConfig,
+    ));
+    list.add(PaletteItem(
+      title: tr('emulatorSettings.title'),
+      subtitle: 'Android',
+      icon: Icons.smartphone,
+      onSelect: _openEmulatorSettings,
+    ));
+    list.add(PaletteItem(
+      title: tr('settings.title'),
+      subtitle: 'Settings',
+      icon: Icons.settings,
+      onSelect: _openSettings,
+    ));
+    list.add(PaletteItem(
+      title: tr('backendLogs'),
+      subtitle: 'Go',
+      icon: Icons.terminal,
+      onSelect: _openBackendLogs,
+    ));
+    list.add(PaletteItem(
+      title: tr('wirelessAdb'),
+      subtitle: '',
+      icon: Icons.wifi_tethering,
+      onSelect: _showWirelessAdbDialog,
+    ));
+
+    CommandPalette.show(context, items: list);
   }
 
   Widget _buildContent() {
