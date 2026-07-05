@@ -176,9 +176,7 @@
     │   │   ├── screen_capture_service.dart
     │   │   └── screen_record_owner.dart
     │   ├── mixins/                     # 截图 / 录屏捕获混入
-    │   │   ├── screen_capture_mixin.dart
-    │   │   ├── file_browser_capture_mixin.dart
-    │   │   └── test_session_capture_mixin.dart
+    │   │   └── screen_capture_mixin.dart  # 统一 CaptureMixin（CaptureMode 区分 fileBrowser / testSession）
 │   ├── widgets/                    # 跨页面复用组件 (17 个)
 │   │   ├── widgets/                # 顶层: 截图水印 / 录制 FAB / 文件传输 / 投屏设置 ...
 │   │   ├── logcat/                 # 子目录: 高亮规则等 logcat 专用组件
@@ -190,7 +188,7 @@
     │   │   ├── test_flow_text.dart     # 测试流程/步骤文本解析与格式化
     │   │   ├── time_formatters.dart
     │   │   └── legacy_session_cleanup.dart  # 老版本 JSON session 一次性清理
-    │   └── screens/                    # 12 个屏幕 (home / test_session 已拆子包)
+    │   └── screens/                    # 14 个屏幕 (含 settings + test_session 子包)
     │       ├── home_screen.dart        # 主框架 + 侧边栏
     │       ├── logcat_screen.dart
     │       ├── file_browser_screen.dart
@@ -202,6 +200,7 @@
     │       ├── adb_command_screen.dart     # ADB 指令面板
     │       ├── test_config_screen.dart     # 测试配置编辑
 │       ├── backend_log_screen.dart
+│       ├── settings_screen.dart           # 统一设置（主题/语言/录屏路径）
 │       ├── emulator_settings_screen.dart   # 模拟器设置（引擎/Java/镜像/实例）
 │       └── test_session/           # 测试会话 (hub + active + 预览组件)
     │           ├── test_session_hub_screen.dart    # 会话列表 / 历史浏览 / 创建入口
@@ -343,11 +342,19 @@ export ANDROID_HOME="$HOME/Library/Android/sdk"
 | 路由 | 方法 | 功能 | 参数 | 返回值 |
 |---|---|---|---|---|
 | `/api/scrcpy/start` | POST | 启动内置 scrcpy 投屏 | `?serial=` + 可选 JSON `scrcpy_options` | 启动状态 JSON |
-| `/api/scrcpy/stop` | POST | 停止当前 scrcpy 进程 | 无 | 停止状态 JSON |
+| `/api/scrcpy/stop` | POST | 停止指定设备 scrcpy 进程 | `?serial=` | 停止状态 JSON |
 | `/api/scrcpy/status` | GET | 查询投屏运行状态 | 可选 `?serial=` | running / serial / pid / elapsed |
 | `/api/scrcpy/action` | POST | 发送设备侧快捷动作 | `?serial=&action=` | 动作结果 JSON |
 
 投屏画面由 scrcpy 自己打开独立 SDL 窗口，Flutter 页面只负责启停、状态展示、参数配置和快捷键说明。
+
+##### scrcpy 窗口录制（无窗口模式）
+
+| 路由 | 方法 | 功能 | 参数 |
+|---|---|---|---|
+| `/api/scrcpy/record/start` | POST | 启动后台 scrcpy 录制 | `?serial=&force=true` + 可选 JSON `scrcpy_options` |
+| `/api/scrcpy/record/stop` | POST | 停止录制 | `?serial=` |
+| `/api/scrcpy/record/status` | GET | 查询录制状态 | `?serial=` |
 
 #### Logcat
 
@@ -355,7 +362,8 @@ export ANDROID_HOME="$HOME/Library/Android/sdk"
 |---|---|---|---|
 | `/api/clear` | GET | 清理 logcat 缓冲区 | `?serial=` |
 | `/api/logcat-recent` | GET | 获取最近 logcat 快照 | `?serial=&lines=` (默认 1000) |
-| `/api/session-logcat` | POST | 会话绑定的 logcat | `?serial=&sessionDir=&packageName=&action=start/stop` |
+| `/api/session-logcat` | POST | 会话绑定的 logcat | JSON body: `serial`, `sessionDir`, `packageName`, `action` |
+| `/api/local-recording` | POST | 设备 logcat 保存到本地文件 | JSON body: `serial`, `action` (start/stop/status) |
 | `/ws/logs` | WebSocket | 实时 logcat 流 | JSON 命令: start/stop/pause/resume/clear/filter |
 
 #### 剪贴板
@@ -383,6 +391,8 @@ export ANDROID_HOME="$HOME/Library/Android/sdk"
 | `/api/emulator/engine` | GET | 获取模拟器引擎状态（路径/版本） | 无 |
 | `/api/emulator/engine/detect` | POST | 自动检测引擎路径 | 无 |
 | `/api/emulator/engine/path` | POST | 手动设置引擎路径 | `?path=` |
+| `/api/emulator/engine/use` | POST | 选择并持久化 SDK 路径 | JSON body: `sdkPath` |
+| `/api/emulator/mirror` | GET/PUT | SDK 镜像源配置 | GET 无/PUT JSON `url`, `enabled` |
 | `/api/emulator/java` | GET | 获取 Java 运行时信息 | 无 |
 | `/api/emulator/java/detect` | POST | 自动检测 Java 路径 | 无 |
 | `/api/emulator/java/path` | POST | 手动设置 Java 路径 | `?path=` |
@@ -404,8 +414,10 @@ export ANDROID_HOME="$HOME/Library/Android/sdk"
 
 | 路由 | 方法 | 功能 | 参数 |
 |---|---|---|---|
-| `/api/adb-exec` | POST | 透传任意 ADB 命令 | `args=...` |
+| `/api/adb-exec` | POST | 透传任意 ADB 命令 | `serial=&args=...` |
 | `/api/backend-logs` | GET | 后端操作日志 (环形缓冲) | 无 |
+| `/api/debug/env` | GET | 后端环境变量 (调试用) | 无 |
+| `/api/cache/cleanup` | POST | 清除 adb-tool 缓存目录 | `?confirm=true` |
 | `/api/shutdown` | POST | 关闭后端进程 (loopback only) | 无 |
 | `/` | GET | 静态文件 (web/index.html) | 无 |
 
@@ -472,17 +484,18 @@ JSON 命令格式：
 
 | 页面 | 文件 | 功能 |
 |---|---|---|
-| Home | `home_screen.dart` | 240px 侧边栏，设备树，语言/主题切换，服务重启，导航缓存 |
+| Home | `home_screen.dart` | 仪表盘 + 侧边栏，设备树，实时指标趋势图，语言/主题切换，服务重启，导航缓存 |
 | Logcat | `logcat_screen.dart` | 实时日志，Tag/优先级/关键词/PID 过滤，暂停/自动滚动 |
 | File Browser | `file_browser_screen.dart` | 列表/网格视图，上传/下载，截图，录屏(≤30min)，增删改查，路径面包屑 |
 | App Manager | `app_manager_screen.dart` | APK 拖放安装，搜索，卸载确认，错误详情弹窗 |
 | Device Info | `device_info_screen.dart` | 系统属性分组，搜索，截图 |
 | Device Status | `device_status_screen.dart` | 实时指标 (CPU/内存/电池/存储/前台应用) |
-| Screen Mirror | `screen_mirror_screen.dart` | 内置 scrcpy 投屏控制，按设备保存参数，独立窗口显示，支持录制和快捷键参考 |
+| Screen Mirror | `screen_mirror_screen.dart` | 内置 scrcpy 投屏控制（多设备同时投屏），按设备保存参数，独立窗口或后台无窗口录制，快捷键参考 |
 | Clipboard | `clipboard_screen.dart` | 文本发送，自动安装/卸载助手，历史记录与收藏 |
-| ADB Command | `adb_command_screen.dart` | ADB 指令面板：参数/命令输入 + 快捷指令分类 |
+| ADB Command | `adb_command_screen.dart` | ADB 指令面板：参数/命令输入 + 快捷指令分类，Cmd/Ctrl+K 命令面板 |
 | Test Config | `test_config_screen.dart` | 测试 App 配置、流程/步骤编辑，复制配置 |
 | Backend Logs | `backend_log_screen.dart` | 2 秒轮询日志，错误高亮，命令过滤 |
+| Settings | `settings_screen.dart` | 统一设置页：主题/语言/录屏存储路径与录制方式 |
 | Emulator Settings | `emulator_settings_screen.dart` | 模拟器引擎配置、Java 运行时、系统镜像下载管理、AVD 实例创建/启停 |
 | Test Session (Hub) | `screens/test_session/test_session_hub_screen.dart` | 会话列表、历史浏览、创建入口、设备切换 |
 | Test Session (Active) | `screens/test_session/test_session_active_screen.dart` | 进行中会话：步骤标记、附件归档、问题/备注 |
@@ -525,7 +538,7 @@ JSON 命令格式：
 
 - `screen_capture_service.dart` — 调 `/api/screenshot`，支持加水印 (`widgets/screenshot_watermark.dart`)
 - `screen_record_owner.dart` — 录屏状态机（idle / recording），FAB (`widgets/recording_fab.dart`) 触发
-- `mixins/screen_capture_mixin.dart` + `mixins/file_browser_capture_mixin.dart` + `mixins/test_session_capture_mixin.dart` — 三个 capture mixin，给不同页面复用截图/录屏能力
+- `mixins/screen_capture_mixin.dart` — 统一 CaptureMixin，通过 `CaptureMode` 枚举 (`fileBrowser` / `testSession`) 区分行为，给不同页面复用截图/录屏能力
 
 #### 投屏设置
 

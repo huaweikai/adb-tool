@@ -43,9 +43,9 @@ HTTP 状态码含义：
 
 以下接口成功时直接返回二进制内容，不包 envelope：
 
-- `GET /api/screenshot`：返回 `image/png`。
-- `GET /api/pull-file`：返回 `application/octet-stream`，通过 `Content-Disposition` 附带文件名。
-- `GET /api/screen-record-video`：返回 `video/mp4`。
+- `GET /api/screenshot?serial=<serial>`：返回 `image/png`。
+- `GET /api/pull-file?serial=<serial>&path=<path>`：返回 `application/octet-stream`，通过 `Content-Disposition` 附带文件名。
+- `GET /api/screen-record-video?serial=<serial>`：返回 `video/mp4`。
 
 这些接口失败时仍返回统一 JSON 错误 envelope。
 
@@ -88,6 +88,16 @@ HTTP 状态码含义：
 - `pid`：后端进程 ID。
 - `started`：后端启动时间，RFC3339 格式。
 
+`GET /api/device-status?serial=<serial>`
+
+- `serial`：设备序列号。
+- `cpuPercent`：CPU 使用率（0..100）。
+- `memUsedKb` / `memTotalKb`：内存用量，单位 KB。
+- `batteryLevel` / `batteryTemperature`：电池电量与温度。
+- `storageUsed` / `storageTotal`：存储用量文本。
+- `foregroundPackage`：前台运行包名。
+- `capturedAt`：指标采集时间，RFC3339 格式。
+
 ### Logcat 与进程
 
 `GET /api/clear`
@@ -105,6 +115,36 @@ HTTP 状态码含义：
 - `packages`：当前运行中的包名数组。
 
 失败时 `data.packages` 可能为空数组。
+
+`GET /api/logcat-recent?serial=<serial>&lines=<N>`
+
+获取最近 logcat 快照。`lines` 默认 1000。
+
+- `lines`：返回的日志行数组。
+- `serial`：请求的设备序列号。
+
+`POST /api/session-logcat`
+
+会話绑定的 logcat 录制。请求体：
+
+```json
+{ "serial": "xxx", "sessionDir": "/path/to/session", "packageName": "com.example", "action": "start|stop" }
+```
+
+- `action` 为 `start` 时开始录制指定会话的 logcat。
+- `action` 为 `stop` 时停止录制。
+
+`POST /api/local-recording`
+
+日志保存到本地文件。请求体：
+
+```json
+{ "serial": "xxx", "action": "start|stop|status" }
+```
+
+- `start`：开始记录该设备 logcat 到本地文件。
+- `stop`：停止记录并返回文件路径。
+- `status`：查询当前记录状态。
 
 ### 文件管理
 
@@ -216,13 +256,23 @@ HTTP 状态码含义：
 - `ok`：断开命令是否成功。
 - `output`：ADB 原始输出。
 
-### 后端日志
+### 后端日志与调试
 
 `GET /api/backend-logs`
 
 - `logs`：后端 ADB 执行日志数组。
 
 日志条目字段由后端日志结构决定，通常包含命令、输出、错误和耗时等信息。
+
+`GET /api/debug/env`
+
+返回后端进程的环境变量键值对，用于调试。
+
+`POST /api/cache/cleanup?confirm=true`
+
+清除 adb-tool 缓存目录（`/tmp/adb-tool-cache/`）。**必须**带 `?confirm=true`，否则返回 400。
+
+- `status`：固定为 `cleaned`。
 
 ### 剪贴板助手
 
@@ -270,9 +320,9 @@ HTTP 状态码含义：
 
 请求参数或 `scrcpy_options` 校验失败时返回 `400`，`error` 会包含可展示的校验原因。
 
-`POST /api/scrcpy/stop`
+`POST /api/scrcpy/stop?serial=<serial>`
 
-- `status`：固定为 `stopped`。即使当前没有投屏进程，也按无操作成功处理。
+- `status`：固定为 `stopped`。即使该设备当前没有投屏进程，也按无操作成功处理。
 
 `GET /api/scrcpy/status`
 
@@ -296,17 +346,22 @@ HTTP 状态码含义：
 
 ### 录屏
 
-`GET /api/screen-record?action=start`
+`GET /api/screen-record?serial=<serial>&action=start`
+
+`serial` 必填。返回：
 
 - `status`：固定为 `recording`。
 - `serial`：正在录屏的设备序列号。
 
-`GET /api/screen-record?action=stop`
+`GET /api/screen-record?serial=<serial>&action=stop`
+
+返回：
 
 - `status`：固定为 `stopped`。
 - `elapsed`：录屏持续时间，单位秒。
+- `path`：录屏视频在服务端保存的完整路径（`~/.adb-tool/adb_recordings/` 下）。
 
-`GET /api/screen-record?action=status`
+`GET /api/screen-record?serial=<serial>&action=status`
 
 未录屏时：
 
@@ -317,6 +372,32 @@ HTTP 状态码含义：
 - `recording`：`true`。
 - `serial`：正在录屏的设备序列号。
 - `elapsed`：当前已录制时间，单位秒。
+
+---
+
+### scrcpy 窗口录制（无窗口模式）
+
+`POST /api/scrcpy/record/start?serial=<serial>[&force=true]`
+
+启动无窗口 scrcpy 录制（画面不显示、仅后台录屏）。`force=true` 时强制终止已有录制进程再启动。
+
+请求体可选传入 `scrcpy_options`（格式同投屏）。成功时：
+
+- `status`：固定为 `started`。
+- `serial`：录制绑定的设备序列号。
+
+如果该设备已有录制进程且未传 `force=true`，返回 `409 Conflict`。
+
+`POST /api/scrcpy/record/stop?serial=<serial>`
+
+- `status`：固定为 `stopped`。
+- `path`：录屏文件在服务端保存的完整路径。
+
+`GET /api/scrcpy/record/status?serial=<serial>`
+
+- `recording`：是否正在录制。
+- `serial`：录制绑定的设备序列号。
+- `elapsed`：已录制时长，单位秒。
 
 ## 模拟器管理
 
@@ -436,6 +517,24 @@ HTTP 状态码含义：
 `use` 的旧别名，部分老客户端还在用；与 `/engine/use` 同语义。
 
 ### SDK 管理
+
+`GET /api/emulator/mirror`
+
+返回当前 SDK 镜像源配置：
+
+- `enabled`：是否启用自定义镜像源。
+- `url`：镜像源 URL。
+
+`PUT /api/emulator/mirror`
+
+设置 SDK 镜像源。请求体：
+
+```json
+{ "url": "https://mirror.example.com/android/repository/", "enabled": true }
+```
+
+- `url`：镜像源地址。通过 `validateDownloadURL` 校验（仅 `http(s)`，拒绝 loopback/link-local）。
+- `enabled`：是否启用。
 
 `POST /api/emulator/sdk/import`
 

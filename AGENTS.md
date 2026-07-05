@@ -47,15 +47,17 @@ ADB Tool — 跨平台 Android 调试桌面工具，**Go 后端 + Flutter 桌面
 | `lib/screens/home_screen.dart` | ~34K | Same. |
 | `lib/models/scrcpy_options.dart` | ~20K | Same. |
 
-### Capture mixins — copy-paste red flag
+### Capture mixins — resolved 2026-07-05
 
-- `lib/mixins/screen_capture_mixin.dart`
-- `lib/mixins/file_browser_capture_mixin.dart`
-- `lib/mixins/test_session_capture_mixin.dart`
+`FileBrowserCaptureMixin` and `TestSessionCaptureMixin` were merged into a
+single `ScreenCaptureMixin` configured by `CaptureMode` enum
+(`fileBrowser` / `testSession`). Files deleted:
+- ~~`lib/mixins/file_browser_capture_mixin.dart`~~
+- ~~`lib/mixins/test_session_capture_mixin.dart`~~
+- New: `lib/mixins/screen_capture_mixin.dart`
 
-**Rule**: before adding a 4th `*_capture_mixin.dart`, merge the first three
-into one. Names are too similar — duplicated logic is the default trajectory;
-explicitly merge to break the pattern.
+**Rule (legacy)**: was "before adding a 4th, merge". Now irrelevant — all
+three consumers (file-browser + test-session) use the unified mixin.
 
 ### Why NOT refactoring now
 
