@@ -48,6 +48,7 @@ class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
 
   final List<double> _cpuHistory = [];
   final List<double> _memHistory = [];
+  final List<double> _batteryHistory = [];
 
   @override
   void initState() {
@@ -147,6 +148,11 @@ class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
     if (mem > 0) {
       _memHistory.add(mem.clamp(0.0, 1.0));
       if (_memHistory.length > _maxHistory) _memHistory.removeAt(0);
+    }
+    final batt = _parsePercent(status.batteryLevel) / 100;
+    if (batt > 0) {
+      _batteryHistory.add(batt.clamp(0.0, 1.0));
+      if (_batteryHistory.length > _maxHistory) _batteryHistory.removeAt(0);
     }
   }
 
@@ -267,12 +273,13 @@ class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, AppSpacing.xs),
+                    AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, AppSpacing.sm),
                 child: _buildSummaryHeader(context, status),
               ),
             ),
             SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+              padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, AppSpacing.lg),
               sliver: SliverMasonryGrid.count(
                 crossAxisCount: columns,
                 mainAxisSpacing: AppSpacing.md,
@@ -284,7 +291,7 @@ class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
             ),
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.lg),
+                  AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, AppSpacing.lg),
               sliver: SliverToBoxAdapter(
                 child: _buildProcesses(context, status.topProcesses),
               ),
@@ -400,7 +407,8 @@ class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
             subtitle: _join([status.batteryStatus, status.batteryTemperature]),
             progress: battPct,
             warningThreshold: 0.3,
-            criticalThreshold: 0.15);
+            criticalThreshold: 0.15,
+            sparkline: _batteryHistory);
       case 1:
         return _metricCard(context, tr('monitorCpuUsage'), Icons.memory,
             _value(status.cpuUsage),
