@@ -35,7 +35,12 @@ function Build-Go {
 function Build-Flutter {
   Push-Location "$Root/flutter_app"
   flutter pub get
-  flutter build windows --release
+  $fullVer = (Select-String -Path "$Root/flutter_app/pubspec.yaml" -Pattern '^version:\s*(\S+)').Matches[0].Groups[1].Value
+  $ver = $fullVer -replace '\+.*$',''
+  $build = if ($fullVer -match '\+(\d+)$') { $Matches[1] } else { '0' }
+  flutter build windows --release `
+    --dart-define=APP_VERSION=$ver `
+    --dart-define=APP_BUILD=$build
   Pop-Location
 
   # Build-Go writes runtime.exe / uninstall.exe into flutter_app/windows/runner/

@@ -42,8 +42,16 @@ build_backend() {
 
 # ---------------- flutter ----------------
 build_flutter() {
+  local full_ver
+  full_ver=$(grep '^version:' "$ROOT/flutter_app/pubspec.yaml" | awk '{print $2}')
+  local ver="${full_ver%+*}"
+  local build="${full_ver#*+}"
+  [[ "$build" == "$full_ver" ]] && build="0"
+
   (cd "$ROOT/flutter_app" && flutter pub get)
-  (cd "$ROOT/flutter_app" && flutter build macos --release)
+  (cd "$ROOT/flutter_app" && flutter build macos --release \
+    --dart-define=APP_VERSION="$ver" \
+    --dart-define=APP_BUILD="$build")
 }
 
 # ---------------- copy app ----------------
