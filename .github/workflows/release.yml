@@ -17,10 +17,19 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      - name: Setup keystore
+        run: echo "$KEYSTORE_B64" | base64 -d > adb_tool_app/release.jks
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_BASE64 }}
+
       - name: Build Android helper
         run: |
           cd adb_tool_app
           ./gradlew assembleRelease
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
 
       - uses: actions/upload-artifact@v4
         with:
