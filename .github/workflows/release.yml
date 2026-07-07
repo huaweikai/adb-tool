@@ -71,9 +71,9 @@ jobs:
           path: |
             ~/Library/Caches/org.swift.swiftpm
             ~/Library/Developer/Xcode/DerivedData/**/SourcePackages
-          key: ${{ runner.os }}-spm-${{ hashFiles('flutter_app/macos/Runner.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-spm-${{ hashFiles('flutter_app/macos/Runner.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
           restore-keys: |
-            ${{ runner.os }}-spm-
+            ${{ runner.os }}-${{ runner.arch }}-spm-
 
       - name: Read version from pubspec
         id: ver
@@ -130,9 +130,9 @@ jobs:
           path: |
             ~/Library/Caches/org.swift.swiftpm
             ~/Library/Developer/Xcode/DerivedData/**/SourcePackages
-          key: ${{ runner.os }}-spm-${{ hashFiles('flutter_app/macos/Runner.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-spm-${{ hashFiles('flutter_app/macos/Runner.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
           restore-keys: |
-            ${{ runner.os }}-spm-
+            ${{ runner.os }}-${{ runner.arch }}-spm-
 
       - name: Read version from pubspec
         id: ver
