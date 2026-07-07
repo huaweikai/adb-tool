@@ -22,13 +22,23 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: android
-          path: adb_tool_app/app/build/outputs/apk/**/release/*.apk
+          path: adb_tool_app/app/build/outputs/apk/release/app-release.apk
 
   macos-arm64:
     runs-on: macos-14
     needs: android
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: android
+          path: dist/android/
+
+      - name: Setup clipboard-helper.apk
+        run: |
+          cp dist/android/app-release.apk backend/clipboard-helper.apk
+          cp dist/android/app-release.apk dist/android/clipboard-helper.apk
 
       - uses: actions/setup-go@v5
         with:
@@ -38,7 +48,18 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
-          channel: stable
+          flutter-version: 3.44.4
+          cache: true
+
+      - name: Cache SPM
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/org.swift.swiftpm
+            ~/Library/Developer/Xcode/DerivedData/**/SourcePackages
+          key: ${{ runner.os }}-spm-${{ hashFiles('flutter_app/macos/Runner.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-
 
       - name: Read version from pubspec
         id: ver
@@ -66,6 +87,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: android
+          path: dist/android/
+
+      - name: Setup clipboard-helper.apk
+        run: |
+          cp dist/android/app-release.apk backend/clipboard-helper.apk
+          cp dist/android/app-release.apk dist/android/clipboard-helper.apk
+
       - uses: actions/setup-go@v5
         with:
           go-version-file: backend/go.mod
@@ -74,7 +105,18 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
-          channel: stable
+          flutter-version: 3.44.4
+          cache: true
+
+      - name: Cache SPM
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/org.swift.swiftpm
+            ~/Library/Developer/Xcode/DerivedData/**/SourcePackages
+          key: ${{ runner.os }}-spm-${{ hashFiles('flutter_app/macos/Runner.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-
 
       - name: Read version from pubspec
         id: ver
@@ -99,6 +141,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: android
+          path: dist/android/
+
+      - name: Setup clipboard-helper.apk
+        shell: pwsh
+        run: |
+          Copy-Item dist/android/app-release.apk backend/clipboard-helper.apk -Force
+          Copy-Item dist/android/app-release.apk dist/android/clipboard-helper.apk -Force
+
       - uses: actions/setup-go@v5
         with:
           go-version-file: backend/go.mod
@@ -106,6 +159,9 @@ jobs:
           cache-dependency-path: backend/go.sum
 
       - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.44.4
+          cache: true
 
       - name: Install WiX v5
         run: |

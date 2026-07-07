@@ -8,21 +8,6 @@ $Root = (Resolve-Path "$PSScriptRoot/..").Path
 $Dist = "$Root/dist/windows"
 $Android = "$Root/dist/android"
 
-function Build-Android {
-  $src="$Root/adb_tool_app/app/build/outputs/apk/release/app-release.apk"
-
-  if (Test-Path "$Root/adb_tool_app") {
-    Push-Location "$Root/adb_tool_app"
-    ./gradlew assembleRelease | Out-Null
-    Pop-Location
-  }
-
-  if (Test-Path $src) {
-    Copy-Item $src "$Root/backend/clipboard-helper.apk" -Force
-    Copy-Item $src "$Android/clipboard-helper.apk" -Force
-  }
-}
-
 function Build-Go {
   $runner="$Root/flutter_app/windows/runner"
 
@@ -34,7 +19,6 @@ function Build-Go {
 
 function Build-Flutter {
   Push-Location "$Root/flutter_app"
-  flutter pub get
   $fullVer = (Select-String -Path "$Root/flutter_app/pubspec.yaml" -Pattern '^version:\s*(\S+)').Matches[0].Groups[1].Value
   $ver = $fullVer -replace '\+.*$',''
   $build = if ($fullVer -match '\+(\d+)$') { $Matches[1] } else { '0' }
@@ -157,7 +141,6 @@ function Expand-WixTemplate {
 
 New-Item -ItemType Directory -Force -Path $Dist,$Android | Out-Null
 
-Build-Android
 Build-Go
 Build-Flutter
 Build-MSI

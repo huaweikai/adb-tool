@@ -13,20 +13,6 @@ EXEC="adb-tool"
 
 mkdir -p "$MACOS" "$ANDROID"
 
-# ---------------- Android helper ----------------
-build_android() {
-  local src="$ROOT/adb_tool_app/app/build/outputs/apk/release/app-release.apk"
-
-  if [[ -d "$ROOT/adb_tool_app" ]]; then
-    (cd "$ROOT/adb_tool_app" && ./gradlew assembleRelease || true)
-  fi
-
-  if [[ -f "$src" ]]; then
-    cp "$src" "$ROOT/backend/clipboard-helper.apk"
-    cp "$src" "$ANDROID/clipboard-helper.apk"
-  fi
-}
-
 # ---------------- backend ----------------
 build_backend() {
   local arch=$(uname -m)
@@ -48,7 +34,6 @@ build_flutter() {
   local build="${full_ver#*+}"
   [[ "$build" == "$full_ver" ]] && build="0"
 
-  (cd "$ROOT/flutter_app" && flutter pub get)
   (cd "$ROOT/flutter_app" && flutter build macos --release \
     --dart-define=APP_VERSION="$ver" \
     --dart-define=APP_BUILD="$build")
@@ -94,7 +79,6 @@ create_dmg() {
     "$dmg"
 }
 
-build_android
 build_backend
 build_flutter
 copy_app
