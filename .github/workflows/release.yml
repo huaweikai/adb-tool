@@ -10,9 +10,9 @@ jobs:
   android:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 17
@@ -31,7 +31,7 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: android
           path: adb_tool_app/app/build/outputs/apk/**/release/*.apk
@@ -40,9 +40,9 @@ jobs:
     runs-on: macos-14
     needs: android
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: android
           path: dist/android/
@@ -54,7 +54,7 @@ jobs:
           mkdir -p dist/android
           cp "$APK" dist/android/clipboard-helper.apk
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: backend/go.mod
           check-latest: true
@@ -66,7 +66,7 @@ jobs:
           cache: true
 
       - name: Cache SPM
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/Library/Caches/org.swift.swiftpm
@@ -87,7 +87,7 @@ jobs:
           PRODUCT_VERSION: ${{ steps.ver.outputs.version }}
         run: PRODUCT_VERSION="$PRODUCT_VERSION" bash scripts/build.sh
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: macos-arm64
           path: dist/macos/*.dmg
@@ -99,9 +99,9 @@ jobs:
     runs-on: macos-15-intel
     needs: android
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: android
           path: dist/android/
@@ -113,7 +113,7 @@ jobs:
           mkdir -p dist/android
           cp "$APK" dist/android/clipboard-helper.apk
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: backend/go.mod
           check-latest: true
@@ -125,7 +125,7 @@ jobs:
           cache: true
 
       - name: Cache SPM
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/Library/Caches/org.swift.swiftpm
@@ -146,7 +146,7 @@ jobs:
           PRODUCT_VERSION: ${{ steps.ver.outputs.version }}
         run: PRODUCT_VERSION="$PRODUCT_VERSION" bash scripts/build.sh
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: macos-amd64
           path: dist/macos/*.dmg
@@ -155,9 +155,9 @@ jobs:
     runs-on: windows-latest
     needs: android
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: android
           path: dist/android/
@@ -169,7 +169,7 @@ jobs:
           Copy-Item $apk backend/clipboard-helper.apk -Force
           Copy-Item $apk dist/android/clipboard-helper.apk -Force
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: backend/go.mod
           check-latest: true
@@ -200,7 +200,7 @@ jobs:
         run: |
           powershell -ExecutionPolicy Bypass -File scripts/build.ps1 -Mode Release -ProductVersion "$env:PRODUCT_VERSION"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows
           path: dist/windows/*.msi
@@ -213,9 +213,9 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
           files: |
