@@ -12,17 +12,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build Android helper (optional)
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Build Android helper
         run: |
-          if [ -d adb_tool_app ]; then
-            cd adb_tool_app
-            ./gradlew assembleRelease || true
-          fi
+          cd adb_tool_app
+          ./gradlew assembleRelease
 
       - uses: actions/upload-artifact@v4
         with:
           name: android
-          path: adb_tool_app/app/build/outputs/apk/release/app-release.apk
+          path: adb_tool_app/app/build/outputs/apk/**/release/*.apk
 
   macos-arm64:
     runs-on: macos-14
