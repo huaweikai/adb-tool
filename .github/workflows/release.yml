@@ -40,8 +40,10 @@ jobs:
 
       - name: Setup clipboard-helper.apk
         run: |
-          cp dist/android/app-release.apk backend/clipboard-helper.apk
-          cp dist/android/app-release.apk dist/android/clipboard-helper.apk
+          APK=$(find dist/android -name '*.apk' -type f | head -1)
+          cp "$APK" backend/clipboard-helper.apk
+          mkdir -p dist/android
+          cp "$APK" dist/android/clipboard-helper.apk
 
       - uses: actions/setup-go@v5
         with:
@@ -97,8 +99,10 @@ jobs:
 
       - name: Setup clipboard-helper.apk
         run: |
-          cp dist/android/app-release.apk backend/clipboard-helper.apk
-          cp dist/android/app-release.apk dist/android/clipboard-helper.apk
+          APK=$(find dist/android -name '*.apk' -type f | head -1)
+          cp "$APK" backend/clipboard-helper.apk
+          mkdir -p dist/android
+          cp "$APK" dist/android/clipboard-helper.apk
 
       - uses: actions/setup-go@v5
         with:
@@ -152,8 +156,9 @@ jobs:
       - name: Setup clipboard-helper.apk
         shell: pwsh
         run: |
-          Copy-Item dist/android/app-release.apk backend/clipboard-helper.apk -Force
-          Copy-Item dist/android/app-release.apk dist/android/clipboard-helper.apk -Force
+          $apk = Get-ChildItem dist/android -Recurse -Filter *.apk | Select-Object -First 1 -ExpandProperty FullName
+          Copy-Item $apk backend/clipboard-helper.apk -Force
+          Copy-Item $apk dist/android/clipboard-helper.apk -Force
 
       - uses: actions/setup-go@v5
         with:
