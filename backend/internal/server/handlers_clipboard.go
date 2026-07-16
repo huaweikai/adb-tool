@@ -28,7 +28,7 @@ func (s *Server) handleClipboardInstall(w http.ResponseWriter, r *http.Request) 
 		writeAPIError(w, http.StatusBadRequest, "serial required")
 		return
 	}
-	if err := s.adb.InstallClipboardHelper(serial, s.clipboardApk); err != nil {
+	if err := s.adb.ensureHelperInstalled(serial, s.clipboardApk); err != nil {
 		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

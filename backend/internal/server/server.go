@@ -253,6 +253,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/packages", s.handlePackages)
 	mux.HandleFunc("/api/install-package", s.handleInstallPackage)
 	mux.HandleFunc("/api/uninstall-package", s.handleUninstallPackage)
+	mux.HandleFunc("/api/refresh-icons", s.handleRefreshIcons)
+	mux.HandleFunc("/api/icons/", s.handleCachedIcon)
+	mux.HandleFunc("/api/icons", s.handleCachedIcon)
 
 	// Logcat
 	mux.HandleFunc("/ws/logs", s.handleLogStream)

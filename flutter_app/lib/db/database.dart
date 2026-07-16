@@ -87,6 +87,7 @@ import 'dao/sent_clipboard_entry_dao.dart';
 import 'dao/saved_devices_dao.dart';
 import 'dao/scrcpy_options_dao.dart';
 import 'dao/test_app_configs_dao.dart';
+import 'dao/app_icons_dao.dart';
 import 'dao/test_sessions_dao.dart';
 import 'tables/app_states.dart';
 import 'tables/sent_clipboard_entry.dart';
@@ -128,12 +129,17 @@ part 'database.g.dart';
   ],
 )
 class AppDatabase extends _$AppDatabase {
-  AppDatabase() : super(_openConnection());
+  late final AppIconsDao appIconsDao;
+  AppDatabase() : super(_openConnection()) {
+    appIconsDao = AppIconsDao(this);
+  }
 
-  AppDatabase.forTesting(super.executor);
+  AppDatabase.forTesting(super.executor) {
+    appIconsDao = AppIconsDao(this);
+  }
 
   @override
-  int get schemaVersion => 12;
+  int get schemaVersion => 13;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -143,6 +149,12 @@ class AppDatabase extends _$AppDatabase {
           await customStatement(
             'CREATE INDEX IF NOT EXISTS idx_saved_devices_address '
             'ON saved_devices (address)',
+          );
+          await customStatement(
+            'CREATE TABLE IF NOT EXISTS app_icons ('
+            'id INTEGER PRIMARY KEY AUTOINCREMENT, '
+            'package TEXT NOT NULL UNIQUE, '
+            'icon_url TEXT NOT NULL)',
           );
         },
         onUpgrade: (m, from, to) async {
@@ -280,6 +292,15 @@ class AppDatabase extends _$AppDatabase {
               "UPDATE test_session_issues "
               "SET id = session_id || '_' || id "
               "WHERE id LIKE 'ISSUE-%'",
+            );
+          }
+          if (from < 13) {
+            // v12 → v13: app_icons table for cached package icons
+            await customStatement(
+              'CREATE TABLE IF NOT EXISTS app_icons ('
+              'id INTEGER PRIMARY KEY AUTOINCREMENT, '
+              'package TEXT NOT NULL UNIQUE, '
+              'icon_url TEXT NOT NULL)',
             );
           }
         },

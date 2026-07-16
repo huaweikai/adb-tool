@@ -1,4 +1,4 @@
-// APK install / uninstall.
+// APK install / uninstall / icons.
 import 'package:adb_tool/services/api_client.dart';
 import 'package:dio/dio.dart';
 
@@ -31,6 +31,17 @@ mixin PackagesApi on ApiBase {
       cancelToken: cancelToken,
     );
     return data['status'] ?? 'ok';
+  }
+
+  Future<List<Map<String, dynamic>>> refreshIcons(String serial) async {
+    final resp = await dio.post(
+      '/api/refresh-icons',
+      queryParameters: deviceQueryParameters(serial),
+    );
+    throwIfNotOk(resp);
+    final data = responseMap(resp);
+    final list = data['packages'] as List? ?? [];
+    return list.map((e) => asMap(e)).toList();
   }
 
   Future<bool> uninstallPackage(String serial, String packageName) async {

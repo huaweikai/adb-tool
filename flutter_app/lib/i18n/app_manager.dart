@@ -32,6 +32,8 @@ const _locAppManagerZh = <String, String>{
   'phasePreparing': '准备上传...',
   'phaseDeviceInstalling': '设备安装中...',
   'phaseUploading': '正在上传...',
+  'refreshIcons': '刷新图标',
+  'iconsRefreshed': '已刷新 {count} 个应用图标',
 };
 
 const _locAppManagerEn = <String, String>{
@@ -68,4 +70,6 @@ const _locAppManagerEn = <String, String>{
   'phasePreparing': 'Preparing upload...',
   'phaseDeviceInstalling': 'Installing on device...',
   'phaseUploading': 'Uploading...',
+  'refreshIcons': 'Refresh Icons',
+  'iconsRefreshed': 'Refreshed {count} app icons',
 };

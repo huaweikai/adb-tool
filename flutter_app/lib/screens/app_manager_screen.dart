@@ -35,6 +35,9 @@ class _AppManagerScreenState extends State<AppManagerScreen>
   TransferState? _installState;
   TransferCancelToken? _installCancelToken;
   String? _error;
+  bool _refreshingIcons = false;
+  Set<String> _iconPackages = {};
+  List<Map<String, dynamic>> _iconEntries = [];
 
   bool get _installing => _installState != null;
   final TextEditingController _searchCtrl = TextEditingController();
@@ -43,6 +46,20 @@ class _AppManagerScreenState extends State<AppManagerScreen>
   void initState() {
     super.initState();
     _loadPackages();
+    _loadCachedIcons();
+  }
+
+  Future<void> _loadCachedIcons() async {
+    try {
+      final db = context.read<DeviceProvider>().db;
+      final rows = await db.appIconsDao.getAll();
+      if (!mounted) return;
+      _iconEntries = rows;
+      _iconPackages = rows
+          .map((r) => r['package']?.toString() ?? '')
+          .where((n) => n.isNotEmpty)
+          .toSet();
+    } catch (_) {}
   }
 
   // ── DeviceReconnectMixin 实现 ─────────────────────────────────
@@ -87,6 +104,52 @@ class _AppManagerScreenState extends State<AppManagerScreen>
         _error = e.toString();
         _loading = false;
       });
+    }
+  }
+
+  Future<void> _refreshIcons() async {
+    if (_refreshingIcons || _installing) return;
+    final serial = _selectedSerial;
+    if (serial == null) return;
+    setState(() => _refreshingIcons = true);
+    try {
+      final entries = await context.read<ApiClient>().refreshIcons(serial);
+      if (!mounted) return;
+      final db = context.read<DeviceProvider>().db;
+      await db.appIconsDao.clear();
+      for (final entry in entries) {
+        final name = entry['name']?.toString() ?? '';
+        final iconUrl = entry['iconUrl']?.toString() ?? '';
+        if (name.isNotEmpty && iconUrl.isNotEmpty) {
+          await db.appIconsDao.upsert(name, iconUrl);
+        }
+      }
+      if (!mounted) return;
+      _iconEntries = await db.appIconsDao.getAll();
+      final iconPackages = _iconEntries
+          .map((e) => e['package']?.toString() ?? '')
+          .where((n) => n.isNotEmpty)
+          .toSet();
+      setState(() {
+        _iconPackages = iconPackages;
+        _refreshingIcons = false;
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(tr('iconsRefreshed', {'count': '${entries.length}'})),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _refreshingIcons = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${tr('operationFailed')}: $e'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
 
@@ -451,7 +514,7 @@ class _AppManagerScreenState extends State<AppManagerScreen>
               style: const TextStyle(fontSize: 12),
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 8),
           FilledButton.tonal(
             onPressed: _installing ? null : _loadPackages,
             style: FilledButton.styleFrom(
@@ -464,6 +527,28 @@ class _AppManagerScreenState extends State<AppManagerScreen>
                 const Icon(Icons.refresh, size: 16),
                 const SizedBox(width: 4),
                 Text(tr('refresh')),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          FilledButton.tonal(
+            onPressed: (_refreshingIcons || _installing) ? null : _refreshIcons,
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              textStyle: const TextStyle(fontSize: 12),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _refreshingIcons
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.photo_library, size: 16),
+                const SizedBox(width: 4),
+                Text(tr('refreshIcons')),
               ],
             ),
           ),
@@ -486,40 +571,29 @@ class _AppManagerScreenState extends State<AppManagerScreen>
 
   Widget _buildPackageRow(BuildContext context, AppPackage pkg) {
     final theme = Theme.of(context);
-    final initials =
-        pkg.shortName.isNotEmpty ? pkg.shortName[0].toUpperCase() : '?';
-    final colors = [
-      Colors.blue,
-      Colors.green,
-      Colors.orange,
-      Colors.purple,
-      Colors.teal,
-      Colors.deepOrange,
-      Colors.indigo,
-      Colors.pink,
-    ];
-    final color = colors[pkg.packageName.hashCode.abs() % colors.length];
+    final iconEntry = _iconEntries.cast<Map<String, dynamic>?>().firstWhere(
+          (e) => e?['package'] == pkg.packageName,
+          orElse: () => null,
+        );
+    final hasIcon = iconEntry != null;
     return InkWell(
       onTap: _installing ? null : () => _showPackageDetail(context, pkg),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         child: Row(
           children: [
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: color.withAlpha(40),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Center(
-                child: Text(initials,
-                    style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: color)),
-              ),
-            ),
+            hasIcon
+                ? ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: Image.network(
+                      'http://localhost:9876${iconEntry!['icon_url']}',
+                      width: 36,
+                      height: 36,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _buildLetterAvatar(pkg),
+                    ),
+                  )
+                : _buildLetterAvatar(pkg),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -818,6 +892,37 @@ class _AppManagerScreenState extends State<AppManagerScreen>
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildLetterAvatar(AppPackage pkg) {
+    final initials =
+        pkg.shortName.isNotEmpty ? pkg.shortName[0].toUpperCase() : '?';
+    final colors = [
+      Colors.blue,
+      Colors.green,
+      Colors.orange,
+      Colors.purple,
+      Colors.teal,
+      Colors.deepOrange,
+      Colors.indigo,
+      Colors.pink,
+    ];
+    final color = colors[pkg.packageName.hashCode.abs() % colors.length];
+    return Container(
+      width: 36,
+      height: 36,
+      decoration: BoxDecoration(
+        color: color.withAlpha(40),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Center(
+        child: Text(initials,
+            style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: color)),
       ),
     );
   }
