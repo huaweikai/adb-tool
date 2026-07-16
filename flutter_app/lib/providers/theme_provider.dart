@@ -50,7 +50,7 @@ ThemeData _buildDarkTheme() {
     colorSchemeSeed: Colors.blue,
     scaffoldBackgroundColor: _darkScaffoldBg,
     dividerColor: _darkDivider,
-    fontFamily: 'System',
+    fontFamily: Platform.isWindows ? 'Microsoft YaHei' : null,
     pageTransitionsTheme: const PageTransitionsTheme(
       builders: {
         TargetPlatform.macOS: FadeUpwardsPageTransitionsBuilder(),
@@ -87,7 +87,7 @@ ThemeData _buildLightTheme() {
     colorSchemeSeed: Colors.blue,
     scaffoldBackgroundColor: Colors.white,
     dividerColor: _lightDivider,
-    fontFamily: 'System',
+    fontFamily: Platform.isWindows ? 'Microsoft YaHei' : null,
     pageTransitionsTheme: const PageTransitionsTheme(
       builders: {
         TargetPlatform.macOS: FadeUpwardsPageTransitionsBuilder(),
