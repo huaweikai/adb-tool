@@ -183,7 +183,7 @@ class DeviceProvider extends ChangeNotifier {
   /// "device offline" and refuse to issue adb commands.
   ///
   /// Callers MUST go through `ApiClient.deviceQueryParameters(...)` /
-  /// `ApiClient.resolveAdbSerial(...)` instead of calling this
+  /// ApiClient's interceptor calls this instead of calling this directly
   /// directly. The API boundary exists so screens never need to know
   /// about adb addresses.
   String? onlineAddressFor(String stableSerial) {

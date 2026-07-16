@@ -1498,6 +1498,7 @@ Widget _infoChip(IconData icon, String label, {required bool isReady}) {
 
       if (mounted) {
         await context.read<EmulatorEngineProvider>().refreshStatus();
+        if (!mounted) return;
         _importPathController.clear();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(tr('engineCard.importLog.success'))),

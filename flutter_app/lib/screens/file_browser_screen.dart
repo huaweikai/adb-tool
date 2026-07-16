@@ -31,6 +31,8 @@ enum _SortKey { name, date, size }
 enum _FileAction {
   open,
   download,
+  downloadAsZip,
+  downloadToFolder,
   uploadToDir,
   copyPath,
   rename,
@@ -306,7 +308,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
     }
   }
 
-  Future<void> _downloadFile(FileItem file) async {
+  Future<void> _downloadFile(FileItem file, {String? suggestedName}) async {
     if (isTransferring) return;
     final deviceSerial = _selectedSerial;
     if (deviceSerial == null) return;
@@ -315,7 +317,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
     String? localPath;
     try {
       final location = await getSaveLocation(
-        suggestedName: file.name,
+        suggestedName: suggestedName ?? file.name,
         confirmButtonText: tr('save'),
       );
       if (location == null) return;
@@ -395,6 +397,87 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
         SnackBar(
             content: Text('${tr('downloadFailed')}: $e'),
             behavior: SnackBarBehavior.floating),
+      );
+    }
+  }
+
+  void _showDirectoryDownloadChoice(FileItem file) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(file.name),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.folder_zip),
+              title: Text(tr('downloadAsZip')),
+              onTap: () {
+                Navigator.pop(ctx);
+                _downloadDirectoryAsZip(file);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.folder),
+              title: Text(tr('downloadToFolder')),
+              onTap: () {
+                Navigator.pop(ctx);
+                _downloadDirectoryToFolder(file);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _downloadDirectoryAsZip(FileItem file) async {
+    await _downloadFile(file, suggestedName: '${file.name}.zip');
+  }
+
+  Future<void> _downloadDirectoryToFolder(FileItem file) async {
+    if (isTransferring) return;
+    final deviceSerial = _selectedSerial;
+    if (deviceSerial == null) return;
+    final api = context.read<ApiClient>();
+    final destDir = await getDirectoryPath(
+      confirmButtonText: tr('save'),
+    );
+    if (destDir == null) return;
+    setState(() {
+      _transfer = TransferState(
+        mode: TransferMode.download,
+        fileName: file.name,
+        sent: 0,
+        total: 0,
+        phaseKey: 'deviceReading',
+      );
+      isTransferring = true;
+    });
+    try {
+      await api.pullDirectoryToPath(deviceSerial, file.path, destDir);
+      if (!mounted) return;
+      setState(() {
+        _transfer = null;
+        isTransferring = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(tr('savedTo', {'path': '$destDir${Platform.pathSeparator}${file.name}'})),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _transfer = null;
+        isTransferring = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${tr('downloadFailed')}: $e'),
+          behavior: SnackBarBehavior.floating,
+        ),
       );
     }
   }
@@ -1189,14 +1272,16 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
                     textAlign: TextAlign.end,
                   ),
                 ),
-              if (!file.isDir) ...[
-                const SizedBox(width: 4),
-                _iconBtn(
-                  Icons.download,
-                  tr('downloadTooltip'),
-                  isTransferring ? null : () => _downloadFile(file),
-                ),
-              ],
+              const SizedBox(width: 4),
+              _iconBtn(
+                Icons.download,
+                tr('downloadTooltip'),
+                isTransferring
+                    ? null
+                    : () => file.isDir
+                        ? _showDirectoryDownloadChoice(file)
+                        : _downloadFile(file),
+              ),
               if (file.isDir) ...[
                 const SizedBox(width: 4),
                 _iconBtn(
@@ -1336,6 +1421,16 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
           value: _FileAction.download,
           child: _menuRow(Icons.download, tr('downloadTooltip')),
         ),
+      if (file.isDir) ...[
+        PopupMenuItem(
+          value: _FileAction.downloadAsZip,
+          child: _menuRow(Icons.folder_zip, tr('downloadAsZip')),
+        ),
+        PopupMenuItem(
+          value: _FileAction.downloadToFolder,
+          child: _menuRow(Icons.folder, tr('downloadToFolder')),
+        ),
+      ],
       if (file.isDir)
         PopupMenuItem(
           value: _FileAction.uploadToDir,
@@ -1403,6 +1498,12 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
               tr: tr,
               onOpen: file.isDir ? () => _enterDir(file) : null,
               onDownload: !file.isDir ? () => _downloadFile(file) : null,
+              onDownloadAsZip: file.isDir
+                  ? () => _downloadDirectoryAsZip(file)
+                  : null,
+              onDownloadToFolder: file.isDir
+                  ? () => _downloadDirectoryToFolder(file)
+                  : null,
               onUploadToDir:
                   file.isDir ? () => _uploadFile(targetDir: file.path) : null,
               onCopyPath: () => _copyPath(file),
@@ -1431,6 +1532,10 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
         _enterDir(file);
       case _FileAction.download:
         await _downloadFile(file);
+      case _FileAction.downloadAsZip:
+        await _downloadDirectoryAsZip(file);
+      case _FileAction.downloadToFolder:
+        await _downloadDirectoryToFolder(file);
       case _FileAction.uploadToDir:
         await _uploadFile(targetDir: file.path);
       case _FileAction.copyPath:

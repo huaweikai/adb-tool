@@ -45,6 +45,12 @@ class FileSheetActions extends StatelessWidget {
   /// !file.isDir ? download() : null
   final VoidCallback? onDownload;
 
+  /// file.isDir ? downloadAsZip() : null
+  final VoidCallback? onDownloadAsZip;
+
+  /// file.isDir ? downloadToFolder() : null
+  final VoidCallback? onDownloadToFolder;
+
   /// file.isDir ? upload(targetDir: file.path) : null
   final VoidCallback? onUploadToDir;
 
@@ -73,6 +79,8 @@ class FileSheetActions extends StatelessWidget {
     required this.tr,
     this.onOpen,
     this.onDownload,
+    this.onDownloadAsZip,
+    this.onDownloadToFolder,
     this.onUploadToDir,
     this.onCopyPath,
     this.onRename,
@@ -100,6 +108,20 @@ class FileSheetActions extends StatelessWidget {
             icon: Icons.download,
             title: tr('downloadTooltip'),
             action: onDownload!,
+          ),
+        if (file.isDir && onDownloadAsZip != null)
+          SheetAction(
+            sheetContext: sheetContext,
+            icon: Icons.folder_zip,
+            title: tr('downloadAsZip'),
+            action: onDownloadAsZip!,
+          ),
+        if (file.isDir && onDownloadToFolder != null)
+          SheetAction(
+            sheetContext: sheetContext,
+            icon: Icons.folder,
+            title: tr('downloadToFolder'),
+            action: onDownloadToFolder!,
           ),
         if (file.isDir && onUploadToDir != null)
           SheetAction(

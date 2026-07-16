@@ -157,6 +157,22 @@ mixin FileApi on ApiBase {
     return true;
   }
 
+  Future<void> pullDirectoryToPath(
+    String serial,
+    String remotePath,
+    String destDir,
+  ) async {
+    final resp = await dio.post(
+      '/api/pull-directory',
+      data: {
+        'serial': serial,
+        'remotePath': remotePath,
+        'destDir': destDir,
+      },
+    );
+    throwIfNotOk(resp);
+  }
+
   Future<bool> pushLocalFile(
     String serial,
     String remotePath,

@@ -177,7 +177,7 @@ abstract class ApiBase {
   final DeviceProvider? deviceProvider;
 
   ApiBase(this.baseUrl, {Dio? dio, this.deviceProvider})
-      : dio = dio ??
+      : dio = (dio ??
             Dio(
               BaseOptions(
                 baseUrl: baseUrl,
@@ -185,30 +185,60 @@ abstract class ApiBase {
                 receiveTimeout: const Duration(seconds: 120),
                 validateStatus: (_) => true,
               ),
-            );
-
-  String resolveAdbSerial(String stableSerial) {
-    if (stableSerial.isEmpty) return stableSerial;
-    final resolved = deviceProvider?.onlineAddressFor(stableSerial) ??
-        (deviceProvider == null ? stableSerial : null);
-    if (resolved == null || resolved.isEmpty) {
-      throw DeviceOfflineException(stableSerial);
-    }
-    return resolved;
-  }
+            ))..interceptors.add(InterceptorsWrapper(
+          onRequest: (options, handler) {
+            final provider = deviceProvider;
+            if (provider == null) {
+              handler.next(options);
+              return;
+            }
+            // Resolve serial in query params
+            final querySerial = options.queryParameters['serial'];
+            if (querySerial is String && querySerial.isNotEmpty) {
+              final resolved = provider.onlineAddressFor(querySerial);
+              if (resolved == null || resolved.isEmpty) {
+                handler.reject(DioException(
+                  requestOptions: options,
+                  error: DeviceOfflineException(querySerial),
+                  type: DioExceptionType.unknown,
+                ));
+                return;
+              }
+              options.queryParameters['serial'] = resolved;
+            }
+            // Resolve serial in JSON body
+            if (options.data is Map<String, dynamic>) {
+              final body = options.data as Map<String, dynamic>;
+              final bodySerial = body['serial'];
+              if (bodySerial is String && bodySerial.isNotEmpty) {
+                final resolved = provider.onlineAddressFor(bodySerial);
+                if (resolved == null || resolved.isEmpty) {
+                  handler.reject(DioException(
+                    requestOptions: options,
+                    error: DeviceOfflineException(bodySerial),
+                    type: DioExceptionType.unknown,
+                  ));
+                  return;
+                }
+                body['serial'] = resolved;
+              }
+            }
+            handler.next(options);
+          },
+        ));
 
   Map<String, dynamic> deviceQueryParameters(
     String stableSerial, [
     Map<String, dynamic> extra = const {},
   ]) {
-    return {'serial': resolveAdbSerial(stableSerial), ...extra};
+    return {'serial': stableSerial, ...extra};
   }
 
   Map<String, dynamic> deviceBodyParameters(
     String stableSerial, [
     Map<String, dynamic> extra = const {},
   ]) {
-    return {'serial': resolveAdbSerial(stableSerial), ...extra};
+    return {'serial': stableSerial, ...extra};
   }
 
   AdbCommandResult adbCommandResult(Map<String, dynamic> data) {

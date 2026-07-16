@@ -241,6 +241,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/files", s.handleFiles)
 	mux.HandleFunc("/api/file-content", s.handleFileContent)
 	mux.HandleFunc("/api/pull-file", s.handlePullFile)
+	mux.HandleFunc("/api/pull-directory", s.handlePullDirectoryToPath)
 	mux.HandleFunc("/api/push-file", s.handlePushFile)
 	mux.HandleFunc("/api/file-delete", s.handleFileDelete)
 	mux.HandleFunc("/api/file-rename", s.handleFileRename)
