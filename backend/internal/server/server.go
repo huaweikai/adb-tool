@@ -294,6 +294,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/clipboard-send", s.handleClipboardSend)
 	mux.HandleFunc("/api/clipboard-uninstall", s.handleClipboardUninstall)
 
+	// View hierarchy
+	mux.HandleFunc("/api/view-hierarchy", s.handleViewHierarchyDump)
+
 	// Meta & diagnostics
 	mux.HandleFunc("/api/backend-logs", s.handleBackendLogs)
 

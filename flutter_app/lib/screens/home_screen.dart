@@ -29,6 +29,7 @@ import '../widgets/wireless_adb_dialog.dart';
 import '../widgets/command_palette.dart';
 import '../widgets/empty_state.dart';
 import 'screen_mirror_screen.dart';
+import 'view_hierarchy_screen.dart';
 import 'emulator_settings_screen.dart';
 import 'settings_screen.dart';
 
@@ -39,6 +40,7 @@ enum NavItem {
   apps,
   info,
   clipboard,
+  hierarchy,
   command,
   session,
   mirror,
@@ -51,6 +53,7 @@ const _navConfig = {
   NavItem.apps: _NavConfig(Icons.android, 'apps'),
   NavItem.info: _NavConfig(Icons.info_outline, 'info'),
   NavItem.clipboard: _NavConfig(Icons.content_paste, 'clipboard'),
+  NavItem.hierarchy: _NavConfig(Icons.account_tree, 'viewHierarchy'),
   NavItem.command: _NavConfig(Icons.terminal, 'command'),
   NavItem.session: _NavConfig(Icons.assignment_outlined, 'testSession'),
   NavItem.mirror: _NavConfig(Icons.cast, 'screenMirror'),
@@ -309,6 +312,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           screen = const DeviceInfoScreen();
         case NavItem.clipboard:
           screen = const ClipboardScreen();
+        case NavItem.hierarchy:
+          screen = const ViewHierarchyScreen();
         case NavItem.command:
           screen = const AdbCommandScreen();
         case NavItem.session:

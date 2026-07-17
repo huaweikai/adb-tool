@@ -33,6 +33,7 @@ part 'i18n/backend_log.dart';
 part 'i18n/screen_mirror.dart';
 part 'i18n/settings.dart';
 part 'i18n/emulator.dart';
+part 'i18n/view_hierarchy.dart';
 
 String _lang = 'zh';
 
@@ -53,6 +54,7 @@ const _loc = <String, Map<String, String>>{
     ..._locScreenMirrorZh,
     ..._locSettingsZh,
     ..._locEmulatorZh,
+    ..._locViewHierarchyZh,
   },
   'en': {
     ..._locCommonEn,
@@ -70,6 +72,7 @@ const _loc = <String, Map<String, String>>{
     ..._locScreenMirrorEn,
     ..._locSettingsEn,
     ..._locEmulatorEn,
+    ..._locViewHierarchyEn,
   },
 };
 

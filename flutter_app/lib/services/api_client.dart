@@ -36,6 +36,7 @@ import 'api/emulator_api.dart';
 import 'api/emulator_java_api.dart';
 import 'api/emulator_image_api.dart';
 import 'api/cleanup_api.dart';
+import 'api/view_hierarchy_api.dart';
 
 export 'api/device_api.dart' show DeviceApi;
 export 'api/file_api.dart' show FileApi;
@@ -70,6 +71,7 @@ export 'api/emulator_image_api.dart'
     show EmulatorImageApi, SystemImage, SystemImageStatus, ImageDownloadResult;
 export 'api/cleanup_api.dart'
     show CleanupApi, CacheCleanupResult, CacheCleanupEntry;
+export 'api/view_hierarchy_api.dart' show ViewHierarchyApi;
 
 // ===== Public value types shared across domains =====
 
@@ -399,4 +401,5 @@ class ApiClient = ApiBase
         EmulatorApi,
         EmulatorJavaApi,
         EmulatorImageApi,
-        CleanupApi;
+        CleanupApi,
+        ViewHierarchyApi;
