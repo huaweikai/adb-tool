@@ -14,6 +14,11 @@ import (
 
 const clipboardHelperPackage = "com.adbtool.clipboard"
 
+// clipboardHelperVersionCode must match versionCode in adb_tool_app/app/build.gradle.kts.
+// Bump both when the APK changes so ensureHelperInstalled can skip re-install when
+// the device already has the same or newer version.
+const clipboardHelperVersionCode = 2
+
 func validateClipboardApk(apkBytes []byte) error {
 	if len(apkBytes) < 1024 {
 		return fmt.Errorf("clipboard helper apk missing or too small")
@@ -55,10 +60,13 @@ func (m *AdbManager) getInstalledHelperVersion(serial string) int {
 }
 
 func (m *AdbManager) ensureHelperInstalled(serial string, apkBytes []byte) error {
-	// Always try to install. ADB's -r (replace) + -d (allow downgrade)
-	// handles version comparison natively and is fast when versions match.
 	if err := validateClipboardApk(apkBytes); err != nil {
 		return err
+	}
+	installedVer := m.getInstalledHelperVersion(serial)
+	if installedVer >= clipboardHelperVersionCode {
+		log.Printf("[helper] already up-to-date: serial=%s installed=%d embedded=%d", serial, installedVer, clipboardHelperVersionCode)
+		return nil
 	}
 	tmpFile := filepath.Join(os.TempDir(), "clipboard-helper.apk")
 	if err := os.WriteFile(tmpFile, apkBytes, 0644); err != nil {
@@ -75,7 +83,7 @@ func (m *AdbManager) ensureHelperInstalled(serial string, apkBytes []byte) error
 }
 
 func (m *AdbManager) IsClipboardHelperInstalled(serial string) bool {
-	return m.getInstalledHelperVersion(serial) > 0
+	return m.getInstalledHelperVersion(serial) >= clipboardHelperVersionCode
 }
 
 func (m *AdbManager) InstallClipboardHelper(serial string, apkBytes []byte) error {

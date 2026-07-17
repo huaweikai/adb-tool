@@ -14,6 +14,8 @@ android {
         applicationId = "com.adbtool.clipboard"
         minSdk = 24
         targetSdk = 36
+        // When bumping versionCode, also update clipboardHelperVersionCode
+        // in backend/internal/server/adb_clipboard.go
         versionCode = 2
         versionName = "1.1"
     }
