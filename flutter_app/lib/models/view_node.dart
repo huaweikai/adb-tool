@@ -113,6 +113,70 @@ class ViewNode {
     final parts = className.split('.');
     return parts.last;
   }
+
+  /// Case-insensitive substring match across the user-facing fields a
+  /// tester would search by: text, content-desc, resource-id, class name.
+  /// Returns true when [query] is empty (no filter active).
+  bool matchesQuery(String query) {
+    if (query.isEmpty) return true;
+    final q = query.toLowerCase();
+    return text.toLowerCase().contains(q) ||
+        contentDesc.toLowerCase().contains(q) ||
+        resourceId.toLowerCase().contains(q) ||
+        className.toLowerCase().contains(q);
+  }
+
+  /// Find the deepest node whose bounds contains [point], preferring
+  /// clickable nodes when multiple candidates share the same area.
+  /// Returns null when no node contains the point.
+  static ViewNode? hitTest(ViewNode root, Offset point) {
+    ViewNode? best;
+    double bestArea = double.infinity;
+    ViewNode? bestClickable;
+    double bestClickableArea = double.infinity;
+    void walk(ViewNode n) {
+      final b = n.bounds;
+      if (b != null && b.width > 0 && b.height > 0 && b.contains(point)) {
+        final area = b.width * b.height;
+        if (area < bestArea) {
+          bestArea = area;
+          best = n;
+        }
+        if (n.clickable && area < bestClickableArea) {
+          bestClickableArea = area;
+          bestClickable = n;
+        }
+      }
+      for (final c in n.children) {
+        walk(c);
+      }
+    }
+    walk(root);
+    return bestClickable ?? best;
+  }
+
+  /// Returns ancestor chain from root (inclusive) to this node, or null
+  /// when the node is not present in the [root] subtree.
+  static List<ViewNode>? ancestorChain(ViewNode root, ViewNode target) {
+    if (identical(root, target)) return [root];
+    for (final c in root.children) {
+      final sub = ancestorChain(c, target);
+      if (sub != null) return [root, ...sub];
+    }
+    return null;
+  }
+
+  /// Approximate XPath for inspection / debugging.
+  /// Form: `//node[@resource-id="..." and @bounds="[l,t][r,b]"]`
+  /// Falls back to class+index when resource-id is empty.
+  String toXPath() {
+    if (resourceId.isNotEmpty) {
+      return '//node[@resource-id="${_escape(resourceId)}" and @bounds="$boundsStr"]';
+    }
+    return '//node[@class="${_escape(className)}" and @bounds="$boundsStr"]';
+  }
+
+  static String _escape(String s) => s.replaceAll('"', '\\"');
 }
 
 /// Result of a view-hierarchy dump. `rotation` is 0/1/2/3 = the number of

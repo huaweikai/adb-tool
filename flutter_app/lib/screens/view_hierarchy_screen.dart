@@ -1,8 +1,8 @@
 import 'dart:convert';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../design/design_tokens.dart';
@@ -50,10 +50,35 @@ class _ViewHierarchyScreenState extends State<ViewHierarchyScreen>
 
   final Set<ViewNode> _expanded = {};
 
+  // Search/filter state. When non-empty, `_visibleRows` ignores user
+  // expand state and instead shows matched rows plus their ancestor chain.
+  String _query = '';
+  final TextEditingController _searchCtrl = TextEditingController();
+  final FocusNode _searchFocus = FocusNode();
+  int _matchCount = 0;
+
+  // For scrolling a row into view when the selection changes via tapping
+  // the screenshot panel (reverse select).
+  final ScrollController _treeScroll = ScrollController();
+  GlobalKey? _selectedRowKey;
+
+  // InteractiveViewer transform controller — used by reverse-select to
+  // invert the user's pan/zoom back into dump coordinate space.
+  final TransformationController _xformController = TransformationController();
+
   @override
   void initState() {
     super.initState();
     _dump();
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    _searchFocus.dispose();
+    _treeScroll.dispose();
+    _xformController.dispose();
+    super.dispose();
   }
 
   @override
@@ -179,6 +204,43 @@ class _ViewHierarchyScreenState extends State<ViewHierarchyScreen>
     _loadScreenshot();
   }
 
+  /// Selecting a node and make sure its ancestor chain is expanded and the
+  /// row is scrolled into view. Used by reverse-select (tap screenshot).
+  void _selectAndReveal(ViewNode node) {
+    final root = _root;
+    if (root == null) return;
+    final ancestors = ViewNode.ancestorChain(root, node);
+    setState(() {
+      _selectedNode = node;
+      if (ancestors != null) {
+        for (final a in ancestors) {
+          _expanded.add(a);
+        }
+      }
+      _invalidateRowsCache();
+      _selectedRowKey = GlobalKey();
+    });
+    _loadScreenshot();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final key = _selectedRowKey;
+      final ctx = key?.currentContext;
+      if (ctx != null && _treeScroll.hasClients) {
+        Scrollable.ensureVisible(
+          ctx,
+          alignment: 0.4,
+          duration: const Duration(milliseconds: 150),
+        );
+      }
+    });
+  }
+
+  void _onQueryChanged(String q) {
+    setState(() {
+      _query = q.trim();
+      _invalidateRowsCache();
+    });
+  }
+
   Future<void> _refreshScreenshot() => _loadScreenshot(force: true);
 
   @override
@@ -228,7 +290,12 @@ class _ViewHierarchyScreenState extends State<ViewHierarchyScreen>
           if (_root != null) ...[
             const SizedBox(width: AppSpacing.md),
             Text(
-              tr('viewHierarchy.nodes', {'count': '$_totalNodeCount'}),
+              _query.isEmpty
+                  ? tr('viewHierarchy.nodes', {'count': '$_totalNodeCount'})
+                  : tr('viewHierarchy.matchCount', {
+                      'count': '$_totalNodeCount',
+                      'matches': '$_matchCount',
+                    }),
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const Spacer(),
@@ -275,16 +342,52 @@ class _ViewHierarchyScreenState extends State<ViewHierarchyScreen>
   // Flatten the currently-visible (expanded) subtree into a list of
   // (node, depth). Lets ListView lazily build only on-screen rows instead of
   // eagerly constructing the whole tree as nested Columns.
+  //
+  // When `_query` is non-empty, expands the matched rows' ancestor chains
+  // regardless of `_expanded`. Each row carries an `matches` flag so the tile
+  // can dim non-matched rows and highlight matched ones.
   List<_FlatRow> _flattenVisible() {
     final root = _root;
     if (root == null) return const [];
     final out = <_FlatRow>[];
-    void walk(ViewNode node, int depth) {
-      out.add(_FlatRow(node, depth));
-      if (_expanded.contains(node)) {
-        for (final c in node.children) {
-          walk(c, depth + 1);
+    if (_query.isEmpty) {
+      void walk(ViewNode node, int depth) {
+        out.add(_FlatRow(node, depth, false));
+        if (_expanded.contains(node)) {
+          for (final c in node.children) {
+            walk(c, depth + 1);
+          }
         }
+      }
+      walk(root, 0);
+      _matchCount = 0;
+      return out;
+    }
+    // Compute the set of nodes that should be shown: each matched node plus
+    // the chain of ancestors from root down to the matched node.
+    final shown = <ViewNode>{};
+    int matches = 0;
+    void collect(ViewNode n) {
+      if (n.matchesQuery(_query)) {
+        matches++;
+        final chain = ViewNode.ancestorChain(root, n);
+        if (chain != null) {
+          shown.addAll(chain);
+        } else {
+          shown.add(n);
+        }
+      }
+      for (final c in n.children) {
+        collect(c);
+      }
+    }
+    collect(root);
+    _matchCount = matches;
+    void walk(ViewNode n, int depth) {
+      if (!shown.contains(n)) return;
+      out.add(_FlatRow(n, depth, n.matchesQuery(_query)));
+      for (final c in n.children) {
+        walk(c, depth + 1);
       }
     }
     walk(root, 0);
@@ -300,7 +403,12 @@ class _ViewHierarchyScreenState extends State<ViewHierarchyScreen>
             decoration: BoxDecoration(
               border: Border(right: BorderSide(color: Theme.of(context).dividerColor)),
             ),
-            child: _buildTreePanel(),
+            child: Column(
+              children: [
+                _buildSearchBox(),
+                Expanded(child: _buildTreePanel()),
+              ],
+            ),
           ),
         ),
         Expanded(child: _buildScreenshotPanel()),
@@ -308,15 +416,54 @@ class _ViewHierarchyScreenState extends State<ViewHierarchyScreen>
     );
   }
 
+  Widget _buildSearchBox() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+          AppSpacing.md, AppSpacing.sm, AppSpacing.md, AppSpacing.sm),
+      child: TextField(
+        controller: _searchCtrl,
+        focusNode: _searchFocus,
+        onChanged: _onQueryChanged,
+        style: Theme.of(context).textTheme.bodySmall,
+        decoration: InputDecoration(
+          isDense: true,
+          contentPadding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
+          prefixIcon: const Icon(Icons.search, size: 18),
+          prefixIconConstraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+          hintText: tr('viewHierarchy.searchHint'),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+            borderSide: BorderSide(color: Theme.of(context).dividerColor),
+          ),
+          suffixIcon: _query.isEmpty
+              ? null
+              : IconButton(
+                  icon: const Icon(Icons.clear, size: 16),
+                  onPressed: () {
+                    _searchCtrl.clear();
+                    _onQueryChanged('');
+                    _searchFocus.unfocus();
+                  },
+                ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildTreePanel() {
     final rows = _visibleRows;
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
-      itemCount: rows.length,
-      itemBuilder: (context, i) {
-        final r = rows[i];
-        return _buildNodeTile(r.node, r.depth, i);
-      },
+    return Scrollbar(
+      controller: _treeScroll,
+      child: ListView.builder(
+        controller: _treeScroll,
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+        itemCount: rows.length,
+        itemBuilder: (context, i) {
+          final r = rows[i];
+          return _buildNodeTile(r.node, r.depth, i, r.matches);
+        },
+      ),
     );
   }
 
@@ -329,10 +476,11 @@ class _ViewHierarchyScreenState extends State<ViewHierarchyScreen>
 
   void _invalidateRowsCache() => _rowsCache = null;
 
-  Widget _buildNodeTile(ViewNode node, int depth, int index) {
+  Widget _buildNodeTile(ViewNode node, int depth, int index, bool matches) {
     final hasChildren = node.children.isNotEmpty;
     final isExpanded = _expanded.contains(node);
     final isSelected = _selectedNode == node;
+    final dim = _query.isNotEmpty && !matches;
 
     // Depth accent color: cycle 8 hues.
     const depthColors = [
@@ -342,7 +490,7 @@ class _ViewHierarchyScreenState extends State<ViewHierarchyScreen>
     final accent = depthColors[depth % depthColors.length];
 
     return InkWell(
-      key: ValueKey('${node.index}:${node.className}:$index'),
+      key: isSelected ? _selectedRowKey : ValueKey('${node.index}:${node.className}:$index'),
       onTap: () => _selectNode(node),
       child: Container(
         padding: EdgeInsets.only(
@@ -362,45 +510,48 @@ class _ViewHierarchyScreenState extends State<ViewHierarchyScreen>
                 )
               : null,
         ),
-        child: Row(
-          children: [
-            if (hasChildren)
-              GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => _toggleExpand(node),
-                child: Icon(
-                  isExpanded ? Icons.expand_more : Icons.chevron_right,
-                  size: 18,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              )
-            else
-              const SizedBox(width: 18),
-            const SizedBox(width: 4),
-            Container(
-              width: 8, height: 8,
-              decoration: BoxDecoration(color: accent, shape: BoxShape.circle),
-            ),
-            const SizedBox(width: 6),
-            Expanded(
-              child: Text(
-                node.displayName,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      fontWeight: isSelected ? FontWeight.w600 : null,
-                      color: node.clickable
-                          ? Theme.of(context).colorScheme.primary
-                          : null,
-                    ),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            Text(
-              node.shortClass,
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+        child: Opacity(
+          opacity: dim ? 0.35 : 1.0,
+          child: Row(
+            children: [
+              if (hasChildren)
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => _toggleExpand(node),
+                  child: Icon(
+                    isExpanded ? Icons.expand_more : Icons.chevron_right,
+                    size: 18,
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
-            ),
-          ],
+                )
+              else
+                const SizedBox(width: 18),
+              const SizedBox(width: 4),
+              Container(
+                width: 8, height: 8,
+                decoration: BoxDecoration(color: accent, shape: BoxShape.circle),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  node.displayName,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        fontWeight: isSelected ? FontWeight.w600 : null,
+                        color: node.clickable
+                            ? Theme.of(context).colorScheme.primary
+                            : null,
+                      ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Text(
+                node.shortClass,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -434,48 +585,256 @@ class _ViewHierarchyScreenState extends State<ViewHierarchyScreen>
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        // The dump root bounds ARE the screen surface in dump coordinates.
-        // Scale so the canvas fits the available panel; InteractiveViewer
-        // lets the user pan/zoom if the highlighted node is off-screen
-        // (e.g. NestedScrollView items with negative top coords).
-        final scale = (constraints.maxWidth / rootBounds.width)
-            .clamp(0.0, constraints.maxHeight / rootBounds.height);
-        final canvasW = rootBounds.width * scale;
-        final canvasH = rootBounds.height * scale;
+        // The screenshot PNG, after applying `_effectiveRotation`, occupies
+        // exactly `_screenshotDumpSize` in dump coordinate space. We size the
+        // canvas by the rotated screenshot size (NOT by `rootBounds`) so the
+        // image isn't letterboxed/stretched when the dump root covers only a
+        // sub-rect of the screen (status bar, notch, non-fullscreen apps).
+        // Node bounds are absolute dump coordinates, so they sit on the same
+        // canvas space regardless of where `rootBounds` is anchored.
+        final scale = (constraints.maxWidth / dumpSize.width)
+            .clamp(0.0, constraints.maxHeight / dumpSize.height);
+        final canvasW = dumpSize.width * scale;
+        final canvasH = dumpSize.height * scale;
 
         return ClipRect(
-          child: InteractiveViewer(
-            constrained: false,
-            boundaryMargin: const EdgeInsets.all(double.infinity),
-            minScale: 0.25,
-            maxScale: 6.0,
-            child: SizedBox(
-              width: canvasW,
-              height: canvasH,
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  // Screenshot rotated to match the dump orientation.
-                  Positioned.fill(
-                    child: RotatedBox(
-                      quarterTurns: _effectiveRotation,
-                      child: Image.memory(
-                        _screenshotBytes!,
-                        width: _screenshotPhysicalSize!.width,
-                        height: _screenshotPhysicalSize!.height,
-                        fit: BoxFit.fill,
-                        gaplessPlayback: true,
-                      ),
+          child: Stack(
+            children: [
+              InteractiveViewer(
+                constrained: false,
+                boundaryMargin: const EdgeInsets.all(double.infinity),
+                minScale: 0.25,
+                maxScale: 6.0,
+                transformationController: _xformController,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onTapUp: (d) => _reverseSelect(d.localPosition, scale),
+                  child: SizedBox(
+                    width: canvasW,
+                    height: canvasH,
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        // Screenshot rotated to match the dump orientation.
+                        // BoxFit.fill is safe here because `Positioned.fill`
+                        // forces the image box to `canvasW × canvasH`, which
+                        // is already the image's rotated aspect (so no
+                        // distortion — same bytes-to-canvas ratio).
+                        Positioned.fill(
+                          child: RotatedBox(
+                            quarterTurns: _effectiveRotation,
+                            child: Image.memory(
+                              _screenshotBytes!,
+                              width: _screenshotPhysicalSize!.width,
+                              height: _screenshotPhysicalSize!.height,
+                              fit: BoxFit.fill,
+                              gaplessPlayback: true,
+                            ),
+                          ),
+                        ),
+                        ..._buildSelectedOverlay(scale),
+                      ],
                     ),
                   ),
-                  ..._buildSelectedOverlay(scale),
-                ],
+                ),
               ),
-            ),
+              if (_selectedNode != null)
+                Positioned(
+                  left: AppSpacing.lg,
+                  right: AppSpacing.lg,
+                  bottom: AppSpacing.lg,
+                  child: _buildNodeActionToolbar(),
+                ),
+            ],
           ),
         );
       },
     );
+  }
+
+  /// Convert a tap position on the screenshot panel back into dump coordinate
+  /// space and pick the deepest node whose bounds contains that point.
+  ///
+  /// The `GestureDetector` is placed INSIDE the `InteractiveViewer`, so
+  /// Flutter's hit-test already inverts the user's pan/zoom before dispatching
+  /// `onTapUp` — `localPosition` is the tap point in the child widget's own
+  /// coordinate system (i.e. canvas space = dumpSize × scale). We just divide
+  /// by `scale` to recover dump coordinates. Calling `toScene()` here would
+  /// double-invert the transform and place the hit point in the wrong node.
+  void _reverseSelect(Offset localPosition, double scale) {
+    final root = _root;
+    if (root == null || scale <= 0) return;
+    final dumpX = localPosition.dx / scale;
+    final dumpY = localPosition.dy / scale;
+    final hit = ViewNode.hitTest(root, Offset(dumpX, dumpY));
+    if (hit != null) {
+      _selectAndReveal(hit);
+    }
+  }
+
+  Widget _buildNodeActionToolbar() {
+    final node = _selectedNode;
+    if (node == null) return const SizedBox();
+    final b = node.bounds;
+    final canTap = b != null && b.width > 0 && b.height > 0;
+    return Align(
+      alignment: Alignment.bottomCenter,
+      child: Material(
+        elevation: 6,
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        color: Theme.of(context).colorScheme.surfaceContainer,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _actionButton(Icons.touch_app, tr('viewHierarchy.tap'),
+                  enabled: canTap, onTap: _tapSelected),
+              _actionButton(Icons.back_hand, tr('viewHierarchy.longPress'),
+                  enabled: canTap, onTap: _longPressSelected),
+              _actionButton(Icons.keyboard, tr('viewHierarchy.inputText'),
+                  enabled: true, onTap: _inputTextSelected),
+              _actionButton(Icons.copy, tr('viewHierarchy.copyResourceId'),
+                  enabled: node.resourceId.isNotEmpty,
+                  onTap: () => _copyResourceId(node)),
+              _actionButton(Icons.code, tr('viewHierarchy.copyXPath'),
+                  enabled: true, onTap: () => _copyXPath(node)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _actionButton(IconData icon, String tooltip,
+      {required bool enabled, required Future<void> Function() onTap}) {
+    return Tooltip(
+      message: tooltip,
+      child: IconButton(
+        icon: Icon(icon, size: 20),
+        visualDensity: VisualDensity.compact,
+        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+        onPressed: enabled
+            ? () {
+                onTap();
+              }
+            : null,
+      ),
+    );
+  }
+
+  Future<void> _tapSelected() async {
+    final node = _selectedNode;
+    final b = node?.bounds;
+    if (node == null || b == null || b.width <= 0 || b.height <= 0) return;
+    final cx = (b.left + b.right) ~/ 2;
+    final cy = (b.top + b.bottom) ~/ 2;
+    await _runAdbAndRefresh(['shell', 'input', 'tap', '$cx', '$cy']);
+  }
+
+  Future<void> _longPressSelected() async {
+    final node = _selectedNode;
+    final b = node?.bounds;
+    if (node == null || b == null || b.width <= 0 || b.height <= 0) return;
+    final cx = (b.left + b.right) ~/ 2;
+    final cy = (b.top + b.bottom) ~/ 2;
+    await _runAdbAndRefresh(
+        ['shell', 'input', 'swipe', '$cx', '$cy', '$cx', '$cy', '1000']);
+  }
+
+  Future<void> _inputTextSelected() async {
+    final node = _selectedNode;
+    if (node == null) return;
+    final controller = TextEditingController();
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: Text(tr('viewHierarchy.inputText')),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            decoration: InputDecoration(
+              hintText: tr('viewHierarchy.textHint'),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(AppRadius.sm),
+              ),
+            ),
+            minLines: 1,
+            maxLines: 3,
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Cancel')),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(controller.text),
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
+    if (result == null) return;
+    // `adb shell input text` parses %s as a literal space; raw spaces in
+    // other tools get split by the device shell, so use %s for safety.
+    final escaped = result.replaceAll(' ', '%s');
+    if (escaped.isEmpty) return;
+    await _runAdbAndRefresh(['shell', 'input', 'text', escaped]);
+  }
+
+  Future<void> _copyResourceId(ViewNode node) async {
+    if (node.resourceId.isEmpty) return;
+    await Clipboard.setData(ClipboardData(text: node.resourceId));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(tr('viewHierarchy.copiedResourceId'))),
+    );
+  }
+
+  Future<void> _copyXPath(ViewNode node) async {
+    await Clipboard.setData(ClipboardData(text: node.toXPath()));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(tr('viewHierarchy.copiedXPath'))),
+    );
+  }
+
+  Future<void> _runAdb(List<String> args) async {
+    final serial = _selectedSerial;
+    if (serial == null) return;
+    try {
+      final api = context.read<ApiClient>();
+      await api.executeAdbCommand(serial, args);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(tr('viewHierarchy.actionFailed', {'error': '$e'}))),
+      );
+    }
+  }
+
+  /// Run an adb shell command that mutates the device UI (tap / long press /
+  /// text input), then automatically re-dump the view hierarchy and refresh
+  /// the screenshot so the red bounds box and screenshot stay in sync with
+  /// the new on-screen state.
+  ///
+  /// The 400ms wait lets the target app start its reaction animation /
+  /// navigation transition before we capture, otherwise the dump would still
+  /// show the pre-tap state. If the UI has a longer transition the user can
+  /// tap "Dump" toolbar button / "Re-shoot" screenshot button to capture a
+  /// later snapshot.
+  Future<void> _runAdbAndRefresh(List<String> args) async {
+    await _runAdb(args);
+    if (!mounted) return;
+    // Give the device a beat to react (open dialog / navigate / show toast)
+    // before we re-dump. Cheap and matches the user's intuition that "after
+    // tapping, the tool updates the screenshot".
+    await Future<void>.delayed(const Duration(milliseconds: 400));
+    if (!mounted) return;
+    await _dump();
   }
 
   // Highlight the currently selected node directly in dump coordinate space.
@@ -508,5 +867,6 @@ class _ViewHierarchyScreenState extends State<ViewHierarchyScreen>
 class _FlatRow {
   final ViewNode node;
   final int depth;
-  const _FlatRow(this.node, this.depth);
+  final bool matches;
+  const _FlatRow(this.node, this.depth, this.matches);
 }

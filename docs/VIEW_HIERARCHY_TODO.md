@@ -5,45 +5,38 @@
 
 ## 一、剩余调试点（按价值排序）
 
-### 1. 反向选中（点击截图 → 选中节点）
+> 这些项目已全部完成，详见文末第三章“后续完成的增强”。
+> 以下原始描述保留为历史参考。
 
-**当前问题**：只能在左侧树面板点击节点选中，截图只读。
-**目标**：在截图区域点击某点，自动找到 dump 坐标空间中**包含该点、面积最小**的节点，选中它并在树面板滚动到该行。
+### ~~1. 反向选中（点击截图 → 选中节点）~~ ~~已完成~~
 
-**实现要点**
+**原始目标**：在截图区域点击某点，自动找到 dump 坐标空间中**包含该点、面积最小**的节点，选中它并在树面板滚动到该行。
+
+**实际实现**
 - 截图区域包一层 `GestureDetector`，`onTapUp` 拿到 `localPosition`。
-- 把屏幕坐标换回到 dump 坐标：`dumpX = (localX - canvasOffsetX) / scale`，其中 `scale` 是 `_buildScreenshotPanel` 里算出的缩放比，`canvasOffsetX` 是 `InteractiveViewer` 平移后的偏移（可从 `TransformationController` 取）。
-- 遍历 `<hierarchy>` 整棵树，筛选 `bounds != null && bounds.contains(Offset(dumpX, dumpY))`，按面积升序取第一个；优先 `clickable == true` 的节点更符合用户直觉。
-- 选中后调用树面板的 `ScrollController.ensureVisible`，让该行可见。
+- 因 GestureDetector 位于 `InteractiveViewer` 内部，Flutter 命中测试已经反变换过用户的 pan/zoom，`localPosition` 就是 child 自身坐标系（canvas 空间）。只需 `localPosition / scale` 得到 dump 坐标——再 `toScene()` 会双重反变换算错。
+- 遍历 `<hierarchy>` 整棵树，筛选 `bounds != null && bounds.contains(point)`，按面积升序取最小，**优先 clickable 节点**。逻辑提为 `ViewNode.hitTest` 静态方法，单测覆盖三类场景。
+- 选中后调 `_selectAndReveal`：展开所有祖先 → 复用 post-frame `Scrollable.ensureVisible` 让该行可见。
 
-**复杂度**：单次树遍历，节点上千也只需几毫秒。
+### ~~2. 节点操作按钮~~ ~~已完成（不含 scroll-to）~~
 
-### 2. 节点操作按钮
+**实际实现**
+- 选中节点后，在截图面板底部居中弹出 Material 工具条：
+  - **Tap** —— 走现有 `/api/adb-exec`（`AdbCommandApi.executeAdbCommand`），args = `["shell","input","tap","<cx>","<cy>"]`, cx/cy 取 bounds 中心整数。
+  - **Long press** —— `["shell","input","swipe","<cx>","<cy>","<cx>","<cy>","1000"]`。
+  - **输入文本** —— `AlertDialog + TextField`，写入时把空格替换为 `%s`（`adb shell input text` 的标准转义）。
+  - **复制 resource-id** —— `Clipboard.setData`，再 SnackBar。
+  - **复制 XPath** —— `ViewNode.toXPath()` 生成 `//node[@resource-id=\"…\" and @bounds=\"…\"]` 或 class+bounds 回退。
+- **未实现**：原 proposal 提的 **scroll-to**（依赖 `uiautomator scroll-to` 命令在标准 Android 上不存在，且当前没用 UiAutomator2 helper）以及“走剪贴板辅助 APK” 复制 path（桌面端 `Clipboard.setData` 已经够用）。
+- **未做后端新接口**：因为 `/api/adb-exec` 已经过 dangerous-command guard + DeviceOffline 保护，没有动力为 view-hierarchy 加专用 endpoint。让 view-hierarchy 走通用 adb-exec 与现有 `setShowTouches` 一致。
 
-**目标**：选中节点后，在右下角弹出工具条，提供：
-- **Tap** —— 后端 `adb shell input tap <cx> <cy>`，cx/cy 取 bounds 中心
-- **Long press** —— `adb shell input swipe <x> <y> <x> <y> 1000`
-- **输入文本** —— 弹输入框，`adb shell input text "<escaped>"`
-- **滚动到可见** —— `adb shell uiautomator scroll-to <resource-id>` 或 swip
-- **复制 resource-id** —— 走剪贴板辅助 APK 写入
-- **复制 XPath** —— 形如 `//node[@resource-id=\"…\" and @bounds=\"…\"]`
+### ~~3. 过滤 / 搜索~~ ~~已完成~~
 
-**后端新接口**
-```
-POST /api/view-hierarchy/action?serial=…  body: {type, target}
-  type ∈ {tap, long-press, text, scroll-to}
-  target 可选；tap/long-press 用 bounds 中心，text 接 body.text
-```
-
-### 3. 过滤 / 搜索
-
-**当前问题**：节点上百后左侧树很难找。
-**目标**：在 toolbar 加搜索框，输入关键词后：
-- 按 `resource-id` / `text` / `content-desc` / `class` 子串匹配
-- 不匹配的行变灰低亮，匹配的行展开父链
-- 节点数显示改为"N 个 · M 个匹配"
-
-**实现**：搜索时把可见行列表赋值成 "匹配 + 匹配行祖先链"，其余折叠。可以复用 `_rowsCache` 机制，加一个 `_query` 字段触发重建。
+**实际实现**
+- 树面板上方加 `TextField`（`onChanged -> _onQueryChanged`），右侧带 clear 按钮。
+- `ViewNode.matchesQuery` 按小写子串匹配 text/content-desc/resource-id/class。提为公开 API，配单测。
+- `_flattenVisible` 改为双路径：query 为空时维持原 `_expanded` 行为；非空时先收集 matched 节点 + `ViewNode.ancestorChain` 求并集 `shown`，再按这个 set 递归扁平化。每个 `_FlatRow` 多带一个 `matches` 标志，行 widget 用 `Opacity` 给不匹配的变灰（保留 ancestor 链上的结构可读性）。
+- Toolbar 节点数文案：query 为空 → “N 个节点”；query 非空 → “N 个节点 · M 个匹配”。
 
 ## 二、已完成的优化（本轮 commit）
 
@@ -61,7 +54,18 @@ POST /api/view-hierarchy/action?serial=…  body: {type, target}
 
 ## 三、架构债务（不动，记录当警钟）
 
-- `lib/screens/view_hierarchy_screen.dart` 约 510 行，离 "60K + 新功能不属独立 widget" 的拆分阈值还有距离。第三步"过滤搜索"加上去后估计到 ~650 行，那时再考虑：
+- 选 ck 自动刷新延迟时长目前固定为 400ms，未来如果用户反映"截图截早了 / 晚了"可以考虑按命令类型（tap / swipe / text）分别调，或暴露一个可配置项。
+- `lib/screens/view_hierarchy_screen.dart` 现 816 行，已超过原 ~650 行的拆分阈值。下一个明确触发再加（新增调用、新增节点操作、要求把树面板/截图面板拆出来给其它 screen 复用）：
   - 提一个 `widgets/view_hierarchy_tree.dart` 把 tree panel 拆出去
   - 提一个 `widgets/view_hierarchy_inspector.dart` 把 screenshot overlay 拆出去
 - "反向选中"或"节点操作按钮"要加更多状态时，应优先考虑把 `_selectedNode` / `_screenshot*` 抽成一个轻量 `ValueNotifier<ViewNode?>` 而不是继续撑 State —— State 重建会触发整个 ListView 重新 dispose/build，对滚动干涉大。
+
+## 四、后续完成的增强（本轮 commit）
+
+实现以上三点后，文件从 ~510 行涨到 816 行。具体决策：
+
+- 未拆 `view_hierarchy_tree.dart` / `view_hierarchy_inspector.dart` —— 工具条、搜索框、节点 tile、overlay 都是有 stateful 切片，但有 `_xformController` / `_treeScroll` / `_searchCtrl` / `_selectedRowKey` 4 个 controller 同生共死，拆出去彼此之间还要加接缝。等下一个明确触发再加。
+- `_FlatRow` 增加 `matches` 字段，而不是另起 `Set<ViewNode> _matchMask` 在 widget 层查 —— `_FlatRow` 已经是 row→node 的唯一携带者，对齐字段更简单。
+- 反向选中 / hit-test / XPath 构造逻辑全部下沉到 `ViewNode` 静态方法或 getter，配单测 `test/view_node_test.dart`（14 用例）覆盖：`matchesQuery`（5）/ `hitTest`（3）/ `ancestorChain`（3）/ `toXPath`（3）。screen 层不做坐标计算，纯做交互与 UI 反馈。
+- 通用 `AdbCommandApi.executeAdbCommand` 复用现有 `/api/adb-exec` 危险命令守卫 + DeviceOffline 保护，不引后端新接口。与 `setShowTouches` 路径一致。
+- **tap / long-press / text 操作后自动 refresh**：复用新加的 `_runAdbAndRefresh` helper —— 命令回来 400ms 后自动重新 dump 树 + 截图，令红框与截图同新状态。copy resource-id / XPath 不走 refresh 路径，保持纯剪贴板行为。如果某 app 转场动画超 400ms，用户仍可手动点 toolbar 的"刷新"按钮。
