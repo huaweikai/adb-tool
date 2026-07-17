@@ -16,6 +16,7 @@ import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_view.dart';
 import '../widgets/offline_guard.dart';
+import '../widgets/view_node_inspector_panel.dart';
 
 class ViewHierarchyScreen extends StatefulWidget {
   const ViewHierarchyScreen({super.key});
@@ -412,6 +413,11 @@ class _ViewHierarchyScreenState extends State<ViewHierarchyScreen>
           ),
         ),
         Expanded(child: _buildScreenshotPanel()),
+        if (_selectedNode != null)
+          SizedBox(
+            width: 280,
+            child: ViewNodeInspectorPanel(node: _selectedNode!),
+          ),
       ],
     );
   }
@@ -698,8 +704,10 @@ class _ViewHierarchyScreenState extends State<ViewHierarchyScreen>
               _actionButton(Icons.copy, tr('viewHierarchy.copyResourceId'),
                   enabled: node.resourceId.isNotEmpty,
                   onTap: () => _copyResourceId(node)),
-              _actionButton(Icons.code, tr('viewHierarchy.copyXPath'),
-                  enabled: true, onTap: () => _copyXPath(node)),
+              _copyAsMenu(node),
+              _actionButton(Icons.visibility, tr('viewHierarchy.scrollToVisible'),
+                  enabled: b != null && b.width > 0 && b.height > 0,
+                  onTap: _scrollToSelected),
             ],
           ),
         ),
@@ -785,6 +793,137 @@ class _ViewHierarchyScreenState extends State<ViewHierarchyScreen>
     await _runAdbAndRefresh(['shell', 'input', 'text', escaped]);
   }
 
+  /// Scrolls the device UI until the selected node's bounds is fully within
+  /// its scrollable ancestor's visible viewport, or gives up after 6 tries.
+  /// Walks ancestor chain for the nearest `scrollable == true` node and uses
+  /// `adb shell input swipe` against that ancestor's bounds center to drive
+  /// the scroll in the right direction (up if target above viewport, down if
+  /// below).
+  Future<void> _scrollToSelected() async {
+    final root = _root;
+    final node = _selectedNode;
+    if (root == null || node == null) return;
+    final target = node.bounds;
+    if (target == null || target.width <= 0 || target.height <= 0) return;
+
+    // Find the nearest scrollable ancestor. ancestorChain returns null if
+    // the node is no longer in the tree (e.g. user re-dumped since).
+    final chain = ViewNode.ancestorChain(root, node);
+    if (chain == null) return;
+    ViewNode? scrollAncestor;
+    for (var i = chain.length - 2; i >= 0; i--) {
+      if (chain[i].scrollable && chain[i].bounds != null) {
+        scrollAncestor = chain[i];
+        break;
+      }
+    }
+    if (scrollAncestor == null) {
+      // Nothing scrollable in the path — node is either visible already or
+      // not in any scroll container. Nothing for us to do.
+      return;
+    }
+    final viewport = scrollAncestor.bounds!;
+
+    const maxAttempts = 6;
+    for (var attempt = 0; attempt < maxAttempts; attempt++) {
+      final current = _selectedNode?.bounds;
+      if (current == null) break;
+      // Visible when fully inside the viewport.
+      if (current.top >= viewport.top &&
+          current.bottom <= viewport.bottom) {
+        return; // success
+      }
+      // Decide swipe direction.
+      // Target above viewport → swipe down (so content moves UP into view).
+      // Target below viewport → swipe up (so content moves DOWN into view).
+      final viewportCx = (viewport.left + viewport.right) ~/ 2;
+      final y1 = (viewport.top + viewport.bottom) ~/ 2;
+      const swipeDistance = 600; // device pixels
+      late int y2;
+      if (current.top < viewport.top) {
+        // target is above viewport — swipe down (start low, end high)
+        y2 = y1 - swipeDistance;
+      } else {
+        // target is below viewport — swipe up (start high, end low)
+        y2 = y1 + swipeDistance;
+      }
+      await _runAdb([
+        'shell',
+        'input',
+        'swipe',
+        '$viewportCx',
+        '$y1',
+        '$viewportCx',
+        '$y2',
+        '400',
+      ]);
+      if (!mounted) return;
+      // Wait for device to redraw, then re-dump+re-screenshot so the next
+      // iteration can re-evaluate the target's new bounds. Reuse the same
+      // 400ms rhythm as the other refresh actions.
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      if (!mounted) return;
+      await _dump();
+      // After re-dump we get a new tree. Re-find the node we were scrolling
+      // toward — by resource-id+bounds (or just by resourceId, less robust)
+      // since the ViewNode instance we hold is now stale. If we can't find
+      // a match, stop scrolling.
+      final newRoot = _root;
+      if (newRoot == null) return;
+      final relocated = _findNodeByIdentity(newRoot, node);
+      if (relocated == null) {
+        // The view got recycled / removed during scroll; nothing more to do.
+        return;
+      }
+      // Keep _selectedNode in sync with the new tree so subsequent taps land
+      // at the relocated position.
+      _selectAndReveal(relocated);
+    }
+    // Exhausted attempts.
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(tr('viewHierarchy.scrollToVisibleFailed',
+          {'n': '$maxAttempts'}))),
+    );
+  }
+
+  /// Best-effort identity match between old and new dump trees so
+  /// `_scrollToSelected` can follow a node across re-dumps. Matches by
+  /// resource-id first; if resource-id is empty, matches by className +
+  /// same parent path depth. Returns null when no clear match exists.
+  ViewNode? _findNodeByIdentity(ViewNode root, ViewNode old) {
+    // Strongest match: unique resource-id, present at most once in the tree.
+    if (old.resourceId.isNotEmpty) {
+      final matches = <ViewNode>[];
+      void scan(ViewNode n) {
+        if (n.resourceId == old.resourceId) matches.add(n);
+        for (final c in n.children) {
+          scan(c);
+        }
+      }
+      scan(root);
+      if (matches.length == 1) return matches.first;
+      // length>1 means the id isn't unique enough — try bounds+class match
+    }
+    // Weaker match: same class + same boundsStr. Useful when resource-id is
+    // empty (e.g. anonymous TextView whose position changed mid-scroll).
+    final bstr = old.boundsStr;
+    if (bstr.isNotEmpty) {
+      ViewNode? found;
+      void scan(ViewNode n) {
+        if (found == null && n.className == old.className && n.boundsStr == bstr) {
+          found = n;
+        }
+        for (final c in n.children) {
+          scan(c);
+        }
+      }
+      scan(root);
+      return found;
+    }
+    return null;
+  }
+
   Future<void> _copyResourceId(ViewNode node) async {
     if (node.resourceId.isEmpty) return;
     await Clipboard.setData(ClipboardData(text: node.resourceId));
@@ -799,6 +938,62 @@ class _ViewHierarchyScreenState extends State<ViewHierarchyScreen>
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(tr('viewHierarchy.copiedXPath'))),
+    );
+  }
+
+  Future<void> _copyUiAutomator(ViewNode node) async {
+    await Clipboard.setData(ClipboardData(text: node.toUiAutomator()));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(tr('viewHierarchy.copiedUiAutomator'))),
+    );
+  }
+
+  Future<void> _copyEspresso(ViewNode node) async {
+    await Clipboard.setData(ClipboardData(text: node.toEspresso()));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(tr('viewHierarchy.copiedEspresso'))),
+    );
+  }
+
+  /// Popup menu for "Copy as" — emits XPath, UiAutomator By.* or Espresso
+  /// onView(...) strings a tester pastes into instrumentation/host-side
+  /// test code. Keeps the toolbar compact (1 icon slot instead of 3) and
+  /// leaves room for the future "scroll to visible" action.
+  Widget _copyAsMenu(ViewNode node) {
+    return PopupMenuButton<_CopyAsKind>(
+      tooltip: tr('viewHierarchy.copyAs'),
+      icon: const Icon(Icons.code, size: 20),
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+      onSelected: (kind) {
+        switch (kind) {
+          case _CopyAsKind.xpath:
+            _copyXPath(node);
+            break;
+          case _CopyAsKind.uiautomator:
+            _copyUiAutomator(node);
+            break;
+          case _CopyAsKind.espresso:
+            _copyEspresso(node);
+            break;
+        }
+      },
+      itemBuilder: (context) => [
+        PopupMenuItem(
+          value: _CopyAsKind.xpath,
+          child: Text(tr('viewHierarchy.copyAsXPath')),
+        ),
+        PopupMenuItem(
+          value: _CopyAsKind.uiautomator,
+          child: Text(tr('viewHierarchy.copyAsUiAutomator')),
+        ),
+        PopupMenuItem(
+          value: _CopyAsKind.espresso,
+          child: Text(tr('viewHierarchy.copyAsEspresso')),
+        ),
+      ],
     );
   }
 
@@ -870,3 +1065,6 @@ class _FlatRow {
   final bool matches;
   const _FlatRow(this.node, this.depth, this.matches);
 }
+
+/// Choice kinds emitted by the "Copy as" popup on the node-action toolbar.
+enum _CopyAsKind { xpath, uiautomator, espresso }

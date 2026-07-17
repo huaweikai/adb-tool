@@ -159,4 +159,68 @@ void main() {
       expect(n.toXPath(), contains('weird"id'.replaceAll('"', '\\"')));
     });
   });
+
+  group('ViewNode.toUiAutomator', () {
+    test('prefers By.res with split package + entry', () {
+      final n = _node(
+        cls: 'Button',
+        resourceId: 'com.example:id/login_btn',
+      );
+      // resourceEntryName keeps the `id/` prefix (everything after `:`),
+      // which is what matches UiAutomator's `By.res(pkg, resId)` contract —
+      // `resId` here means everything after the package prefix, including
+      // the `id/` declarator.
+      expect(n.toUiAutomator(), 'By.res("com.example", "id/login_btn")');
+    });
+
+    test('uses bare resId when no colon separator', () {
+      final n = _node(cls: 'Button', resourceId: 'login_btn');
+      expect(n.toUiAutomator(), 'By.res("login_btn")');
+    });
+
+    test('falls back to By.text when no resource id', () {
+      final n = _node(cls: 'Button', text: 'Login');
+      expect(n.toUiAutomator(), 'By.text("Login")');
+    });
+
+    test('falls back to By.desc when no res/text', () {
+      final n = _node(cls: 'View', contentDesc: 'avatar');
+      expect(n.toUiAutomator(), 'By.desc("avatar")');
+    });
+
+    test('falls back to By.clazz as last resort', () {
+      final n = _node(cls: 'android.widget.TextView');
+      expect(n.toUiAutomator(), 'By.clazz("android.widget.TextView")');
+    });
+  });
+
+  group('ViewNode.toEspresso', () {
+    test('prefers withResourceName using entry name', () {
+      final n = _node(
+        cls: 'Button',
+        resourceId: 'com.example:id/login_btn',
+      );
+      // Espresso's withResourceName matches the entry portion (after `:`),
+      // which for `com.example:id/login_btn` is `id/login_btn` — both the
+      // Android resource type and the entry name, not just the last `/`
+      // segment.
+      expect(n.toEspresso(), 'onView(withResourceName("id/login_btn"))');
+    });
+
+    test('falls back to withText when no resId', () {
+      final n = _node(cls: 'Button', text: 'Login');
+      expect(n.toEspresso(), 'onView(withText("Login"))');
+    });
+
+    test('falls back to withContentDescription when only desc set', () {
+      final n = _node(cls: 'View', contentDesc: 'avatar');
+      expect(n.toEspresso(), 'onView(withContentDescription("avatar"))');
+    });
+
+    test('falls back to withClassName as last resort', () {
+      final n = _node(cls: 'android.widget.TextView');
+      expect(n.toEspresso(),
+          'onView(withClassName(equalTo("android.widget.TextView")))');
+    });
+  });
 }

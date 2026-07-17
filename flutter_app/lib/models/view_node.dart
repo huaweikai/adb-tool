@@ -177,6 +177,61 @@ class ViewNode {
   }
 
   static String _escape(String s) => s.replaceAll('"', '\\"');
+
+  /// Copy as UiAutomator (`androidx.test.uiautomator.By`) — matches the
+  /// pattern a tester most often pastes into instrumentation code:
+  /// prefers resource-id split into package + entry, falls back to text,
+  /// then class. Never returns an empty string.
+  ///
+  /// Examples:
+  ///   resId="com.example:id/login_btn" → By.res("com.example", "login_btn")
+  ///   text="Login" (no resId)           → By.text("Login")
+  ///   text="" clazz="android.widget.TextView"
+  ///                                     → By.clazz("android.widget.TextView")
+  String toUiAutomator() {
+    if (resourceId.isNotEmpty) {
+      final colon = resourceId.indexOf(':');
+      final pkg = colon >= 0 ? resourceId.substring(0, colon) : '';
+      final entry = colon >= 0 ? resourceId.substring(colon + 1) : resourceId;
+      if (pkg.isNotEmpty && entry.isNotEmpty) {
+        return 'By.res("$pkg", "$entry")';
+      }
+      if (entry.isNotEmpty) {
+        return 'By.res("$entry")';
+      }
+    }
+    if (text.isNotEmpty) {
+      return 'By.text("$text")';
+    }
+    if (contentDesc.isNotEmpty) {
+      return 'By.desc("$contentDesc")';
+    }
+    return 'By.clazz("$className")';
+  }
+
+  /// Copy as Espresso (`androidx.test.espresso.Espresso.onView` + matchers)
+  /// — prefers withResourceName, then withText, then withClassName. The
+  /// fallback preparer lives in the test class's static import block.
+  ///
+  /// Examples:
+  ///   resId="com.example:id/login_btn" → onView(withResourceName("login_btn"))
+  ///   text="Login" (no resId)           → onView(withText("Login"))
+  ///   nothing usable                     → onView(withClassName(equalTo("android.widget.TextView")))
+  String toEspresso() {
+    if (resourceId.isNotEmpty) {
+      final entry = resourceEntryName;
+      if (entry.isNotEmpty) {
+        return 'onView(withResourceName("$entry"))';
+      }
+    }
+    if (text.isNotEmpty) {
+      return 'onView(withText("$text"))';
+    }
+    if (contentDesc.isNotEmpty) {
+      return 'onView(withContentDescription("$contentDesc"))';
+    }
+    return 'onView(withClassName(equalTo("$className")))';
+  }
 }
 
 /// Result of a view-hierarchy dump. `rotation` is 0/1/2/3 = the number of
