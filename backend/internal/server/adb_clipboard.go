@@ -17,7 +17,7 @@ const clipboardHelperPackage = "com.adbtool.clipboard"
 // clipboardHelperVersionCode must match versionCode in adb_tool_app/app/build.gradle.kts.
 // Bump both when the APK changes so ensureHelperInstalled can skip re-install when
 // the device already has the same or newer version.
-const clipboardHelperVersionCode = 2
+const clipboardHelperVersionCode = 3
 
 func validateClipboardApk(apkBytes []byte) error {
 	if len(apkBytes) < 1024 {
@@ -73,13 +73,28 @@ func (m *AdbManager) ensureHelperInstalled(serial string, apkBytes []byte) error
 		return fmt.Errorf("write temp apk: %w", err)
 	}
 	defer os.Remove(tmpFile)
-	_, err := m.run("-s", serial, "install", "-r", "-d", tmpFile)
+	err := m.installWithRetry(serial, tmpFile)
 	if err != nil {
 		log.Printf("[helper] install failed: serial=%s err=%v", serial, err)
 		return err
 	}
 	log.Printf("[helper] install success: serial=%s", serial)
 	return nil
+}
+
+func (m *AdbManager) installWithRetry(serial, apkPath string) error {
+	_, err := m.run("-s", serial, "install", "-r", "-d", apkPath)
+	if err == nil {
+		return nil
+	}
+	errStr := err.Error()
+	if strings.Contains(errStr, "INSTALL_FAILED_UPDATE_INCOMPATIBLE") {
+		log.Printf("[helper] signature mismatch, uninstalling and retrying: serial=%s", serial)
+		m.UninstallClipboardHelper(serial)
+		_, err := m.run("-s", serial, "install", "-r", "-d", apkPath)
+		return err
+	}
+	return err
 }
 
 func (m *AdbManager) IsClipboardHelperInstalled(serial string) bool {

@@ -7,7 +7,7 @@
 #   - Flutter 走 `flutter run` 而不是 `flutter build`，启用 hot reload
 #
 # 流程：
-#   1. 编译 Android 辅助 App（debug APK）→ backend/clipboard-helper.apk
+#   1. 编译 Android 辅助 App（release APK）→ backend/clipboard-helper.apk
 #   2. 编译 Go 后端 → flutter_app/macos/Runner/adb-tool
 #   3. 启动 Flutter（debug，前台阻塞，按 Ctrl+C 退出）
 #
@@ -69,7 +69,7 @@ die()  { printf '\033[1;31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
 # Step 1: Android 辅助 App
 # ---------------------------------------------------------------------------
 build_android_apk() {
-  local apk_src="$ROOT/adb_tool_app/app/build/outputs/apk/debug/app-debug.apk"
+  local apk_src="$ROOT/adb_tool_app/app/build/outputs/apk/release/app-release.apk"
   local apk_dst="$ROOT/backend/clipboard-helper.apk"
 
   if [[ ! -d "$ROOT/adb_tool_app" ]]; then
@@ -77,7 +77,7 @@ build_android_apk() {
     return 0
   fi
 
-  step "编译 Android 辅助 APK (debug)..."
+  step "编译 Android 辅助 APK (release)..."
 
   # local.properties 里 sdk.dir 指向外部驱动器（被沙盒阻止），用 ANDROID_HOME 覆盖
   # Gradle 优先级：ANDROID_HOME env > local.properties sdk.dir
@@ -89,7 +89,7 @@ build_android_apk() {
   # explicitly via ${PIPESTATUS[0]}.
   local gradle_log="/tmp/adb-tool-gradle-$$.log"
   local gradle_exit=0
-  (cd "$ROOT/adb_tool_app" && ./gradlew assembleDebug \
+  (cd "$ROOT/adb_tool_app" && ./gradlew assembleRelease \
         -x lintVitalAnalyzeRelease -x lintVitalReportRelease \
         -x lintAnalyzeRelease -x lintVitalRelease -x lintReportRelease \
         --console=plain 2>&1 | tee "$gradle_log" | tail -50) || gradle_exit=${PIPESTATUS[0]}

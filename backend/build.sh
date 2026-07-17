@@ -3,13 +3,13 @@ set -e
 cd "$(dirname "$0")"
 
 APK_DIR="../adb_tool_app"
-APK_SRC="$APK_DIR/app/build/outputs/apk/debug/app-debug.apk"
+APK_SRC="$APK_DIR/app/build/outputs/apk/release/app-release.apk"
 APK_DST="./clipboard-helper.apk"
 
 if [ -d "$APK_DIR" ]; then
   echo "Building clipboard helper APK..."
   set +e
-  (cd "$APK_DIR" && ./gradlew assembleDebug -x lintVitalAnalyzeRelease -x lintVitalReportRelease \
+  (cd "$APK_DIR" && ./gradlew assembleRelease -x lintVitalAnalyzeRelease -x lintVitalReportRelease \
     -x lintAnalyzeRelease -x lintVitalRelease -x lintReportRelease 2>&1)
   GRADLE_EXIT=$?
   set -e

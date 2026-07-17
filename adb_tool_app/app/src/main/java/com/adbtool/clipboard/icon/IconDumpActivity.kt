@@ -1,4 +1,4 @@
-package com.adbtool.icon
+package com.adbtool.clipboard.icon
 
 import android.app.Activity
 import android.graphics.Bitmap
@@ -7,7 +7,7 @@ import android.graphics.drawable.AdaptiveIconDrawable
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.os.Bundle
-import android.os.Environment
+import android.util.Log
 import java.io.File
 import java.io.FileOutputStream
 
@@ -22,7 +22,9 @@ class IconDumpActivity : Activity() {
             val extDir = getExternalFilesDir("adb-tool-icons")
                 ?: File(filesDir, "adb-tool-icons")
             extDir.mkdirs()
+            Log.d("IconDump", "extDir=$extDir")
 
+            var count = 0
             for (pkg in packages) {
                 try {
                     val icon = pm.getApplicationIcon(pkg.packageName)
@@ -31,12 +33,20 @@ class IconDumpActivity : Activity() {
                     FileOutputStream(pngFile).use { out ->
                         bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
                     }
-                } catch (_: Exception) {
+                    count++
+                } catch (e: Exception) {
+                    Log.w("IconDump", "skip ${pkg.packageName}: ${e.message}")
                 }
             }
 
             File(extDir, ".done").writeText("ok")
-        } catch (_: Exception) {
+            Log.d("IconDump", "done: $count icons written")
+        } catch (e: Exception) {
+            Log.e("IconDump", "failed", e)
+            File(filesDir, "adb-tool-icons/.done").apply {
+                parentFile?.mkdirs()
+                writeText("error: ${e.message}")
+            }
         }
         finish()
     }

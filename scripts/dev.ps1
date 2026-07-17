@@ -6,7 +6,7 @@
 #   - flutter run instead of flutter build (hot reload enabled)
 #
 # Flow:
-#   1. Build Android helper App (debug APK) -> backend/clipboard-helper.apk
+#   1. Build Android helper App (release APK) -> backend/clipboard-helper.apk
 #   2. Build Go backend -> flutter_app/windows/runner/Resources/runtime.exe
 #   3. Launch Flutter (debug, foreground, Ctrl+C to exit)
 #
@@ -99,7 +99,7 @@ $env:ANDROID_SDK_ROOT = $ResolvedAndroidHome
 $env:Path = "$ResolvedAndroidHome\emulator;$ResolvedAndroidHome\platform-tools;$ResolvedAndroidHome\cmdline-tools\latest\bin;$env:Path"
 
 function Build-AndroidApk {
-  $apkSrc = Join-Path $Root 'adb_tool_app\app\build\outputs\apk\debug\app-debug.apk'
+  $apkSrc = Join-Path $Root 'adb_tool_app\app\build\outputs\apk\release\app-release.apk'
   $apkDst = Join-Path $Root 'backend\clipboard-helper.apk'
   $apkDir = Join-Path $Root 'adb_tool_app'
 
@@ -108,11 +108,11 @@ function Build-AndroidApk {
     return
   }
 
-  Step "[1/2] Build Android helper APK (debug)... [ANDROID_HOME=$ResolvedAndroidHome]"
+  Step "[1/2] Build Android helper APK (release)... [ANDROID_HOME=$ResolvedAndroidHome]"
 
   Push-Location $apkDir
   try {
-    & .\gradlew.bat assembleDebug -x lintVitalAnalyzeRelease -x lintVitalReportRelease -x lintAnalyzeRelease -x lintVitalRelease -x lintReportRelease --console=plain
+    & .\gradlew.bat assembleRelease -x lintVitalAnalyzeRelease -x lintVitalReportRelease -x lintAnalyzeRelease -x lintVitalRelease -x lintReportRelease --console=plain
     if ($LASTEXITCODE -ne 0) {
       if (Test-Path $apkDst) {
         Warn "Gradle failed; reusing existing $apkDst"

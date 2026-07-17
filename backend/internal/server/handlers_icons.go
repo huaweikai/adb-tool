@@ -49,17 +49,10 @@ func (s *Server) handleRefreshIcons(w http.ResponseWriter, r *http.Request) {
 	}
 
 	donePath := "/sdcard/Android/data/com.adbtool.clipboard/files/adb-tool-icons/.done"
-	deadline := time.Now().Add(60 * time.Second)
-	polled := false
-	for time.Now().Before(deadline) {
-		out, _ := s.adb.run("-s", serial, "shell", "test", "-f", donePath, "&&", "echo", "done")
-		if strings.TrimSpace(out) == "done" {
-			polled = true
-			break
-		}
-		time.Sleep(800 * time.Millisecond)
-	}
-	if !polled {
+	// Single ADB call: poll for .done with shell-side timeout (~60s = 75 * 0.8s).
+	out, err := s.adb.run("-s", serial, "shell",
+		"for i in $(seq 1 75); do test -f '"+donePath+"' && echo done && exit 0; sleep 0.8; done; echo timeout")
+	if err != nil || strings.TrimSpace(out) != "done" {
 		writeAPIError(w, http.StatusGatewayTimeout, "icon dump timed out")
 		return
 	}
@@ -72,7 +65,7 @@ func (s *Server) handleRefreshIcons(w http.ResponseWriter, r *http.Request) {
 	os.RemoveAll(tmpDir)
 	os.MkdirAll(tmpDir, 0755)
 
-	out, err := s.adb.runRaw("-s", serial, "pull", remoteIconsDir, tmpDir)
+	out, err = s.adb.runRaw("-s", serial, "pull", remoteIconsDir, tmpDir)
 	if err != nil {
 		os.RemoveAll(tmpDir)
 		writeAPIError(w, http.StatusInternalServerError, fmt.Sprintf("pull icons: %v\n%s", err, out))
