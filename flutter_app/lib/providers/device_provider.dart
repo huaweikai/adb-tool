@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../models/device.dart';
 import '../db/database.dart';
 import '../services/api_client.dart';
+import '../services/device_stream.dart';
 
 enum DeviceTransportType { usb, wifi, unknown }
 
@@ -109,6 +110,10 @@ class DeviceProvider extends ChangeNotifier {
   final AppDatabase _db;
 
   Future<void>? _refreshing;
+  bool _streamDirty = false;
+
+  // ── WebSocket device stream ───────────────────────────────────────
+  StreamSubscription<DeviceStreamEvent>? _streamSub;
 
   // ── Offline event stream ────────────────────────────────────────────
   final _offlineController = StreamController<DeviceOfflineEvent>.broadcast();
@@ -399,7 +404,13 @@ class DeviceProvider extends ChangeNotifier {
 
   Future<void> refresh(ApiClient api) {
     final running = _refreshing;
-    if (running != null) return running;
+    if (running != null) {
+      // A WS event arrived while a refresh was in-flight. Mark dirty
+      // so whenComplete below re-triggers one more refresh — catching
+      // any device changes that happened during the in-flight call.
+      _streamDirty = true;
+      return running;
+    }
 
     final future = _refresh(api);
     _refreshing = future;
@@ -407,7 +418,45 @@ class DeviceProvider extends ChangeNotifier {
       if (identical(_refreshing, future)) {
         _refreshing = null;
       }
+      // If a WS event landed while we were busy, do one more pass.
+      if (_streamDirty) {
+        _streamDirty = false;
+        refresh(api);
+      }
     });
+  }
+
+  /// Connect to the device-event WebSocket stream.
+  ///
+  /// Triggers an immediate HTTP refresh to get full device details,
+  /// then subscribes to the WS for incremental changes. Each WS
+  /// event triggers another HTTP refresh to get model/brand/sdk etc.
+  void connectDeviceStream(DeviceStreamService stream, ApiClient api) {
+    // Kick off an immediate HTTP refresh so the UI shows devices
+    // right away (before the WS even connects).
+    refresh(api);
+    // Subscribe to WS events — each one triggers a full refresh.
+    _streamSub?.cancel();
+    _streamSub = stream.stream.listen((event) {
+      debugPrint('[DeviceProvider] WS event: ${event.runtimeType}');
+      refresh(api);
+    });
+  }
+
+  /// Disconnect from the device-event stream. Called on dispose.
+  void disconnectDeviceStream() {
+    _streamSub?.cancel();
+    _streamSub = null;
+  }
+
+  /// Pause the stream subscription (app backgrounded).
+  void pauseStream() {
+    _streamSub?.pause();
+  }
+
+  /// Resume the stream subscription (app foregrounded).
+  void resumeStream() {
+    _streamSub?.resume();
   }
 
   Future<void> _refresh(ApiClient api) async {
@@ -530,6 +579,7 @@ class DeviceProvider extends ChangeNotifier {
   @override
   void dispose() {
     _savedDevicesSub?.cancel();
+    _streamSub?.cancel();
     _offlineController.close();
     // DB is owned by GetIt — do NOT close it here
     super.dispose();

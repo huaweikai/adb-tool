@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"embed"
 	"fmt"
 	"io/fs"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -34,6 +36,16 @@ type Server struct {
 	// save-to-local-file UI flow (vs. the test-session singleton above).
 	localRecorder *LocalRecorder
 
+	// AdbEventStream maintains a persistent TCP connection to the adb
+	// server's host:track-devices, surfacing device-list deltas.
+	eventStream  *AdbEventStream
+	streamCancel context.CancelFunc
+
+	// deviceEventHub fans device-list changes to connected /ws/devices
+	// clients. Protected by devHubMu.
+	devHubMu   sync.Mutex
+	devHubSubs map[chan<- trackDeviceChange]struct{}
+
 	// Emulator components
 	instanceManager *emulator.InstanceManager
 	statusMonitor   *emulator.StatusMonitor
@@ -44,20 +56,46 @@ type Server struct {
 	closeOnce  sync.Once
 }
 
+// esLogWriter bridges AdbEventStream's *log.Logger to BackendLogger so
+// event-stream diagnostics appear in the /api/backend-logs page.
+type esLogWriter struct{}
+
+func (w *esLogWriter) Write(p []byte) (n int, err error) {
+	Log.Add("event-stream", strings.TrimRight(string(p), "\r\n"), nil, 0)
+	return len(p), nil
+}
+
 func New(adbPath string, webFS fs.FS, clipboardApk []byte, scrcpyFS embed.FS) *Server {
 	adb := NewAdbManager(adbPath, scrcpyFS)
 	adb.DiagnoseStartup()
-	return &Server{
+
+	s := &Server{
 		adb:           adb,
 		webFS:         webFS,
 		clipboardApk:  clipboardApk,
 		sessionLogcat: &SessionLogcat{},
 		localRecorder: NewLocalRecorder(),
+		devHubSubs:    make(map[chan<- trackDeviceChange]struct{}),
 		startedAt:     time.Now(),
 		upgrader: websocket.Upgrader{
 			CheckOrigin: isAllowedWebSocketOrigin,
 		},
 	}
+
+	// Wire device add/remove → fan-out to connected /ws/devices clients.
+	eventStream := NewAdbEventStream(0, func(change trackDeviceChange) {
+		Log.Add("event-stream", fmt.Sprintf("change: added=%v removed=%v current=%d",
+			change.Added, change.Removed, len(change.Current)), nil, 0)
+		s.broadcastDeviceChange(change)
+	})
+	eventStream.SetLogger(log.New(&esLogWriter{}, "", 0))
+	s.eventStream = eventStream
+
+	streamCtx, streamCancel := context.WithCancel(context.Background())
+	s.streamCancel = streamCancel
+
+	go eventStream.Run(streamCtx)
+	return s
 }
 
 // InitEmulator initializes the emulator components.
@@ -195,6 +233,8 @@ func (s *Server) Close() {
 		s.recordMu.Lock()
 		s.recordingSerial = ""
 		s.recordMu.Unlock()
+		s.streamCancel()
+		s.eventStream.Stop()
 		s.adb.Close()
 		if s.statusMonitor != nil {
 			s.statusMonitor.Stop()
@@ -206,11 +246,50 @@ func (s *Server) Close() {
 	})
 }
 
+// broadcastDeviceChange fans a device-list change to every registered
+// /ws/devices client. Non-blocking: slow consumers see a dropped event
+// (send-on-full == best-effort fan-out). The next event they receive
+// will be the full snapshot from the subsequent track-devices tick.
+func (s *Server) broadcastDeviceChange(change trackDeviceChange) {
+	s.devHubMu.Lock()
+	subs := make([]chan<- trackDeviceChange, 0, len(s.devHubSubs))
+	for ch := range s.devHubSubs {
+		subs = append(subs, ch)
+	}
+	s.devHubMu.Unlock()
+
+	Log.Add("event-stream", fmt.Sprintf("broadcast to %d clients, added=%v removed=%v",
+		len(subs), change.Added, change.Removed), nil, 0)
+
+	for _, ch := range subs {
+		select {
+		case ch <- change:
+		default:
+			Log.Add("event-stream", "channel full, event dropped", nil, 0)
+		}
+	}
+}
+
+// registerDeviceWS adds a channel to the device-event fan-out set.
+func (s *Server) registerDeviceWS(ch chan<- trackDeviceChange) {
+	s.devHubMu.Lock()
+	s.devHubSubs[ch] = struct{}{}
+	s.devHubMu.Unlock()
+}
+
+// unregisterDeviceWS removes a channel from the fan-out set and closes it.
+func (s *Server) unregisterDeviceWS(ch chan<- trackDeviceChange) {
+	s.devHubMu.Lock()
+	delete(s.devHubSubs, ch)
+	close(ch)
+	s.devHubMu.Unlock()
+}
+
 // Handler returns the HTTP handler for the server. Route registration is split
 // into logical groups — each handlers_*.go file owns the routes for its domain.
 //
 // Layout:
-//   - handlers_devices.go   /api/devices, /api/info, /api/device-detail, /api/device-status,
+//   - handlers_devices.go   /api/devices, /ws/devices, /api/info, /api/device-detail, /api/device-status,
 //     /api/clear, /api/package-pid, /api/running-packages, /api/adb-path
 //   - handlers_files.go     /api/files, /api/file-content, /api/pull-file, /api/push-file,
 //     /api/file-delete, /api/file-rename, /api/file-mkdir,
@@ -229,6 +308,7 @@ func (s *Server) Handler() http.Handler {
 
 	// Devices & system
 	mux.HandleFunc("/api/devices", s.handleDevices)
+	mux.HandleFunc("/ws/devices", s.handleDeviceWS)
 	mux.HandleFunc("/api/clear", s.handleClear)
 	mux.HandleFunc("/api/info", s.handleDeviceInfo)
 	mux.HandleFunc("/api/package-pid", s.handlePackagePID)

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../db/database.dart';
 import '../services/api_client.dart';
+import '../services/device_stream.dart';
 import '../providers/theme_provider.dart';
 import '../providers/device_provider.dart'
     show DeviceSerialScope, DeviceScreenActiveScope, DeviceProvider;
@@ -146,11 +147,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
-  Timer? _refreshTimer;
-  // True while the app is backgrounded — gates the self-rescheduling
-  // refresh loop so an in-flight refresh's whenComplete doesn't re-arm
-  // the timer while paused.
-  bool _paused = false;
+  final DeviceStreamService _deviceStream = DeviceStreamService();
 
   final Set<String> _expandedSerials = {};
   final Map<String, _CachedScreen> _screens = {};
@@ -175,7 +172,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _restoreState();
-    _startRefresh();
+    _connectDeviceStream();
+  }
+
+  void _connectDeviceStream() {
+    final dp = context.read<DeviceProvider>();
+    final api = context.read<ApiClient>();
+    dp.connectDeviceStream(_deviceStream, api);
+    _deviceStream.connect();
   }
 
   Future<void> _restoreState() async {
@@ -222,54 +226,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _startRefresh() async {
-    // Kick off the first refresh immediately; the loop self-schedules
-    // the next one 5s after each refresh COMPLETES (single-shot, not
-    // Timer.periodic). The previous periodic timer fired every 5s from
-    // tick START, so a slow backend shrank the gap between refreshes
-    // toward zero; this keeps a fixed 5s rest after each refresh.
-    _runRefresh();
-  }
-
-  void _scheduleNextRefresh() {
-    _refreshTimer?.cancel();
-    _refreshTimer = Timer(const Duration(seconds: 5), _runRefresh);
-  }
-
-  void _runRefresh() {
-    if (!mounted || _paused) return;
-    final dp = context.read<DeviceProvider>();
-    final api = context.read<ApiClient>();
-    // refresh() returns the in-flight future if one is already running
-    // (the provider's _refreshing guard), so concurrent ticks are a
-    // no-op — but we still attach whenComplete so the loop reschedules
-    // exactly once per completed refresh.
-    dp.refresh(api).whenComplete(() {
-      if (mounted && !_paused) _scheduleNextRefresh();
-    });
-  }
-
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _paused = true;
-    _refreshTimer?.cancel();
+    final dp = context.read<DeviceProvider>();
+    dp.disconnectDeviceStream();
+    _deviceStream.dispose();
     _sidebarWidth.dispose();
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Pause the 5s polling loop while the app is backgrounded so we
-    // don't keep hitting the backend + reconciling the DB from off-
-    // screen. The loop is restarted on resume.
+    final dp = context.read<DeviceProvider>();
     if (state == AppLifecycleState.paused) {
-      _paused = true;
-      _refreshTimer?.cancel();
-      _refreshTimer = null;
+      dp.pauseStream();
+      _deviceStream.pause();
     } else if (state == AppLifecycleState.resumed) {
-      _paused = false;
-      _runRefresh();
+      // Resume subscription first so it's ready when the WS snapshot arrives.
+      dp.resumeStream();
+      _deviceStream.resume();
     }
   }
 
@@ -1249,9 +1225,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   void _clearAllState() {
-    _paused = true;
-    _refreshTimer?.cancel();
-    _refreshTimer = null;
+    // Don't pause the device stream here — the WS will handle
+    // disconnection/reconnection automatically when the backend
+    // restarts. Pausing it here would permanently kill the stream
+    // because nothing resumes it.
     _screens.clear();
     _expandedSerials.clear();
     _activeKey = null;
