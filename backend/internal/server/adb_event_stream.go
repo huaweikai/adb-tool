@@ -156,7 +156,9 @@ func (s *AdbEventStream) Run(ctx context.Context) {
 
 		s.logger.Printf("stream error: %v (retry in %s)", err, backoff)
 		// Drop snapshot so re-connect delivers a fresh full diff.
+		s.snapshotMu.Lock()
 		s.last = nil
+		s.snapshotMu.Unlock()
 
 		select {
 		case <-ctx.Done():

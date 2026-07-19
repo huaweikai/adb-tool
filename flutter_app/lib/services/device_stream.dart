@@ -49,16 +49,6 @@ class DeviceStreamService {
     const wsUrl = 'ws://127.0.0.1:9876/ws/devices';
     final channel = WebSocketChannel.connect(Uri.parse(wsUrl));
     _ws = channel;
-
-    channel.ready.then((_) {
-      if (_disposed) return;
-      _reconnectAttempt = 0;
-      debugPrint('[DeviceStream] connected');
-    }).catchError((e) {
-      debugPrint('[DeviceStream] connect error: $e');
-      _scheduleReconnect();
-    });
-
     _sub = channel.stream.listen(
       (data) {
         try {
@@ -94,6 +84,15 @@ class DeviceStreamService {
       },
       cancelOnError: false,
     );
+
+    channel.ready.then((_) {
+      if (_disposed) return;
+      _reconnectAttempt = 0;
+      debugPrint('[DeviceStream] connected');
+    }).catchError((e) {
+      debugPrint('[DeviceStream] connect error: $e');
+      _scheduleReconnect();
+    });
   }
 
   void _scheduleReconnect() {
