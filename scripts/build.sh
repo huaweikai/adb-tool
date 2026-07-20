@@ -50,11 +50,6 @@ copy_app() {
   rm -rf "$dst"
   mkdir -p "$MACOS/$arch"
   cp -R "$app" "$dst"
-
-  if [[ -f "$ANDROID/clipboard-helper.apk" ]]; then
-    mkdir -p "$dst/Contents/Resources"
-    cp "$ANDROID/clipboard-helper.apk" "$dst/Contents/Resources/"
-  fi
 }
 
 # ---------------- dmg ----------------
