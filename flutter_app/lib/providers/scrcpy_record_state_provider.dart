@@ -59,6 +59,17 @@ class ScrcpyRecordStateProvider extends ChangeNotifier {
   /// Poll the backend for the given device. Pass [serial]="" to query
   /// the first running entry.
   Future<void> refresh({String? serial}) async {
+    // Skip the request when a specific serial is given and that device is
+    // offline — polling an offline device only rejects at the Dio
+    // interceptor (DeviceOfflineException) and spams the log. Clear any
+    // stale recording state; the poll resumes once the device reconnects.
+    if (serial != null && !_deviceProvider.isDeviceConnected(serial)) {
+      if (_statusMap.containsKey(serial)) {
+        _statusMap.remove(serial);
+        notifyListeners();
+      }
+      return;
+    }
     try {
       final next = await _api.scrcpyRecordingStatus(serial: serial);
       final key = serial ?? next.serial;

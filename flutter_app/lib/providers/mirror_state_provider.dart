@@ -101,6 +101,19 @@ class MirrorStateProvider extends ChangeNotifier {
   /// local start time on first successful response. Only notifies on
   /// running→stopped transitions (not on elapsed changes).
   Future<void> refresh(String serial) async {
+    // Don't poll a device that isn't online. The Dio interceptor rejects
+    // such requests with a DeviceOfflineException every tick (spamming the
+    // log). Clear any stale mirror state so the UI never shows a phantom
+    // session; the poll automatically resumes once the device reconnects.
+    if (!_deviceProvider.isDeviceConnected(serial)) {
+      if (_statusMap.containsKey(serial)) {
+        _statusMap.remove(serial);
+        _startedAt.remove(serial);
+        _stopTickerIfIdle();
+        notifyListeners();
+      }
+      return;
+    }
     try {
       final next = await _api.scrcpyStatus(serial: serial);
       final prev = _statusMap[serial];
