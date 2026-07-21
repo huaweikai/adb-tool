@@ -1286,6 +1286,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       color: isActive ? theme.colorScheme.primaryContainer : Colors.transparent,
       child: InkWell(
         onTap: onTap,
+        hoverColor: theme.colorScheme.surfaceContainerHighest,
+        mouseCursor: SystemMouseCursors.click,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           child: Row(
@@ -1471,6 +1473,18 @@ class _DeviceTreeArea extends StatelessWidget {
     // — the stable identity never contains ':' once the row is
     // upgraded past v9 migration, so the button would vanish.
     final hasWifi = context.read<DeviceProvider>().hasWifiTransport(d.serial);
+    // Two-line label: model on top, Android version + transport below.
+    // When no model is known displayName already equals the serial, so a
+    // subtitle would be redundant.
+    final subtitle = d.model.isNotEmpty
+        ? 'Android ${d.sdk}${hasWifi ? ' · Wi-Fi' : ' · USB'}'
+        : '';
+    // Pick a device-type glyph (phone vs tablet) for the rounded icon
+    // container on the left of the row.
+    final deviceIcon = (d.model.toLowerCase().contains('tab') ||
+            d.model.toLowerCase().contains('pad'))
+        ? Icons.tablet_android
+        : Icons.smartphone;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1479,82 +1493,107 @@ class _DeviceTreeArea extends StatelessWidget {
           color: hasActiveScreen
               ? theme.colorScheme.primaryContainer.withAlpha(80)
               : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
         child: InkWell(
           onTap: () => onToggleExpand(d.serial),
           hoverColor: theme.colorScheme.surfaceContainerHighest,
           mouseCursor: SystemMouseCursors.click,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
-              child: Row(
-                children: [
-                  Icon(
-                    isExpanded ? Icons.expand_more : Icons.chevron_right,
-                    size: 18,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 4),
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: _statusDotColor(theme, isConnected),
+            child: Tooltip(
+              message: d.serial,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    // Device-type icon in a rounded container, with an
+                    // online/offline status dot at its bottom-right corner.
+                    Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Container(
+                          width: 28,
+                          height: 28,
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Icon(
+                            deviceIcon,
+                            size: 16,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        Positioned(
+                          right: -1,
+                          bottom: -1,
+                          child: Container(
+                            width: 9,
+                            height: 9,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: _statusDotColor(theme, isConnected),
+                              border: Border.all(
+                                color: theme.colorScheme.surface,
+                                width: 1.5,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      d.displayName,
-                      style: const TextStyle(
-                          fontSize: 12, fontWeight: FontWeight.w500),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  // ConstrainedBox caps the serial so it can't push
-                  // the row past available width when the sidebar is
-                  // at its min (200px) and the row has
-                  // sync_problem/remove/disconnect icons attached.
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 80),
-                    child: Text(
-                      d.serial.length > 12
-                          ? '...${d.serial.substring(d.serial.length - 8)}'
-                          : d.serial,
-                      style: TextStyle(
-                          fontSize: 9,
-                          color: theme.colorScheme.onSurfaceVariant),
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 1,
-                    ),
-                  ),
-                  if (!isConnected)
-                    Padding(
-                      padding: const EdgeInsets.only(left: 4),
-                      child: Icon(
-                        Icons.sync_problem,
-                        size: 14,
-                        color: Colors.orange.withAlpha(200),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            d.displayName,
+                            style: const TextStyle(
+                                fontSize: 13, fontWeight: FontWeight.w600),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                          ),
+                          if (subtitle.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 2),
+                              child: Text(
+                                subtitle,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
+                              ),
+                            ),
+                        ],
                       ),
                     ),
-                  // Remove device button (only show when disconnected)
-                  if (!isConnected)
-                    Tooltip(
-                      message: tr('removeDevice'),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(4),
-                        onTap: () => onRemoveDevice(d.serial),
-                        child: const Padding(
-                          padding: EdgeInsets.only(left: 4),
-                          child: Icon(Icons.close, size: 14),
+                    // Subtle action icons (right side): remove when
+                    // offline, disconnect Wi-Fi when connected wirelessly.
+                    if (!isConnected)
+                      Tooltip(
+                        message: tr('removeDevice'),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(4),
+                          onTap: () => onRemoveDevice(d.serial),
+                          child: const Padding(
+                            padding: EdgeInsets.only(left: 4),
+                            child: Icon(Icons.close, size: 14),
+                          ),
                         ),
                       ),
+                    if (isConnected && hasWifi) _disconnectButton(context, d),
+                    const SizedBox(width: 2),
+                    Icon(
+                      isExpanded ? Icons.expand_more : Icons.chevron_right,
+                      size: 18,
+                      color: theme.colorScheme.onSurfaceVariant,
                     ),
-                  // Disconnect wireless button — show only when the
-                  // device currently has a live Wi-Fi transport to
-                  // disconnect from. The disconnect target is the
-                  // `ip:port` of that transport, not the saved PK.
-                  if (isConnected && hasWifi) _disconnectButton(context, d),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -1650,39 +1689,62 @@ class _DeviceTreeArea extends StatelessWidget {
     final c = _navConfig[item]!;
     final isActive = activeKey == key;
 
-    return Material(
-      color: isActive ? theme.colorScheme.primaryContainer : Colors.transparent,
+    final radius = BorderRadius.circular(8);
+    return Padding(
+      // Gap between submenu items + inset from the sidebar edges so the
+      // rounded hover / selected surface reads as a distinct tile
+      // (modern macOS-style sidebar) instead of one flat block.
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      child: Material(
+        color: isActive ? theme.colorScheme.primaryContainer : Colors.transparent,
+        borderRadius: radius,
         child: InkWell(
           onTap: () => onNavigateTo(d.serial, item),
+          borderRadius: radius,
           hoverColor: theme.colorScheme.surfaceContainerHighest,
           mouseCursor: SystemMouseCursors.click,
-        child: Padding(
-          padding:
-              const EdgeInsets.only(left: 42, right: 12, top: 6, bottom: 6),
-          child: Row(
+          child: Stack(
             children: [
-              Icon(c.icon,
-                  size: 16,
-                  color: isActive
-                      ? theme.colorScheme.primary
-                      : theme.colorScheme.onSurfaceVariant),
-              const SizedBox(width: 10),
-              // Expanded with ellipsis: at min sidebar width (200px)
-              // the available width is ~146px; long labels like
-              // "Test Session Hub" / "Screen Mirror" would otherwise
-              // overflow the row.
-              Expanded(
-                child: Text(
-                  tr(_navConfig[item]!.label),
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
-                    color: isActive
-                        ? theme.colorScheme.primary
-                        : theme.colorScheme.onSurface,
+              if (isActive)
+                Positioned(
+                  left: 4,
+                  top: 6,
+                  bottom: 6,
+                  child: Container(
+                    width: 3,
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primary,
+                      borderRadius: BorderRadius.circular(1.5),
+                    ),
                   ),
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
+                ),
+              Padding(
+                padding:
+                    const EdgeInsets.only(left: 42, right: 12, top: 7, bottom: 7),
+                child: Row(
+                  children: [
+                    Icon(c.icon,
+                        size: 16,
+                        color: isActive
+                            ? theme.colorScheme.primary
+                            : theme.colorScheme.onSurfaceVariant),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        tr(_navConfig[item]!.label),
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight:
+                              isActive ? FontWeight.w600 : FontWeight.normal,
+                          color: isActive
+                              ? theme.colorScheme.primary
+                              : theme.colorScheme.onSurface,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
