@@ -1141,7 +1141,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final deviceProvider = context.read<DeviceProvider>();
 
     return MaterialBanner(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
       backgroundColor: theme.colorScheme.errorContainer,
       leading: Icon(Icons.cloud_off, color: theme.colorScheme.onErrorContainer),
       content: Text(
@@ -1427,24 +1427,33 @@ class _DeviceTreeArea extends StatelessWidget {
           );
         }
 
+        final deviceNodes = devices.asMap().entries.expand((e) {
+          final d = e.value;
+          final isLast = e.key == devices.length - 1;
+          return [
+            KeyedSubtree(
+              key: ValueKey('device-node:${d.serial}'),
+              child: _buildDeviceNode(context, d, theme),
+            ),
+            if (!isLast)
+              Divider(
+                height: 1,
+                thickness: 1,
+                indent: AppSpacing.md,
+                endIndent: AppSpacing.md,
+                color: theme.dividerColor,
+              ),
+          ];
+        }).toList();
         return ListView(
           padding: const EdgeInsets.symmetric(vertical: 4),
-          // KeyedSubtree around each child: without an explicit Key,
-          // Flutter falls back to position-based matching for
-          // ListView's direct children. When the savedDevices list
-          // changes shape (insert / remove / reorder) the lack of a
-          // stable key causes the per-row element/state to drift to
-          // the wrong row — on Windows that combination with rapid
-          // rebuilds can trip the a11y tree into UNREACHABLE and
-          // crash the app. Stable keys tie each row to its
-          // SavedDevice.serial (= stable identity) so expanded /
-          // active / cached-screen state stays correct.
-          children: devices
-              .map((d) => KeyedSubtree(
-                    key: ValueKey('device-node:${d.serial}'),
-                    child: _buildDeviceNode(context, d, theme),
-                  ))
-              .toList(),
+          // KeyedSubtree + stable ValueKey per device: without an
+          // explicit Key, Flutter falls back to position-based
+          // matching and rapid Windows rebuilds can trip the a11y
+          // tree into UNREACHABLE. Stable keys tie each row to its
+          // SavedDevice.serial so expanded/active/cached-screen
+          // state stays correct.
+          children: deviceNodes,
         );
       },
     );
@@ -1470,10 +1479,12 @@ class _DeviceTreeArea extends StatelessWidget {
           color: hasActiveScreen
               ? theme.colorScheme.primaryContainer.withAlpha(80)
               : Colors.transparent,
-          child: InkWell(
-            onTap: () => onToggleExpand(d.serial),
+        child: InkWell(
+          onTap: () => onToggleExpand(d.serial),
+          hoverColor: theme.colorScheme.surfaceContainerHighest,
+          mouseCursor: SystemMouseCursors.click,
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
               child: Row(
                 children: [
                   Icon(
@@ -1641,8 +1652,10 @@ class _DeviceTreeArea extends StatelessWidget {
 
     return Material(
       color: isActive ? theme.colorScheme.primaryContainer : Colors.transparent,
-      child: InkWell(
-        onTap: () => onNavigateTo(d.serial, item),
+        child: InkWell(
+          onTap: () => onNavigateTo(d.serial, item),
+          hoverColor: theme.colorScheme.surfaceContainerHighest,
+          mouseCursor: SystemMouseCursors.click,
         child: Padding(
           padding:
               const EdgeInsets.only(left: 42, right: 12, top: 6, bottom: 6),

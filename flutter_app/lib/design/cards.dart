@@ -70,6 +70,8 @@ class MetricCard extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
+        hoverColor: theme.colorScheme.surfaceContainerHighest,
+        mouseCursor: SystemMouseCursors.click,
         child: Container(
           decoration: color == Colors.transparent
               ? null
@@ -264,6 +266,8 @@ class ActionCard extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
+        hoverColor: theme.colorScheme.surfaceContainerHighest,
+        mouseCursor: SystemMouseCursors.click,
         child: Container(
           color: isActive
               ? theme.colorScheme.primaryContainer.withAlpha(80)

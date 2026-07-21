@@ -3,6 +3,8 @@
 import 'dart:async';
 import 'package:adb_tool/providers/locale_provider.dart';
 import 'package:flutter/material.dart';
+
+import '../widgets/skeleton.dart';
 import 'package:provider/provider.dart';
 import '../i18n.dart';
 import '../providers/emulator_image_provider.dart';
@@ -137,10 +139,7 @@ class _EmulatorSettingsScreenState extends State<EmulatorSettingsScreen> {
 
     if (provider.isLoading) {
       return const Card(
-        child: Padding(
-          padding: EdgeInsets.all(32),
-          child: Center(child: CircularProgressIndicator()),
-        ),
+        child: SkeletonList(count: 4),
       );
     }
 

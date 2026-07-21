@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../design/design_tokens.dart';
+
 /// A two-column label:value row used in info / detail dialogs.
 class InfoRow extends StatelessWidget {
   final String label;
@@ -15,8 +17,9 @@ class InfoRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.only(bottom: AppSpacing.xs),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -24,7 +27,10 @@ class InfoRow extends StatelessWidget {
             width: labelWidth,
             child: Text(
               '$label:',
-              style: const TextStyle(fontSize: 12, color: Colors.grey),
+              style: TextStyle(
+                fontSize: AppFontSize.body,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
           ),
           Expanded(
