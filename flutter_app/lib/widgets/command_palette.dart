@@ -151,9 +151,9 @@ class _CommandPaletteState extends State<CommandPalette> {
                               BorderRadius.circular(AppRadius.md),
                         ),
                         contentPadding: const EdgeInsets.symmetric(
-                          vertical: AppSpacing.sm,
+                          vertical: AppSpacing.md,
                         ),
-                        isDense: true,
+                        isDense: false,
                       ),
                     ),
                   ),

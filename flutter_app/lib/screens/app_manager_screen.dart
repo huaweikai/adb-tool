@@ -39,6 +39,11 @@ class _AppManagerScreenState extends State<AppManagerScreen>
   Set<String> _iconPackages = {};
   List<Map<String, dynamic>> _iconEntries = [];
 
+  /// Selected package for the desktop master-detail side pane.
+  /// Null → list only (modal sheet fallback on narrow widths).
+  AppPackage? _selectedPackage;
+  double _contentWidth = 0;
+
   bool get _installing => _installState != null;
   final TextEditingController _searchCtrl = TextEditingController();
 
@@ -465,7 +470,30 @@ class _AppManagerScreenState extends State<AppManagerScreen>
                     ),
                   )
                 else
-                  Expanded(child: _buildPackageList(context)),
+                  Expanded(
+                    child: LayoutBuilder(
+                      builder: (ctx, constraints) {
+                        _contentWidth = constraints.maxWidth;
+                        final wide = constraints.maxWidth >= 760;
+                        if (_selectedPackage != null && wide) {
+                          return Row(
+                            children: [
+                              Expanded(child: _buildPackageList(context)),
+                              VerticalDivider(
+                                width: 1,
+                                color: Theme.of(context).dividerColor,
+                              ),
+                              SizedBox(
+                                width: 340,
+                                child: _buildDetailPane(_selectedPackage!),
+                              ),
+                            ],
+                          );
+                        }
+                        return _buildPackageList(context);
+                      },
+                    ),
+                  ),
                 _buildStatusBar(context),
               ],
             ),
@@ -569,6 +597,109 @@ class _AppManagerScreenState extends State<AppManagerScreen>
     );
   }
 
+  void _onPackageTap(AppPackage pkg) {
+    if (_installing) return;
+    if (_contentWidth >= 760) {
+      setState(() => _selectedPackage = pkg);
+    } else {
+      _showPackageDetail(context, pkg);
+    }
+  }
+
+  Widget _buildDetailPane(AppPackage pkg) {
+    final theme = Theme.of(context);
+    final iconEntry = _iconEntries.cast<Map<String, dynamic>?>().firstWhere(
+          (e) => e?['package'] == pkg.packageName,
+          orElse: () => null,
+        );
+    final header = iconEntry != null
+        ? ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: Image.network(
+              'http://localhost:9876${iconEntry['icon_url']}',
+              width: 40,
+              height: 40,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => _buildLetterAvatar(pkg),
+            ),
+          )
+        : _buildLetterAvatar(pkg);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            border: Border(bottom: BorderSide(color: theme.dividerColor)),
+          ),
+          child: Row(
+            children: [
+              header,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(pkg.shortName,
+                        style: const TextStyle(
+                            fontSize: 14, fontWeight: FontWeight.w500)),
+                    const SizedBox(height: 2),
+                    Text(pkg.packageName,
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: theme.colorScheme.onSurfaceVariant,
+                            fontFamily: 'Menlo'),
+                        overflow: TextOverflow.ellipsis),
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close, size: 18),
+                tooltip: tr('close'),
+                onPressed: () => setState(() => _selectedPackage = null),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _detailRow(tr('packageName'), pkg.packageName),
+                _detailRow(tr('path'), pkg.sourceDir),
+                const SizedBox(height: 20),
+                FilledButton.tonalIcon(
+                  onPressed: _installing ? null : () => _forceStopApp(pkg),
+                  icon: const Icon(Icons.stop_circle_outlined, size: 18),
+                  label: Text(tr('forceStop')),
+                  style:
+                      FilledButton.styleFrom(foregroundColor: Colors.orange),
+                ),
+                const SizedBox(height: 10),
+                FilledButton.tonalIcon(
+                  onPressed: _installing ? null : () => _clearAppData(pkg),
+                  icon: const Icon(Icons.cleaning_services_outlined, size: 18),
+                  label: Text(tr('clearData')),
+                  style:
+                      FilledButton.styleFrom(foregroundColor: Colors.orange),
+                ),
+                const SizedBox(height: 10),
+                FilledButton.tonalIcon(
+                  onPressed: _installing ? null : () => _uninstallPackage(pkg),
+                  icon: const Icon(Icons.delete_outline, size: 18),
+                  label: Text(tr('uninstallApp')),
+                  style: FilledButton.styleFrom(foregroundColor: Colors.red),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildPackageRow(BuildContext context, AppPackage pkg) {
     final theme = Theme.of(context);
     final iconEntry = _iconEntries.cast<Map<String, dynamic>?>().firstWhere(
@@ -577,9 +708,16 @@ class _AppManagerScreenState extends State<AppManagerScreen>
         );
     final hasIcon = iconEntry != null;
     return InkWell(
-      onTap: _installing ? null : () => _showPackageDetail(context, pkg),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      onTap: _installing ? null : () => _onPackageTap(pkg),
+      child: Container(
+        decoration: BoxDecoration(
+          color: _selectedPackage == pkg
+              ? theme.colorScheme.primaryContainer.withAlpha(45)
+              : null,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         child: Row(
           children: [
             hasIcon
@@ -661,6 +799,7 @@ class _AppManagerScreenState extends State<AppManagerScreen>
             ),
           ],
         ),
+      ),
       ),
     );
   }

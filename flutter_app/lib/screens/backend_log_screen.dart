@@ -254,11 +254,8 @@ class _BackendLogScreenState extends State<BackendLogScreen> {
                 hintText: tr('filterCommand'),
                 hintStyle: const TextStyle(fontSize: 11),
                 prefixIcon: const Icon(Icons.search, size: 16),
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                 border: const OutlineInputBorder(
                     borderRadius: BorderRadius.all(Radius.circular(6))),
-                isDense: true,
               ),
               style: const TextStyle(fontSize: 12),
             ),

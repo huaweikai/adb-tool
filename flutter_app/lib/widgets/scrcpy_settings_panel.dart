@@ -482,7 +482,7 @@ class _DropdownRow<T> extends StatelessWidget {
           Expanded(child: Text(label, style: Theme.of(context).textTheme.bodyMedium)),
           DropdownButton<T>(
             value: value,
-            isDense: true,
+            isDense: false,
             underline: const SizedBox.shrink(),
             items: options
                 .map((o) => DropdownMenuItem<T>(
@@ -537,7 +537,7 @@ class _TextFieldRowState extends State<_TextFieldRow> {
         controller: _ctrl,
         decoration: InputDecoration(
           labelText: widget.label,
-          isDense: true,
+          isDense: false,
           border: const OutlineInputBorder(),
         ),
         style: Theme.of(context).textTheme.bodySmall,

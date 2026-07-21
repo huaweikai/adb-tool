@@ -368,7 +368,7 @@ class _ClipboardScreenState extends State<ClipboardScreen>
                 textAlignVertical: TextAlignVertical.top,
                 decoration: InputDecoration(
                   hintText: tr('clipboardInputHint'),
-                  isDense: true,
+                  isDense: false,
                   contentPadding: const EdgeInsets.all(12),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),

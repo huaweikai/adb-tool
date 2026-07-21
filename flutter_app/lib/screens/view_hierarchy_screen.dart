@@ -432,9 +432,9 @@ class _ViewHierarchyScreenState extends State<ViewHierarchyScreen>
         onChanged: _onQueryChanged,
         style: Theme.of(context).textTheme.bodySmall,
         decoration: InputDecoration(
-          isDense: true,
+          isDense: false,
           contentPadding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
+              horizontal: AppSpacing.md, vertical: AppSpacing.md),
           prefixIcon: const Icon(Icons.search, size: 18),
           prefixIconConstraints: const BoxConstraints(minWidth: 36, minHeight: 36),
           hintText: tr('viewHierarchy.searchHint'),

@@ -51,6 +51,7 @@ ThemeData _buildDarkTheme() {
     scaffoldBackgroundColor: _darkScaffoldBg,
     dividerColor: _darkDivider,
     fontFamily: Platform.isWindows ? 'Microsoft YaHei' : null,
+    visualDensity: VisualDensity.compact,
     pageTransitionsTheme: const PageTransitionsTheme(
       builders: {
         TargetPlatform.macOS: FadeUpwardsPageTransitionsBuilder(),
@@ -62,6 +63,9 @@ ThemeData _buildDarkTheme() {
       elevation: AppElevation.card,
       margin: EdgeInsets.zero,
       clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.all(Radius.circular(AppRadius.lg)),
+      ),
     ),
     inputDecorationTheme: InputDecorationTheme(
       border: OutlineInputBorder(
@@ -71,11 +75,71 @@ ThemeData _buildDarkTheme() {
         horizontal: AppSpacing.md,
         vertical: AppSpacing.md,
       ),
+      isDense: false,
     ),
     dividerTheme: const DividerThemeData(
       thickness: 1,
-      indent: AppSpacing.md,
-      endIndent: AppSpacing.md,
+      indent: 0,
+      endIndent: 0,
+      space: AppSpacing.sm,
+    ),
+    listTileTheme: const ListTileThemeData(
+      contentPadding: EdgeInsets.symmetric(horizontal: AppSpacing.md),
+      minLeadingWidth: 24,
+    ),
+    iconButtonTheme: IconButtonThemeData(
+      style: ButtonStyle(
+        shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+          ),
+        ),
+      ),
+    ),
+    filledButtonTheme: FilledButtonThemeData(
+      style: ButtonStyle(
+        shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+          ),
+        ),
+        padding: const WidgetStatePropertyAll(
+          EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.sm,
+          ),
+        ),
+      ),
+    ),
+    elevatedButtonTheme: ElevatedButtonThemeData(
+      style: ButtonStyle(
+        shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+          ),
+        ),
+        padding: const WidgetStatePropertyAll(
+          EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.sm,
+          ),
+        ),
+      ),
+    ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: ButtonStyle(
+        shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+          ),
+        ),
+        padding: const WidgetStatePropertyAll(
+          EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.sm,
+          ),
+        ),
+      ),
     ),
   );
 }
@@ -88,6 +152,7 @@ ThemeData _buildLightTheme() {
     scaffoldBackgroundColor: Colors.white,
     dividerColor: _lightDivider,
     fontFamily: Platform.isWindows ? 'Microsoft YaHei' : null,
+    visualDensity: VisualDensity.compact,
     pageTransitionsTheme: const PageTransitionsTheme(
       builders: {
         TargetPlatform.macOS: FadeUpwardsPageTransitionsBuilder(),
@@ -99,6 +164,9 @@ ThemeData _buildLightTheme() {
       elevation: AppElevation.card,
       margin: EdgeInsets.zero,
       clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.all(Radius.circular(AppRadius.lg)),
+      ),
     ),
     inputDecorationTheme: InputDecorationTheme(
       border: OutlineInputBorder(
@@ -108,11 +176,71 @@ ThemeData _buildLightTheme() {
         horizontal: AppSpacing.md,
         vertical: AppSpacing.md,
       ),
+      isDense: false,
     ),
     dividerTheme: const DividerThemeData(
       thickness: 1,
-      indent: AppSpacing.md,
-      endIndent: AppSpacing.md,
+      indent: 0,
+      endIndent: 0,
+      space: AppSpacing.sm,
+    ),
+    listTileTheme: const ListTileThemeData(
+      contentPadding: EdgeInsets.symmetric(horizontal: AppSpacing.md),
+      minLeadingWidth: 24,
+    ),
+    iconButtonTheme: IconButtonThemeData(
+      style: ButtonStyle(
+        shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+          ),
+        ),
+      ),
+    ),
+    filledButtonTheme: FilledButtonThemeData(
+      style: ButtonStyle(
+        shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+          ),
+        ),
+        padding: const WidgetStatePropertyAll(
+          EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.sm,
+          ),
+        ),
+      ),
+    ),
+    elevatedButtonTheme: ElevatedButtonThemeData(
+      style: ButtonStyle(
+        shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+          ),
+        ),
+        padding: const WidgetStatePropertyAll(
+          EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.sm,
+          ),
+        ),
+      ),
+    ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: ButtonStyle(
+        shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+          ),
+        ),
+        padding: const WidgetStatePropertyAll(
+          EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.sm,
+          ),
+        ),
+      ),
     ),
   );
 }

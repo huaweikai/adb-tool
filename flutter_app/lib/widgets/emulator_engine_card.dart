@@ -853,8 +853,8 @@ Widget _infoChip(IconData icon, String label, {required bool isReady}) {
                   decoration: InputDecoration(
                     hintText: '/Users/xxx/Library/Android/sdk',
                     hintStyle: TextStyle(color: Colors.grey.shade400),
-                    isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    isDense: false,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                     border: const OutlineInputBorder(),
                     suffixIcon: IconButton(
                       icon: const Icon(Icons.clear, size: 16),
@@ -953,8 +953,8 @@ Widget _infoChip(IconData icon, String label, {required bool isReady}) {
             decoration: InputDecoration(
               hintText: tr('engineCard.urlHint'),
               hintStyle: TextStyle(color: Colors.grey.shade400),
-              isDense: true,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              isDense: false,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
               border: const OutlineInputBorder(),
             ),
           ),
@@ -1032,8 +1032,8 @@ Widget _infoChip(IconData icon, String label, {required bool isReady}) {
                   decoration: InputDecoration(
                     hintText: tr('engineCard.zipHint'),
                     hintStyle: TextStyle(color: Colors.grey.shade400),
-                    isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    isDense: false,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                     border: const OutlineInputBorder(),
                   ),
                 ),

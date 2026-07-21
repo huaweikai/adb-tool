@@ -58,9 +58,9 @@ Future<WatermarkOpts?> showWatermarkDialog(BuildContext context) {
                       decoration: InputDecoration(
                         hintText: tr('stepNumberHint'),
                         border: const OutlineInputBorder(),
-                        isDense: true,
+                        isDense: false,
                         contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 10),
+                            horizontal: 10, vertical: 12),
                       ),
                       style: const TextStyle(fontSize: 13),
                     ),
