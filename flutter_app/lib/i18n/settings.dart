@@ -11,11 +11,30 @@
 part of 'package:adb_tool/i18n.dart';
 
 const _locSettingsZh = <String, String>{
-  // ── screens/settings_screen.dart ───────────────────────────────
+  // ── widgets/settings_dialog.dart ───────────────────────────────
   'settings.title': '设置',
+  'settings.sectionBackend': '后端',
   'settings.sectionRecording': '录屏',
   'settings.sectionCache': '缓存',
+  'settings.sectionAppearance': '外观',
   'settings.sectionAbout': '关于',
+
+  // 后端 (Bridge) section
+  'settings.backend.bridge': 'Bridge',
+  'settings.backend.statusRunning': '运行中',
+  'settings.backend.statusStopped': '未启动',
+  'settings.backend.checking': '检测中…',
+  'settings.backend.port': '端口',
+  'settings.backend.portHint': '默认 9876，可修改以避开端口冲突',
+  'settings.backend.portInvalid': '端口须为 1–65535 之间的整数',
+  'settings.backend.autoStart': '启动时自动运行后端',
+  'settings.backend.autoStartDesc': '打开应用时自动启动本地 Go 后端',
+  'settings.backend.restart': '重启后端',
+  'settings.backend.restarting': '重启中…',
+  'settings.backend.apply': '应用',
+  'settings.backend.runtimeInfo': '运行时信息',
+  'settings.backend.pid': '进程 ID',
+  'settings.backend.started': '启动于',
 
   // 录屏 section
   'settings.recording.methodAdb': 'ADB (内置)',
@@ -25,6 +44,14 @@ const _locSettingsZh = <String, String>{
   'settings.recording.methodScrcpyDesc':
       '使用 scrcpy 录屏，无弹出窗口。适合部分 ADB 录屏有问题的设备。',
   'settings.recording.savedToast': '设置已保存',
+
+  // 外观 section
+  'settings.appearance.theme': '主题',
+  'settings.appearance.themeDark': '深色',
+  'settings.appearance.themeLight': '浅色',
+  'settings.appearance.language': '语言',
+  'settings.appearance.langZh': '中文',
+  'settings.appearance.langEn': 'English',
 
   // 缓存 section
   'settings.cache.cleanup': '清理所有 adb-tool 缓存',
@@ -65,9 +92,28 @@ const _locSettingsZh = <String, String>{
 
 const _locSettingsEn = <String, String>{
   'settings.title': 'Settings',
+  'settings.sectionBackend': 'Backend',
   'settings.sectionRecording': 'Recording',
   'settings.sectionCache': 'Cache',
+  'settings.sectionAppearance': 'Appearance',
   'settings.sectionAbout': 'About',
+
+  // Backend (Bridge) section
+  'settings.backend.bridge': 'Bridge',
+  'settings.backend.statusRunning': 'Running',
+  'settings.backend.statusStopped': 'Stopped',
+  'settings.backend.checking': 'Checking…',
+  'settings.backend.port': 'Port',
+  'settings.backend.portHint': 'Default 9876; change it to avoid port conflicts',
+  'settings.backend.portInvalid': 'Port must be an integer from 1 to 65535',
+  'settings.backend.autoStart': 'Auto-start backend on launch',
+  'settings.backend.autoStartDesc': 'Start the local Go backend when the app opens',
+  'settings.backend.restart': 'Restart backend',
+  'settings.backend.restarting': 'Restarting…',
+  'settings.backend.apply': 'Apply',
+  'settings.backend.runtimeInfo': 'Runtime',
+  'settings.backend.pid': 'Process ID',
+  'settings.backend.started': 'Started',
 
   'settings.recording.methodAdb': 'ADB (built-in)',
   'settings.recording.methodAdbDesc':
@@ -76,6 +122,14 @@ const _locSettingsEn = <String, String>{
   'settings.recording.methodScrcpyDesc':
       'Use the bundled scrcpy to record silently. Works around `adb screenrecord` bugs on some devices.',
   'settings.recording.savedToast': 'Settings saved',
+
+  // Appearance section
+  'settings.appearance.theme': 'Theme',
+  'settings.appearance.themeDark': 'Dark',
+  'settings.appearance.themeLight': 'Light',
+  'settings.appearance.language': 'Language',
+  'settings.appearance.langZh': '中文',
+  'settings.appearance.langEn': 'English',
 
   'settings.cache.cleanup': 'Clean all adb-tool caches',
   'settings.cache.cleanupDesc':

@@ -22,6 +22,7 @@ import 'package:nested/nested.dart' show SingleChildWidget;
 import 'package:provider/provider.dart';
 
 import 'db/database.dart';
+import 'providers/app_settings_provider.dart';
 import 'providers/theme_provider.dart';
 import 'providers/locale_provider.dart';
 import 'providers/device_provider.dart';
@@ -46,9 +47,13 @@ final GetIt getIt = GetIt.instance;
 
 /// Initialize all app-wide singletons.
 ///
-/// Call once from main() before runApp().
-Future<void> setupDependencies() async {
+/// Call once from main() before runApp(). [settings] must be loaded
+/// first (see [AppSettings.load]) so the backend port is known before
+/// the [ApiClient] base URL and [ServerLauncher] are constructed.
+Future<void> setupDependencies(AppSettings settings) async {
   // ── 1. Core infrastructure (no app-layer dependencies) ──────────────
+  getIt.registerSingleton<AppSettings>(settings);
+
   getIt.registerSingleton<AppDatabase>(AppDatabase());
 
   // DeviceProvider needs DB
@@ -58,7 +63,7 @@ Future<void> setupDependencies() async {
 
   getIt.registerSingleton<ApiClient>(
     ApiClient(
-      'http://127.0.0.1:9876',
+      settings.baseUrl,
       deviceProvider: getIt<DeviceProvider>(),
     ),
   );
@@ -158,6 +163,7 @@ List<SingleChildWidget> get dependencyProviders => [
       Provider<AppDatabase>.value(value: getIt<AppDatabase>()),
       Provider<ApiClient>.value(value: getIt<ApiClient>()),
       Provider<LogStreamService>.value(value: getIt<LogStreamService>()),
+      ChangeNotifierProvider<AppSettings>.value(value: getIt<AppSettings>()),
 
       // ChangeNotifier providers
       ChangeNotifierProvider<ThemeProvider>.value(

@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'di.dart';
+import 'providers/app_settings_provider.dart';
 import 'screens/home_screen.dart';
 import 'screens/launch_page.dart';
 import 'i18n.dart';
@@ -13,6 +14,7 @@ import 'providers/locale_provider.dart';
 import 'providers/test_session_provider.dart';
 import 'services/api_client.dart';
 import 'services/server_launcher.dart';
+import 'widgets/settings_dialog.dart';
 import 'utils/legacy_session_cleanup.dart';
 import 'widgets/window_chrome.dart';
 
@@ -40,8 +42,11 @@ Future<void> main() async {
     );
   }
 
-  // Initialize all app-wide singletons via GetIt
-  await setupDependencies();
+  // Initialize all app-wide singletons via GetIt. AppSettings must be
+  // loaded first so the backend port is known before ApiClient /
+  // ServerLauncher are built.
+  final appSettings = await AppSettings.load();
+  await setupDependencies(appSettings);
 
   // Fire-and-forget: remove the pre-DB test-session on-disk storage on
   // first launch. Safe to re-run; a marker file short-circuits subsequent
@@ -181,7 +186,9 @@ class _ServerBootScreenState extends State<ServerBootScreen>
 
   Future<void> _boot() async {
     final api = context.read<ApiClient>();
-    _launcher ??= ServerLauncher();
+    // Build the launcher with the currently configured backend port so a
+    // port change applied from the launch-page settings takes effect.
+    _launcher ??= ServerLauncher(context.read<AppSettings>().backendPort);
     final launcher = _launcher!;
     try {
       if (!mounted || _disposed) return;
@@ -272,6 +279,35 @@ class _ServerBootScreenState extends State<ServerBootScreen>
     await _boot();
   }
 
+  /// Open the full settings page (backend status / port / recording
+  /// method / cache / appearance / about). The backend (bridge) status
+  /// and restart live here too, so a port change or restart is applied
+  /// immediately via [_reconfigureBackend].
+  void _openSettings() {
+    if (!mounted || _disposed) return;
+    showSettingsDialog(
+      context,
+      onRestartBackend: _reconfigureBackend,
+      onPortChanged: (_) => _reconfigureBackend(),
+    );
+  }
+
+  /// Tear down the running backend, point [ApiClient] at the current
+  /// [AppSettings] port, and re-boot with a fresh [ServerLauncher].
+  /// Used by the settings page's "重启后端" button and after a port
+  /// change. [_boot] recreates the launcher from the current port.
+  Future<void> _reconfigureBackend() async {
+    final api = context.read<ApiClient>();
+    final settings = context.read<AppSettings>();
+    final old = _launcher;
+    _launcher = null;
+    await old?.stop();
+    api.updateBaseUrl(settings.baseUrl);
+    if (!mounted || _disposed) return;
+    setState(() => _status = tr('restarting'));
+    await _boot();
+  }
+
   void _showBootLog() {
     showDialog(
       context: context,
@@ -307,6 +343,7 @@ class _ServerBootScreenState extends State<ServerBootScreen>
       if (!_entered) {
         return LaunchPage(
           onOpen: () => setState(() => _entered = true),
+          onOpenSettings: _openSettings,
         );
       }
       return HomeScreen(

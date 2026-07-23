@@ -32,7 +32,7 @@ import '../widgets/empty_state.dart';
 import 'screen_mirror_screen.dart';
 import 'view_hierarchy_screen.dart';
 import 'emulator_settings_screen.dart';
-import 'settings_screen.dart';
+import '../widgets/settings_dialog.dart';
 
 enum NavItem {
   status,
@@ -362,13 +362,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   void _openSettings() {
-    if (!_screens.containsKey(_settingsKey)) {
-      _screens[_settingsKey] = const _CachedScreen(
-        serial: null,
-        child: SettingsScreen(),
-      );
-    }
-    setState(() => _activeKey = _settingsKey);
+    showSettingsDialog(
+      context,
+      onRestartBackend: () async => widget.onRestart?.call(),
+    );
   }
 
   /// Restore the active page from saved _activeKey
@@ -388,10 +385,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _openEmulatorSettings();
       return;
     }
-    if (_activeKey == _settingsKey) {
-      _openSettings();
-      return;
-    }
+    // (settings is a transient dialog, not a restorable page — skip it)
 
     // Parse device serial and nav item from _activeKey (format: "serial_itemName")
     final parts = _activeKey!.split('_');

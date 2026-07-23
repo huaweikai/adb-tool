@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
+import 'package:get_it/get_it.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
+import '../providers/app_settings_provider.dart';
 
 /// WebSocket client for the backend's `/ws/devices` endpoint.
 ///
@@ -33,7 +35,8 @@ class DeviceStreamService {
   /// Whether the WebSocket is currently connected.
   bool get isConnected => _ws != null;
 
-  /// Open the WebSocket connection to `ws://127.0.0.1:9876/ws/devices`.
+  /// Open the WebSocket connection to `ws://127.0.0.1:<port>/ws/devices`,
+  /// where `<port>` is the configured backend port (see [AppSettings]).
   ///
   /// Safe to call multiple times — subsequent calls are no-ops while
   /// already connected or connecting.
@@ -46,7 +49,11 @@ class DeviceStreamService {
   void _doConnect() {
     if (_disposed) return;
 
-    const wsUrl = 'ws://127.0.0.1:9876/ws/devices';
+    // Resolve the port dynamically on every (re)connect so a backend port
+    // change applied from the launch-page settings takes effect on the next
+    // reconnect without recreating this service.
+    final port = _resolvePort();
+    final wsUrl = 'ws://127.0.0.1:$port/ws/devices';
     final channel = WebSocketChannel.connect(Uri.parse(wsUrl));
     _ws = channel;
     _sub = channel.stream.listen(
@@ -143,6 +150,14 @@ class DeviceStreamService {
     _sub?.cancel();
     _ws?.sink.close();
     await _controller.close();
+  }
+
+  int _resolvePort() {
+    try {
+      return GetIt.instance<AppSettings>().backendPort;
+    } catch (_) {
+      return AppSettings.defaultBackendPort;
+    }
   }
 
   List<WsDevice> _parseDeviceList(dynamic raw) {

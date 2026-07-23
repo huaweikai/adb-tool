@@ -8,7 +8,7 @@
 // picks a final destination through the system save dialog at
 // stop time (mirroring the adb flow).
 //
-// Rendered as a section inside SettingsScreen. Kept as its own
+// Rendered as a section inside the settings dialog. Kept as its own
 // widget so the file is digestible and the per-feature logic stays
 // together; the settings page just lays three of these out.
 import 'package:flutter/material.dart';
@@ -17,6 +17,10 @@ import 'package:provider/provider.dart';
 import '../i18n.dart';
 import '../providers/locale_provider.dart';
 import '../providers/recording_settings_provider.dart';
+
+/// Accent colors — keep in sync with lib/screens/launch_page.dart (64:2).
+const Color _accent = Color(0xFF2EA043);
+const Color _accentBorder = Color(0xFF3FB950);
 
 class RecordingSettingsSection extends StatelessWidget {
   const RecordingSettingsSection({super.key});
@@ -86,66 +90,55 @@ class _MethodCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Card(
-      color: selected
-          ? theme.colorScheme.primaryContainer
-          : theme.colorScheme.surfaceContainerLow,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-        side: BorderSide(
+    final borderColor =
+        selected ? _accentBorder : theme.colorScheme.outlineVariant;
+    final iconColor =
+        selected ? _accentBorder : theme.colorScheme.onSurfaceVariant;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        decoration: BoxDecoration(
           color: selected
-              ? theme.colorScheme.primary
-              : theme.colorScheme.outlineVariant,
-          width: selected ? 2 : 1,
+              ? _accent.withValues(alpha: 0.10)
+              : theme.colorScheme.surfaceContainerHighest
+                  .withValues(alpha: 0.25),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: borderColor, width: selected ? 1.5 : 1),
         ),
-      ),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            children: [
-              Icon(icon,
-                  size: 24,
-                  color: selected
-                      ? theme.colorScheme.primary
-                      : theme.colorScheme.onSurfaceVariant),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: selected
-                            ? theme.colorScheme.onPrimaryContainer
-                            : theme.colorScheme.onSurface,
-                      ),
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          children: [
+            Icon(icon, size: 22, color: iconColor),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: theme.colorScheme.onSurface,
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      description,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: selected
-                            ? theme.colorScheme.onPrimaryContainer
-                                .withAlpha(200)
-                            : theme.colorScheme.onSurfaceVariant,
-                      ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    description,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-              if (selected)
-                Padding(
-                  padding: const EdgeInsets.only(left: 8),
-                  child: Icon(Icons.check_circle,
-                      color: theme.colorScheme.primary, size: 20),
-                ),
-            ],
-          ),
+            ),
+            if (selected)
+              Padding(
+                padding: const EdgeInsets.only(left: 8),
+                child: Icon(Icons.check_circle,
+                    color: _accentBorder, size: 18),
+              ),
+          ],
         ),
       ),
     );

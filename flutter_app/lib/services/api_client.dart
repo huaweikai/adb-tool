@@ -174,7 +174,7 @@ class DeviceOfflineException implements Exception {
 /// All public members here are part of the mixin contract; they are not
 /// intended to be called directly by application code — use ApiClient.
 abstract class ApiBase {
-  final String baseUrl;
+  String baseUrl;
   final Dio dio;
   final DeviceProvider? deviceProvider;
 
@@ -234,6 +234,39 @@ abstract class ApiBase {
     Map<String, dynamic> extra = const {},
   ]) {
     return {'serial': stableSerial, ...extra};
+  }
+
+  /// Update the backend base URL at runtime — used when the user changes
+  /// the listen port in the launch-page settings. Updates both the cached
+  /// field and the underlying Dio instance so every domain mixin (which
+  /// issue relative-path requests) picks up the new host:port.
+  void updateBaseUrl(String value) {
+    baseUrl = value;
+    dio.options.baseUrl = value;
+  }
+
+  /// Probe the backend's identify endpoint.
+  ///
+  /// Returns the identify payload (`{name, pid, started}`) when the
+  /// backend is reachable and reports itself as `adb-tool`, or `null`
+  /// on any error / wrong identity. Used by the settings page to show
+  /// a live backend (bridge) status without throwing.
+  Future<Map<String, dynamic>?> tryIdentify() async {
+    try {
+      final resp = await dio.get('/api/identify');
+      if (resp.statusCode != 200) return null;
+      final body = asMap(resp.data);
+      if (_isEnvelope(body)) {
+        if (body['ok'] != true) return null;
+        final data = asMap(body['data']);
+        if (data['name'] != 'adb-tool') return null;
+        return data;
+      }
+      if (body['name'] == 'adb-tool') return body;
+      return null;
+    } catch (_) {
+      return null;
+    }
   }
 
   Map<String, dynamic> deviceBodyParameters(

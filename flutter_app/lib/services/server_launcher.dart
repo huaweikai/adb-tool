@@ -15,19 +15,26 @@ class PortInUseException implements Exception {
 }
 
 class ServerLauncher {
-  static const int serverPort = 9876;
-  static const String baseUrl = 'http://127.0.0.1:$serverPort';
-
-  final Dio _dio = Dio(
-    BaseOptions(
-      baseUrl: baseUrl,
-      connectTimeout: const Duration(seconds: 2),
-      receiveTimeout: const Duration(seconds: 2),
-      validateStatus: (_) => true,
-    ),
-  );
+  /// Backend listen port. Defaults to 9876 to match the Go backend's
+  /// `server.DefaultListenAddr`. The actual port is propagated to the
+  /// backend via the `ADB_TOOL_LISTEN` env var in [start].
+  final int port;
+  late final String baseUrl;
+  late final Dio _dio;
   Process? _process;
   Future<void>? _stopFuture;
+
+  ServerLauncher([this.port = 9876]) {
+    baseUrl = 'http://127.0.0.1:$port';
+    _dio = Dio(
+      BaseOptions(
+        baseUrl: baseUrl,
+        connectTimeout: const Duration(seconds: 2),
+        receiveTimeout: const Duration(seconds: 2),
+        validateStatus: (_) => true,
+      ),
+    );
+  }
 
   String get _binaryName => Platform.isWindows ? 'runtime.exe' : 'adb-tool';
 
@@ -70,7 +77,7 @@ class ServerLauncher {
 
   Future<bool> start() async {
     _stopFuture = null;
-    await _releaseOurBackendPort(serverPort);
+    await _releaseOurBackendPort(port);
     final path = await findServerBinary();
 
     // 获取后端所在目录
@@ -79,6 +86,9 @@ class ServerLauncher {
     // 基础环境变量
     final env = Map<String, String>.from(Platform.environment);
     env['ADB_TOOL_PARENT_PID'] = pid.toString();
+    // Tell the Go backend which loopback address:port to listen on.
+    // Matches backend/main.go: listenAddr = os.Getenv("ADB_TOOL_LISTEN").
+    env['ADB_TOOL_LISTEN'] = '127.0.0.1:$port';
 
     if (Platform.isMacOS || Platform.isLinux) {
       // Important: a GUI app (this Flutter desktop app) does NOT inherit
@@ -287,7 +297,7 @@ class ServerLauncher {
       }
     }
 
-    await _releaseOurBackendPort(serverPort, trackedPid: process?.pid);
+    await _releaseOurBackendPort(port, trackedPid: process?.pid);
   }
 
   Future<void> _releaseOurBackendPort(int port, {int? trackedPid}) async {

@@ -18,10 +18,14 @@ import '../widgets/wireless_adb_dialog.dart';
 /// the parent can swap in the HomeScreen. A "连接新设备" section offers
 /// USB instructions plus the wireless/QR pairing dialog.
 class LaunchPage extends StatefulWidget {
-  const LaunchPage({super.key, required this.onOpen});
+  const LaunchPage({super.key, required this.onOpen, this.onOpenSettings});
 
   /// Called after a device has been selected in [DeviceProvider].
   final VoidCallback onOpen;
+
+  /// Opens the settings dialog (backend port, etc.). Null when settings
+  /// are not reachable from this page.
+  final VoidCallback? onOpenSettings;
 
   @override
   State<LaunchPage> createState() => _LaunchPageState();
@@ -119,6 +123,19 @@ class _LaunchPageState extends State<LaunchPage> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                // ── Settings gear (top-right) ──
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.settings_outlined, size: 20),
+                      tooltip: tr('settings.title'),
+                      color: theme.colorScheme.onSurfaceVariant,
+                      onPressed: widget.onOpenSettings,
+                      splashRadius: 18,
+                    ),
+                  ],
+                ),
                 // ── Title + subtitle (64:8 / 64:9) ──
                 Text(
                   tr('launchPickDevice'),

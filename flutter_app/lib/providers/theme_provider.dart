@@ -265,4 +265,13 @@ class ThemeProvider extends ChangeNotifier {
     savePrefs({'dark': isDark});
     notifyListeners();
   }
+
+  /// Set a specific theme mode (used by the settings page's theme
+  /// segmented control). No-op when the value is unchanged.
+  void setDark(bool dark) {
+    if (isDark == dark) return;
+    _themeMode = dark ? ThemeMode.dark : ThemeMode.light;
+    savePrefs({'dark': dark});
+    notifyListeners();
+  }
 }

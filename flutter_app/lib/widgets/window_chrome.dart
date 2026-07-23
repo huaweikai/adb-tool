@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../design/design_tokens.dart';
@@ -14,12 +15,28 @@ class WindowChromeHint {
 
   static final ValueNotifier<String?> notifier = ValueNotifier<String?>(null);
 
-  static void set(String? value) => notifier.value = value;
+  static void set(String? value) => _setValue(value);
 
   /// Clear the hint only if it still equals [value] — avoids a
   /// disposing page erasing a hint that a newer page already set.
   static void clearIf(String? value) {
-    if (notifier.value == value) notifier.value = null;
+    if (notifier.value == value) _setValue(null);
+  }
+
+  /// Assign the notifier, but defer to after the current frame if we are
+  /// being called while the framework is still building (e.g. a page sets
+  /// its hint inside initState, which runs as the parent screen is being
+  /// built). Setting the value synchronously there would rebuild the
+  /// title bar's ValueListenableBuilder during build → "setState() called
+  /// during build" assertion.
+  static void _setValue(String? value) {
+    if (SchedulerBinding.instance.schedulerPhase != SchedulerPhase.idle) {
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        notifier.value = value;
+      });
+    } else {
+      notifier.value = value;
+    }
   }
 }
 
