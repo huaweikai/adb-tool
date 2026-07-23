@@ -25,6 +25,7 @@ dependencies:
   pro_image_editor: ^9.2.0
   url_launcher: ^6.3.1
   flutter_typeahead: ^6.0.0
+  window_manager: ^0.5.0
 
 dev_dependencies:
   flutter_test:

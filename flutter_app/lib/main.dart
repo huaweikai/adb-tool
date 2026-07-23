@@ -2,9 +2,11 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:window_manager/window_manager.dart';
 
 import 'di.dart';
 import 'screens/home_screen.dart';
+import 'screens/launch_page.dart';
 import 'i18n.dart';
 import 'providers/theme_provider.dart';
 import 'providers/locale_provider.dart';
@@ -12,9 +14,31 @@ import 'providers/test_session_provider.dart';
 import 'services/api_client.dart';
 import 'services/server_launcher.dart';
 import 'utils/legacy_session_cleanup.dart';
+import 'widgets/window_chrome.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Frameless window with our own chrome (WindowChrome widget). The
+  // native title bar and its buttons are hidden; minimize / maximize /
+  // close are re-implemented in Flutter to match the app UI.
+  if (Platform.isMacOS || Platform.isWindows) {
+    await windowManager.ensureInitialized();
+    const windowOptions = WindowOptions(
+      size: Size(1200, 780),
+      minimumSize: Size(960, 640),
+      center: true,
+      title: 'ADB Tool',
+      titleBarStyle: TitleBarStyle.hidden,
+      windowButtonVisibility: false,
+    );
+    unawaited(
+      windowManager.waitUntilReadyToShow(windowOptions, () async {
+        await windowManager.show();
+        await windowManager.focus();
+      }),
+    );
+  }
 
   // Initialize all app-wide singletons via GetIt
   await setupDependencies();
@@ -75,6 +99,27 @@ class AdbToolApp extends StatelessWidget {
       themeMode: themeProvider.themeMode,
       darkTheme: themeProvider.darkTheme,
       theme: themeProvider.lightTheme,
+      // Global custom window chrome: sits above the Navigator so every
+      // route (boot screen, launch page, home) shares one title bar.
+      //
+      // The chrome's window-control Tooltips need an Overlay ancestor, but
+      // the app's Overlay lives *inside* the Navigator. Wrap the whole tree
+      // in a local Overlay so RawTooltip finds one and stops throwing
+      // "No Overlay widget found".
+      builder: (context, child) {
+        return Overlay(
+          initialEntries: [
+            OverlayEntry(
+              builder: (context) => Column(
+                children: [
+                  const WindowChrome(),
+                  Expanded(child: child ?? const SizedBox.shrink()),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
       home: ServerBootScreen(),
     );
   }
@@ -92,6 +137,10 @@ class _ServerBootScreenState extends State<ServerBootScreen>
   String _status = 'Starting ...';
   final List<String> _steps = [];
   bool _ready = false;
+  // True once the user picked a device on the LaunchPage and entered
+  // the main app. Reset whenever the backend goes down so a restart
+  // brings the user back to device selection.
+  bool _entered = false;
   bool _stoppedByUser = false;
   bool _canRetry = false;
   bool _disposed = false;
@@ -202,6 +251,7 @@ class _ServerBootScreenState extends State<ServerBootScreen>
     await launcher?.stop();
     setState(() {
       _ready = false;
+      _entered = false;
       _stoppedByUser = true;
       _canRetry = true;
       _status = tr('serverShutdown');
@@ -214,6 +264,7 @@ class _ServerBootScreenState extends State<ServerBootScreen>
     await launcher?.stop();
     setState(() {
       _ready = false;
+      _entered = false;
       _stoppedByUser = false;
       _canRetry = false;
       _status = tr('restarting');
@@ -253,6 +304,11 @@ class _ServerBootScreenState extends State<ServerBootScreen>
   @override
   Widget build(BuildContext context) {
     if (_ready) {
+      if (!_entered) {
+        return LaunchPage(
+          onOpen: () => setState(() => _entered = true),
+        );
+      }
       return HomeScreen(
         onShutdown: _shutdownServer,
         onRestart: _restartServer,
