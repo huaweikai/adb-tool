@@ -1,4 +1,4 @@
-// Common UI vocabulary + the ServerBootScreen startup strings.
+// Common UI vocabulary + backend startup / lifecycle strings.
 part of 'package:adb_tool/i18n.dart';
 
 const _locCommonZh = <String, String>{
@@ -37,7 +37,7 @@ const _locCommonZh = <String, String>{
   'removeDeviceFailed': '移除失败：设备仍有未清理的数据，请重试或重启应用',
   'giveUp': '放弃',
 
-  // ServerBootScreen
+  // Backend startup / lifecycle (owned by LaunchPage root now)
   'starting': 'Starting ...',
   'launchingBackend': '启动后端服务...',
   'waitingForServer': '等待服务就绪...',

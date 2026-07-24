@@ -140,7 +140,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
     final settings = context.watch<AppSettings>();
     final canEditPort = widget.onPortChanged != null;
     final maxW =
-        (MediaQuery.of(context).size.width - 48).clamp(360.0, 560.0);
+        (MediaQuery.of(context).size.width - 48).clamp(420.0, 680.0);
 
     final window = Container(
       width: maxW,

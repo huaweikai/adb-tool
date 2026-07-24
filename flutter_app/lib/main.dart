@@ -14,8 +14,8 @@ import 'providers/locale_provider.dart';
 import 'providers/test_session_provider.dart';
 import 'services/api_client.dart';
 import 'services/server_launcher.dart';
-import 'widgets/settings_dialog.dart';
 import 'utils/legacy_session_cleanup.dart';
+import 'widgets/settings_dialog.dart';
 import 'widgets/window_chrome.dart';
 
 Future<void> main() async {
@@ -103,8 +103,8 @@ class AdbToolApp extends StatelessWidget {
       themeMode: themeProvider.themeMode,
       darkTheme: themeProvider.darkTheme,
       theme: themeProvider.lightTheme,
-      // Global custom window chrome: sits above the Navigator so every
-      // route (boot screen, launch page, home) shares one title bar.
+      // Global custom window chrome: sits above the Navigator so both
+      // pages (launch page, home) and every dialog share one title bar.
       //
       // The chrome's window-control Tooltips need an Overlay ancestor, but
       // the app's Overlay lives *inside* the Navigator. Wrap the whole tree
@@ -124,39 +124,53 @@ class AdbToolApp extends StatelessWidget {
           ],
         );
       },
-      home: ServerBootScreen(),
+      home: const _AppShell(),
     );
   }
 }
 
-class ServerBootScreen extends StatefulWidget {
-  const ServerBootScreen({super.key});
+/// App shell — owns the Go-backend lifecycle (boot / shutdown / restart /
+/// port reconfigure) and the app-level page switch between the
+/// [LaunchPage] (device selection) and [HomeScreen].
+///
+/// Sits *inside* [AdbToolApp] as the navigator's home; the custom title
+/// bar ([WindowChrome]) is rendered above the navigator via
+/// [MaterialApp.builder] so it is shared by both pages and dialogs appear
+/// beneath it.
+class _AppShell extends StatefulWidget {
+  const _AppShell();
 
   @override
-  State<ServerBootScreen> createState() => _ServerBootScreenState();
+  State<_AppShell> createState() => _AppShellState();
 }
 
-class _ServerBootScreenState extends State<ServerBootScreen>
-    with WidgetsBindingObserver {
-  String _status = 'Starting ...';
-  final List<String> _steps = [];
-  bool _ready = false;
-  // True once the user picked a device on the LaunchPage and entered
-  // the main app. Reset whenever the backend goes down so a restart
-  // brings the user back to device selection.
+class _AppShellState extends State<_AppShell> with WidgetsBindingObserver {
+  // True once a device is picked and we've swapped in HomeScreen.
   bool _entered = false;
-  bool _stoppedByUser = false;
-  bool _canRetry = false;
+  // True when the backend is not running and the banner should offer a
+  // "启动后端" button. Set to false while booting / running.
+  bool _notStarted = false;
+  // True once we've confirmed the backend is reachable. When [_notStarted]
+  // is true we assume it's down until proven otherwise.
+  bool _backendUp = true;
   bool _disposed = false;
-  Timer? _bootDelayTimer;
   ServerLauncher? _launcher;
+  Timer? _pollTimer;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _status = tr('starting');
-    _boot();
+    // Auto-start ON → boot in the background (banner shows "connecting");
+    // OFF → wait for the user to hit "启动后端".
+    if (context.read<AppSettings>().autoStartBackend) {
+      _boot();
+    } else {
+      _notStarted = true;
+    }
+    final api = context.read<ApiClient>();
+    if (_notStarted) _backendUp = false;
+    _startPolling(api);
   }
 
   @override
@@ -170,85 +184,67 @@ class _ServerBootScreenState extends State<ServerBootScreen>
   @override
   void dispose() {
     _disposed = true;
-    _bootDelayTimer?.cancel();
+    _pollTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     unawaited(_launcher?.stop() ?? Future.value());
     _launcher = null;
     super.dispose();
   }
 
-  void _log(String step) {
-    if (!mounted) return;
-    setState(() => _steps.add('[${DateTime.now().millisecondsSinceEpoch % 100000}] $step'));
-    debugPrint('[BOOT] $step');
+  void _startPolling(ApiClient api) {
+    _pollTimer?.cancel();
+    _pollTimer = Timer.periodic(const Duration(seconds: 1), (_) async {
+      // Skip while HomeScreen is showing — no need to rebuild it every
+      // second, and the banner isn't visible anyway.
+      if (!mounted || _entered) return;
+      final up = await api.isReady();
+      if (!mounted || _entered) return;
+      if (up != _backendUp) setState(() => _backendUp = up);
+    });
   }
 
+  /// Boot (or re-boot) the Go backend. Runs the full start → wait → poll
+  /// cycle. On success [_notStarted] stays false (banner hides). On
+  /// timeout / error [_notStarted] is set back to true so the
+  /// "启动后端" button reappears.
   Future<void> _boot() async {
     final api = context.read<ApiClient>();
-    // Build the launcher with the currently configured backend port so a
-    // port change applied from the launch-page settings takes effect.
     _launcher ??= ServerLauncher(context.read<AppSettings>().backendPort);
     final launcher = _launcher!;
     try {
       if (!mounted || _disposed) return;
-      _log('开始启动...');
-      setState(() {
-        _status = tr('launchingBackend');
-        _stoppedByUser = false;
-        _canRetry = false;
-      });
-      _log('调用 launcher.start()...');
+      setState(() => _notStarted = false);
       await launcher.start();
-      _log('launcher.start() 完成');
       if (!mounted || _disposed) return;
-      setState(() => _status = tr('waitingForServer'));
-      _log('等待 800ms...');
       await Future.delayed(const Duration(milliseconds: 800));
-      _log('开始轮询 isReady()...');
       for (int i = 0; i < 60; i++) {
-        await _waitForBootRetry();
+        await Future.delayed(const Duration(milliseconds: 500));
         if (!mounted || _disposed) return;
-        _log('isReady() 第${i + 1}次尝试...');
         final ready = await api.isReady();
-        _log('isReady() = $ready');
         if (ready) {
           if (!mounted || _disposed) return;
-          _log('后端就绪，切换到 HomeScreen');
-          setState(() {
-            _ready = true;
-            _canRetry = false;
-          });
+          setState(() => _notStarted = false);
           return;
         }
       }
-      _log('轮询超时，停止后端');
       await launcher.stop();
       if (!mounted || _disposed) return;
       _launcher = null;
-      setState(() {
-        _status = tr('serverTimeout');
-        _canRetry = true;
-      });
+      setState(() => _notStarted = true);
     } catch (e, st) {
-      _log('异常: $e');
       debugPrint('[BOOT ERROR] $e\n$st');
       await launcher.stop();
       if (!mounted || _disposed) return;
       _launcher = null;
-      setState(() {
-        _status = '${tr('serverError')}: $e';
-        _canRetry = true;
-      });
+      setState(() => _notStarted = true);
     }
   }
 
-  Future<void> _waitForBootRetry() {
-    _bootDelayTimer?.cancel();
-    final completer = Completer<void>();
-    _bootDelayTimer = Timer(const Duration(milliseconds: 500), () {
-      if (!completer.isCompleted) completer.complete();
-    });
-    return completer.future;
+  /// Boot on demand from the "启动后端" banner. [_boot] manages the
+  /// _notStarted flag, so this is just a guard + call.
+  Future<void> _startBackend() async {
+    if (!mounted || _disposed) return;
+    await _boot();
   }
 
   Future<void> _shutdownServer() async {
@@ -256,11 +252,8 @@ class _ServerBootScreenState extends State<ServerBootScreen>
     _launcher = null;
     await launcher?.stop();
     setState(() {
-      _ready = false;
       _entered = false;
-      _stoppedByUser = true;
-      _canRetry = true;
-      _status = tr('serverShutdown');
+      _notStarted = true;
     });
   }
 
@@ -269,19 +262,12 @@ class _ServerBootScreenState extends State<ServerBootScreen>
     _launcher = null;
     await launcher?.stop();
     setState(() {
-      _ready = false;
       _entered = false;
-      _stoppedByUser = false;
-      _canRetry = false;
-      _status = tr('restarting');
+      _notStarted = false; // "connecting" banner while rebooting
     });
     await _boot();
   }
 
-  /// Open the full settings page (backend status / port / recording
-  /// method / cache / appearance / about). The backend (bridge) status
-  /// and restart live here too, so a port change or restart is applied
-  /// immediately via [_reconfigureBackend].
   void _openSettings() {
     if (!mounted || _disposed) return;
     showSettingsDialog(
@@ -292,9 +278,8 @@ class _ServerBootScreenState extends State<ServerBootScreen>
   }
 
   /// Tear down the running backend, point [ApiClient] at the current
-  /// [AppSettings] port, and re-boot with a fresh [ServerLauncher].
-  /// Used by the settings page's "重启后端" button and after a port
-  /// change. [_boot] recreates the launcher from the current port.
+  /// port, and re-boot. Used by the settings "重启后端" button and after
+  /// a port change.
   Future<void> _reconfigureBackend() async {
     final api = context.read<ApiClient>();
     final settings = context.read<AppSettings>();
@@ -302,106 +287,23 @@ class _ServerBootScreenState extends State<ServerBootScreen>
     _launcher = null;
     await old?.stop();
     api.updateBaseUrl(settings.baseUrl);
-    if (!mounted || _disposed) return;
-    setState(() => _status = tr('restarting'));
     await _boot();
-  }
-
-  void _showBootLog() {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('启动日志'),
-        content: SizedBox(
-          width: 500,
-          height: 400,
-          child: ListView.builder(
-            itemCount: _steps.length,
-            itemBuilder: (ctx, i) => Padding(
-              padding: const EdgeInsets.symmetric(vertical: 2),
-              child: Text(
-                _steps[i],
-                style: const TextStyle(fontFamily: 'Menlo', fontSize: 11),
-              ),
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('关闭'),
-          ),
-        ],
-      ),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_ready) {
-      if (!_entered) {
-        return LaunchPage(
-          onOpen: () => setState(() => _entered = true),
-          onOpenSettings: _openSettings,
-        );
-      }
+    if (_entered) {
       return HomeScreen(
         onShutdown: _shutdownServer,
         onRestart: _restartServer,
       );
     }
-
-    final theme = Theme.of(context);
-    return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor,
-      body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (!_stoppedByUser && !_canRetry) ...[
-              const SizedBox(
-                  width: 48,
-                  height: 48,
-                  child: CircularProgressIndicator(strokeWidth: 3)),
-              const SizedBox(height: 24),
-            ],
-            Text(tr('appTitle'),
-                style: theme.textTheme.headlineSmall
-                    ?.copyWith(fontWeight: FontWeight.w600)),
-            const SizedBox(height: 12),
-            Text(_status,
-                style: theme.textTheme.bodyMedium
-                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-            if (_steps.isNotEmpty) ...[
-              const SizedBox(height: 16),
-              ..._steps.reversed.take(3).map(
-                (s) => Padding(
-                  padding: const EdgeInsets.only(bottom: 2),
-                  child: Text(s,
-                    style: TextStyle(
-                      fontFamily: 'Menlo',
-                      fontSize: 10,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-              ),
-              TextButton(
-                onPressed: _showBootLog,
-                child: Text('查看完整日志 (${_steps.length}步)'),
-              ),
-            ],
-            if (_stoppedByUser || _canRetry) ...[
-              const SizedBox(height: 20),
-              FilledButton.icon(
-                onPressed: _restartServer,
-                icon: const Icon(Icons.refresh, size: 18),
-                label: Text(tr('restartServer')),
-              ),
-            ],
-          ],
-        ),
-      ),
+    return LaunchPage(
+      backendUp: _backendUp,
+      notStarted: _notStarted,
+      onOpen: () => setState(() => _entered = true),
+      onOpenSettings: _openSettings,
+      onStartBackend: _notStarted ? _startBackend : null,
     );
   }
 }

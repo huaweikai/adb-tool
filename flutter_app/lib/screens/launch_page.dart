@@ -1,31 +1,55 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../design/design_tokens.dart';
 import '../i18n.dart';
-import '../models/device.dart';
 import '../providers/device_provider.dart';
 import '../services/api_client.dart';
 import '../services/device_stream.dart';
 import '../widgets/window_chrome.dart';
 import '../widgets/wireless_adb_dialog.dart';
 
-/// Launch page — device selection (design node 64:2 "启动 — 设备选择").
+/// App startup / device-selection page (design node 64:2 "启动 — 设备选择").
 ///
-/// Shown right after the backend is ready, before entering the main
-/// app. The user picks a connected device and hits "打开", which
-/// pre-selects the device in [DeviceProvider] and calls [onOpen] so
-/// the parent can swap in the HomeScreen. A "连接新设备" section offers
-/// USB instructions plus the wireless/QR pairing dialog.
+/// This is one screen inside the [AdbToolApp] shell — it does NOT own the
+/// Go-backend lifecycle (that lives in the shell) nor the app-level page
+/// switch. It renders the device list + the "启动后端" status banner and
+/// reports the user's choices back through callbacks:
+///  * [onOpen]        — a device was picked; the shell swaps in HomeScreen.
+///  * [onOpenSettings]— open the settings dialog (backend port, etc.).
+///  * [onStartBackend]— manually launch the backend when auto-start is off
+///                     (null while the backend is booting / running).
+///  * [backendUp] / [notStarted] — drive the status banner.
 class LaunchPage extends StatefulWidget {
-  const LaunchPage({super.key, required this.onOpen, this.onOpenSettings});
+  const LaunchPage({
+    super.key,
+    required this.backendUp,
+    required this.notStarted,
+    required this.onOpen,
+    this.onOpenSettings,
+    this.onStartBackend,
+  });
+
+  /// Whether the Go backend is currently reachable. When false the status
+  /// banner is shown.
+  final bool backendUp;
+
+  /// True when auto-start is off (or a boot failed). Drives the banner's
+  /// red "启动后端" treatment with a manual-start button.
+  final bool notStarted;
 
   /// Called after a device has been selected in [DeviceProvider].
   final VoidCallback onOpen;
 
-  /// Opens the settings dialog (backend port, etc.). Null when settings
-  /// are not reachable from this page.
+  /// Opens the settings dialog. Null when settings are not reachable.
   final VoidCallback? onOpenSettings;
+
+  /// When non-null, the backend is not running and the user must start it
+  /// manually. The page shows a banner with a "启动后端" button bound to
+  /// this callback.
+  final Future<void> Function()? onStartBackend;
 
   @override
   State<LaunchPage> createState() => _LaunchPageState();
@@ -36,38 +60,34 @@ class _LaunchPageState extends State<LaunchPage> {
   static const Color _accent = Color(0xFF2EA043);
   static const Color _accentBorder = Color(0xFF3FB950);
 
-  final DeviceStreamService _deviceStream = DeviceStreamService();
-  String? _selectedSerial;
+  // Selection is a ValueNotifier, not raw state, so picking a row only
+  // notifies the rows that actually change (the newly-selected one and
+  // the previously-selected one) — not the whole page. The device-event
+  // stream otherwise rebuilds the page on every push, and a full Stateful
+  // setState here would pile that on top of the selection animation.
+  final ValueNotifier<String?> _selectedSerial = ValueNotifier<String?>(null);
   String? _hint;
+  // De-bounces the after-frame selection-clear so we don't stack
+  // post-frame callbacks while an invalid selection persists.
+  bool _selectionClearScheduled = false;
 
   @override
   void initState() {
     super.initState();
     _hint = tr('launchHint');
     WindowChromeHint.set(_hint);
-    final dp = context.read<DeviceProvider>();
-    final api = context.read<ApiClient>();
-    dp.connectDeviceStream(_deviceStream, api);
-    _deviceStream.connect();
   }
 
   @override
   void dispose() {
+    _selectedSerial.dispose();
     WindowChromeHint.clearIf(_hint);
-    // Do NOT call dp.disconnectDeviceStream() here: when HomeScreen
-    // replaces this page its initState re-connects the provider to its
-    // own stream BEFORE this dispose runs; cancelling here would kill
-    // the new subscription. We only tear down our own WebSocket.
-    _deviceStream.dispose();
     super.dispose();
   }
 
-  void _open() {
-    final serial = _selectedSerial;
-    if (serial == null) return;
-    context.read<DeviceProvider>().select(serial);
-    widget.onOpen();
-  }
+  // The device is pre-selected on tap (see the list onTap), so opening
+  // just hands control to the shell.
+  void _open() => widget.onOpen();
 
   Future<void> _showWirelessDialog() async {
     final api = context.read<ApiClient>();
@@ -98,14 +118,24 @@ class _LaunchPageState extends State<LaunchPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final dp = context.watch<DeviceProvider>();
-    final devices = dp.devices;
+    // The selection page reads from the local saved-devices table
+    // (drift DB), not the live-only online list. Known devices stay
+    // visible when offline, each tagged with its connection state.
+    // Only a genuinely empty DB shows the "no device" empty state.
+    final saved = dp.savedDevices;
 
-    // Drop a selection whose device disappeared or went offline.
-    if (_selectedSerial != null) {
-      final match = devices.where(
-        (d) => d.serial == _selectedSerial && d.isOnline,
-      );
-      if (match.isEmpty) _selectedSerial = null;
+    // Drop a selection whose device is gone from the DB or went offline.
+    // Done on the next frame (not mid-build) to avoid mutating the
+    // notifier while the widget tree is being built.
+    final sel = _selectedSerial.value;
+    if (sel != null &&
+        !saved.any((d) => d.serial == sel && d.isConnected) &&
+        !_selectionClearScheduled) {
+      _selectionClearScheduled = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _selectionClearScheduled = false;
+        if (_selectedSerial.value == sel) _selectedSerial.value = null;
+      });
     }
 
     return Scaffold(
@@ -123,6 +153,11 @@ class _LaunchPageState extends State<LaunchPage> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                // Keeps the device-event stream alive only while the
+                // selection surface is visible; unmounts (closing its
+                // WebSocket) once the shell swaps in HomeScreen, which
+                // opens its own stream.
+                const _LaunchDeviceStream(),
                 // ── Settings gear (top-right) ──
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
@@ -136,6 +171,95 @@ class _LaunchPageState extends State<LaunchPage> {
                     ),
                   ],
                 ),
+                // ── Backend status banner ──
+                // Driven by the shell: [widget.backendUp] toggles the whole
+                // banner; [widget.notStarted] switches it between a red
+                // "manual start" treatment (with a button) and a neutral
+                // "connecting…" hint with a spinner while auto-start boots.
+                if (!widget.backendUp) ...[
+                  Container(
+                    margin: const EdgeInsets.only(bottom: AppSpacing.lg),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
+                    decoration: BoxDecoration(
+                      color: widget.notStarted
+                          ? theme.colorScheme.errorContainer
+                              .withValues(alpha: 0.18)
+                          : theme.colorScheme.surfaceContainerHighest
+                              .withValues(alpha: 0.6),
+                      borderRadius: BorderRadius.circular(AppRadius.md),
+                      border: Border.all(
+                        color: widget.notStarted
+                            ? theme.colorScheme.error.withValues(alpha: 0.4)
+                            : theme.colorScheme.outline.withValues(alpha: 0.4),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        if (widget.notStarted)
+                          Icon(Icons.power_settings_new,
+                              color: theme.colorScheme.error, size: 20)
+                        else
+                          SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                widget.notStarted
+                                    ? tr('launchBackendOffTitle')
+                                    : tr('launchBackendConnecting'),
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                widget.notStarted
+                                    ? tr('launchBackendOffDesc')
+                                    : tr('launchBackendConnectingDesc'),
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (widget.notStarted) ...[
+                          const SizedBox(width: 10),
+                          SizedBox(
+                            height: 36,
+                            child: FilledButton.icon(
+                              onPressed: widget.onStartBackend,
+                              icon: const Icon(Icons.play_arrow, size: 18),
+                              label: Text(tr('launchStartBackend')),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: _accent,
+                                foregroundColor: Colors.white,
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 14),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius:
+                                      BorderRadius.circular(AppRadius.sm),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
                 // ── Title + subtitle (64:8 / 64:9) ──
                 Text(
                   tr('launchPickDevice'),
@@ -153,23 +277,39 @@ class _LaunchPageState extends State<LaunchPage> {
                 const SizedBox(height: AppSpacing.xl),
 
                 // ── Device options (64:10 / 64:19) ──
-                if (devices.isEmpty)
+                // Source of truth = saved_devices table. Each known
+                // device is shown with its connection state; offline
+                // ones are listed but not selectable. Only a truly
+                // empty DB renders the "no device" empty state.
+                if (saved.isEmpty)
                   _EmptyDevices(theme: theme)
                 else
-                  ...devices.map(
-                    (d) => Padding(
-                      padding: const EdgeInsets.only(bottom: AppSpacing.md),
-                      child: _DeviceOption(
-                        device: d,
-                        selected: d.serial == _selectedSerial,
-                        accent: _accent,
-                        accentBorder: _accentBorder,
-                        onTap: d.isOnline
-                            ? () =>
-                                setState(() => _selectedSerial = d.serial)
-                            : null,
-                      ),
-                    ),
+                  ...saved.map(
+                    (d) {
+                      final name = dp.displayNameFor(d.serial) ?? d.serial;
+                      final secondary =
+                          (d.address != null && d.address!.isNotEmpty)
+                              ? d.address!
+                              : d.serial;
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: AppSpacing.md),
+                        child: _DeviceOption(
+                          displayName: name,
+                          secondary: secondary,
+                          stableSerial: d.serial,
+                          online: d.isConnected,
+                          selectedNotifier: _selectedSerial,
+                          accent: _accent,
+                          accentBorder: _accentBorder,
+                          onTap: d.isConnected
+                              ? () {
+                                  dp.select(d.serial);
+                                  _selectedSerial.value = d.serial;
+                                }
+                              : null,
+                        ),
+                      );
+                    },
                   ),
                 const SizedBox(height: AppSpacing.xs),
 
@@ -212,10 +352,15 @@ class _LaunchPageState extends State<LaunchPage> {
                 const SizedBox(height: AppSpacing.xl),
 
                 // ── Open button (64:33 — 44 tall, green) ──
-                SizedBox(
-                  height: 44,
-                  child: FilledButton(
-                    onPressed: _selectedSerial != null ? _open : null,
+                // Listens only to the selection notifier, so it enables /
+                // disables without rebuilding the whole page on every
+                // device-stream push.
+                ValueListenableBuilder<String?>(
+                  valueListenable: _selectedSerial,
+                  builder: (ctx, sel, _) => SizedBox(
+                    height: 44,
+                    child: FilledButton(
+                      onPressed: sel != null ? _open : null,
                     style: FilledButton.styleFrom(
                       backgroundColor: _accent,
                       foregroundColor: Colors.white,
@@ -234,6 +379,7 @@ class _LaunchPageState extends State<LaunchPage> {
                     ),
                   ),
                 ),
+                ),
               ],
             ),
           ),
@@ -247,15 +393,21 @@ class _LaunchPageState extends State<LaunchPage> {
 /// border when selected (design 64:10 / 64:19).
 class _DeviceOption extends StatelessWidget {
   const _DeviceOption({
-    required this.device,
-    required this.selected,
+    required this.displayName,
+    required this.secondary,
+    required this.stableSerial,
+    required this.online,
+    required this.selectedNotifier,
     required this.accent,
     required this.accentBorder,
     required this.onTap,
   });
 
-  final Device device;
-  final bool selected;
+  final String displayName;
+  final String secondary;
+  final String stableSerial;
+  final bool online;
+  final ValueNotifier<String?> selectedNotifier;
   final Color accent;
   final Color accentBorder;
   final VoidCallback? onTap;
@@ -264,69 +416,80 @@ class _DeviceOption extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final disabled = onTap == null;
-    final borderColor = selected
-        ? accentBorder
-        : theme.colorScheme.outlineVariant.withValues(alpha: 0.6);
+    // Only rebuild this row when its own selection state flips — picking
+    // a different row animates just that row + the previously selected one,
+    // never the page.
+    return ValueListenableBuilder<String?>(
+      valueListenable: selectedNotifier,
+      builder: (context, selectedSerial, _) {
+        final selected = selectedSerial == stableSerial;
+        final borderColor = selected
+            ? accentBorder
+            : theme.colorScheme.outlineVariant.withValues(alpha: 0.6);
 
-    return AnimatedContainer(
-      duration: AppDuration.fast,
-      height: 64,
-      decoration: BoxDecoration(
-        color: selected
-            ? accent.withValues(alpha: 0.08)
-            : theme.colorScheme.surfaceContainerHighest
-                .withValues(alpha: 0.25),
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: borderColor, width: selected ? 1.5 : 1),
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-            child: Row(
-              children: [
-                // Radio (64:18 / 64:27).
-                _RadioDot(selected: selected, accent: accentBorder),
-                const SizedBox(width: AppSpacing.md),
-                Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        device.displayName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
-                          color: disabled
-                              ? theme.colorScheme.onSurfaceVariant
-                              : theme.colorScheme.onSurface,
-                        ),
+        return AnimatedContainer(
+          duration: AppDuration.fast,
+          height: 64,
+          decoration: BoxDecoration(
+            color: selected
+                ? accent.withValues(alpha: 0.08)
+                : theme.colorScheme.surfaceContainerHighest
+                    .withValues(alpha: 0.25),
+            borderRadius: BorderRadius.circular(AppRadius.md),
+            border:
+                Border.all(color: borderColor, width: selected ? 1.5 : 1),
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+                child: Row(
+                  children: [
+                    // Radio (64:18 / 64:27).
+                    _RadioDot(selected: selected, accent: accentBorder),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            displayName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: disabled
+                                  ? theme.colorScheme.onSurfaceVariant
+                                  : theme.colorScheme.onSurface,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            secondary,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                              fontSize: AppFontSize.md,
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        device.serial,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                          fontSize: AppFontSize.md,
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    _StatusPill(online: online),
+                  ],
                 ),
-                const SizedBox(width: AppSpacing.sm),
-                _StatusPill(online: device.isOnline),
-              ],
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
@@ -484,4 +647,37 @@ class _EmptyDevices extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Connects the device-event stream only while the selection surface is
+/// visible (mounted). Once a device is picked and [HomeScreen] takes
+/// over, this widget unmounts and its WebSocket closes — [HomeScreen]
+/// opens its own stream, so we never run two sockets at once.
+class _LaunchDeviceStream extends StatefulWidget {
+  const _LaunchDeviceStream();
+
+  @override
+  State<_LaunchDeviceStream> createState() => _LaunchDeviceStreamState();
+}
+
+class _LaunchDeviceStreamState extends State<_LaunchDeviceStream> {
+  final DeviceStreamService _stream = DeviceStreamService();
+
+  @override
+  void initState() {
+    super.initState();
+    final dp = context.read<DeviceProvider>();
+    final api = context.read<ApiClient>();
+    dp.connectDeviceStream(_stream, api);
+    _stream.connect();
+  }
+
+  @override
+  void dispose() {
+    _stream.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => const SizedBox.shrink();
 }
