@@ -30,13 +30,11 @@ class WindowChromeHint {
   /// title bar's ValueListenableBuilder during build → "setState() called
   /// during build" assertion.
   static void _setValue(String? value) {
-    if (SchedulerBinding.instance.schedulerPhase != SchedulerPhase.idle) {
-      SchedulerBinding.instance.addPostFrameCallback((_) {
-        notifier.value = value;
-      });
-    } else {
+    // Always defer to post-frame to avoid "setState during build" errors
+    // when called from initState or build methods.
+    SchedulerBinding.instance.addPostFrameCallback((_) {
       notifier.value = value;
-    }
+    });
   }
 }
 
