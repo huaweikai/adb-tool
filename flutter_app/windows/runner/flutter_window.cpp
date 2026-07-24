@@ -33,7 +33,7 @@ bool FlutterWindow::OnCreate() {
   RegisterDragDrop(GetHandle(), drop_target_);
 
   flutter_controller_->engine()->SetNextFrameCallback([this]() {
-    this->Show();
+    // Window Manager: do not show window here, let Dart side handle it
   });
 
   flutter_controller_->ForceRedraw();

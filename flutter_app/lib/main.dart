@@ -21,25 +21,24 @@ import 'widgets/window_chrome.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Frameless window with our own chrome (WindowChrome widget). The
-  // native title bar and its buttons are hidden; minimize / maximize /
-  // close are re-implemented in Flutter to match the app UI.
+  // Initialize window manager for desktop platforms.
+  // Window is hidden at launch via native code to prevent flash.
+  // Title bar is hidden via window_manager's TitleBarStyle.hidden.
   if (Platform.isMacOS || Platform.isWindows) {
     await windowManager.ensureInitialized();
-    const windowOptions = WindowOptions(
+    WindowOptions windowOptions = WindowOptions(
       size: Size(1200, 780),
       minimumSize: Size(960, 640),
       center: true,
-      title: 'ADB Tool',
+      backgroundColor: Colors.transparent,
       titleBarStyle: TitleBarStyle.hidden,
       windowButtonVisibility: false,
+      title: 'ADB Tool',
     );
-    unawaited(
-      windowManager.waitUntilReadyToShow(windowOptions, () async {
-        await windowManager.show();
-        await windowManager.focus();
-      }),
-    );
+    windowManager.waitUntilReadyToShow(windowOptions, () async {
+      await windowManager.show();
+      await windowManager.focus();
+    });
   }
 
   // Initialize all app-wide singletons via GetIt. AppSettings must be

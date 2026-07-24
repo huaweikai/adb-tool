@@ -1,6 +1,7 @@
 import Cocoa
 import FlutterMacOS
 import UniformTypeIdentifiers
+import window_manager
 
 class DropOverlayView: NSView {
     var methodChannel: FlutterMethodChannel?
@@ -55,7 +56,9 @@ class DropOverlayView: NSView {
 class MainFlutterWindow: NSWindow {
     override func awakeFromNib() {
         let flutterViewController = FlutterViewController()
+        let windowFrame = self.frame
         self.contentViewController = flutterViewController
+        self.setFrame(windowFrame, display: true)
 
         if let screen = NSScreen.main {
             let screenFrame = screen.visibleFrame
@@ -105,5 +108,11 @@ class MainFlutterWindow: NSWindow {
         }
 
         super.awakeFromNib()
+    }
+
+    // Window Manager: hide window at launch to prevent flash
+    override public func order(_ place: NSWindow.OrderingMode, relativeTo otherWin: Int) {
+        super.order(place, relativeTo: otherWin)
+        hiddenWindowAtLaunch()
     }
 }
