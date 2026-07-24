@@ -15,15 +15,19 @@ import '../design/design_tokens.dart';
 ///   │       [content on top]          │
 ///   └─────────────────────────────────┘
 ///
-/// Wrap the main content area (everything to the right of the sidebar)
-/// in this. The sidebar itself is NOT wrapped — it has its own panel fill.
+/// Wrap the root window in this (see [AdbToolApp]'s [MaterialApp.builder]).
+/// The custom title bar is transparent so the glow shows through it, and
+/// each page paints its own opaque, theme-colored scaffold on top — so the
+/// glow reads as a soft accent behind the title bar rather than a full
+/// content wash. Sidebars / panels keep their own opaque panel fill.
 class AppBackground extends StatelessWidget {
   const AppBackground({
     super.key,
     required this.child,
     this.accentStrength = 0.14,
     this.center = const Alignment(-0.25, -0.7),
-    this.radius = 1.3,
+    // radius 从 1.3 调小到 0.8
+    this.radius = 0.8,
   });
 
   /// The content painted on top of the glow.
@@ -41,21 +45,38 @@ class AppBackground extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        // Gradient goes accent(alpha) → canvas(opaque). The opaque end
-        // stop replaces the need for a separate background color.
-        gradient: RadialGradient(
-          center: center,
-          radius: radius,
-          colors: [
-            AppColors.accent.withOpacity(accentStrength),
-            AppColors.canvas,
-          ],
-          stops: const [0.0, 1.0],
-        ),
+    // Canvas follows the active theme so the glow reads correctly whether
+    // the window is in light or dark mode.
+    final canvas = Theme.of(context).brightness == Brightness.dark
+        ? AppColors.canvas // #0A0C12 — near-black, the design's canvas
+        : Colors.white; // 亮色模式使用纯白
+
+    return Container(
+      color: canvas, // 重点：底层，100% 不透明的白色
+      child: Stack(
+        children: [
+          // 2. 在纯白底色上叠加光晕层
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: RadialGradient(
+                  center: center,
+                  radius: radius, // 使用调小后的 radius (例如 0.8)
+                  colors: [
+                    // 中心：峰值亮度的绿色
+                    AppColors.accent.withValues(alpha: accentStrength),
+                    // 1.0 边缘：完全透明，透出底部的白色
+                    AppColors.accent.withValues(alpha: 0.0),
+                  ],
+                  stops: const [0.0, 1.0], // 线性过渡
+                ),
+              ),
+            ),
+          ),
+          // 3. 将实际内容 Widget 放在光晕上方
+          child,
+        ],
       ),
-      child: child,
     );
   }
 }

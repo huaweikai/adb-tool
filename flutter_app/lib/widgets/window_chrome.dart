@@ -100,8 +100,10 @@ class _WindowChromeState extends State<WindowChrome> with WindowListener {
 
     return Container(
       height: WindowChrome.height,
+      // Transparent so the root AppBackground glow shows through behind the
+      // title bar (the bar was purpose-built to carry that background).
       decoration: BoxDecoration(
-        color: theme.scaffoldBackgroundColor,
+        color: Colors.transparent,
         border: Border(
           bottom: BorderSide(
             color: theme.colorScheme.outlineVariant.withValues(alpha: 0.4),

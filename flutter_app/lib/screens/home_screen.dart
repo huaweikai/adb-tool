@@ -456,6 +456,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       child: Focus(
         autofocus: true,
         child: Scaffold(
+          // Transparent: the global AppBackground (theme base + glow) is the
+          // real app background, so the whole content area shows it through.
+          backgroundColor: Colors.transparent,
           body: Column(
             children: [
               if (!backendOnline) _buildOfflineBanner(context),

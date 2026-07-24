@@ -15,6 +15,7 @@ import 'providers/test_session_provider.dart';
 import 'services/api_client.dart';
 import 'services/server_launcher.dart';
 import 'utils/legacy_session_cleanup.dart';
+import 'widgets/app_background.dart';
 import 'widgets/settings_dialog.dart';
 import 'widgets/window_chrome.dart';
 
@@ -111,14 +112,21 @@ class AdbToolApp extends StatelessWidget {
       // in a local Overlay so RawTooltip finds one and stops throwing
       // "No Overlay widget found".
       builder: (context, child) {
+        // App-level background glow (design 背景光晕) painted at the ROOT of
+        // the window — behind BOTH the custom title bar and the page content.
+        // The title bar (WindowChrome) is transparent so the glow shows
+        // through it; each page paints its own opaque, theme-colored scaffold
+        // on top, so the glow reads as a soft accent behind the title bar.
         return Overlay(
           initialEntries: [
             OverlayEntry(
-              builder: (context) => Column(
-                children: [
-                  const WindowChrome(),
-                  Expanded(child: child ?? const SizedBox.shrink()),
-                ],
+              builder: (context) => AppBackground(
+                child: Column(
+                  children: [
+                    const WindowChrome(),
+                    Expanded(child: child ?? const SizedBox.shrink()),
+                  ],
+                ),
               ),
             ),
           ],

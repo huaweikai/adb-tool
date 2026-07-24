@@ -139,7 +139,9 @@ class _LaunchPageState extends State<LaunchPage> {
     }
 
     return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor,
+      // Transparent so the global AppBackground (theme-colored base + glow)
+      // shows through the entire app, including the launch page.
+      backgroundColor: Colors.transparent,
       body: Center(
         child: ConstrainedBox(
           // Design 64:7 — picker card is 440 wide.
