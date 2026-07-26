@@ -11,12 +11,13 @@ import '../models/device_status.dart';
 import '../db/database.dart';
 import '../providers/device_provider.dart';
 import '../services/api_client.dart';
-import '../widgets/empty_state.dart';
+import '../widgets/sparkline.dart';
 
-/// Dashboard landing screen — Ardot design node 17:3 (已连接设备).
+/// Dashboard landing screen — Ardot design nodes 17:3 (已连接设备) and
+/// 17:202 (未连接设备).
 ///
 /// Structure: a 64px top bar + a content row split into
-///   • main column (hero device card + quick actions + realtime performance)
+///   • main column (hero device card + quick actions grid + realtime perf)
 ///   • right panel (connected devices + recent activity)
 ///
 /// The selected device is owned by [DeviceProvider.activeSerial]; this view
@@ -31,14 +32,17 @@ class DashboardView extends StatefulWidget {
   });
 
   /// Active device serial (from [DeviceProvider.activeSerial]). Null when no
-  /// device is selected yet — the view then shows a "pick a device" empty state.
+  /// device is selected yet — the view keeps the full skeleton but swaps the
+  /// hero card for a "未连接设备" prompt and dims interactive tiles.
   final String? serial;
 
-  /// Emitted when a quick-action chip is tapped. [actionId] is one of
-  /// `status` / `files` / `apps` / `logcat` / `command` / `mirror` / `wireless`.
+  /// Emitted when a quick-action tile is tapped. [actionId] is one of
+  /// `screenRecord` / `mirror` / `screenshot` / `installApk` / `wireless` /
+  /// `clipboard`. The shell maps these to real navigation targets.
   final void Function(String actionId)? onQuickAction;
 
-  /// Emitted when a device row in the right panel is tapped.
+  /// Emitted when a device row in the right panel is tapped (empty string
+  /// means "open device switcher").
   final void Function(String serial)? onSelectDevice;
 
   @override
@@ -49,6 +53,13 @@ class _DashboardViewState extends State<DashboardView> {
   DeviceStatus? _status;
   Timer? _timer;
   String? _error;
+
+  /// Ring buffers for the realtime perf sparkline. Keep last 40 samples
+  /// (~2min at 3s cadence) so the chart shows enough context without
+  /// growing unbounded.
+  static const _perfWindow = 40;
+  final List<double> _cpuSeries = <double>[];
+  final List<double> _memSeries = <double>[];
 
   @override
   void initState() {
@@ -63,6 +74,8 @@ class _DashboardViewState extends State<DashboardView> {
     if (old.serial != widget.serial) {
       _status = null;
       _error = null;
+      _cpuSeries.clear();
+      _memSeries.clear();
       _load();
       _startTimer();
     }
@@ -94,6 +107,7 @@ class _DashboardViewState extends State<DashboardView> {
       setState(() {
         _status = s;
         _error = null;
+        _appendSample(s);
       });
     } catch (e) {
       if (!mounted) return;
@@ -101,6 +115,31 @@ class _DashboardViewState extends State<DashboardView> {
         _error = e.toString();
       });
     }
+  }
+
+  /// Push CPU / memory readings into the sparkline ring buffers. Values
+  /// come in as `"23%"` / `"52%"` strings from `DeviceStatus`; we tolerate
+  /// missing or malformed entries by falling back to the previous sample
+  /// (or 0 if the series is still empty) — that keeps the curve visually
+  /// stable when a single poll misses.
+  void _appendSample(DeviceStatus s) {
+    final cpu = _parsePercent(s.cpuUsage) ?? _cpuSeries.lastOrNull ?? 0;
+    final mem =
+        _parsePercent(s.memoryUsedPercent) ?? _memSeries.lastOrNull ?? 0;
+    _cpuSeries.add(cpu);
+    _memSeries.add(mem);
+    if (_cpuSeries.length > _perfWindow) {
+      _cpuSeries.removeAt(0);
+    }
+    if (_memSeries.length > _perfWindow) {
+      _memSeries.removeAt(0);
+    }
+  }
+
+  static double? _parsePercent(String raw) {
+    if (raw.isEmpty) return null;
+    final cleaned = raw.replaceAll('%', '').trim();
+    return double.tryParse(cleaned);
   }
 
   @override
@@ -151,58 +190,38 @@ class _DashboardViewState extends State<DashboardView> {
           ),
         ),
         Expanded(
-          child: serial == null
-              ? _EmptyDevice(onPick: () => widget.onSelectDevice?.call(''))
-              : Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Expanded(
-                      flex: 3,
-                      child: _MainColumn(
-                        device: device,
-                        status: _status,
-                        error: _error,
-                        onRetry: () => _load(),
-                        onQuickAction: widget.onQuickAction,
-                      ),
-                    ),
-                    Expanded(
-                      flex: 1,
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 380),
-                        child: _RightPanel(
-                          devices: deviceProvider.savedDevices,
-                          activeSerial: serial,
-                          onSelectDevice: widget.onSelectDevice,
-                        ),
-                      ),
-                    ),
-                  ],
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                flex: 3,
+                child: _MainColumn(
+                  device: device,
+                  status: _status,
+                  error: _error,
+                  cpuSeries: _cpuSeries,
+                  memSeries: _memSeries,
+                  onRetry: () => _load(),
+                  onQuickAction: widget.onQuickAction,
+                  onOpenPicker: () => widget.onSelectDevice?.call(''),
                 ),
+              ),
+              Expanded(
+                flex: 1,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 380),
+                  child: _RightPanel(
+                    devices: deviceProvider.savedDevices,
+                    activeSerial: serial,
+                    onSelectDevice: widget.onSelectDevice,
+                    onQuickAction: widget.onQuickAction,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ],
-    );
-  }
-}
-
-class _EmptyDevice extends StatelessWidget {
-  const _EmptyDevice({this.onPick});
-
-  final VoidCallback? onPick;
-
-  @override
-  Widget build(BuildContext context) {
-    return EmptyState(
-      icon: Icons.device_unknown,
-      title: tr('noDevice'),
-      subtitle: tr('selectDevice'),
-      action: onPick == null
-          ? null
-          : FilledButton.icon(
-              onPressed: onPick,
-              icon: const Icon(Icons.add, size: 16),
-              label: Text(tr('selectDevice')),
-            ),
     );
   }
 }
@@ -212,30 +231,50 @@ class _MainColumn extends StatelessWidget {
     this.device,
     this.status,
     this.error,
+    required this.cpuSeries,
+    required this.memSeries,
     this.onRetry,
     this.onQuickAction,
+    this.onOpenPicker,
   });
 
   final SavedDevice? device;
   final DeviceStatus? status;
   final String? error;
+  final List<double> cpuSeries;
+  final List<double> memSeries;
   final VoidCallback? onRetry;
   final void Function(String)? onQuickAction;
+  final VoidCallback? onOpenPicker;
 
   @override
   Widget build(BuildContext context) {
+    final hasDevice = device != null;
     return SingleChildScrollView(
       padding: const EdgeInsets.all(AppSpacing.xl),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _HeroCard(
-            device: device,
-            status: status,
+          if (hasDevice)
+            _HeroCard(
+              device: device,
+              status: status,
+              onQuickAction: onQuickAction,
+            )
+          else
+            _DisconnectedHeroCard(onOpenPicker: onOpenPicker),
+          const SizedBox(height: AppSpacing.xl),
+          _QuickActions(
             onQuickAction: onQuickAction,
+            enabled: hasDevice,
           ),
           const SizedBox(height: AppSpacing.xl),
-          _QuickActions(onQuickAction: onQuickAction),
+          _RealtimePerformance(
+            device: device,
+            status: status,
+            cpuSeries: cpuSeries,
+            memSeries: memSeries,
+          ),
           if (error != null) ...[
             const SizedBox(height: AppSpacing.xl),
             _ErrorNote(error: error!, onRetry: onRetry),
@@ -248,11 +287,6 @@ class _MainColumn extends StatelessWidget {
 
 /// Big hero card with the active device's identity, live metric stats,
 /// and CTA column. Ardot node 17:401.
-///
-/// Layout: `[avatar 64] [device info flexible] [4 metric stats] [CTA column]`.
-/// The stat cards read directly off [status] and default to `--` while data
-/// is loading; they intentionally show no sparkline (compact) to leave room
-/// for the CTAs and preserve the design's balanced hero rhythm.
 class _HeroCard extends StatelessWidget {
   const _HeroCard({
     this.device,
@@ -262,9 +296,6 @@ class _HeroCard extends StatelessWidget {
 
   final SavedDevice? device;
   final DeviceStatus? status;
-
-  /// Bubbled up so the CTA buttons ("开启投屏" / "实时截图") can route
-  /// via the same channel the QuickActions row uses.
   final void Function(String)? onQuickAction;
 
   @override
@@ -277,20 +308,11 @@ class _HeroCard extends StatelessWidget {
     final online = device?.isConnected ?? false;
 
     return AppPanel(
-      padding: const EdgeInsets.all(AppSpacing.xl), // 24 — design 卡片内边距
+      padding: const EdgeInsets.all(AppSpacing.xl),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Row 1 — avatar + device identity + CTA column.
-          //
-          // The design (Ardot 17:401) is 1125px wide and horizontally packs
-          // avatar + info + 4 stats + CTA into one row with `itemSpacing:
-          // 52`. On real desktop windows (~1200-1400 usable content width
-          // after sidebar + right rail + paddings) this overflows, so we
-          // split into two rows: identity on top, stats below. Both rows
-          // still share the same avatar / CTA column siblings, giving the
-          // hero a stable 2-line height regardless of window width.
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
@@ -304,7 +326,7 @@ class _HeroCard extends StatelessWidget {
                     Text(
                       name,
                       style: TextStyle(
-                        fontSize: AppFontSize.large, // 20
+                        fontSize: AppFontSize.large,
                         fontWeight: FontWeight.w600,
                         color: palette.textPrimary,
                       ),
@@ -316,7 +338,7 @@ class _HeroCard extends StatelessWidget {
                       Text(
                         subtitle,
                         style: TextStyle(
-                          fontSize: AppFontSize.body, // 12
+                          fontSize: AppFontSize.body,
                           fontFamily: 'Noto Sans Mono',
                           color: palette.textSecondary,
                         ),
@@ -332,7 +354,6 @@ class _HeroCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: AppSpacing.lg),
-          // Row 2 — 4 metric stats spread across the full hero width.
           Row(
             children: [
               _HeroStat(
@@ -362,11 +383,82 @@ class _HeroCard extends StatelessWidget {
   }
 }
 
+/// Empty-device hero — matches Ardot node 17:202. Preserves the skeleton so
+/// the surrounding quick-actions grid and perf card stay in place.
+class _DisconnectedHeroCard extends StatelessWidget {
+  const _DisconnectedHeroCard({this.onOpenPicker});
+
+  final VoidCallback? onOpenPicker;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return AppPanel(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.xl,
+        vertical: AppSpacing.xxl,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Container(
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(
+              color: palette.raised,
+              borderRadius: BorderRadius.circular(AppRadius.xl),
+              border: Border.all(color: palette.hairline),
+            ),
+            child: Icon(
+              Icons.phone_android,
+              size: 36,
+              color: palette.textDisabled,
+            ),
+          ),
+          const SizedBox(width: AppSpacing.xl),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  tr('deviceOffline'),
+                  style: TextStyle(
+                    fontSize: AppFontSize.large,
+                    fontWeight: FontWeight.w600,
+                    color: palette.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  tr('noDevicesHint'),
+                  style: TextStyle(
+                    fontSize: AppFontSize.body,
+                    color: palette.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                Row(
+                  children: [
+                    _HeroCtaButton(
+                      label: tr('selectDevice'),
+                      filled: true,
+                      enabled: onOpenPicker != null,
+                      onTap: onOpenPicker ?? () {},
+                      width: 132,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// 64×64 avatar with online halo + a small bottom-right online dot.
-///
-/// Design uses an accent-tinted fill (12% alpha) + accent stroke (40% alpha)
-/// when online; when offline it falls back to the muted raised surface so
-/// the halo doesn't imply a live device.
 class _HeroAvatar extends StatelessWidget {
   const _HeroAvatar({required this.online});
 
@@ -388,7 +480,7 @@ class _HeroAvatar extends StatelessWidget {
               color: online
                   ? palette.accent.withValues(alpha: 0.12)
                   : palette.raised,
-              borderRadius: BorderRadius.circular(AppRadius.xl), // 16 — design
+              borderRadius: BorderRadius.circular(AppRadius.xl),
               border: Border.all(
                 color: online
                     ? palette.accent.withValues(alpha: 0.4)
@@ -398,8 +490,7 @@ class _HeroAvatar extends StatelessWidget {
             child: Icon(
               Icons.phone_android,
               size: 32,
-              color:
-                  online ? palette.accent : palette.textDisabled,
+              color: online ? palette.accent : palette.textDisabled,
             ),
           ),
           if (online)
@@ -422,14 +513,7 @@ class _HeroAvatar extends StatelessWidget {
   }
 }
 
-/// One 120-ish × ~58 metric card inside the hero (电量 / CPU / 内存 / 存储).
-///
-/// Style: raised surface with a rounded label + value pair. Height is
-/// content-driven (not fixed) so the label (11pt) + gap + value (16pt)
-/// always fit; a fixed 58 with a `spaceBetween` column overflows by
-/// ~1-2px because 11pt + 16pt + line-height metrics > 38px content area.
-/// Row context makes all 4 stats end up equal-height naturally because
-/// they render the same 2-line structure.
+/// One metric card inside the hero (电量 / CPU / 内存 / 存储).
 class _HeroStat extends StatelessWidget {
   const _HeroStat({required this.label, this.value});
 
@@ -444,12 +528,12 @@ class _HeroStat extends StatelessWidget {
       child: Container(
         constraints: const BoxConstraints(minWidth: 0),
         padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.md, // 12 — design x=12
+          horizontal: AppSpacing.md,
           vertical: 10,
         ),
         decoration: BoxDecoration(
           color: palette.raised,
-          borderRadius: BorderRadius.circular(AppRadius.lg - 2), // 10 — design
+          borderRadius: BorderRadius.circular(AppRadius.lg - 2),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -458,7 +542,7 @@ class _HeroStat extends StatelessWidget {
             Text(
               label,
               style: TextStyle(
-                fontSize: AppFontSize.md, // 11
+                fontSize: AppFontSize.md,
                 color: palette.textSecondary,
               ),
               overflow: TextOverflow.ellipsis,
@@ -468,7 +552,7 @@ class _HeroStat extends StatelessWidget {
             Text(
               display,
               style: TextStyle(
-                fontSize: AppFontSize.headline, // 16
+                fontSize: AppFontSize.headline,
                 fontWeight: FontWeight.w600,
                 color: palette.textPrimary,
               ),
@@ -483,10 +567,6 @@ class _HeroStat extends StatelessWidget {
 }
 
 /// Right rail inside the hero: status pill + solid CTA + outlined CTA.
-///
-/// The two buttons forward to `onQuickAction('mirror' | 'screenshot')`
-/// so the shell keeps a single navigation channel; the hero doesn't need
-/// its own callbacks.
 class _HeroCtaColumn extends StatelessWidget {
   const _HeroCtaColumn({required this.online, this.onQuickAction});
 
@@ -502,7 +582,6 @@ class _HeroCtaColumn extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Status pill: accent-tinted when online, muted otherwise.
           Container(
             height: 27,
             alignment: Alignment.center,
@@ -528,11 +607,10 @@ class _HeroCtaColumn extends StatelessWidget {
                 Text(
                   online ? tr('online') : tr('offline'),
                   style: TextStyle(
-                    fontSize: AppFontSize.body, // 12
+                    fontSize: AppFontSize.body,
                     fontWeight: FontWeight.w500,
-                    color: online
-                        ? palette.accent
-                        : palette.textDisabled,
+                    color:
+                        online ? palette.accent : palette.textDisabled,
                   ),
                   overflow: TextOverflow.ellipsis,
                   maxLines: 1,
@@ -541,7 +619,6 @@ class _HeroCtaColumn extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 10),
-          // Primary CTA: 开启投屏
           _HeroCtaButton(
             label: tr('startMirror'),
             filled: true,
@@ -549,13 +626,11 @@ class _HeroCtaColumn extends StatelessWidget {
             onTap: () => onQuickAction?.call('mirror'),
           ),
           const SizedBox(height: 10),
-          // Secondary CTA: 实时截图 — routes via hierarchy screen for now
-          // (dashboard doesn't own a screenshot capture pipeline).
           _HeroCtaButton(
             label: tr('liveScreenshot'),
             filled: false,
             enabled: online && onQuickAction != null,
-            onTap: () => onQuickAction?.call('hierarchy'),
+            onTap: () => onQuickAction?.call('screenshot'),
           ),
         ],
       ),
@@ -563,20 +638,20 @@ class _HeroCtaColumn extends StatelessWidget {
   }
 }
 
-/// Filled = solid accent bg + near-black text (design's high-contrast
-/// primary CTA). Outlined = panel bg + hairline border + textPrimary.
 class _HeroCtaButton extends StatelessWidget {
   const _HeroCtaButton({
     required this.label,
     required this.filled,
     required this.enabled,
     required this.onTap,
+    this.width,
   });
 
   final String label;
   final bool filled;
   final bool enabled;
   final VoidCallback onTap;
+  final double? width;
 
   @override
   Widget build(BuildContext context) {
@@ -587,135 +662,427 @@ class _HeroCtaButton extends StatelessWidget {
     final fg = filled
         ? (enabled ? palette.canvas : palette.textDisabled)
         : (enabled ? palette.textPrimary : palette.textDisabled);
+    final content = Container(
+      height: 40,
+      width: width,
+      alignment: Alignment.center,
+      decoration: filled
+          ? null
+          : BoxDecoration(
+              border: Border.all(color: palette.hairline),
+              borderRadius: BorderRadius.circular(AppRadius.md),
+            ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: AppFontSize.subtitle,
+          fontWeight: filled ? FontWeight.w600 : FontWeight.w500,
+          color: fg,
+        ),
+        overflow: TextOverflow.ellipsis,
+      ),
+    );
     return Material(
       color: bg,
-      borderRadius: BorderRadius.circular(AppRadius.md), // 8
+      borderRadius: BorderRadius.circular(AppRadius.md),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: enabled ? onTap : null,
-        child: Container(
-          height: 40,
-          alignment: Alignment.center,
-          decoration: filled
-              ? null
-              : BoxDecoration(
-                  border: Border.all(color: palette.hairline),
-                  borderRadius: BorderRadius.circular(AppRadius.md),
-                ),
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: AppFontSize.subtitle, // 13
-              fontWeight: filled ? FontWeight.w600 : FontWeight.w500,
-              color: fg,
-            ),
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
+        child: content,
       ),
     );
   }
 }
 
-/// Quick-action chips. Each forwards an [actionId] to the shell.
+/// Quick actions — Ardot 17:3 中部 2×3 网格。每格是「大图标 + 主标题 +
+/// 副标题」的动作型入口。tile id 与 [DashboardView.onQuickAction] 契约一致，
+/// 由外层 shell 决定映射到哪个页面。
 class _QuickActions extends StatelessWidget {
-  const _QuickActions({this.onQuickAction});
+  const _QuickActions({
+    this.onQuickAction,
+    this.enabled = true,
+  });
 
   final void Function(String)? onQuickAction;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
-    const items = <(String, IconData, String)>[
-      ('status', Icons.phone_android, 'status'),
-      ('files', Icons.folder_open, 'files'),
-      ('apps', Icons.android, 'apps'),
-      ('logcat', Icons.list_alt, 'logcat'),
-      ('command', Icons.terminal, 'command'),
-      ('mirror', Icons.cast, 'screenMirror'),
-      ('wireless', Icons.wifi_tethering, 'wirelessAdb'),
+    final palette = context.palette;
+    const items = <_QuickActionSpec>[
+      _QuickActionSpec(
+        id: 'screenRecord',
+        icon: Icons.videocam_outlined,
+        titleKey: 'screenRecord',
+        subtitleKey: 'screenRecordHint',
+      ),
+      _QuickActionSpec(
+        id: 'mirror',
+        icon: Icons.cast,
+        titleKey: 'screenMirror',
+        subtitleKey: 'mirrorTileHint',
+      ),
+      _QuickActionSpec(
+        id: 'screenshot',
+        icon: Icons.photo_camera_outlined,
+        titleKey: 'screenshot',
+        subtitleKey: 'screenshotHint',
+      ),
+      _QuickActionSpec(
+        id: 'installApk',
+        icon: Icons.download_outlined,
+        titleKey: 'installApk',
+        subtitleKey: 'installApkHint',
+      ),
+      _QuickActionSpec(
+        id: 'wireless',
+        icon: Icons.wifi_tethering,
+        titleKey: 'wirelessAdb',
+        subtitleKey: 'wirelessAdbTileHint',
+      ),
+      _QuickActionSpec(
+        id: 'clipboard',
+        icon: Icons.content_paste_outlined,
+        titleKey: 'clipboard',
+        subtitleKey: 'clipboardTileHint',
+      ),
     ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: const EdgeInsets.only(bottom: AppSpacing.md),
-          child: AppSectionLabel(tr('quickActions')),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AppSectionLabel(tr('quickActions')),
+                  const SizedBox(height: 2),
+                  Text(
+                    tr('quickActionsHint'),
+                    style: TextStyle(
+                      fontSize: AppFontSize.md,
+                      color: palette.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Text(
+              enabled ? '${tr('viewAll')} →' : tr('deviceOffline'),
+              style: TextStyle(
+                fontSize: AppFontSize.md,
+                color: palette.textDisabled,
+              ),
+            ),
+          ],
         ),
-        Wrap(
-          spacing: AppSpacing.lg,
-          runSpacing: AppSpacing.lg,
-          children: items
-              .map(
-                (a) => _QuickChip(
-                  id: a.$1,
-                  icon: a.$2,
-                  label: tr(a.$3),
-                  onTap: onQuickAction == null
-                      ? null
-                      : () => onQuickAction!(a.$1),
-                ),
-              )
-              .toList(),
+        const SizedBox(height: AppSpacing.lg),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            const columns = 3;
+            const gap = AppSpacing.lg;
+            final tileWidth =
+                (constraints.maxWidth - gap * (columns - 1)) / columns;
+            return Wrap(
+              spacing: gap,
+              runSpacing: gap,
+              children: items.map((spec) {
+                final effectiveTap = enabled && onQuickAction != null
+                    ? () => onQuickAction!(spec.id)
+                    : null;
+                return SizedBox(
+                  width: tileWidth,
+                  child: _QuickActionTile(
+                    icon: spec.icon,
+                    title: tr(spec.titleKey),
+                    subtitle: tr(spec.subtitleKey),
+                    onTap: effectiveTap,
+                    dimmed: !enabled,
+                  ),
+                );
+              }).toList(),
+            );
+          },
         ),
       ],
     );
   }
 }
 
-class _QuickChip extends StatelessWidget {
-  const _QuickChip({
+class _QuickActionSpec {
+  const _QuickActionSpec({
     required this.id,
     required this.icon,
-    required this.label,
-    this.onTap,
+    required this.titleKey,
+    required this.subtitleKey,
   });
 
   final String id;
   final IconData icon;
-  final String label;
+  final String titleKey;
+  final String subtitleKey;
+}
+
+class _QuickActionTile extends StatelessWidget {
+  const _QuickActionTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.onTap,
+    this.dimmed = false,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
   final VoidCallback? onTap;
+  final bool dimmed;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final enabled = onTap != null;
-    return Material(
-      color: palette.raised,
-      borderRadius: BorderRadius.circular(AppRadius.md),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        mouseCursor:
-            enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
-        child: Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.lg,
-            vertical: AppSpacing.md,
+    return AppPanel(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.lg,
+        vertical: AppSpacing.lg,
+      ),
+      color: dimmed ? palette.panel : palette.raised,
+      onTap: onTap,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: dimmed
+                  ? palette.raised
+                  : palette.accent.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(AppRadius.md),
+            ),
+            alignment: Alignment.center,
+            child: Icon(
+              icon,
+              size: 20,
+              color: dimmed ? palette.textDisabled : palette.accent,
+            ),
           ),
-          child: Row(
+          const SizedBox(height: AppSpacing.md),
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: AppFontSize.subtitle,
+              fontWeight: FontWeight.w600,
+              color:
+                  dimmed ? palette.textDisabled : palette.textPrimary,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 2),
+          Text(
+            subtitle,
+            style: TextStyle(
+              fontSize: AppFontSize.md,
+              color: palette.textSecondary,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Realtime performance chart — Ardot 17:3 底部一整块。
+///
+/// 已连接：section header 显示"实时"药丸 + 前台应用副文案，body 是双曲线
+/// (CPU 绿 / 内存蓝) 的 sparkline，下方是图例。
+/// 未连接：body 显示"等待设备连接"占位提示，保留骨架不塌陷。
+class _RealtimePerformance extends StatelessWidget {
+  const _RealtimePerformance({
+    this.device,
+    this.status,
+    required this.cpuSeries,
+    required this.memSeries,
+  });
+
+  final SavedDevice? device;
+  final DeviceStatus? status;
+  final List<double> cpuSeries;
+  final List<double> memSeries;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final connected = device?.isConnected ?? false;
+    final hasData = connected && cpuSeries.length >= 2;
+
+    // Header — 左侧标题 + 副文案，右侧 "实时" 药丸 / "等待设备连接" 文案。
+    Widget header = Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                icon,
-                size: 18,
-                color: enabled
-                    ? palette.navActiveFg
-                    : palette.textDisabled,
-              ),
-              const SizedBox(width: AppSpacing.sm),
+              AppSectionLabel(tr('realtimePerformance')),
+              const SizedBox(height: 2),
               Text(
-                label,
+                connected
+                    ? _subtitleFor(device, status)
+                    : tr('waitingForDeviceHint'),
                 style: TextStyle(
-                  fontSize: AppFontSize.body,
-                  color: enabled
-                      ? palette.textPrimary
-                      : palette.textDisabled,
+                  fontSize: AppFontSize.md,
+                  color: palette.textSecondary,
                 ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),
         ),
+        if (connected)
+          Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.sm,
+              vertical: 3,
+            ),
+            decoration: BoxDecoration(
+              color: palette.accent.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(AppRadius.full),
+            ),
+            child: Text(
+              tr('live'),
+              style: TextStyle(
+                fontSize: AppFontSize.md,
+                fontWeight: FontWeight.w500,
+                color: palette.accent,
+              ),
+            ),
+          )
+        else
+          Text(
+            tr('waitingForDevice'),
+            style: TextStyle(
+              fontSize: AppFontSize.md,
+              color: palette.textDisabled,
+            ),
+          ),
+      ],
+    );
+
+    return AppPanel(
+      padding: const EdgeInsets.all(AppSpacing.xl),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          header,
+          const SizedBox(height: AppSpacing.lg),
+          SizedBox(
+            height: 140,
+            child: hasData
+                ? Stack(
+                    children: [
+                      Sparkline(
+                        data: memSeries,
+                        color: palette.blue,
+                        height: 140,
+                        lineWidth: 1.5,
+                      ),
+                      Sparkline(
+                        data: cpuSeries,
+                        color: palette.accent,
+                        height: 140,
+                        lineWidth: 1.8,
+                      ),
+                    ],
+                  )
+                : Center(
+                    child: Text(
+                      tr('waitingForDeviceHint'),
+                      style: TextStyle(
+                        fontSize: AppFontSize.body,
+                        color: palette.textDisabled,
+                      ),
+                    ),
+                  ),
+          ),
+          if (hasData) ...[
+            const SizedBox(height: AppSpacing.md),
+            Row(
+              children: [
+                _PerfLegend(
+                  color: palette.accent,
+                  label: tr('perfLegendCpu', {
+                    'value': _formatPercent(status?.cpuUsage),
+                  }),
+                ),
+                const SizedBox(width: AppSpacing.lg),
+                _PerfLegend(
+                  color: palette.blue,
+                  label: tr('perfLegendMemory', {
+                    'value': _formatPercent(status?.memoryUsedPercent),
+                  }),
+                ),
+              ],
+            ),
+          ],
+        ],
       ),
+    );
+  }
+
+  static String _subtitleFor(SavedDevice? device, DeviceStatus? status) {
+    final parts = <String>[];
+    if (device?.displayName.isNotEmpty ?? false) parts.add(device!.displayName);
+    parts.add('CPU / ${tr('monitorMemory')}');
+    final top = status?.topProcesses.firstOrNull;
+    if (top != null && top.name.isNotEmpty) {
+      parts.add(top.name);
+    }
+    return parts.join(' · ');
+  }
+
+  static String _formatPercent(String? raw) {
+    if (raw == null || raw.isEmpty) return '--';
+    return raw.endsWith('%') ? raw : '$raw%';
+  }
+}
+
+class _PerfLegend extends StatelessWidget {
+  const _PerfLegend({required this.color, required this.label});
+
+  final Color color;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: AppSpacing.sm),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: AppFontSize.md,
+            color: palette.textSecondary,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -764,27 +1131,55 @@ class _RightPanel extends StatelessWidget {
     required this.devices,
     required this.activeSerial,
     this.onSelectDevice,
+    this.onQuickAction,
   });
 
   final List<SavedDevice> devices;
-  final String activeSerial;
+  final String? activeSerial;
   final void Function(String serial)? onSelectDevice;
+  final void Function(String)? onQuickAction;
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.palette;
     return Container(
       padding: const EdgeInsets.all(AppSpacing.xl),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          AppSectionLabel(tr('connectedDevices')),
+          Row(
+            children: [
+              Expanded(child: AppSectionLabel(tr('connectedDevices'))),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 2,
+                ),
+                decoration: BoxDecoration(
+                  color: palette.raised,
+                  borderRadius: BorderRadius.circular(AppRadius.full),
+                ),
+                child: Text(
+                  '${devices.length}',
+                  style: TextStyle(
+                    fontSize: AppFontSize.md,
+                    fontWeight: FontWeight.w600,
+                    color: palette.textSecondary,
+                  ),
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: AppSpacing.md),
           Expanded(
             flex: 2,
             child: _DeviceList(
               devices: devices,
-              activeSerial: activeSerial,
+              activeSerial: activeSerial ?? '',
               onSelectDevice: onSelectDevice,
+              onScan: onQuickAction == null
+                  ? null
+                  : () => onQuickAction!('wireless'),
             ),
           ),
           const SizedBox(height: AppSpacing.xl),
@@ -805,105 +1200,161 @@ class _DeviceList extends StatelessWidget {
     required this.devices,
     required this.activeSerial,
     this.onSelectDevice,
+    this.onScan,
   });
 
   final List<SavedDevice> devices;
   final String activeSerial;
   final void Function(String serial)? onSelectDevice;
+  final VoidCallback? onScan;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
     if (devices.isEmpty) {
-      return Center(
-        child: Text(
-          tr('noDevices'),
-          style: TextStyle(
-            fontSize: AppFontSize.md,
-            color: palette.textDisabled,
+      return Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.phone_android, size: 32, color: palette.textDisabled),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            tr('noDevices'),
+            style: TextStyle(
+              fontSize: AppFontSize.body,
+              color: palette.textDisabled,
+            ),
           ),
-        ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            tr('noDevicesHint'),
+            style: TextStyle(
+              fontSize: AppFontSize.md,
+              color: palette.textDisabled,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          if (onScan != null) ...[
+            const SizedBox(height: AppSpacing.md),
+            _HeroCtaButton(
+              label: tr('wirelessScan'),
+              filled: true,
+              enabled: true,
+              onTap: onScan!,
+              width: 140,
+            ),
+          ],
+        ],
       );
     }
-    return ListView.separated(
-      itemCount: devices.length,
-      separatorBuilder: (_, __) => const SizedBox(height: AppSpacing.sm),
-      itemBuilder: (context, i) {
-        final d = devices[i];
-        final active = d.serial == activeSerial;
-        return Material(
-          color: active ? palette.activeNav : palette.panel,
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: onSelectDevice == null
-                ? null
-                : () => onSelectDevice!(d.serial),
-            child: Padding(
-              padding: const EdgeInsets.all(AppSpacing.md),
-              child: Row(
-                children: [
-                  Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: palette.raised,
-                      borderRadius: BorderRadius.circular(AppRadius.sm),
-                      border: Border.all(color: palette.hairline),
-                    ),
-                    child: Icon(
-                      Icons.phone_android,
-                      size: 16,
-                      color: d.isConnected
-                          ? palette.textSecondary
-                          : palette.textDisabled,
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          child: ListView.separated(
+            itemCount: devices.length,
+            separatorBuilder: (_, __) => const SizedBox(height: AppSpacing.sm),
+            itemBuilder: (context, i) {
+              final d = devices[i];
+              final active = d.serial == activeSerial;
+              return Material(
+                color: active ? palette.activeNav : palette.panel,
+                borderRadius: BorderRadius.circular(AppRadius.md),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: onSelectDevice == null
+                      ? null
+                      : () => onSelectDevice!(d.serial),
+                  child: Padding(
+                    padding: const EdgeInsets.all(AppSpacing.md),
+                    child: Row(
                       children: [
-                        Text(
-                          d.displayName,
-                          style: TextStyle(
-                            fontSize: AppFontSize.body,
-                            fontWeight:
-                                active ? FontWeight.w600 : FontWeight.w400,
-                            color: palette.textPrimary,
+                        Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: palette.raised,
+                            borderRadius: BorderRadius.circular(AppRadius.sm),
+                            border: Border.all(color: palette.hairline),
                           ),
-                          overflow: TextOverflow.ellipsis,
+                          child: Icon(
+                            Icons.phone_android,
+                            size: 16,
+                            color: d.isConnected
+                                ? palette.textSecondary
+                                : palette.textDisabled,
+                          ),
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          d.isConnected
-                              ? tr('backendOnline')
-                              : tr('backendOffline'),
-                          style: TextStyle(
-                            fontSize: AppFontSize.md,
-                            color: palette.textSecondary,
+                        const SizedBox(width: AppSpacing.md),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                d.displayName,
+                                style: TextStyle(
+                                  fontSize: AppFontSize.body,
+                                  fontWeight: active
+                                      ? FontWeight.w600
+                                      : FontWeight.w400,
+                                  color: palette.textPrimary,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                d.serial,
+                                style: TextStyle(
+                                  fontSize: AppFontSize.md,
+                                  fontFamily: 'Noto Sans Mono',
+                                  color: palette.textSecondary,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: d.isConnected
+                                ? palette.accent.withValues(alpha: 0.14)
+                                : palette.raised,
+                            borderRadius:
+                                BorderRadius.circular(AppRadius.full),
+                          ),
+                          child: Text(
+                            d.isConnected ? tr('online') : tr('offline'),
+                            style: TextStyle(
+                              fontSize: AppFontSize.xs,
+                              fontWeight: FontWeight.w500,
+                              color: d.isConnected
+                                  ? palette.accent
+                                  : palette.textDisabled,
+                            ),
                           ),
                         ),
                       ],
                     ),
                   ),
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: d.isConnected
-                          ? palette.online
-                          : palette.red,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+                ),
+              );
+            },
           ),
-        );
-      },
+        ),
+        if (onScan != null) ...[
+          const SizedBox(height: AppSpacing.md),
+          _HeroCtaButton(
+            label: tr('wirelessScan'),
+            filled: false,
+            enabled: true,
+            onTap: onScan!,
+          ),
+        ],
+      ],
     );
   }
 }
@@ -917,12 +1368,23 @@ class _RecentActivity extends StatelessWidget {
     return AppPanel(
       padding: const EdgeInsets.all(AppSpacing.lg),
       child: Center(
-        child: Text(
-          tr('noRecentActivity'),
-          style: TextStyle(
-            fontSize: AppFontSize.md,
-            color: palette.textDisabled,
-          ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.access_time,
+              size: 24,
+              color: palette.textDisabled,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              tr('noRecentActivity'),
+              style: TextStyle(
+                fontSize: AppFontSize.md,
+                color: palette.textDisabled,
+              ),
+            ),
+          ],
         ),
       ),
     );

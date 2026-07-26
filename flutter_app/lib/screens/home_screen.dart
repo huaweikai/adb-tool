@@ -388,9 +388,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _showWirelessAdbDialog();
       return;
     }
+    // Map dashboard tile ids to actual nav destinations. Dashboard tiles
+    // are action-oriented (录屏 / 截图 / 安装 APK ...) while the nav layer
+    // is page-oriented, so the shell translates.
+    final resolved = switch (id) {
+      'screenRecord' => 'files',
+      'screenshot' => 'hierarchy',
+      'installApk' => 'apps',
+      _ => id,
+    };
     final serial = _selectedSerial;
     if (serial == null) return;
-    _navigateToId(id);
+    _navigateToId(resolved);
   }
 
   void _selectDevice(String serial) {
