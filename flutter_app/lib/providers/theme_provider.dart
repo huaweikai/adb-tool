@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import '../design/app_palette.dart';
 import '../design/design_tokens.dart';
 
 String get prefsPath {
@@ -50,6 +51,7 @@ ThemeData _buildDarkTheme() {
     colorSchemeSeed: Colors.blue,
     scaffoldBackgroundColor: _darkScaffoldBg,
     dividerColor: _darkDivider,
+    extensions: const [AppPalette.dark],
     fontFamily: Platform.isWindows ? 'Microsoft YaHei' : null,
     visualDensity: VisualDensity.compact,
     pageTransitionsTheme: const PageTransitionsTheme(
@@ -151,6 +153,7 @@ ThemeData _buildLightTheme() {
     colorSchemeSeed: Colors.blue,
     scaffoldBackgroundColor: Colors.white,
     dividerColor: _lightDivider,
+    extensions: const [AppPalette.light],
     fontFamily: Platform.isWindows ? 'Microsoft YaHei' : null,
     visualDensity: VisualDensity.compact,
     pageTransitionsTheme: const PageTransitionsTheme(

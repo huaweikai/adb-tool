@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 
-import '../design/design_tokens.dart';
+import '../design/app_palette.dart';
 
 /// ── AppBackground ────────────────────────────────────────────
 ///
 /// The radial green glow that sits behind every screen's main content
 /// area in the new design. Mirrors the design's `背景光晕` node:
-/// `GRADIENT_RADIAL` from accent `#3DDC84` @ alpha 0.14 → fully
-/// transparent, painted over the canvas `#0A0C12`.
+/// `GRADIENT_RADIAL` from accent @ alpha 0.14 → fully transparent, painted
+/// over the theme's canvas color (`palette.canvas`).
 ///
 ///   ┌─────────────────────────────────┐
 ///   │  · ·  glow fades out  · ·       │
@@ -45,17 +45,14 @@ class AppBackground extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Canvas follows the active theme so the glow reads correctly whether
-    // the window is in light or dark mode.
-    final canvas = Theme.of(context).brightness == Brightness.dark
-        ? AppColors.canvas // #0A0C12 — near-black, the design's canvas
-        : Colors.white; // 亮色模式使用纯白
-
+    final palette = context.palette;
+    // Canvas follows the active theme (dark → near-black, light → near-white)
+    // so the glow reads correctly whether the window is in light or dark mode.
     return Container(
-      color: canvas, // 重点：底层，100% 不透明的白色
+      color: palette.canvas,
       child: Stack(
         children: [
-          // 2. 在纯白底色上叠加光晕层
+          // 2. 在底色上叠加光晕层
           Positioned.fill(
             child: DecoratedBox(
               decoration: BoxDecoration(
@@ -64,9 +61,9 @@ class AppBackground extends StatelessWidget {
                   radius: radius, // 使用调小后的 radius (例如 0.8)
                   colors: [
                     // 中心：峰值亮度的绿色
-                    AppColors.accent.withValues(alpha: accentStrength),
-                    // 1.0 边缘：完全透明，透出底部的白色
-                    AppColors.accent.withValues(alpha: 0.0),
+                    palette.accent.withValues(alpha: accentStrength),
+                    // 1.0 边缘：完全透明，透出底部的画布色
+                    palette.accent.withValues(alpha: 0.0),
                   ],
                   stops: const [0.0, 1.0], // 线性过渡
                 ),

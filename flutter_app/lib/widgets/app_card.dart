@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 
+import '../design/app_palette.dart';
 import '../design/design_tokens.dart';
 
 /// ── AppCard ──────────────────────────────────────────────────
 ///
 /// The new design system's base surface card. Mirrors the unified Card
-/// spec from the Ardot design: cornerRadius 12, fill #0E1118
-/// ([AppColors.panel]), optional 1px hairline border ([AppColors.hairline]).
+/// spec from the Ardot design: cornerRadius 12, fill `palette.panel`,
+/// optional 1px hairline border (`palette.hairline`).
 ///
 ///   ┌─── AppCard ───────────────────────────────┐
 ///   │  Title              trailing               │  ← optional header
@@ -29,7 +30,7 @@ class AppCard extends StatelessWidget {
     this.padding = const EdgeInsets.all(AppSpacing.lg),
     this.headerPadding,
     this.cornerRadius = AppRadius.lg, // 12 — design spec
-    this.fill = AppColors.panel,
+    this.fill,
     this.showBorder = true,
     this.onTap,
   });
@@ -55,8 +56,8 @@ class AppCard extends StatelessWidget {
   /// Corner radius. Default 12 (design spec).
   final double cornerRadius;
 
-  /// Card fill. Default [AppColors.panel].
-  final Color fill;
+  /// Card fill. When null, uses `palette.panel` from the active theme.
+  final Color? fill;
 
   /// Whether to draw the 1px hairline border. Default true.
   final bool showBorder;
@@ -66,6 +67,7 @@ class AppCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.palette;
     final hasHeader = title != null || trailing != null;
     final shape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(cornerRadius),
@@ -94,10 +96,10 @@ class AppCard extends StatelessWidget {
                       if (title != null)
                         Text(
                           title!,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: AppFontSize.headline, // 16
                             fontWeight: FontWeight.w600,
-                            color: AppColors.textPrimary,
+                            color: palette.textPrimary,
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -105,9 +107,9 @@ class AppCard extends StatelessWidget {
                         const SizedBox(height: 2),
                         Text(
                           subtitle!,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: AppFontSize.body, // 12
-                            color: AppColors.textSecondary,
+                            color: palette.textSecondary,
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -133,10 +135,10 @@ class AppCard extends StatelessWidget {
 
     final card = Container(
       decoration: BoxDecoration(
-        color: fill,
+        color: fill ?? palette.panel,
         borderRadius: BorderRadius.circular(cornerRadius),
         border: showBorder
-            ? Border.all(color: AppColors.hairline)
+            ? Border.all(color: palette.hairline)
             : null,
       ),
       clipBehavior: Clip.antiAlias,

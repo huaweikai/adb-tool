@@ -5,10 +5,12 @@ ADB Tool — 跨平台 Android 调试桌面工具，**Go 后端 + Flutter 桌面
 ## Setup commands
 
 - 后端依赖: `cd backend && go mod download`
-- 后端运行: `cd backend && go run .` — 默认监听 `http://localhost:9876`
+- 后端运行: `cd backend && go run .` — 默认 `127.0.0.1:9876`（`internal/server/security.go` 里的 `DefaultListenAddr`），可用 `ADB_TOOL_LISTEN` 环境变量覆盖。
 - 前端依赖: `cd flutter_app && flutter pub get`
 - 前端运行 (macOS): `cd flutter_app && flutter run -d macos`
 - 前端运行 (Windows): `cd flutter_app && flutter run -d windows`
+- **drift 代码生成**（改了 `lib/db/tables/*` 或 dao 后必跑）: `cd flutter_app && dart run build_runner build --delete-conflicting-outputs`。所有 `*.g.dart`（含 544K 的 `database.g.dart`）由此生成，**手改无效**。
+- 重置本地 SQLite（schema 变了、迁移嫌麻烦）: `pwsh scripts/reset-db.ps1`。Windows 默认路径 `%APPDATA%\com.example\ADB Tool\adb_tool.db`。
 - 构建 macOS app: `bash scripts/build.sh --platform macos --mode release [--arch arm64|amd64|all|universal]`
 - 构建 Windows MSI: `powershell scripts/build.ps1 -Mode Release -Platform Windows -GoArch amd64`
 
@@ -25,9 +27,10 @@ ADB Tool — 跨平台 Android 调试桌面工具，**Go 后端 + Flutter 桌面
 
 - **Go**: handler 与 adb 封装分层；统一 envelope `{ok, data, error}`（见 `internal/server/response.go`），但二进制端点（截图 / 文件下载 / 录屏）跳过 envelope。`security.go` 强制 loopback-only。
 - **Dart**: `lib/<layer>/<domain>.dart` 按层 × 域拆分；Provider 状态管理、drift 本地持久化；加 endpoint 时优先在 `lib/services/api/<domain>_api.dart` 单文件加，影响面最小。`analysis_options.yaml` 继承 `package:flutter_lints/flutter.yaml`。
+- **drift / analyzer 版本锁**: `pubspec.yaml` 的 `dependency_overrides` 里锁着 `analyzer` / `dart_style` —— 是绕 drift_dev 与 flutter 自带 analyzer 版本冲突的活口子，**不要随手删**，注释里写了背景。
 - **i18n**: 中英文按页面分文件（`flutter_app/lib/i18n/<page>.dart`），CI 用 `scripts/check_i18n_tr_keys.py` 校验 key 完整性。
 - **平台条件编译**: Go 端用 `//go:build darwin|windows`；Flutter 端用 `defaultTargetPlatform` + MethodChannel（`mac_drop` / `win_drop`）。
-- **Backend embedding**: `platform-tools-*.zip`、`scrcpy` 与 `clipboard-helper.apk` 全部 `//go:embed` 进二进制，运行时提取到 `/tmp/adb-tool-cache/`。
+- **Backend embedding**: `platform-tools-*.zip`、`scrcpy` 与 `clipboard-helper.apk` 全部 `//go:embed` 进二进制，运行时提取到 `os.TempDir()/adb-tool-cache/`（macOS `/tmp/…`、Windows `%TEMP%\…`）。
 
 ## Architecture debt — when to act, when to leave alone
 
@@ -36,16 +39,22 @@ ADB Tool — 跨平台 Android 调试桌面工具，**Go 后端 + Flutter 桌面
 > future agent (or future me) suggests refactoring without a concrete trigger
 > matching this list, challenge the "why now" first.
 
-### Current fat files (snapshot 2026-06-27)
+### Current fat files (snapshot 2026-07-25)
 
 | File | Size | Trigger to act |
 |---|---|---|
-| `lib/providers/test_session_provider.dart` | ~44K | **Before** adding the next responsibility: extract a `usecase/` layer, validate the boundary on one slice, then decide whether to split the provider. |
-| `lib/widgets/emulator_engine_card.dart` | ~54K | Leave alone unless a real feature pushes it past ~60K AND the new logic doesn't naturally belong in a separate widget. |
-| `lib/screens/file_browser_screen.dart` | ~47K | Same. |
-| `lib/screens/test_session_hub_screen.dart` | ~41K | Same. |
-| `lib/screens/home_screen.dart` | ~34K | Same. |
-| `lib/models/scrcpy_options.dart` | ~20K | Same. |
+| `lib/providers/test_session_provider.dart` | ~47K | **Before** adding the next responsibility: extract a `usecase/` layer, validate the boundary on one slice, then decide whether to split the provider. |
+| `lib/screens/logcat_screen.dart` | ~57K | Leave alone unless a real feature pushes it past ~65K AND the new logic doesn't naturally belong in a separate widget. |
+| `lib/widgets/emulator_engine_card.dart` | ~53K | Same. |
+| `lib/screens/file_browser_screen.dart` | ~51K | Same. |
+| `lib/screens/test_session/test_session_hub_screen.dart` | ~41K | Same. |
+| `lib/screens/test_session/test_session_active_screen.dart` | ~38K | Same. |
+| `lib/screens/view_hierarchy_screen.dart` | ~38K | Same. |
+| `lib/screens/app_manager_screen.dart` | ~37K | Same. |
+| `lib/screens/test_config_screen.dart` | ~34K | Same. |
+
+> Note: `lib/db/database.g.dart` (~544K) is drift-generated — never edit
+> by hand; run the codegen command from **Setup commands**.
 
 ### Capture mixins — resolved 2026-07-05
 

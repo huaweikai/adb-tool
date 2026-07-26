@@ -66,19 +66,23 @@ class AppElevation {
 
 /// ── AppColors ───────────────────────────────────────────────
 ///
+/// **DEPRECATED for new code. Use [AppPalette] via `context.palette.<token>`
+/// instead** — the palette switches with `ThemeMode` and interpolates on
+/// theme changes; this class is a frozen dark-only snapshot kept alive so
+/// legacy screens keep rendering unchanged during the incremental migration.
+///
+/// Original doc (kept for historical context):
+///
 /// Color tokens for the **new design system** (Ardot 主文件 706601156104862,
 /// 深色专用). These are intentionally a *separate* semantic layer from
 /// `Theme.of(context).colorScheme` — the existing dark theme is GitHub-style
 /// (`#0D1117` + blue seed), while this new system is a custom dark palette
 /// anchored on Android green `#3DDC84`.
 ///
-/// New widgets built from the new design (AppSidebar / AppTopbar / AppCard …)
-/// MUST read colors from [AppColors], not from `colorScheme`, so they render
-/// correctly regardless of the legacy theme. Migration of existing screens
-/// to this palette is a separate, per-page effort — do not bulk-replace.
-///
 /// Values sourced from the design file node `fills` (no Ardot variables used).
-/// Light-theme variants are TODO until a light design spec exists.
+@Deprecated('Use context.palette.<token> from AppPalette instead. '
+    'AppColors is a frozen dark-only snapshot; new widgets must read '
+    'colors from the palette so they switch correctly under ThemeMode.')
 class AppColors {
   const AppColors._();
 

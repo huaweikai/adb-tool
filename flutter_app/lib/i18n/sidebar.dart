@@ -122,6 +122,15 @@ const _locSidebarZh = <String, String>{
   'collapseSidebar': '收起侧边栏',
   'expandSidebar': '展开侧边栏',
   'resizeSidebarHint': '拖拽调整宽度 · 双击重置',
+  'dashboard': '仪表盘',
+  'connectedDevices': '已连接设备',
+  'recentActivity': '最近活动',
+  'noDevice': '未选择设备',
+  'noRecentActivity': '暂无活动',
+  'deviceOnline': 'USB · 已连接',
+  'deviceOffline': '未连接设备',
+  'startMirror': '开启投屏',
+  'liveScreenshot': '实时截图',
 };
 
 const _locSidebarEn = <String, String>{
@@ -261,4 +270,13 @@ const _locSidebarEn = <String, String>{
   'collapseSidebar': 'Collapse sidebar',
   'expandSidebar': 'Expand sidebar',
   'resizeSidebarHint': 'Drag to resize · Double-click to reset',
+  'dashboard': 'Dashboard',
+  'connectedDevices': 'Connected Devices',
+  'recentActivity': 'Recent Activity',
+  'noDevice': 'No device selected',
+  'noRecentActivity': 'No recent activity',
+  'deviceOnline': 'USB · Connected',
+  'deviceOffline': 'Device disconnected',
+  'startMirror': 'Start Mirror',
+  'liveScreenshot': 'Live Screenshot',
 };

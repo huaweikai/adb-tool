@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../design/app_palette.dart';
 import '../design/design_tokens.dart';
 
 /// ── New design system sidebar widgets ─────────────────────────
@@ -15,9 +16,10 @@ import '../design/design_tokens.dart';
 /// nav* model. Migrating the interaction is a separate task; these widgets
 /// are extracted first so the visual layer is ready.
 ///
-/// Colors come from [AppColors] (new palette), NOT `Theme.of(context)`,
-/// so they render correctly under either the legacy GitHub-dark theme or
-/// a future new-theme migration.
+/// Colors come from the active theme's [AppPalette] (via `context.palette`)
+/// so they switch automatically with `ThemeMode`. Do NOT read from
+/// `Theme.of(context).colorScheme` (that's the legacy GitHub-dark seed) —
+/// the design system's tokens live in [AppPalette].
 
 /// Which nav group an item belongs to — drives the section label above it.
 enum AppNavGroup { mainMenu, debug, advanced }
@@ -44,7 +46,7 @@ class AppNavItemData {
 /// Small uppercase-style section header above a nav group.
 ///   主菜单 / 调试工具 / 高级
 ///
-/// Spec: Noto Sans SC Regular 11, color #5B6472 ([AppColors.textDisabled]).
+/// Spec: Noto Sans SC Regular 11, color `palette.textDisabled` (#5B6472 on dark).
 class AppNavGroupLabel extends StatelessWidget {
   const AppNavGroupLabel(this.label, {super.key});
 
@@ -61,9 +63,9 @@ class AppNavGroupLabel extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: AppFontSize.sm, // 10 — design uses 11; token sm=10 reads closer at this density
-          color: AppColors.textDisabled,
+          color: context.palette.textDisabled,
           letterSpacing: 0.4,
         ),
       ),
@@ -84,7 +86,7 @@ class AppNavGroupLabel extends StatelessWidget {
 ///
 /// Spec: 212×40, cornerRadius 8, icon 18×18, label fontSize 14.
 /// Default fill = transparent (sidebar panel shows through); active fill
-/// = [AppColors.activeNav]. Hover gets [AppColors.raised].
+/// = `palette.activeNav`. Hover gets `palette.raised`.
 class AppNavItem extends StatefulWidget {
   const AppNavItem({
     super.key,
@@ -114,16 +116,17 @@ class _AppNavItemState extends State<AppNavItem> {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.palette;
     final fg = !widget.enabled
-        ? AppColors.textDisabled
+        ? palette.textDisabled
         : widget.active
-            ? AppColors.navActiveFg
-            : AppColors.navDefaultFg;
+            ? palette.navActiveFg
+            : palette.navDefaultFg;
 
     final bg = widget.active
-        ? AppColors.activeNav
+        ? palette.activeNav
         : _hovering && widget.enabled
-            ? AppColors.raised
+            ? palette.raised
             : Colors.transparent;
 
     return Padding(
@@ -180,8 +183,8 @@ class _AppNavItemState extends State<AppNavItem> {
 ///   │  ▢  未连接设备                  ▼   │  ← disconnected
 ///  └────────────────────────────────────┘
 ///
-/// Spec: 212×60, cornerRadius 10, fill #161B24 ([AppColors.raised]),
-/// stroke #1E2430 ([AppColors.hairline]). Avatar 36×36 cornerRadius 8
+/// Spec: 212×60, cornerRadius 10, fill `palette.raised` (#161B24 on dark),
+/// stroke `palette.hairline` (#1E2430 on dark). Avatar 36×36 cornerRadius 8
 /// with an 11×11 online dot at bottom-right. Two-line info: name
 /// (Inter SemiBold 13) + status (Noto Sans SC Regular 11).
 class AppDeviceSwitcher extends StatefulWidget {
@@ -207,10 +210,11 @@ class _AppDeviceSwitcherState extends State<AppDeviceSwitcher> {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.palette;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
       child: Material(
-        color: AppColors.raised,
+        color: palette.raised,
         borderRadius: BorderRadius.circular(AppRadius.lg), // 12 → design 10; token lg=12 close
         clipBehavior: Clip.antiAlias,
         child: InkWell(
@@ -218,7 +222,7 @@ class _AppDeviceSwitcherState extends State<AppDeviceSwitcher> {
           onHover: (h) => setState(() => _hovering = h),
           child: Container(
             decoration: BoxDecoration(
-              border: Border.all(color: AppColors.hairline),
+              border: Border.all(color: palette.hairline),
               borderRadius: BorderRadius.circular(AppRadius.lg),
             ),
             padding: const EdgeInsets.all(AppSpacing.md),
@@ -235,16 +239,16 @@ class _AppDeviceSwitcherState extends State<AppDeviceSwitcher> {
                         width: 36,
                         height: 36,
                         decoration: BoxDecoration(
-                          color: AppColors.panel,
+                          color: palette.panel,
                           borderRadius: BorderRadius.circular(AppRadius.md),
-                          border: Border.all(color: AppColors.hairline),
+                          border: Border.all(color: palette.hairline),
                         ),
                         child: Icon(
                           Icons.phone_android,
                           size: 18,
                           color: widget.online
-                              ? AppColors.textSecondary
-                              : AppColors.textDisabled,
+                              ? palette.textSecondary
+                              : palette.textDisabled,
                         ),
                       ),
                       if (widget.online)
@@ -255,10 +259,10 @@ class _AppDeviceSwitcherState extends State<AppDeviceSwitcher> {
                             width: 11,
                             height: 11,
                             decoration: BoxDecoration(
-                              color: AppColors.online,
+                              color: palette.online,
                               shape: BoxShape.circle,
                               border: Border.all(
-                                color: AppColors.raised,
+                                color: palette.raised,
                                 width: 2,
                               ),
                             ),
@@ -276,19 +280,19 @@ class _AppDeviceSwitcherState extends State<AppDeviceSwitcher> {
                     children: [
                       Text(
                         widget.deviceName,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: AppFontSize.subtitle, // 13
                           fontWeight: FontWeight.w600,
-                          color: AppColors.textPrimary,
+                          color: palette.textPrimary,
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: 2),
                       Text(
                         widget.deviceStatus,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: AppFontSize.md, // 11
-                          color: AppColors.textSecondary,
+                          color: palette.textSecondary,
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -300,8 +304,8 @@ class _AppDeviceSwitcherState extends State<AppDeviceSwitcher> {
                   Icons.keyboard_arrow_down_rounded,
                   size: 18,
                   color: _hovering
-                      ? AppColors.textPrimary
-                      : AppColors.textSecondary,
+                      ? palette.textPrimary
+                      : palette.textSecondary,
                 ),
               ],
             ),
@@ -364,6 +368,7 @@ class AppSidebar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.palette;
     // Group items preserving their declared order within each group.
     final byGroup = <AppNavGroup, List<AppNavItemData>>{
       AppNavGroup.mainMenu: [],
@@ -374,12 +379,34 @@ class AppSidebar extends StatelessWidget {
       byGroup[item.group]?.add(item);
     }
 
+    // Build the nav-group blocks separately so we can wrap them in a
+    // scroll view. On short windows (< ~860px) the 15 nav items + labels +
+    // logo + switcher + footer overflows a plain Column; scrolling the
+    // middle section keeps the header + footer pinned.
+    final navBlocks = <Widget>[
+      for (final group in const [
+        AppNavGroup.mainMenu,
+        AppNavGroup.debug,
+        AppNavGroup.advanced,
+      ])
+        if (byGroup[group]!.isNotEmpty) ...[
+          AppNavGroupLabel(_groupLabels[group]!),
+          for (final item in byGroup[group]!)
+            AppNavItem(
+              icon: item.icon,
+              label: item.label,
+              active: item.id == activeNavId,
+              onTap: onNavTap == null ? null : () => onNavTap!(item.id),
+            ),
+        ],
+    ];
+
     return Container(
       width: 240,
-      decoration: const BoxDecoration(
-        color: AppColors.panel,
+      decoration: BoxDecoration(
+        color: palette.panel,
         border: Border(
-          right: BorderSide(color: AppColors.hairline),
+          right: BorderSide(color: palette.hairline),
         ),
       ),
       child: Column(
@@ -395,14 +422,14 @@ class AppSidebar extends StatelessWidget {
             ),
             child: Row(
               children: [
-                const Icon(Icons.adb, size: 26, color: AppColors.accent),
+                Icon(Icons.adb, size: 26, color: palette.accent),
                 const SizedBox(width: AppSpacing.md),
-                const Text(
+                Text(
                   'ADB Tool',
                   style: TextStyle(
                     fontSize: 17,
                     fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
+                    color: palette.textPrimary,
                   ),
                 ),
               ],
@@ -418,26 +445,16 @@ class AppSidebar extends StatelessWidget {
               onTap: onDeviceSwitcherTap,
             ),
           ),
-          // Nav groups
-          ...[
-            AppNavGroup.mainMenu,
-            AppNavGroup.debug,
-            AppNavGroup.advanced,
-          ].expand((group) {
-            final groupItems = byGroup[group]!;
-            if (groupItems.isEmpty) return <Widget>[];
-            return <Widget>[
-              AppNavGroupLabel(_groupLabels[group]!),
-              ...groupItems.map((item) => AppNavItem(
-                    icon: item.icon,
-                    label: item.label,
-                    active: item.id == activeNavId,
-                    onTap: onNavTap == null ? null : () => onNavTap!(item.id),
-                  )),
-            ];
-          }),
-          // Spacer pushes footer to the bottom
-          const Spacer(),
+          // Nav groups — scrollable middle section. Expanded gives it all
+          // remaining vertical space; the footer stays pinned below.
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: navBlocks,
+              ),
+            ),
+          ),
           // Footer
           Padding(
             padding: const EdgeInsets.fromLTRB(
@@ -453,8 +470,8 @@ class AppSidebar extends StatelessWidget {
                   height: 8,
                   decoration: BoxDecoration(
                     color: backendOnline
-                        ? AppColors.online
-                        : AppColors.red,
+                        ? palette.online
+                        : palette.red,
                     borderRadius: BorderRadius.circular(4),
                   ),
                 ),
@@ -463,9 +480,9 @@ class AppSidebar extends StatelessWidget {
                   child: Text(
                     backendStatusText ??
                         (backendOnline ? '本地后端 · 在线' : '本地后端 · 离线'),
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: AppFontSize.body, // 12
-                      color: AppColors.textSecondary,
+                      color: palette.textSecondary,
                     ),
                     overflow: TextOverflow.ellipsis,
                   ),

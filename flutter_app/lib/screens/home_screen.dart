@@ -6,7 +6,6 @@ import 'package:provider/provider.dart';
 import '../db/database.dart';
 import '../services/api_client.dart';
 import '../services/device_stream.dart';
-import '../providers/theme_provider.dart';
 import '../providers/device_provider.dart'
     show DeviceSerialScope, DeviceScreenActiveScope, DeviceProvider;
 import '../providers/locale_provider.dart';
@@ -33,43 +32,57 @@ import 'screen_mirror_screen.dart';
 import 'view_hierarchy_screen.dart';
 import 'emulator_settings_screen.dart';
 import '../widgets/settings_dialog.dart';
+import '../widgets/app_sidebar.dart';
+import 'dashboard_view.dart';
 
-enum NavItem {
-  status,
-  logcat,
-  files,
-  apps,
-  info,
-  clipboard,
-  hierarchy,
-  command,
-  session,
-  mirror,
-}
-
-const _navConfig = {
-  NavItem.status: _NavConfig(Icons.phone_android, 'status'),
-  NavItem.logcat: _NavConfig(Icons.list_alt, 'logcat'),
-  NavItem.files: _NavConfig(Icons.folder_open, 'files'),
-  NavItem.apps: _NavConfig(Icons.android, 'apps'),
-  NavItem.info: _NavConfig(Icons.info_outline, 'info'),
-  NavItem.clipboard: _NavConfig(Icons.content_paste, 'clipboard'),
-  NavItem.hierarchy: _NavConfig(Icons.account_tree, 'viewHierarchy'),
-  NavItem.command: _NavConfig(Icons.terminal, 'command'),
-  NavItem.session: _NavConfig(Icons.assignment_outlined, 'testSession'),
-  NavItem.mirror: _NavConfig(Icons.cast, 'screenMirror'),
-};
-
-class _NavConfig {
+/// Nav entries shown in the new [AppSidebar]. Each [id] maps to either a
+/// per-device screen (via [NavItem]), a global screen, the settings dialog,
+/// or the dashboard landing.
+class _NavEntry {
+  const _NavEntry(this.id, this.icon, this.labelKey, this.group);
+  final String id;
   final IconData icon;
-  final String label;
-  const _NavConfig(this.icon, this.label);
+  final String labelKey;
+  final AppNavGroup group;
 }
 
-const _backendLogKey = '_backend_logs';
-const _testConfigKey = '_test_config';
-const _emulatorKey = '_emulator_settings';
-const _settingsKey = '_settings';
+const List<_NavEntry> _navEntries = [
+  _NavEntry('dashboard', Icons.dashboard, 'dashboard', AppNavGroup.mainMenu),
+  _NavEntry('status', Icons.phone_android, 'status', AppNavGroup.mainMenu),
+  _NavEntry('apps', Icons.android, 'apps', AppNavGroup.mainMenu),
+  _NavEntry('files', Icons.folder_open, 'files', AppNavGroup.mainMenu),
+  _NavEntry('info', Icons.info_outline, 'info', AppNavGroup.mainMenu),
+  _NavEntry('logcat', Icons.list_alt, 'logcat', AppNavGroup.debug),
+  _NavEntry('command', Icons.terminal, 'command', AppNavGroup.debug),
+  _NavEntry('clipboard', Icons.content_paste, 'clipboard', AppNavGroup.debug),
+  _NavEntry('hierarchy', Icons.account_tree, 'viewHierarchy', AppNavGroup.debug),
+  _NavEntry('mirror', Icons.cast, 'screenMirror', AppNavGroup.debug),
+  _NavEntry('session', Icons.assignment_outlined, 'testSession', AppNavGroup.advanced),
+  _NavEntry('backendLogs', Icons.terminal, 'backendLogs', AppNavGroup.advanced),
+  _NavEntry('testConfig', Icons.tune, 'testConfigCenter', AppNavGroup.advanced),
+  _NavEntry('emulator', Icons.smartphone, 'emulatorSettings', AppNavGroup.advanced),
+  _NavEntry('settings', Icons.settings, 'settings', AppNavGroup.advanced),
+];
+
+const Set<String> _globalKeys = {'backendLogs', 'testConfig', 'emulator'};
+const String _backendLogKey = 'backendLogs';
+const String _testConfigKey = 'testConfig';
+const String _emulatorKey = 'emulator';
+const String _settingsKey = 'settings';
+const String _dashboardKey = 'dashboard';
+
+const List<String> _deviceNavIds = [
+  'status',
+  'apps',
+  'files',
+  'info',
+  'logcat',
+  'command',
+  'clipboard',
+  'hierarchy',
+  'mirror',
+  'session',
+];
 
 /// Digit keys for keyboard navigation (Cmd/Ctrl+1~9).
 const _navDigitKeys = <LogicalKeyboardKey>[
@@ -85,18 +98,17 @@ const _navDigitKeys = <LogicalKeyboardKey>[
 ];
 
 class _CachedScreen extends StatelessWidget {
+  const _CachedScreen({super.key, required this.serial, required this.child});
+
   final String? serial;
   final Widget child;
 
-  const _CachedScreen({super.key, required this.serial, required this.child});
-
   @override
   Widget build(BuildContext context) {
-    // NOTE: do NOT `context.watch<TestConfigProvider>()` here. Every
-    // cached screen in the IndexedStack is mounted (kept alive); a watch
-    // here would rebuild *all* of them on every TestConfigProvider
-    // notify, even the non-active ones. Each screen watches the providers
-    // it actually needs itself, so non-active tabs stay idle.
+    // NOTE: do NOT `context.watch<TestConfigProvider>()` here. Every cached
+    // screen in the IndexedStack is kept alive; a watch here would rebuild
+    // *all* of them on every TestConfigProvider notify. Each screen watches
+    // the providers it needs itself.
     return Provider<DeviceSerialScope>.value(
       value: DeviceSerialScope(serial),
       child: child,
@@ -107,17 +119,15 @@ class _CachedScreen extends StatelessWidget {
 /// Narrow value class for [HomeScreen]'s dependency on [DeviceProvider].
 ///
 /// `context.select` compares the returned value with `==`. By overriding
-/// `==` here (using [listEquals] for the device list) the screen rebuilds
-/// only when the device list *contents* actually change — not on every
-/// 5s `notifyListeners()` that reassigns the list to a fresh instance
-/// holding identical data. This keeps the `IndexedStack` of cached
-/// per-device screens from rebuilding every poll cycle.
+/// `==` here the screen rebuilds only when the device list *contents*
+/// actually change — not on every 5s `notifyListeners()` that reassigns the
+/// list to a fresh instance holding identical data.
 class _HomeSnapshot {
+  const _HomeSnapshot(this.savedDevices, this.online, this.lastDbError);
+
   final List<SavedDevice> savedDevices;
   final bool online;
   final String? lastDbError;
-
-  const _HomeSnapshot(this.savedDevices, this.online, this.lastDbError);
 
   @override
   bool operator ==(Object other) =>
@@ -132,15 +142,24 @@ class _HomeSnapshot {
       Object.hash(online, lastDbError, Object.hashAll(savedDevices));
 }
 
+enum NavItem {
+  status,
+  logcat,
+  files,
+  apps,
+  info,
+  clipboard,
+  hierarchy,
+  command,
+  session,
+  mirror,
+}
+
 class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key, this.onShutdown, this.onRestart});
+
   final VoidCallback? onShutdown;
   final VoidCallback? onRestart;
-
-  const HomeScreen({
-    super.key,
-    this.onShutdown,
-    this.onRestart,
-  });
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -149,23 +168,11 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final DeviceStreamService _deviceStream = DeviceStreamService();
 
-  final Set<String> _expandedSerials = {};
   final Map<String, _CachedScreen> _screens = {};
-  String? _activeKey;
+  String? _activeKey = _dashboardKey;
   bool _restoredFromState = false;
 
-  // Sidebar resize state. _sidebarWidth lives in a ValueNotifier so per-frame
-  // drag updates don't setState() the whole HomeScreen (which would also rebuild
-  // every keep-mounted screen inside IndexedStack — commit 18b0ca5). The sidebar
-  // rebuilds itself via ValueListenableBuilder + RepaintBoundary.
-  final ValueNotifier<double> _sidebarWidth = ValueNotifier(240);
-  bool _sidebarCollapsed = false;
-  bool _isDragging = false;
-  static const double _defaultSidebarWidth = 240;
-  static const double _minSidebarWidth = 200;
-  static const double _maxSidebarWidth = 400;
-  static const double _collapsedSidebarWidth = 56;
-  static const Duration _sidebarAnimDuration = Duration(milliseconds: 150);
+  static const int _maxCachedScreens = 20;
 
   @override
   void initState() {
@@ -186,38 +193,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final dp = context.read<DeviceProvider>();
     final db = dp.db;
 
-    // Read the singleton row ONCE instead of four times — the previous
-    // getActiveKey / getExpandedSerials / getSidebarWidth /
-    // getSidebarCollapsed calls each issued their own SELECT against
-    // app_states on every app launch.
     final state = await db.appStatesDao.getAppState();
-    final activeKey = state.activeKey;
-    final expandedSerials = db.appStatesDao.expandedSerialsFromState(state);
-    final sidebarWidth = state.sidebarWidth;
-    final sidebarCollapsed = state.sidebarCollapsed;
-
     if (!mounted) return;
 
+    if (state.activeSerial != null && state.activeSerial!.isNotEmpty) {
+      dp.select(state.activeSerial);
+    }
     setState(() {
-      if (activeKey != null && activeKey.isNotEmpty) {
-        _activeKey = activeKey;
-      }
-      _expandedSerials
-        ..clear()
-        ..addAll(expandedSerials);
-      _sidebarWidth.value =
-          sidebarWidth.toDouble().clamp(_minSidebarWidth, _maxSidebarWidth);
-      _sidebarCollapsed = sidebarCollapsed;
+      _activeKey =
+          state.activeKey?.isNotEmpty == true ? state.activeKey : _dashboardKey;
     });
 
     // Restore emulator toolchain selections from DB
-    // Import the providers to use them
     if (!mounted) return;
     try {
       final emulatorEngineProvider = context.read<EmulatorEngineProvider>();
       final emulatorJavaProvider = context.read<EmulatorJavaProvider>();
 
-      // Restore SDK selection first, then Java
       await emulatorEngineProvider.restoreFromDB();
       if (!mounted) return;
       await emulatorJavaProvider.restoreFromDB();
@@ -232,7 +224,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final dp = context.read<DeviceProvider>();
     dp.disconnectDeviceStream();
     _deviceStream.dispose();
-    _sidebarWidth.dispose();
     super.dispose();
   }
 
@@ -243,32 +234,73 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       dp.pauseStream();
       _deviceStream.pause();
     } else if (state == AppLifecycleState.resumed) {
-      // Resume subscription first so it's ready when the WS snapshot arrives.
       dp.resumeStream();
       _deviceStream.resume();
     }
   }
 
-  String navLabel(NavItem item) {
-    final c = _navConfig[item]!;
-    return tr(c.label);
+  /// Sidebar highlight id derived from the persisted [_activeKey].
+  String get _activeNavId {
+    final k = _activeKey;
+    if (k == null) return _dashboardKey;
+    if (k == _dashboardKey) return _dashboardKey;
+    if (_globalKeys.contains(k)) return k;
+    final idx = k.lastIndexOf('_');
+    if (idx < 0) return _dashboardKey;
+    return k.substring(idx + 1);
   }
 
-  void _toggleExpand(String serial) {
-    setState(() {
-      if (_expandedSerials.contains(serial)) {
-        _expandedSerials.remove(serial);
-      } else {
-        _expandedSerials.add(serial);
-        if (_screens.isEmpty) {
-          _navigateTo(serial, NavItem.status);
-        }
-      }
-    });
-    _persistState();
+  String? get _selectedSerial => context.read<DeviceProvider>().activeSerial;
+
+  NavItem? _deviceNavItem(String id) {
+    switch (id) {
+      case 'status':
+        return NavItem.status;
+      case 'apps':
+        return NavItem.apps;
+      case 'files':
+        return NavItem.files;
+      case 'info':
+        return NavItem.info;
+      case 'logcat':
+        return NavItem.logcat;
+      case 'command':
+        return NavItem.command;
+      case 'clipboard':
+        return NavItem.clipboard;
+      case 'hierarchy':
+        return NavItem.hierarchy;
+      case 'mirror':
+        return NavItem.mirror;
+      case 'session':
+        return NavItem.session;
+      default:
+        return null;
+    }
   }
 
-  static const int _maxCachedScreens = 20;
+  Widget _globalScreen(String id) {
+    switch (id) {
+      case _backendLogKey:
+        return const BackendLogScreen();
+      case _testConfigKey:
+        return const TestConfigScreen();
+      case _emulatorKey:
+        return const EmulatorSettingsScreen();
+      default:
+        return const SizedBox.shrink();
+    }
+  }
+
+  String _navLabel(String id) {
+    final e = _navEntries.where((x) => x.id == id).firstOrNull;
+    return e == null ? id : tr(e.labelKey);
+  }
+
+  IconData _navIcon(String id) {
+    final e = _navEntries.where((x) => x.id == id).firstOrNull;
+    return e?.icon ?? Icons.circle;
+  }
 
   void _navigateTo(String serial, NavItem item) {
     context.read<DeviceProvider>().select(serial);
@@ -307,10 +339,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       );
       _evictCache();
     }
-    // Also expand the device in the sidebar so the user can see where they are.
-    if (!_expandedSerials.contains(serial)) {
-      _expandedSerials.add(serial);
-    }
     setState(() => _activeKey = key);
     _persistState();
   }
@@ -322,43 +350,77 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     int removed = 0;
     for (final k in keys) {
       if (removed >= toRemove) break;
-      if (k == _activeKey ||
-          k == _backendLogKey ||
-          k == _emulatorKey ||
-          k == _settingsKey) continue;
+      if (k == _activeKey || _globalKeys.contains(k)) continue;
       _screens.remove(k);
       removed++;
     }
   }
 
-  void _openBackendLogs() {
-    if (!_screens.containsKey(_backendLogKey)) {
-      _screens[_backendLogKey] = const _CachedScreen(
-        serial: null,
-        child: BackendLogScreen(),
-      );
+  /// Route by sidebar nav id. device screens need a selected serial.
+  void _navigateToId(String id) {
+    if (id == _dashboardKey) {
+      setState(() => _activeKey = _dashboardKey);
+      _persistState();
+      return;
     }
-    setState(() => _activeKey = _backendLogKey);
+    if (id == _settingsKey) {
+      _openSettings();
+      return;
+    }
+    final deviceNav = _deviceNavItem(id);
+    if (deviceNav != null) {
+      final serial = _selectedSerial;
+      if (serial == null) return;
+      _navigateTo(serial, deviceNav);
+      return;
+    }
+    if (!_screens.containsKey(id)) {
+      _screens[id] = _CachedScreen(serial: null, child: _globalScreen(id));
+    }
+    setState(() => _activeKey = id);
+    _persistState();
   }
 
-  void _openTestConfig() {
-    if (!_screens.containsKey(_testConfigKey)) {
-      _screens[_testConfigKey] = const _CachedScreen(
-        serial: null,
-        child: TestConfigScreen(),
-      );
+  void _navigateToRecord(String serial, NavItem item) => _navigateTo(serial, item);
+
+  void _onQuickAction(String id) {
+    if (id == 'wireless') {
+      _showWirelessAdbDialog();
+      return;
     }
-    setState(() => _activeKey = _testConfigKey);
+    final serial = _selectedSerial;
+    if (serial == null) return;
+    _navigateToId(id);
   }
 
-  void _openEmulatorSettings() {
-    if (!_screens.containsKey(_emulatorKey)) {
-      _screens[_emulatorKey] = _CachedScreen(
-        serial: null,
-        child: const EmulatorSettingsScreen(),
-      );
+  void _selectDevice(String serial) {
+    if (serial.isEmpty) {
+      _showDeviceSwitcher();
+      return;
     }
-    setState(() => _activeKey = _emulatorKey);
+    context.read<DeviceProvider>().select(serial);
+    setState(() => _activeKey = _dashboardKey);
+    _persistState();
+  }
+
+  Future<void> _showDeviceSwitcher() async {
+    final devices = context.read<DeviceProvider>().savedDevices;
+    if (devices.isEmpty) return;
+    final chosen = await showDialog<String>(
+      context: context,
+      builder: (_) => SimpleDialog(
+        title: Text(tr('selectDevice')),
+        children: devices
+            .map(
+              (d) => SimpleDialogOption(
+                onPressed: () => Navigator.pop(context, d.serial),
+                child: Text(d.displayName),
+              ),
+            )
+            .toList(),
+      ),
+    );
+    if (chosen != null && mounted) _selectDevice(chosen);
   }
 
   void _openSettings() {
@@ -368,155 +430,78 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  /// Restore the active page from saved _activeKey
-  void _restoreActivePage(List<SavedDevice> savedDevices) {
-    if (_activeKey == null) return;
+  Future<void> _persistState() async {
+    final dp = context.read<DeviceProvider>();
+    await dp.db.appStatesDao.updateAppState(
+      activeKey: _activeKey,
+      activeSerial: dp.activeSerial,
+    );
+  }
 
-    // Check if it's a backend log or test config page
-    if (_activeKey == _backendLogKey) {
-      _openBackendLogs();
+  void _restoreActiveKey(List<SavedDevice> savedDevices) {
+    final key = _activeKey;
+    if (key == null || key == _dashboardKey) return;
+    if (_globalKeys.contains(key)) {
+      _navigateToId(key);
       return;
     }
-    if (_activeKey == _testConfigKey) {
-      _openTestConfig();
+    final idx = key.lastIndexOf('_');
+    if (idx < 0) {
+      setState(() => _activeKey = _dashboardKey);
       return;
     }
-    if (_activeKey == _emulatorKey) {
-      _openEmulatorSettings();
-      return;
-    }
-    // (settings is a transient dialog, not a restorable page — skip it)
-
-    // Parse device serial and nav item from _activeKey (format: "serial_itemName")
-    final parts = _activeKey!.split('_');
-    if (parts.length < 2) return;
-
-    final serial = parts.sublist(0, parts.length - 1).join('_');
-    final itemName = parts.last;
-
-    // Check if the device still exists in saved devices
-    final deviceExists = savedDevices.any((d) => d.serial == serial);
-    if (!deviceExists) {
-      // Device no longer exists, clear the state
-      setState(() {
-        _activeKey = null;
-        _restoredFromState = false;
-      });
-      return;
-    }
-
-    // Find the NavItem
+    final serial = key.substring(0, idx);
+    final navName = key.substring(idx + 1);
     final navItem =
-        NavItem.values.where((item) => item.name == itemName).firstOrNull;
-    if (navItem == null) return;
-
-    // Expand the device in sidebar
-    if (!_expandedSerials.contains(serial)) {
-      setState(() {
-        _expandedSerials.add(serial);
-      });
+        NavItem.values.where((n) => n.name == navName).firstOrNull;
+    if (navItem == null) {
+      setState(() => _activeKey = _dashboardKey);
+      return;
     }
-
-    // Navigate to the page
+    if (!savedDevices.any((d) => d.serial == serial)) {
+      setState(() => _activeKey = _dashboardKey);
+      return;
+    }
     _navigateTo(serial, navItem);
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final snapshot = context.select<DeviceProvider, _HomeSnapshot>(
-      (p) => _HomeSnapshot(p.savedDevices, p.online, p.lastDbError),
-    );
-    context.watch<LocaleProvider>();
-    final savedDevices = snapshot.savedDevices;
-    final backendOnline = snapshot.online;
-
-    // Restore page from saved state when devices are loaded
-    if (savedDevices.isNotEmpty && _activeKey != null && !_restoredFromState) {
-      _restoredFromState = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _restoreActivePage(savedDevices);
-      });
-    }
-
-    final isMacOS = defaultTargetPlatform == TargetPlatform.macOS;
-
-    return CallbackShortcuts(
-      bindings: {
-        // Command palette: Cmd/Ctrl+K
-        SingleActivator(LogicalKeyboardKey.keyK, meta: isMacOS, control: !isMacOS):
-            _openCommandPalette,
-        // Toggle sidebar: Cmd/Ctrl+B
-        SingleActivator(LogicalKeyboardKey.keyB, meta: isMacOS, control: !isMacOS):
-            _toggleSidebarCollapsed,
-        // Navigate to device function: Cmd/Ctrl+1~8
-        for (int i = 0; i < NavItem.values.length && i < _navDigitKeys.length; i++)
-          SingleActivator(_navDigitKeys[i], meta: isMacOS, control: !isMacOS):
-            () => _navigateShortcut(i + 1),
-      },
-      child: Focus(
-        autofocus: true,
-        child: Scaffold(
-          // Transparent: the global AppBackground (theme base + glow) is the
-          // real app background, so the whole content area shows it through.
-          backgroundColor: Colors.transparent,
-          body: Column(
-            children: [
-              if (!backendOnline) _buildOfflineBanner(context),
-              if (snapshot.lastDbError != null)
-                _buildDbErrorBanner(context, snapshot.lastDbError!),
-              Expanded(
-                child: Row(
-                  children: [
-                    _buildResizableSidebar(context, savedDevices, backendOnline),
-                    Expanded(child: _buildContent()),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _navigateShortcut(int index) {
-    final items = NavItem.values;
-    if (index < 1 || index > items.length) return;
-    final activeSerials = _expandedSerials.toList();
-    if (activeSerials.isEmpty) return;
-    final serial = activeSerials.last;
-    _navigateTo(serial, items[index - 1]);
+  void _digitNavigate(int i) {
+    if (i < 0 || i >= _navEntries.length) return;
+    final id = _navEntries[i].id;
+    if (_deviceNavItem(id) != null && _selectedSerial == null) return;
+    _navigateToId(id);
   }
 
   void _openCommandPalette() {
-    final devices = context.read<DeviceProvider>().savedDevices;
+    final dp = context.read<DeviceProvider>();
+    final devices = dp.savedDevices;
     final list = <PaletteItem>[];
 
-    // Per-device function pages
-    for (final device in devices) {
-      for (final item in NavItem.values) {
-        final icon = _navConfig[item]!.icon;
+    for (final d in devices) {
+      for (final id in _deviceNavIds) {
         list.add(PaletteItem(
-          title: navLabel(item),
-          subtitle: device.displayName,
-          icon: icon,
-          onSelect: () => _navigateTo(device.serial, item),
+          title: _navLabel(id),
+          subtitle: d.displayName,
+          icon: _navIcon(id),
+          onSelect: () {
+            dp.select(d.serial);
+            _navigateToId(id);
+          },
         ));
       }
     }
 
-    // Global entries
     list.add(PaletteItem(
       title: tr('testConfigCenter'),
       subtitle: tr('config'),
       icon: Icons.tune,
-      onSelect: _openTestConfig,
+      onSelect: () => _navigateToId(_testConfigKey),
     ));
     list.add(PaletteItem(
       title: tr('emulatorSettings.title'),
       subtitle: 'Android',
       icon: Icons.smartphone,
-      onSelect: _openEmulatorSettings,
+      onSelect: () => _navigateToId(_emulatorKey),
     ));
     list.add(PaletteItem(
       title: tr('settings.title'),
@@ -528,7 +513,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       title: tr('backendLogs'),
       subtitle: 'Go',
       icon: Icons.terminal,
-      onSelect: _openBackendLogs,
+      onSelect: () => _navigateToId(_backendLogKey),
     ));
     list.add(PaletteItem(
       title: tr('wirelessAdb'),
@@ -541,15 +526,29 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildContent() {
+    if (_activeNavId == _dashboardKey) {
+      return Stack(
+        children: [
+          DashboardView(
+            serial: _selectedSerial,
+            onQuickAction: _onQuickAction,
+            onSelectDevice: _selectDevice,
+          ),
+          RecordingOverlay(
+            db: context.read<AppDatabase>(),
+            sessionProvider: context.read<TestSessionProvider>(),
+            onNavigateToRecord: _navigateToRecord,
+          ),
+        ],
+      );
+    }
+
     if (_activeKey == null || !_screens.containsKey(_activeKey)) {
       return _buildWelcome();
     }
-
     final entries = _screens.entries.toList();
-    final activeIndex = entries.indexWhere((entry) => entry.key == _activeKey);
-    if (activeIndex < 0) {
-      return _buildWelcome();
-    }
+    final activeIndex = entries.indexWhere((e) => e.key == _activeKey);
+    if (activeIndex < 0) return _buildWelcome();
 
     return Stack(
       children: [
@@ -581,554 +580,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  void _navigateToRecord(String serial, NavItem item) {
-    _navigateTo(serial, item);
-  }
-
   Widget _buildWelcome() {
     return EmptyState(
       icon: Icons.android,
       title: tr('appTitle'),
       subtitle: tr('welcome'),
-    );
-  }
-
-  void _removeDevice(String serial) async {
-    final sessionProvider = context.read<TestSessionProvider>();
-    final deviceProvider = context.read<DeviceProvider>();
-    try {
-      if (sessionProvider.hasRunningSession) {
-        await sessionProvider.finishSession();
-      }
-    } catch (_) {}
-    final ok = await deviceProvider.removeDevice(serial);
-    if (!mounted) return;
-    if (!ok) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(tr('removeDeviceFailed')),
-          duration: const Duration(seconds: 3),
-        ),
-      );
-      return;
-    }
-    setState(() {
-      _screens.removeWhere((_, screen) => screen.serial == serial);
-      _expandedSerials.remove(serial);
-      if (_activeKey != null && !_screens.containsKey(_activeKey)) {
-        _activeKey = null;
-      }
-    });
-    _persistState();
-  }
-
-  Future<void> _persistState() async {
-    final dp = context.read<DeviceProvider>();
-    await dp.db.appStatesDao.updateAppState(
-      activeKey: _activeKey,
-      expandedSerials: _expandedSerials.toList(),
-      sidebarWidth: _sidebarWidth.value.round(),
-      sidebarCollapsed: _sidebarCollapsed,
-    );
-  }
-
-  void _toggleSidebarCollapsed() {
-    setState(() {
-      _sidebarCollapsed = !_sidebarCollapsed;
-    });
-    _persistState();
-  }
-
-  void _onDragStart(DragStartDetails details) {
-    setState(() => _isDragging = true);
-  }
-
-  void _onDragUpdate(DragUpdateDetails details) {
-    // No setState: updates ValueNotifier directly so only the sidebar
-    // subtree rebuilds (via ValueListenableBuilder below).
-    _sidebarWidth.value = (_sidebarWidth.value + details.delta.dx)
-        .clamp(_minSidebarWidth, _maxSidebarWidth);
-  }
-
-  void _onDragEnd(DragEndDetails details) {
-    setState(() => _isDragging = false);
-    _persistState();
-  }
-
-  void _resetSidebarWidth() {
-    _sidebarWidth.value = _defaultSidebarWidth;
-    if (_sidebarCollapsed) {
-      setState(() => _sidebarCollapsed = false);
-    }
-    _persistState();
-  }
-
-  Widget _buildResizableSidebar(
-      BuildContext context, List<SavedDevice> devices, bool online) {
-    final theme = Theme.of(context);
-    return RepaintBoundary(
-      child: ValueListenableBuilder<double>(
-        valueListenable: _sidebarWidth,
-        builder: (context, width, _) {
-          final currentWidth =
-              _sidebarCollapsed ? _collapsedSidebarWidth : width;
-          // Duration: 0 during drag (instant feedback), 150ms on collapse toggle
-          // so the width animates smoothly without per-frame lag while dragging.
-          return AnimatedContainer(
-            duration: _isDragging ? Duration.zero : _sidebarAnimDuration,
-            curve: Curves.easeOutCubic,
-            width: currentWidth,
-            child: Stack(
-              children: [
-                _sidebarCollapsed
-                    ? _buildCollapsedSidebar(theme, devices)
-                    : _buildSidebar(context, devices, online),
-                if (!_sidebarCollapsed)
-                  Positioned(
-                    right: 0,
-                    top: 0,
-                    bottom: 0,
-                    child: _buildDragHandle(theme),
-                  ),
-              ],
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildDragHandle(ThemeData theme) {
-    return Tooltip(
-      message: tr('resizeSidebarHint'),
-      child: GestureDetector(
-        behavior: HitTestBehavior.translucent,
-        onHorizontalDragStart: _onDragStart,
-        onHorizontalDragUpdate: _onDragUpdate,
-        onHorizontalDragEnd: _onDragEnd,
-        onDoubleTap: _resetSidebarWidth,
-        child: MouseRegion(
-          cursor: SystemMouseCursors.resizeLeftRight,
-          child: Container(
-            width: 6,
-            color: _isDragging
-                ? theme.colorScheme.primary.withAlpha(60)
-                : Colors.transparent,
-          ),
-        ),
-      ),
-    );
-  }
-
-  // Theme-aware connection status dot color. Green is kept hardcoded (universal
-  // "online" semantic) but uses a slightly desaturated shade; red falls back to
-  // theme.error so it respects dark/light mode.
-  Color _statusDotColor(ThemeData theme, bool isConnected) =>
-      isConnected ? Colors.green.shade400 : theme.colorScheme.error;
-
-  Widget _buildCollapsedSidebar(ThemeData theme, List<SavedDevice> devices) {
-    return Container(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerLow,
-        border: Border(right: BorderSide(color: theme.dividerColor)),
-      ),
-      child: Column(
-        children: [
-          // Expand button
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Tooltip(
-              message: tr('expandSidebar'),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(8),
-                onTap: _toggleSidebarCollapsed,
-                child: Padding(
-                  padding: const EdgeInsets.all(8),
-                  child: Icon(Icons.chevron_right,
-                      size: 20, color: theme.colorScheme.primary),
-                ),
-              ),
-            ),
-          ),
-          const Divider(height: 1),
-          // Device icons
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              children: devices.map((d) {
-                final isConnected =
-                    context.read<DeviceProvider>().isDeviceConnected(d.serial);
-                final isActiveDevice = _screens[_activeKey]?.serial == d.serial;
-                return Tooltip(
-                  message: d.displayName,
-                  preferBelow: false,
-                  child: InkWell(
-                    onTap: () => _collapsedDeviceTap(d.serial),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      color: isActiveDevice
-                          ? theme.colorScheme.primaryContainer
-                          : null,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          CircleAvatar(
-                              radius: 12,
-                              backgroundColor: isActiveDevice
-                                  ? theme.colorScheme.primary
-                                  : theme.colorScheme.surfaceContainerHighest,
-                              child: Text(
-                                d.displayName.isNotEmpty
-                                    ? d.displayName[0].toUpperCase()
-                                    : '?',
-                                style: TextStyle(
-                                  fontSize: AppFontSize.sm,
-                                  fontWeight: FontWeight.w600,
-                                  color: isActiveDevice
-                                      ? theme.colorScheme.onPrimary
-                                      : theme.colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                            ),
-                          const SizedBox(height: 2),
-                          Container(
-                            width: 6,
-                            height: 6,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: _statusDotColor(theme, isConnected),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
-          ),
-          const Divider(height: 1),
-          // Global entries as icon-only
-          _buildCollapsedGlobalEntry(
-            theme,
-            icon: Icons.tune,
-            tooltip: tr('testConfigCenter'),
-            isActive: _activeKey == _testConfigKey,
-            onTap: () => _expandAndOpen(_openTestConfig),
-          ),
-          _buildCollapsedGlobalEntry(
-            theme,
-            icon: Icons.smartphone,
-            tooltip: tr('emulatorSettings.title'),
-            isActive: _activeKey == _emulatorKey,
-            onTap: () => _expandAndOpen(_openEmulatorSettings),
-          ),
-          _buildCollapsedGlobalEntry(
-            theme,
-            icon: Icons.settings,
-            tooltip: tr('settings.title'),
-            isActive: _activeKey == _settingsKey,
-            onTap: () => _expandAndOpen(_openSettings),
-          ),
-          _buildCollapsedGlobalEntry(
-            theme,
-            icon: Icons.terminal,
-            tooltip: tr('backendLogs'),
-            isActive: _activeKey == _backendLogKey,
-            onTap: () => _expandAndOpen(_openBackendLogs),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Click a device icon while sidebar is collapsed: expand sidebar and ensure
-  // the device is in the expanded set, in a single setState + single
-  // _persistState (previously each helper triggered its own — two DB writes
-  // per tap, plus a brief inconsistent intermediate frame).
-  void _collapsedDeviceTap(String serial) {
-    if (_expandedSerials.isEmpty) {
-      // First device ever: expand + auto-navigate to status so the user
-      // immediately has something on screen (matches old _toggleExpand).
-      setState(() => _sidebarCollapsed = false);
-      _navigateTo(serial, NavItem.status);
-      return;
-    }
-    setState(() {
-      _sidebarCollapsed = false;
-      _expandedSerials.add(serial); // Set.add is no-op if already present.
-    });
-    _persistState();
-  }
-
-  // Click a global entry while sidebar is collapsed: expand sidebar and open
-  // the target page in a single persist (collapsed=false + activeKey together).
-  VoidCallback _expandAndOpen(VoidCallback openFn) {
-    return () {
-      if (_sidebarCollapsed) {
-        setState(() => _sidebarCollapsed = false);
-      }
-      openFn(); // openFn does its own setState(_activeKey); Flutter coalesces
-      _persistState();
-    };
-  }
-
-  Widget _buildCollapsedGlobalEntry(
-    ThemeData theme, {
-    required IconData icon,
-    required String tooltip,
-    required VoidCallback onTap,
-    bool isActive = false,
-  }) {
-    return Tooltip(
-      message: tooltip,
-      preferBelow: false,
-      child: Material(
-        color:
-            isActive ? theme.colorScheme.primaryContainer : Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Icon(icon,
-                size: 20,
-                color: isActive
-                    ? theme.colorScheme.primary
-                    : theme.colorScheme.onSurfaceVariant),
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// Section header for sidebar zones.
-  Widget _buildSectionHeader(
-    ThemeData theme, {
-    required String title,
-    String? subtitle,
-    List<Widget>? actions,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-          AppSpacing.md, AppSpacing.sm, AppSpacing.sm, AppSpacing.xs),
-      child: Row(
-        children: [
-          Text(
-            title,
-            style: TextStyle(
-              fontSize: AppFontSize.xs,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.5,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-          if (subtitle != null) ...[
-            const SizedBox(width: AppSpacing.xs),
-            Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.primary.withAlpha(30),
-                borderRadius: BorderRadius.circular(AppRadius.full),
-              ),
-              child: Text(
-                subtitle,
-                style: TextStyle(
-                  fontSize: AppFontSize.xs,
-                  color: theme.colorScheme.primary,
-                ),
-              ),
-            ),
-          ],
-          const Spacer(),
-          if (actions != null) ...actions,
-        ],
-      ),
-    );
-  }
-
-  Widget _buildIconAction(
-    ThemeData theme, {
-    required IconData icon,
-    required String tooltip,
-    required VoidCallback onTap,
-    Color? color,
-  }) {
-    final fg = color ?? theme.colorScheme.onSurfaceVariant;
-    return Tooltip(
-      message: tooltip,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(AppRadius.sm),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(4),
-          child: Icon(icon, size: 16, color: fg),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSidebar(
-      BuildContext context, List<SavedDevice> devices, bool online) {
-    final theme = Theme.of(context);
-    final deviceProvider = context.read<DeviceProvider>();
-    final api = context.read<ApiClient>();
-
-    return Container(
-      width: _sidebarWidth.value,
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerLow,
-        border: Border(right: BorderSide(color: theme.dividerColor)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildHeader(theme),
-          const Divider(height: 1),
-          _buildSectionHeader(
-            theme,
-            title: tr('devices'),
-            subtitle: devices.isNotEmpty ? '${devices.length}' : null,
-            actions: [
-              _buildIconAction(theme,
-                  icon: Icons.sync,
-                  tooltip: tr('refresh'),
-                  onTap: () => deviceProvider.refresh(api)),
-              _buildIconAction(theme,
-                  icon: Icons.wifi_tethering,
-                  tooltip: tr('wirelessAdb'),
-                  onTap: _showWirelessAdbDialog),
-              if (widget.onRestart != null)
-                _buildIconAction(theme,
-                    icon: Icons.refresh,
-                    tooltip: tr('restart'),
-                    onTap: () {
-                      widget.onRestart!();
-                      _clearAllState();
-                    }),
-              if (widget.onShutdown != null)
-                _buildIconAction(theme,
-                    icon: Icons.power_settings_new,
-                    tooltip: tr('shutdown'),
-                    color: theme.colorScheme.error,
-                    onTap: () => _confirmShutdown(context)),
-            ],
-          ),
-          Expanded(
-            child: _DeviceTreeArea(
-              expandedSerials: _expandedSerials,
-              activeDeviceSerials: {
-                for (final entry in _screens.entries)
-                  if (entry.value.serial != null) entry.value.serial!,
-              },
-              activeKey: _activeKey,
-              onToggleExpand: _toggleExpand,
-              onRemoveDevice: _removeDevice,
-              onNavigateTo: _navigateTo,
-            ),
-          ),
-          const Divider(height: 1),
-          _buildSectionHeader(
-            theme,
-            title: tr('tools'),
-          ),
-          _buildGlobalEntry(
-            theme,
-            keyName: _testConfigKey,
-            icon: Icons.tune,
-            label: tr('testConfigCenter'),
-            badge: tr('config'),
-            onTap: _openTestConfig,
-          ),
-          _buildGlobalEntry(
-            theme,
-            keyName: _emulatorKey,
-            icon: Icons.smartphone,
-            label: tr('emulatorSettings.title'),
-            badge: 'Android',
-            extraBadge: 'BETA',
-            onTap: _openEmulatorSettings,
-          ),
-          _buildGlobalEntry(
-            theme,
-            keyName: _settingsKey,
-            icon: Icons.settings,
-            label: tr('settings.title'),
-            badge: 'Settings',
-            onTap: _openSettings,
-          ),
-          _buildGlobalEntry(
-            theme,
-            keyName: _backendLogKey,
-            icon: Icons.terminal,
-            label: tr('backendLogs'),
-            badge: 'Go',
-            onTap: _openBackendLogs,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildHeader(ThemeData theme) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
-      child: Row(
-        children: [
-          Icon(Icons.adb, size: 20, color: theme.colorScheme.primary),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: Text(
-              'ADB Tool',
-              style: theme.textTheme.titleSmall
-                  ?.copyWith(fontWeight: FontWeight.w600),
-              overflow: TextOverflow.ellipsis,
-              maxLines: 1,
-            ),
-          ),
-          Tooltip(
-            message: tr('theme'),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(AppRadius.sm),
-              onTap: () => context.read<ThemeProvider>().toggle(),
-              child: Padding(
-                padding: const EdgeInsets.all(4),
-                child: Icon(Icons.brightness_6, size: 16,
-                    color: theme.colorScheme.onSurfaceVariant),
-              ),
-            ),
-          ),
-          const SizedBox(width: 4),
-          GestureDetector(
-            onTap: () => context.read<LocaleProvider>().toggle(),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-              decoration: BoxDecoration(
-                border: Border.all(color: theme.dividerColor),
-                borderRadius: BorderRadius.circular(AppRadius.sm),
-              ),
-              child: Text(
-                  context.read<LocaleProvider>().currentLang == 'zh'
-                      ? 'EN'
-                      : '文',
-                  style: const TextStyle(fontSize: AppFontSize.sm)),
-            ),
-          ),
-          const SizedBox(width: 4),
-          Tooltip(
-            message: tr('collapseSidebar'),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(AppRadius.sm),
-              onTap: _toggleSidebarCollapsed,
-              child: Padding(
-                padding: const EdgeInsets.all(4),
-                child: Icon(Icons.chevron_left,
-                    size: 18, color: theme.colorScheme.onSurfaceVariant),
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -1138,7 +594,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final deviceProvider = context.read<DeviceProvider>();
 
     return MaterialBanner(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.sm,
+      ),
       backgroundColor: theme.colorScheme.errorContainer,
       leading: Icon(Icons.cloud_off, color: theme.colorScheme.onErrorContainer),
       content: Text(
@@ -1155,15 +614,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               widget.onRestart!();
               _clearAllState();
             },
-            child: Text(tr('restart'),
-                style: TextStyle(
-                    fontSize: 12, color: theme.colorScheme.onErrorContainer)),
+            child: Text(
+              tr('restart'),
+              style: TextStyle(
+                fontSize: 12,
+                color: theme.colorScheme.onErrorContainer,
+              ),
+            ),
           ),
         TextButton(
           onPressed: () => deviceProvider.refresh(api),
-          child: Text(tr('refresh'),
-              style: TextStyle(
-                  fontSize: 12, color: theme.colorScheme.onErrorContainer)),
+          child: Text(
+            tr('refresh'),
+            style: TextStyle(
+              fontSize: 12,
+              color: theme.colorScheme.onErrorContainer,
+            ),
+          ),
         ),
       ],
     );
@@ -1189,7 +656,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               Text(
                 tr('dbErrorTitle'),
                 style: TextStyle(
-                    fontSize: 12, fontWeight: FontWeight.w600, color: fg),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: fg,
+                ),
               ),
               const SizedBox(height: 2),
               Text(
@@ -1227,8 +697,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     // restarts. Pausing it here would permanently kill the stream
     // because nothing resumes it.
     _screens.clear();
-    _expandedSerials.clear();
-    _activeKey = null;
+    _activeKey = _dashboardKey;
     context.read<DeviceProvider>().select(null);
   }
 
@@ -1237,510 +706,88 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final deviceProvider = context.read<DeviceProvider>();
     await showDialog<void>(
       context: context,
-      builder: (_) =>
-          WirelessAdbDialog(api: api, deviceProvider: deviceProvider),
+      builder: (_) => WirelessAdbDialog(api: api, deviceProvider: deviceProvider),
     );
   }
-
-  void _confirmShutdown(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        scrollable: true,
-        title: Text(tr('confirmShutdown')),
-        content: Text(tr('shutdownHint')),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(tr('cancel')),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _clearAllState();
-              widget.onShutdown!();
-            },
-            style: FilledButton.styleFrom(
-                backgroundColor: Theme.of(ctx).colorScheme.error),
-            child: Text(tr('shutdown')),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildGlobalEntry(
-    ThemeData theme, {
-    required String keyName,
-    required IconData icon,
-    required String label,
-    required String badge,
-    String? extraBadge,
-    required VoidCallback onTap,
-  }) {
-    final isActive = _activeKey == keyName;
-    return Material(
-      color: isActive ? theme.colorScheme.primaryContainer : Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        hoverColor: theme.colorScheme.surfaceContainerHighest,
-        mouseCursor: SystemMouseCursors.click,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          child: Row(
-            children: [
-              Icon(icon,
-                  size: 16,
-                  color: isActive
-                      ? theme.colorScheme.primary
-                      : theme.colorScheme.onSurfaceVariant),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
-                    color: isActive
-                        ? theme.colorScheme.primary
-                        : theme.colorScheme.onSurface,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              if (extraBadge != null) ...[
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    // Amber so it pops against the primary-tinted 'Android'
-                    // chip and reads as "in-progress" rather than "stable".
-                    color: Colors.amber.shade700,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    extraBadge,
-                    style: const TextStyle(
-                      fontSize: 9,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.4,
-                      color: Colors.black87,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 6),
-              ],
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.primary.withAlpha(30),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(badge, style: const TextStyle(fontSize: 9)),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Sidebar list of saved devices. Split out from [_HomeScreenState] so
-/// `DeviceProvider.notifyListeners()` only rebuilds *this* subtree
-/// instead of the whole `HomeScreen` (which would also rebuild the
-/// `IndexedStack` of per-device screens, the top toolbar, the
-/// backend-log/test-config entries, etc.). On Windows the previous
-/// "rebuild everything" pattern combined with rapid list-shape changes
-/// (e.g. first device plugged in flipping the empty-state branch into
-/// a non-empty `ListView` mid-rebuild) tripped the a11y bridge into
-/// `UNREACHABLE` and crashed the app.
-///
-/// State owned by [_HomeScreenState] (parent) is passed in as
-/// immutable inputs + callbacks; the widget itself does not hold any
-/// mutable state — the consumer-driven rebuild path is enough for
-/// what this widget needs to do.
-class _DeviceTreeArea extends StatelessWidget {
-  const _DeviceTreeArea({
-    required this.expandedSerials,
-    required this.activeDeviceSerials,
-    required this.activeKey,
-    required this.onToggleExpand,
-    required this.onRemoveDevice,
-    required this.onNavigateTo,
-  });
-
-  /// Stable identities (SavedDevice.serial = ro.serialno) whose
-  /// function-item list is currently expanded.
-  final Set<String> expandedSerials;
-
-  /// Stable identities that own a cached screen in the right-hand
-  /// `IndexedStack` — used to highlight the active device row.
-  /// Derived from the parent's `_screens` map.
-  final Set<String> activeDeviceSerials;
-
-  /// The currently focused screen key (`${serial}_${item.name}`).
-  /// Used to render the per-row active highlight for function items.
-  final String? activeKey;
-
-  final void Function(String serial) onToggleExpand;
-  final void Function(String serial) onRemoveDevice;
-  final void Function(String serial, NavItem item) onNavigateTo;
-
-  // Static dot color helper — kept here to avoid leaking theme
-  // coloring into the parent. Mirrors the original
-  // _HomeScreenState._statusDotColor.
-  static Color _statusDotColor(ThemeData theme, bool isConnected) =>
-      isConnected ? Colors.green.shade400 : theme.colorScheme.error;
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<DeviceProvider>(
-      builder: (context, deviceProvider, _) {
-        final devices = deviceProvider.savedDevices;
-        final theme = Theme.of(context);
+    final snapshot = context.select<DeviceProvider, _HomeSnapshot>(
+      (p) => _HomeSnapshot(p.savedDevices, p.online, p.lastDbError),
+    );
+    context.watch<LocaleProvider>();
+    final savedDevices = snapshot.savedDevices;
+    final backendOnline = snapshot.online;
+    final selectedSerial =
+        context.select<DeviceProvider, String?>((p) => p.activeSerial);
 
-        if (devices.isEmpty) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.phone_android,
-                      size: 40,
-                      color: theme.colorScheme.onSurfaceVariant.withAlpha(100)),
-                  const SizedBox(height: 8),
-                  Text(tr('noDevices'),
-                      style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant)),
-                  const SizedBox(height: 4),
-                  Text(tr('noDevicesHint'),
-                      style: TextStyle(
-                          fontSize: 10,
-                          color: theme.colorScheme.onSurfaceVariant
-                              .withAlpha(150))),
-                ],
-              ),
-            ),
-          );
-        }
+    // Restore page from saved state when devices are loaded.
+    if (savedDevices.isNotEmpty && _activeKey != null && !_restoredFromState) {
+      _restoredFromState = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _restoreActiveKey(savedDevices);
+      });
+    }
 
-        final deviceNodes = devices.asMap().entries.expand((e) {
-          final d = e.value;
-          final isLast = e.key == devices.length - 1;
-          return [
-            KeyedSubtree(
-              key: ValueKey('device-node:${d.serial}'),
-              child: _buildDeviceNode(context, d, theme),
-            ),
-            if (!isLast)
-              Divider(
-                height: 1,
-                thickness: 1,
-                indent: AppSpacing.md,
-                endIndent: AppSpacing.md,
-                color: theme.dividerColor,
-              ),
-          ];
-        }).toList();
-        return ListView(
-          padding: const EdgeInsets.symmetric(vertical: 4),
-          // KeyedSubtree + stable ValueKey per device: without an
-          // explicit Key, Flutter falls back to position-based
-          // matching and rapid Windows rebuilds can trip the a11y
-          // tree into UNREACHABLE. Stable keys tie each row to its
-          // SavedDevice.serial so expanded/active/cached-screen
-          // state stays correct.
-          children: deviceNodes,
-        );
+    final isMacOS = defaultTargetPlatform == TargetPlatform.macOS;
+    final selDevice = selectedSerial == null
+        ? null
+        : savedDevices.where((d) => d.serial == selectedSerial).firstOrNull;
+
+    final sidebarItems = _navEntries
+        .map(
+          (e) => AppNavItemData(
+            id: e.id,
+            icon: e.icon,
+            label: tr(e.labelKey),
+            group: e.group,
+          ),
+        )
+        .toList();
+
+    return CallbackShortcuts(
+      bindings: {
+        // Command palette: Cmd/Ctrl+K
+        SingleActivator(
+          LogicalKeyboardKey.keyK,
+          meta: isMacOS,
+          control: !isMacOS,
+        ): _openCommandPalette,
+        // Navigate to nav item: Cmd/Ctrl+1~9
+        for (int i = 0; i < _navEntries.length && i < _navDigitKeys.length; i++)
+          SingleActivator(
+            _navDigitKeys[i],
+            meta: isMacOS,
+            control: !isMacOS,
+          ): () => _digitNavigate(i),
       },
-    );
-  }
-
-  Widget _buildDeviceNode(
-      BuildContext context, SavedDevice d, ThemeData theme) {
-    final isExpanded = expandedSerials.contains(d.serial);
-    final hasActiveScreen = activeDeviceSerials.contains(d.serial);
-    final isConnected = d.isConnected;
-    // SavedDevice.serial is the stable identity (ro.serialno, e.g.
-    // 'R5CT70AHPDR'); its current Wi-Fi transport (if any) lives on
-    // the DeviceProvider's online list. We must NOT gate the
-    // disconnect button on the serial string itself (e.g. `contains(':')`)
-    // — the stable identity never contains ':' once the row is
-    // upgraded past v9 migration, so the button would vanish.
-    final hasWifi = context.read<DeviceProvider>().hasWifiTransport(d.serial);
-    // Two-line label: model on top, Android version + transport below.
-    // When no model is known displayName already equals the serial, so a
-    // subtitle would be redundant.
-    final subtitle = d.model.isNotEmpty
-        ? 'Android ${d.sdk}${hasWifi ? ' · Wi-Fi' : ' · USB'}'
-        : '';
-    // Pick a device-type glyph (phone vs tablet) for the rounded icon
-    // container on the left of the row.
-    final deviceIcon = (d.model.toLowerCase().contains('tab') ||
-            d.model.toLowerCase().contains('pad'))
-        ? Icons.tablet_android
-        : Icons.smartphone;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Material(
-          color: hasActiveScreen
-              ? theme.colorScheme.primaryContainer.withAlpha(80)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-        child: InkWell(
-          onTap: () => onToggleExpand(d.serial),
-          hoverColor: theme.colorScheme.surfaceContainerHighest,
-          mouseCursor: SystemMouseCursors.click,
-            child: Tooltip(
-              message: d.serial,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.md, vertical: AppSpacing.sm),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    // Device-type icon in a rounded container, with an
-                    // online/offline status dot at its bottom-right corner.
-                    Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        Container(
-                          width: 28,
-                          height: 28,
-                          decoration: BoxDecoration(
-                            color: theme.colorScheme.surfaceContainerHighest,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Icon(
-                            deviceIcon,
-                            size: 16,
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                        Positioned(
-                          right: -1,
-                          bottom: -1,
-                          child: Container(
-                            width: 9,
-                            height: 9,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: _statusDotColor(theme, isConnected),
-                              border: Border.all(
-                                color: theme.colorScheme.surface,
-                                width: 1.5,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            d.displayName,
-                            style: const TextStyle(
-                                fontSize: 13, fontWeight: FontWeight.w600),
-                            overflow: TextOverflow.ellipsis,
-                            maxLines: 1,
-                          ),
-                          if (subtitle.isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 2),
-                              child: Text(
-                                subtitle,
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                ),
-                                overflow: TextOverflow.ellipsis,
-                                maxLines: 1,
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                    // Subtle action icons (right side): remove when
-                    // offline, disconnect Wi-Fi when connected wirelessly.
-                    if (!isConnected)
-                      Tooltip(
-                        message: tr('removeDevice'),
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(4),
-                          onTap: () => onRemoveDevice(d.serial),
-                          child: const Padding(
-                            padding: EdgeInsets.only(left: 4),
-                            child: Icon(Icons.close, size: 14),
-                          ),
-                        ),
-                      ),
-                    if (isConnected && hasWifi) _disconnectButton(context, d),
-                    const SizedBox(width: 2),
-                    Icon(
-                      isExpanded ? Icons.expand_more : Icons.chevron_right,
-                      size: 18,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-        if (isExpanded)
-          ...NavItem.values
-              .where((item) => item != NavItem.info)
-              .map((item) => _buildFunctionItem(context, d, item, theme)),
-      ],
-    );
-  }
-
-  Widget _disconnectButton(BuildContext context, SavedDevice d) {
-    return Tooltip(
-      message: tr('disconnect'),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(4),
-        onTap: () => _disconnect(context, d),
-        child: const Padding(
-          padding: EdgeInsets.only(left: 4),
-          child: Icon(Icons.close, size: 14),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _disconnect(BuildContext context, SavedDevice d) async {
-    final api = context.read<ApiClient>();
-    final deviceProvider = context.read<DeviceProvider>();
-
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        scrollable: true,
-        title: Text(tr('disconnectConfirm')),
-        content: Text(tr('disconnectConfirmBody', {'name': d.displayName})),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(tr('cancel')),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(tr('disconnect')),
-          ),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    // adb-wireless-disconnect takes the **Wi-Fi transport address**
-    // (ip:port), not the saved device's PK (ro.serialno) and not
-    // `onlineAddressFor` (which is USB-preferred and would hand back
-    // a USB serial — `adb disconnect <usb-serial>` is a no-op or an
-    // error). Resolve the current Wi-Fi transport explicitly.
-    if (!context.mounted) return;
-    final wifiTransport =
-        context.read<DeviceProvider>().wifiTransportFor(d.serial);
-    if (wifiTransport == null) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(tr('disconnectFailed', {'name': d.displayName})),
-          duration: const Duration(seconds: 3),
-        ),
-      );
-      return;
-    }
-    final result = await api.disconnectWirelessAdb(wifiTransport.serial);
-    if (!context.mounted) return;
-    if (result.ok) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(tr('disconnectSuccess', {'name': d.displayName})),
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(result.error.isNotEmpty
-              ? result.error
-              : tr('disconnectFailed', {'name': d.displayName})),
-          duration: const Duration(seconds: 3),
-        ),
-      );
-    }
-    deviceProvider.refresh(api);
-  }
-
-  Widget _buildFunctionItem(
-      BuildContext context, SavedDevice d, NavItem item, ThemeData theme) {
-    final key = '${d.serial}_${item.name}';
-    final c = _navConfig[item]!;
-    final isActive = activeKey == key;
-
-    final radius = BorderRadius.circular(8);
-    return Padding(
-      // Gap between submenu items + inset from the sidebar edges so the
-      // rounded hover / selected surface reads as a distinct tile
-      // (modern macOS-style sidebar) instead of one flat block.
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      child: Material(
-        color: isActive ? theme.colorScheme.primaryContainer : Colors.transparent,
-        borderRadius: radius,
-        child: InkWell(
-          onTap: () => onNavigateTo(d.serial, item),
-          borderRadius: radius,
-          hoverColor: theme.colorScheme.surfaceContainerHighest,
-          mouseCursor: SystemMouseCursors.click,
-          child: Stack(
+      child: Focus(
+        autofocus: true,
+        child: Scaffold(
+          // Transparent: the global AppBackground (theme base + glow) shows
+          // through the whole content area.
+          backgroundColor: Colors.transparent,
+          body: Column(
             children: [
-              if (isActive)
-                Positioned(
-                  left: 4,
-                  top: 6,
-                  bottom: 6,
-                  child: Container(
-                    width: 3,
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.primary,
-                      borderRadius: BorderRadius.circular(1.5),
-                    ),
-                  ),
-                ),
-              Padding(
-                padding:
-                    const EdgeInsets.only(left: 42, right: 12, top: 7, bottom: 7),
+              if (!backendOnline) _buildOfflineBanner(context),
+              if (snapshot.lastDbError != null)
+                _buildDbErrorBanner(context, snapshot.lastDbError!),
+              Expanded(
                 child: Row(
                   children: [
-                    Icon(c.icon,
-                        size: 16,
-                        color: isActive
-                            ? theme.colorScheme.primary
-                            : theme.colorScheme.onSurfaceVariant),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        tr(_navConfig[item]!.label),
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight:
-                              isActive ? FontWeight.w600 : FontWeight.normal,
-                          color: isActive
-                              ? theme.colorScheme.primary
-                              : theme.colorScheme.onSurface,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: 1,
-                      ),
+                    AppSidebar(
+                      items: sidebarItems,
+                      activeNavId: _activeNavId,
+                      onNavTap: _navigateToId,
+                      deviceName: selDevice?.displayName ?? tr('noDevice'),
+                      deviceStatus: selDevice?.isConnected == true
+                          ? tr('deviceOnline')
+                          : tr('deviceOffline'),
+                      deviceOnline: selDevice?.isConnected ?? false,
+                      onDeviceSwitcherTap: _showDeviceSwitcher,
+                      backendOnline: backendOnline,
                     ),
+                    Expanded(child: _buildContent()),
                   ],
                 ),
               ),
