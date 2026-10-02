@@ -37,3 +37,5 @@ flutter_app/ADBToolData/
 /.mimocode/*
 /.opencode/*
 .*/
+# Allow .github/ — the blanket `.*/` rule above also hides new workflow files.
+!.github/
