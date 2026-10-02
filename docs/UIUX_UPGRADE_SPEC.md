@@ -65,9 +65,13 @@ WindowChrome（自绘标题栏，常驻）
 | 工作区页 | status / apps / files / info / logcat / command / clipboard / hierarchy / mirror / session | `IndexedStack` 保活 | 不得在 `dispose` 里丢用户状态；切回即恢复 |
 | 全局页 | backendLogs / testConfig / emulator | 进入才创建（`home_screen.dart:67` `_globalKeys`） | 不得假设设备已选中；必须自带"未选设备"引导 |
 
-**决策 D1（待你拍板，推荐先做）**：`DashboardView` 的 `realtimePerformance`（`dashboard_view.dart:935`）与 `connectedDevices`（:1152）两个区块，和 `DeviceStatusScreen` 的目标完全重叠。建议 **DeviceStatusScreen 降级为 Dashboard 的一个可展开 section，并从侧边栏 mainMenu 移除独立入口**（14 个入口 → 13 个）。收益：少一个页面要迁移、消除两处各自演化的实时状态视图。代价：老用户少一个书签。
+**决策 D1（已撤销，前提是错的）**：我原先判断 `DashboardView` 的 `realtimePerformance` 与 `DeviceStatusScreen` "目标完全重叠"，因此建议删掉侧边栏入口。核对源码后不成立：`DeviceStatusScreen`（909 行）独有电池、存储、帧率/刷新率、网络信号、热状态、以及"自动刷新 + 最后更新时间"控制，Dashboard 只重画了 CPU / 内存两条曲线。**删入口会直接砍掉这六类可达能力**，收益（少迁移一页）远小于代价。
 
-**决策 D2**：`DeviceInfoScreen` 与 `DeviceStatusScreen` 同样偏"参数罗列"，建议合并为"设备"单页的两个 tab。与 D1 一起做最省。
+真正的缺陷是：同一类 UI（指标卡、成对属性卡）只在该页私有实现（`_metricCard` `device_status_screen.dart:605`、`_pairedCard` :480），Dashboard 又各自手写一遍，于是两处各自演化。所以处置方式是**提升为设计层组件**（见 D1'），入口一个都不删。
+
+**决策 D2（已撤销）**：`DeviceInfoScreen`（329 行）不是"参数罗列的状态页"，它是静态 `getprop` 属性检索表 + 截图/保存截图（`searchProps`、`saveScreenshot`），与实时监视是两种不同的心智模型，合并只会得到一页两态都别扭。保持独立页面，按 §9 队列正常迁移。
+
+**导航耦合警告**：`_navEntries`（`home_screen.dart:49-65`）、`Ctrl+1..9` 数字快捷键（:88-98 与 :766，**按列表下标绑定**）、`_deviceNavIds`（:74，喂命令面板）、IndexedStack 页索引是同一份顺序的四个消费者。删任一项都会让其余三个静默错位。任何导航增删必须同时改这四处并加断言。
 
 ---
 
@@ -78,7 +82,7 @@ WindowChrome（自绘标题栏，常驻）
 | # | 能力 | 入口 | 前置条件 | 数据源 | 失败态要求 |
 |---|---|---|---|---|---|
 | 1 | 总览设备并快捷行动 | 侧边栏 dashboard（默认） | 无（无设备时走空态） | `DeviceProvider` + `saved_devices` DAO | 设备离线时 `DisconnectedBanner`；快捷行动禁用并说明原因 |
-| 2 | 查看设备实时状态 | D1 后并入 #1 | 设备在线 | `device_provider` 轮询 | CPU/内存取不到 → 显示"—"，不得显示 0 |
+| 2 | 查看设备实时状态 | 侧边栏 status（监视页 = 实时指标的唯一完整源） | 设备在线 | `device_provider` 轮询 | CPU/内存取不到 → 显示"—"，不得显示 0；自动刷新关闭时必须仍给出手动刷新入口 |
 | 3 | 管理设备应用 | 侧边栏 apps | 设备在线 + 已选设备 | `app_manager` API | 卸载失败保留列表原状并 toast；APK 拖放失败要区分"文件不是 APK"和"设备拒绝" |
 | 4 | 浏览并传输设备文件 | 侧边栏 files | 设备在线 | `file_browser` API | 传输中必须有 `TransferProgressOverlay`，取消必须可中断 |
 | 5 | 抓取并过滤运行日志 | 侧边栏 logcat | 设备在线 | `logcat_state` + WS | 后端断连 → `backendOffline` 文案 + 自动重连；过滤正则非法 → 就地校验，不得清空列表 |
@@ -117,10 +121,12 @@ WindowChrome（自绘标题栏，常驻）
 | `AppPanel` | 唯一内容容器（panel 底 + hairline 边 + radius.lg） | 仅 DashboardView | `settings_dialog.dart:327` 的私有 `_Panel` 是它的复制，先删这个 |
 | `AppSectionLabel` | 内容区分节标题（14/w600） | 仅 DashboardView | `scrcpy_settings_panel.dart:342` 的 `_SectionHeader` 重复 |
 | `AppNavGroupLabel` | 侧边栏分组标签 | app_sidebar.dart | **应迁入 `lib/design/`**，否则分组标签规则散落两处 |
-| `AppStatusBadge` | 状态点 + 文本（在线/离线/设备名） | **不存在** | DashboardView `:166-180` 正在手写这个 dot+name；`test/app_surfaces_test.dart` 曾假定它存在。**这是第一个要补的组件** |
-| `AppTopbarIconButton` | 头部图标按钮 + tooltip | **不存在** | 同上，头部操作目前各处自己拼 |
+| `AppStatusBadge` | 状态点 + 文本（在线/离线/设备名） | DashboardView（`bb4305d` 起） | 其余 17 处 `BoxShape.circle` 手写点待收敛 |
+| `AppTopbarIconButton` | 头部图标按钮 + tooltip | **已提供，尚无页面使用** | 各页 header 手拼的 `Tooltip`+`IconButton`（~20 处）待迁移 |
+| `AppMetricCard` | 单指标卡（值 + 副标题 + 阈值色） | **不存在** | 唯一真实实现是 `device_status_screen.dart:605` 的私有 `_metricCard`，应提升为组件后由 Dashboard 复用 |
+| `AppKeyValueCard` | 成对属性卡（标签/值列表） | **不存在** | 同上，源自 `device_status_screen.dart:480` 的私有 `_pairedCard` |
 
-**决策 D3**：组件层优先补 `AppStatusBadge` 与 `AppTopbarIconButton`（两者都有现成手写实现可提炼），再按页面队列迁移，**不要先扩组件库**——先扩只会增加第二套孤岛。
+**决策 D3（已落地 `bb4305d`）**：组件层只补有真实调用点在等的组件——`AppStatusBadge`、`AppTopbarIconButton` 已加入。**扩充顺序固定为"先有重复实现，再有组件"**，下一批只能是从 `DeviceStatusScreen` 提炼的 `AppMetricCard` / `AppKeyValueCard`。凭空扩组件库只会造出第二个孤岛（`cards.dart` 333 行零调用就是这么死的）。
 
 ---
 
@@ -164,18 +170,19 @@ WindowChrome（自绘标题栏，常驻）
 
 ## 9. 迁移路线（可执行，按 PR 切）
 
-**已完成（本分支 `020d091..84ab8fc`）**：颜色单轨、死代码清除、样式棘轮 + CI 护栏、侧边栏 i18n、两处真实缺陷（对比度、设备行溢出）。
+**已完成（本分支 `020d091..bb4305d` + `d86ad46`）**：颜色单轨、死代码清除、样式棘轮 + CI 护栏、侧边栏 i18n、设备行溢出、accent 对比度、`AppStatusBadge` / `AppTopbarIconButton`，以及 drift 迁移中丢失的"按 packageName 合并导入"回归修复。撤销了 D1/D2 两个基于错误前提的页面合并决策。
 
 **P1：按页迁移队列**（排序依据 = 收益确定性 × 使用频率；硬编码点数只作规模参考，不是排序键）：
 
 | 顺序 | 目标 | 硬编码点 | 动作 |
 |---|---|---|---|
-| 1 | `widgets/settings_dialog.dart` | 13 | 私有 `_Panel` → `AppPanel`；3 处 `Color(0x)` → palette |
-| 2 | `widgets/emulator_engine_card.dart` | 58 | header/section → `AppTopbar`/`AppSectionLabel`；字号与圆角走 token |
-| 3 | `screens/logcat_screen.dart` | 44 | header + 工具条 → 组件；字号 |
-| 4 | `screens/test_session/test_session_hub_screen.dart` | 29 | `_StartCard`/`_HistoryPanel`/`_SessionPreviewPanel` → `AppPanel` |
-| 5 | `screens/app_manager_screen.dart` | 33 | 同上 |
-| 6 | 其余工作区页 | 各 <30 | 每页一个 PR |
+| 1 | `widgets/settings_dialog.dart` | 13 | 私有 `_Panel`（:327）→ `AppPanel`；3 处 `Color(0x)` → palette |
+| 2 | `screens/device_status_screen.dart` | 29 | `_metricCard`(:605)/`_pairedCard`(:480) → 提升为 `AppMetricCard`/`AppKeyValueCard`；容器 → `AppPanel`。**这一步同时产出组件，优先于其它页** |
+| 3 | `screens/dashboard_view.dart` | <13 | `realtimePerformance` 区块改用第 2 步的组件，消除与监视页的重复实现 |
+| 4 | `widgets/emulator_engine_card.dart` | 58 | header/section → `AppTopbar`/`AppSectionLabel`；字号与圆角走 token |
+| 5 | `screens/logcat_screen.dart` | 44 | header + 工具条 → 组件；字号 |
+| 6 | `screens/test_session/test_session_hub_screen.dart` | 29 | `_StartCard`/`_HistoryPanel`/`_SessionPreviewPanel` → `AppPanel` |
+| 7 | 其余工作区页（含 `app_manager` 33、`file_browser` 23、`device_info` 等） | 各 <35 | 每页一个 PR |
 
 **每页 DoD（验收即这五条，缺一不算完成）**：
 1. 头部用 `AppTopbar`，分节用 `AppSectionLabel`，容器用 `AppPanel`。
@@ -196,12 +203,14 @@ WindowChrome（自绘标题栏，常驻）
 
 ---
 
-## 11. 待你确认的决策
+## 11. 决策状态
 
-| 编号 | 内容 | 推荐 | 影响面 |
-|---|---|---|---|
-| D1 | `DeviceStatusScreen` 并入 Dashboard section，侧边栏减一项 | 做 | 导航 + 1 页迁移工作量 |
-| D2 | `DeviceInfoScreen` 与设备状态合并为双 tab | 做（与 D1 同批） | 同上 |
-| D3 | 组件层先只补 `AppStatusBadge` / `AppTopbarIconButton` | 做 | design 层 +2 文件 |
-| D4 | 是否先修 §10 的导入合并回归再启动 P1 | 先修（它是产品缺陷，不是 UI 债） | provider + 2 测试 |
-| D5 | `.gitignore` 的 `.*/` 是否加 `!.github/` | 加，否则新 workflow 需持续 force-add | 1 行 |
+| 编号 | 内容 | 状态 |
+|---|---|---|
+| D1 | ~~DeviceStatusScreen 并入 Dashboard、侧边栏减一项~~ | **已撤销**：前提错误。该页独有电池/存储/帧率/刷新率/网络/热状态 + 自动刷新控制，删入口会砍掉六类能力。改为 P1 第 2、3 步收敛重复实现 |
+| D2 | ~~DeviceInfoScreen 与设备状态合并双 tab~~ | **已撤销**：该页是静态 `getprop` 检索 + 截图，与实时监视不是一种心智模型 |
+| D3 | 组件层先补 `AppStatusBadge` / `AppTopbarIconButton` | **已完成** `bb4305d`；顺序规则收紧为"先有重复实现，再有组件" |
+| D4 | 是否先修 §10 的导入合并回归再启动 P1 | **已完成** `d86ad46` |
+| D5 | `.gitignore` 的 `.*/` 是否加 `!.github/` | **已完成** `e6008ee` |
+| D6 | 浅色主题下对话框/菜单是否允许继承半透明 `surface`（`AppPalette.light.panel = 0xE6FBFCFE`） | **待真机走查**，命令行验不了。若透底影响可读性，只给 overlay 层取不透明色，不得回退 palette |
+| D7 | 侧边栏项增删是否强制"四处同步"检查（`_navEntries` / 数字键 / `_deviceNavIds` / IndexedStack 索引） | **待写入 `AGENTS.md`**，需要你同意改项目规则文件 |
