@@ -74,5 +74,12 @@ void main() {
     await pumpHub('device-b');
     expect(find.text('A history session'), findsNothing);
     expect(find.text('No history sessions'), findsOneWidget);
+
+    // Unmount inside the test body. Cancelling drift's stream queries
+    // schedules a cleanup timer in the fake-async zone, and a timer created
+    // by the framework's end-of-test teardown can never be flushed — that
+    // leaves `!timersPending` failing and the runner hanging.
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(milliseconds: 100));
   });
 }

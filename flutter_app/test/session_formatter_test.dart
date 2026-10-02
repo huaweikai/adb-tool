@@ -69,7 +69,12 @@ void main() {
 
     test('safeName strips special chars', () {
       expect(SessionFormatters.safeName('缺陷复现测试'), equals('缺陷复现测试'));
-      expect(SessionFormatters.safeName('Test / Debug'), equals('Test__Debug'));
+      // 1:1 mapping: every non-allowed character becomes its own `_`, so
+      // "Test / Debug" (space, slash, space) yields three underscores.
+      expect(SessionFormatters.safeName('Test / Debug'),
+          equals('Test___Debug'));
+      expect(SessionFormatters.safeName('Test  Debug'), equals('Test__Debug'));
+      expect(SessionFormatters.safeName('a/b'), equals('a_b'));
       expect(SessionFormatters.safeName(''), equals('session'));
     });
   });

@@ -48,10 +48,10 @@ class SessionFormatters {
 
   static String safeName(String name) {
     final value = name.trim().isEmpty ? 'session' : name.trim();
-    // No `+` quantifier — each non-allowed char becomes its own `_`
-    // (e.g. `"Test / Debug"` → `"Test__Debug"`, not `"Test_Debug"`).
-    // This matches what test/session_formatter_test.dart expects and
-    // also gives stable width for downstream IDs / log file names.
+    // No `+` quantifier — each non-allowed char becomes its own `_`, so
+    // `"Test / Debug"` → `"Test___Debug"` (space, slash, space = 3 runs) and
+    // `"Test  Debug"` stays distinct from `"Test-Debug"`. Keeping the 1:1
+    // mapping preserves distinctness for downstream IDs / log file names.
     return value.replaceAll(RegExp(r'[^a-zA-Z0-9\u4e00-\u9fa5_-]'), '_');
   }
 
