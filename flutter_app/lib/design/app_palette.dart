@@ -12,10 +12,9 @@ import 'package:flutter/material.dart';
 /// Container(color: context.palette.panel, ...)
 /// ```
 ///
-/// This replaces the legacy `AppColors.xxx` const class (in
-/// `design_tokens.dart`) as the source of truth for the new UI. The old
-/// class is kept as a *dark-only frozen snapshot* so legacy screens keep
-/// rendering unchanged; new code MUST use [AppPalette].
+/// [AppPalette] is the single source of truth for colour: [toColorScheme]
+/// feeds these same values into `Theme.of(context).colorScheme`, so legacy
+/// screens and new design-system widgets resolve from one set of tokens.
 ///
 /// Field semantics mirror the design nodes in Ardot main file
 /// `706601156104862`. See each field's doc for the mapped design node.
@@ -82,6 +81,18 @@ class AppPalette extends ThemeExtension<AppPalette> {
   /// Online status dot. Alias of [accent].
   Color get online => accent;
 
+  /// Foreground for text or icons sitting on an [accent]-filled surface.
+  /// Picked by contrast rather than by theme: the dark preset's bright green
+  /// needs near-black, and the light preset's darker green reaches only
+  /// ~2.6:1 with white versus ~7.4:1 with near-black.
+  Color get onAccent {
+    const nearBlack = Color(0xFF0A0C12);
+    final l = accent.computeLuminance();
+    final againstNearBlack = (l + 0.05) / (nearBlack.computeLuminance() + 0.05);
+    final againstWhite = 1.05 / (l + 0.05);
+    return againstNearBlack >= againstWhite ? nearBlack : Colors.white;
+  }
+
   // ── Presets ──────────────────────────────────────────────
   //
   // Dark values are frozen — they mirror the Ardot design file 1:1 and
@@ -132,6 +143,51 @@ class AppPalette extends ThemeExtension<AppPalette> {
     orange: Color(0xFFE88B2A),
     red: Color(0xFFE5484D),
   );
+
+  /// Material bridge: express these tokens as a [ColorScheme].
+  ///
+  /// Screens and widgets read `Theme.of(context).colorScheme` at ~350 sites
+  /// versus ~22 `context.palette` sites, so without this bridge a theme switch
+  /// only repaints the few design-system widgets and every legacy screen keeps
+  /// its own seed-derived colours. The two systems stop competing here: the
+  /// palette is the single source of truth and ColorScheme is derived from it.
+  ///
+  /// Only the fields the app actually reads are mapped; the remaining ones keep
+  /// the M3 baseline values from [ColorScheme.light] / [ColorScheme.dark].
+  ColorScheme toColorScheme() {
+    final isLight = canvas.computeLuminance() > 0.5;
+    final onAccent = this.onAccent;
+    final midContainer = Color.lerp(panel, raised, 0.6)!;
+    final base = isLight
+        ? const ColorScheme.light()
+        : const ColorScheme.dark();
+    return base.copyWith(
+      primary: accent,
+      onPrimary: onAccent,
+      primaryContainer: activeNav,
+      onPrimaryContainer: textPrimary,
+      secondary: accent,
+      onSecondary: onAccent,
+      secondaryContainer: activeNav,
+      onSecondaryContainer: textPrimary,
+      tertiary: blue,
+      error: red,
+      onError: Colors.white,
+      errorContainer: Color.lerp(panel, red, isLight ? 0.12 : 0.18)!,
+      onErrorContainer: textPrimary,
+      surface: panel,
+      onSurface: textPrimary,
+      onSurfaceVariant: textSecondary,
+      surfaceTint: accent,
+      surfaceContainerLowest: canvas,
+      surfaceContainerLow: Color.lerp(panel, raised, 0.35)!,
+      surfaceContainer: midContainer,
+      surfaceContainerHigh: Color.lerp(panel, raised, 0.8)!,
+      surfaceContainerHighest: raised,
+      outline: hairline,
+      outlineVariant: hairline,
+    );
+  }
 
   @override
   AppPalette copyWith({

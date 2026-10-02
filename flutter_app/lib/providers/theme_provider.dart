@@ -40,17 +40,13 @@ void savePrefs(Map<String, dynamic> data) {
   } catch (_) {}
 }
 
-const Color _darkScaffoldBg = Color(0xFF0D1117);
-const Color _darkDivider = Color(0xFF30363D);
-const Color _lightDivider = Color(0xFFD0D7DE);
-
 ThemeData _buildDarkTheme() {
   return ThemeData(
     useMaterial3: true,
     brightness: Brightness.dark,
-    colorSchemeSeed: Colors.blue,
-    scaffoldBackgroundColor: _darkScaffoldBg,
-    dividerColor: _darkDivider,
+    colorScheme: AppPalette.dark.toColorScheme(),
+    scaffoldBackgroundColor: AppPalette.dark.canvas,
+    dividerColor: AppPalette.dark.hairline,
     extensions: const [AppPalette.dark],
     fontFamily: Platform.isWindows ? 'Microsoft YaHei' : null,
     visualDensity: VisualDensity.compact,
@@ -150,9 +146,9 @@ ThemeData _buildLightTheme() {
   return ThemeData(
     useMaterial3: true,
     brightness: Brightness.light,
-    colorSchemeSeed: Colors.blue,
-    scaffoldBackgroundColor: Colors.white,
-    dividerColor: _lightDivider,
+    colorScheme: AppPalette.light.toColorScheme(),
+    scaffoldBackgroundColor: AppPalette.light.canvas,
+    dividerColor: AppPalette.light.hairline,
     extensions: const [AppPalette.light],
     fontFamily: Platform.isWindows ? 'Microsoft YaHei' : null,
     visualDensity: VisualDensity.compact,
