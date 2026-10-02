@@ -1314,26 +1314,30 @@ class _DeviceList extends StatelessWidget {
                             ],
                           ),
                         ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: d.isConnected
-                                ? palette.accent.withValues(alpha: 0.14)
-                                : palette.raised,
-                            borderRadius:
-                                BorderRadius.circular(AppRadius.full),
-                          ),
-                          child: Text(
-                            d.isConnected ? tr('online') : tr('offline'),
-                            style: TextStyle(
-                              fontSize: AppFontSize.xs,
-                              fontWeight: FontWeight.w500,
+                        Flexible(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
                               color: d.isConnected
-                                  ? palette.accent
-                                  : palette.textDisabled,
+                                  ? palette.accent.withValues(alpha: 0.14)
+                                  : palette.raised,
+                              borderRadius:
+                                  BorderRadius.circular(AppRadius.full),
+                            ),
+                            child: Text(
+                              d.isConnected ? tr('online') : tr('offline'),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: AppFontSize.xs,
+                                fontWeight: FontWeight.w500,
+                                color: d.isConnected
+                                    ? palette.accent
+                                    : palette.textDisabled,
+                              ),
                             ),
                           ),
                         ),

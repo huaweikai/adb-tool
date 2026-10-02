@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../design/app_palette.dart';
 import '../design/design_tokens.dart';
+import '../i18n.dart';
 
 /// ── New design system sidebar widgets ─────────────────────────
 ///
@@ -9,12 +10,6 @@ import '../design/design_tokens.dart';
 /// main design file `706601156104862`. These widgets are a **pure render**
 /// layer — they do not bind to the legacy `NavItem` enum or `DeviceProvider`.
 /// Callers feed in data + callbacks; the widgets draw the new dark UI.
-///
-/// Not yet wired into `home_screen.dart`. The legacy sidebar there uses a
-/// *device-tree* interaction (multi-device rows, each expanding to its own
-/// nav list), while this new design uses a *single-device switcher + flat
-/// nav* model. Migrating the interaction is a separate task; these widgets
-/// are extracted first so the visual layer is ready.
 ///
 /// Colors come from the active theme's [AppPalette] (via `context.palette`)
 /// so they switch automatically with `ThemeMode`. Do NOT read from
@@ -360,10 +355,10 @@ class AppSidebar extends StatelessWidget {
   /// Overrides the default "本地后端 · 在线" / "本地后端 · 离线" text.
   final String? backendStatusText;
 
-  static const _groupLabels = {
-    AppNavGroup.mainMenu: '主菜单',
-    AppNavGroup.debug: '调试工具',
-    AppNavGroup.advanced: '高级',
+  static const _groupLabelKeys = {
+    AppNavGroup.mainMenu: 'navGroupMainMenu',
+    AppNavGroup.debug: 'navGroupDebug',
+    AppNavGroup.advanced: 'navGroupAdvanced',
   };
 
   @override
@@ -390,7 +385,7 @@ class AppSidebar extends StatelessWidget {
         AppNavGroup.advanced,
       ])
         if (byGroup[group]!.isNotEmpty) ...[
-          AppNavGroupLabel(_groupLabels[group]!),
+          AppNavGroupLabel(tr(_groupLabelKeys[group]!)),
           for (final item in byGroup[group]!)
             AppNavItem(
               icon: item.icon,
