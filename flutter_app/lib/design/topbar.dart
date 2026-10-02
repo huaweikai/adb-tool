@@ -65,3 +65,54 @@ class AppTopbar extends StatelessWidget {
     );
   }
 }
+
+/// ── AppTopbarIconButton ─────────────────────────────────────
+///
+/// Header action button. Screens assembled `Tooltip` + `IconButton` by hand in
+/// ~20 places with three different hit areas, so header controls never lined up
+/// with each other or with the 64px [AppTopbar].
+///
+/// Spec: 36×36 hit area, `palette.raised` on hover/press, icon 18 in
+/// `palette.textSecondary`, switching to [AppPalette.accent] when [isActive].
+class AppTopbarIconButton extends StatelessWidget {
+  const AppTopbarIconButton({
+    super.key,
+    required this.icon,
+    required this.tooltip,
+    this.onPressed,
+    this.isActive = false,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback? onPressed;
+
+  /// Marks a toggle-style action (recording on, filters shown, ...) without
+  /// changing the hit area.
+  final bool isActive;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Tooltip(
+      message: tooltip,
+      child: IconButton(
+        onPressed: onPressed,
+        icon: Icon(
+          icon,
+          size: 18,
+          color: isActive ? palette.accent : palette.textSecondary,
+        ),
+        style: IconButton.styleFrom(
+          minimumSize: const Size(36, 36),
+          padding: EdgeInsets.zero,
+          hoverColor: palette.raised,
+          highlightColor: palette.raised,
+          // Without this the platform's padded tap target silently raises the
+          // button to 48px, so the declared 36px hit area would be a lie.
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+      ),
+    );
+  }
+}

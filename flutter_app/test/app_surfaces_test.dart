@@ -1,3 +1,4 @@
+import 'package:adb_tool/design/status_badge.dart';
 import 'package:adb_tool/design/topbar.dart';
 import 'package:adb_tool/widgets/app_background.dart';
 import 'package:flutter/material.dart';
@@ -63,6 +64,56 @@ void main() {
       );
       final decoration = container.decoration as BoxDecoration;
       expect(decoration.border!.bottom.width, 1);
+    });
+  });
+
+  group('AppStatusBadge', () {
+    Container dotOf(WidgetTester tester) => tester.widget<Container>(
+          find
+              .descendant(
+                of: find.byType(AppStatusBadge),
+                matching: find.byType(Container),
+              )
+              .first,
+        );
+
+    testWidgets('renders a dot and the label', (tester) async {
+      await tester.pumpWidget(wrap(const AppStatusBadge(label: 'Pixel 8 Pro')));
+      expect(find.text('Pixel 8 Pro'), findsOneWidget);
+      expect((dotOf(tester).decoration as BoxDecoration).shape,
+          BoxShape.circle);
+    });
+
+    testWidgets('paints the status colour it was given', (tester) async {
+      await tester.pumpWidget(wrap(const AppStatusBadge(
+        label: '离线',
+        color: Color(0xFFFF6B6B),
+      )));
+      expect((dotOf(tester).decoration as BoxDecoration).color,
+          const Color(0xFFFF6B6B));
+    });
+  });
+
+  group('AppTopbarIconButton', () {
+    testWidgets('fires onPressed', (tester) async {
+      var pressed = false;
+      await tester.pumpWidget(wrap(AppTopbarIconButton(
+        icon: Icons.brightness_6,
+        tooltip: 'theme',
+        onPressed: () => pressed = true,
+      )));
+      await tester.tap(find.byIcon(Icons.brightness_6));
+      await tester.pump();
+      expect(pressed, isTrue);
+    });
+
+    testWidgets('exposes a tooltip on a 36px hit area', (tester) async {
+      await tester.pumpWidget(wrap(const AppTopbarIconButton(
+        icon: Icons.refresh,
+        tooltip: '刷新',
+      )));
+      expect(find.byTooltip('刷新'), findsOneWidget);
+      expect(tester.getSize(find.byType(IconButton)), const Size(36, 36));
     });
   });
 }

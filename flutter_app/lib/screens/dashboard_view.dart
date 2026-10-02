@@ -6,6 +6,7 @@ import '../design/app_palette.dart';
 import '../design/design_tokens.dart';
 import '../design/panel.dart';
 import '../design/section_label.dart';
+import '../design/status_badge.dart';
 import '../design/topbar.dart';
 import '../models/device_status.dart';
 import '../db/database.dart';
@@ -160,26 +161,9 @@ class _DashboardViewState extends State<DashboardView> {
       children: [
         AppTopbar(
           title: tr('dashboard'),
-          subtitle: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 8,
-                height: 8,
-                decoration: BoxDecoration(
-                  color: online ? palette.online : palette.red,
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              Text(
-                deviceName,
-                style: TextStyle(
-                  fontSize: AppFontSize.body,
-                  color: palette.textSecondary,
-                ),
-              ),
-            ],
+          subtitle: AppStatusBadge(
+            label: deviceName,
+            color: online ? palette.online : palette.red,
           ),
           actions: Text(
             tr('selectDevice'),
