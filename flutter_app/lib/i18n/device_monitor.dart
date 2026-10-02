@@ -31,6 +31,8 @@ const _locDeviceMonitorZh = <String, String>{
   'monitorUptime': '运行时间',
   'monitorThermalStatus': '温控状态',
   'monitorTopProcesses': '高占用进程',
+  'monitorLiveMetrics': '实时指标',
+  'monitorDeviceDetails': '设备详情',
 };
 
 const _locDeviceMonitorEn = <String, String>{
@@ -63,4 +65,6 @@ const _locDeviceMonitorEn = <String, String>{
   'monitorUptime': 'Uptime',
   'monitorThermalStatus': 'Thermal Status',
   'monitorTopProcesses': 'Top Processes',
+  'monitorLiveMetrics': 'Live Metrics',
+  'monitorDeviceDetails': 'Device Details',
 };

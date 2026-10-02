@@ -29,11 +29,6 @@
       "fontSize": 5,
       "radius": 1
     },
-    "flutter_app/lib/screens/device_status_screen.dart": {
-      "fontSize": 18,
-      "insets": 5,
-      "radius": 6
-    },
     "flutter_app/lib/screens/emulator_settings_screen.dart": {
       "duration": 1,
       "fontSize": 3,
@@ -185,5 +180,5 @@
       "radius": 1
     }
   },
-  "total": 507
+  "total": 478
 }

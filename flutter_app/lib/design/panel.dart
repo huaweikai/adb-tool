@@ -17,7 +17,12 @@ import 'design_tokens.dart';
 /// radius [AppRadius.lg] (12). Default padding [AppSpacing.xl] (24) per the
 /// design token "卡片内边距 = 24px"; pass an explicit [padding] to override
 /// (e.g. compact metric cards use 16).
-class AppPanel extends StatelessWidget {
+///
+/// Desktop hover: a panel is interactive when it has [onTap] or is marked
+/// [hoverable]; on hover it lifts with a shadow derived from
+/// [AppElevation.card] (spec §7 — hover feedback comes from elevation, never
+/// from a colour swap) and settles back over [AppDuration.fast].
+class AppPanel extends StatefulWidget {
   const AppPanel({
     super.key,
     required this.child,
@@ -26,6 +31,7 @@ class AppPanel extends StatelessWidget {
     this.borderColor,
     this.borderRadius,
     this.onTap,
+    this.hoverable = false,
   });
 
   final Widget child;
@@ -50,26 +56,56 @@ class AppPanel extends StatelessWidget {
   /// border radius).
   final VoidCallback? onTap;
 
+  /// Lift on hover even without [onTap] (e.g. read-only metric cards that
+  /// still want desktop hover feedback).
+  final bool hoverable;
+
+  @override
+  State<AppPanel> createState() => _AppPanelState();
+}
+
+class _AppPanelState extends State<AppPanel> {
+  bool _hovered = false;
+
+  bool get _interactive => widget.onTap != null || widget.hoverable;
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final radius = borderRadius ?? AppRadius.lg;
+    final radius = widget.borderRadius ?? AppRadius.lg;
     final decoration = BoxDecoration(
-      color: color ?? palette.panel,
+      color: widget.color ?? palette.panel,
       borderRadius: BorderRadius.circular(radius),
-      border: Border.all(color: borderColor ?? palette.hairline),
+      border: Border.all(color: widget.borderColor ?? palette.hairline),
+      boxShadow: _interactive && _hovered
+          ? [
+              BoxShadow(
+                color: Colors.black.withAlpha(56),
+                blurRadius: AppElevation.card * 4,
+                offset: Offset(0, AppElevation.card),
+              ),
+            ]
+          : null,
     );
-    final Widget content = Container(
+    Widget content = AnimatedContainer(
+      duration: AppDuration.fast,
       decoration: decoration,
-      padding: padding,
-      child: child,
+      padding: widget.padding,
+      child: widget.child,
     );
-    if (onTap == null) return content;
+    if (_interactive) {
+      content = MouseRegion(
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: content,
+      );
+    }
+    if (widget.onTap == null) return content;
     return Material(
       color: Colors.transparent,
       borderRadius: BorderRadius.circular(radius),
       clipBehavior: Clip.antiAlias,
-      child: InkWell(onTap: onTap, child: content),
+      child: InkWell(onTap: widget.onTap, child: content),
     );
   }
 }

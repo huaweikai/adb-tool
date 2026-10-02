@@ -8,12 +8,27 @@ import '../providers/device_provider.dart';
 import '../providers/locale_provider.dart';
 import '../services/api_client.dart';
 import '../db/database.dart';
+import '../design/app_palette.dart';
 import '../design/design_tokens.dart';
+import '../design/key_value_card.dart';
+import '../design/metric_card.dart';
+import '../design/panel.dart';
+import '../design/section_label.dart';
+import '../design/status_badge.dart';
+import '../design/topbar.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_view.dart';
-import '../widgets/sparkline.dart';
 
+/// Device status monitor — the design-system exemplar page.
+///
+/// Composed entirely from `lib/design/` shells (AppTopbar / AppPanel /
+/// AppSectionLabel / AppStatusBadge) and the data cards extracted from this
+/// page's former private `_metricCard` / `_pairedCard` (AppMetricCard /
+/// AppKeyValueCard). Every reading, control and failure state the legacy
+/// page offered is preserved: auto-refresh + manual refresh, last-updated
+/// stamp, threshold tinting, sparkline history, tappable value detail sheet
+/// and the top-process list.
 class DeviceStatusScreen extends StatefulWidget {
   const DeviceStatusScreen({super.key});
 
@@ -174,7 +189,7 @@ class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _buildToolbar(context, status: status, error: error),
+        _buildTopbar(context, status: status, error: error),
         if (_loading && status == null)
           const Expanded(child: LoadingView())
         else if (error != null && status == null)
@@ -191,68 +206,88 @@ class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
     );
   }
 
-  Widget _buildToolbar(
+  Widget _buildTopbar(
     BuildContext context, {
     required DeviceStatus? status,
     required String? error,
   }) {
-    final theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerLow,
-        border: Border(bottom: BorderSide(color: theme.dividerColor)),
+    final palette = context.palette;
+    final serial = _selectedSerial;
+    final device = serial != null
+        ? context
+            .read<DeviceProvider>()
+            .savedDevices
+            .where((d) => d.serial == serial)
+            .firstOrNull
+        : null;
+    final online = device?.isConnected ?? false;
+
+    return AppTopbar(
+      title: tr('monitorTitle'),
+      subtitle: AppStatusBadge(
+        label: device?.displayName ?? serial ?? '--',
+        color: online ? palette.online : palette.red,
       ),
-      child: Wrap(
-        spacing: 12,
-        runSpacing: 8,
-        crossAxisAlignment: WrapCrossAlignment.center,
+      actions: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            tr('monitorTitle'),
-            style: theme.textTheme.titleSmall
-                ?.copyWith(fontWeight: FontWeight.w700),
-          ),
-          FilledButton.tonalIcon(
-            onPressed: _loading ? null : () => _loadStatus(),
-            icon: _loading
-                ? const SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.refresh, size: 16),
-            label: Text(tr('refresh')),
-            style: FilledButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              textStyle: const TextStyle(fontSize: 12),
-            ),
-          ),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Checkbox(
-                value: _autoRefresh,
-                onChanged: (v) => setState(() => _autoRefresh = v ?? true),
-                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                visualDensity: VisualDensity.compact,
+          if (error != null && status != null) ...[
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 240),
+              child: Text(
+                error,
+                style: TextStyle(fontSize: AppFontSize.md, color: palette.red),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
-              Text(tr('monitorAutoRefresh'),
-                  style: const TextStyle(fontSize: 12)),
-            ],
-          ),
-          if (status?.collectedAt.isNotEmpty == true)
+            ),
+            const SizedBox(width: AppSpacing.md),
+          ],
+          if (status?.collectedAt.isNotEmpty == true) ...[
             Text(
               '${tr('monitorLastUpdated')}: ${status?.collectedAt ?? ''}',
               style: TextStyle(
-                fontSize: 11,
-                color: theme.colorScheme.onSurfaceVariant,
+                fontSize: AppFontSize.md,
+                color: palette.textDisabled,
               ),
             ),
-          if (error != null && status != null)
-            Text(
-              error,
-              style: TextStyle(fontSize: 11, color: theme.colorScheme.error),
+            const SizedBox(width: AppSpacing.md),
+          ],
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Switch(
+                value: _autoRefresh,
+                onChanged: (v) => setState(() => _autoRefresh = v),
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              Text(
+                tr('monitorAutoRefresh'),
+                style: TextStyle(
+                  fontSize: AppFontSize.md,
+                  color: palette.textSecondary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          if (_loading)
+            const SizedBox(
+              width: 36,
+              height: 36,
+              child: Center(
+                child: SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            )
+          else
+            AppTopbarIconButton(
+              icon: Icons.refresh,
+              tooltip: tr('refresh'),
+              onPressed: _loadStatus,
             ),
         ],
       ),
@@ -269,29 +304,50 @@ class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
         final columns = _gridColumns(constraints.maxWidth, maxColumns: 4);
         return CustomScrollView(
           slivers: [
-            // Summary header
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, AppSpacing.sm),
+                    AppSpacing.xl, AppSpacing.xl, AppSpacing.xl, AppSpacing.sm),
                 child: _buildSummaryHeader(context, status),
               ),
             ),
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, AppSpacing.lg),
+                  AppSpacing.xl, AppSpacing.md, AppSpacing.xl, AppSpacing.sm),
+              sliver: SliverToBoxAdapter(child: AppSectionLabel(tr('monitorLiveMetrics'))),
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.xl, AppSpacing.sm, AppSpacing.xl, AppSpacing.md),
               sliver: SliverMasonryGrid.count(
                 crossAxisCount: columns,
                 mainAxisSpacing: AppSpacing.md,
                 crossAxisSpacing: AppSpacing.md,
-                childCount: 10,
+                childCount: 4,
                 itemBuilder: (context, index) =>
-                    _buildDashboardItem(context, status, index),
+                    _metricCards(context, status)[index],
               ),
             ),
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, AppSpacing.lg),
+                  AppSpacing.xl, AppSpacing.sm, AppSpacing.xl, AppSpacing.sm),
+              sliver: SliverToBoxAdapter(child: AppSectionLabel(tr('monitorDeviceDetails'))),
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.xl, AppSpacing.sm, AppSpacing.xl, AppSpacing.md),
+              sliver: SliverMasonryGrid.count(
+                crossAxisCount: columns,
+                mainAxisSpacing: AppSpacing.md,
+                crossAxisSpacing: AppSpacing.md,
+                childCount: 6,
+                itemBuilder: (context, index) =>
+                    _keyValueCards(context, status)[index],
+              ),
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.xl, AppSpacing.sm, AppSpacing.xl, AppSpacing.xl),
               sliver: SliverToBoxAdapter(
                 child: _buildProcesses(context, status.topProcesses),
               ),
@@ -303,7 +359,7 @@ class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
   }
 
   Widget _buildSummaryHeader(BuildContext context, DeviceStatus status) {
-    final theme = Theme.of(context);
+    final palette = context.palette;
     final deviceProvider = context.read<DeviceProvider>();
     final serial = _selectedSerial;
     final device = serial != null
@@ -314,29 +370,23 @@ class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
     final healthOk = status.thermalStatus.toLowerCase().contains('cool') ||
         status.thermalStatus.toLowerCase().contains('normal');
 
-    // Gather summary chips
     final chips = <Widget>[
-      _summaryChip(theme, Icons.phone_android, device?.displayName ?? serial ?? '--'),
+      _summaryChip(palette, Icons.phone_android,
+          device?.displayName ?? serial ?? '--'),
       if (status.resolution.isNotEmpty)
-        _summaryChip(theme, Icons.aspect_ratio, status.resolution),
+        _summaryChip(palette, Icons.aspect_ratio, status.resolution),
       if (status.uptime.isNotEmpty)
-        _summaryChip(theme, Icons.timer_outlined, status.uptime),
+        _summaryChip(palette, Icons.timer_outlined, status.uptime),
       if (status.batteryStatus.isNotEmpty)
-        _summaryChip(theme, Icons.battery_charging_full, status.batteryStatus),
+        _summaryChip(palette, Icons.battery_charging_full, status.batteryStatus),
     ];
 
-    return Container(
+    return AppPanel(
       padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.md, vertical: AppSpacing.sm),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: theme.dividerColor),
-      ),
+          horizontal: AppSpacing.lg, vertical: AppSpacing.md),
       child: Row(
         children: [
-          Icon(Icons.monitor_heart_outlined,
-              size: 16, color: theme.colorScheme.primary),
+          Icon(Icons.monitor_heart_outlined, size: 16, color: palette.accent),
           const SizedBox(width: AppSpacing.sm),
           Expanded(
             child: SingleChildScrollView(
@@ -353,18 +403,15 @@ class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
             ),
           ),
           const SizedBox(width: AppSpacing.sm),
-          // Health status dot
           Tooltip(
             message: status.thermalStatus.isNotEmpty
                 ? '${tr('monitorThermalStatus')}: ${status.thermalStatus}'
                 : '',
-            child: Container(
-              width: 10,
-              height: 10,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: healthOk ? Colors.green : Colors.orange,
-              ),
+            child: AppStatusBadge(
+              label: status.thermalStatus.isNotEmpty
+                  ? status.thermalStatus
+                  : tr('monitorSystemHealth'),
+              color: healthOk ? palette.online : palette.orange,
             ),
           ),
         ],
@@ -372,18 +419,17 @@ class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
     );
   }
 
-  Widget _summaryChip(
-      ThemeData theme, IconData icon, String label) {
+  Widget _summaryChip(AppPalette palette, IconData icon, String label) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 13, color: theme.colorScheme.onSurfaceVariant),
+        Icon(icon, size: 13, color: palette.textSecondary),
         const SizedBox(width: AppSpacing.xs),
         Text(
           label,
           style: TextStyle(
             fontSize: AppFontSize.body,
-            color: theme.colorScheme.onSurfaceVariant,
+            color: palette.textSecondary,
           ),
           overflow: TextOverflow.ellipsis,
         ),
@@ -391,208 +437,160 @@ class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
     );
   }
 
-  Widget _buildDashboardItem(
-    BuildContext context,
-    DeviceStatus status,
-    int index,
-  ) {
+  List<Widget> _metricCards(BuildContext context, DeviceStatus status) {
     final cpuPct = _parsePercent(status.cpuUsage) / 100;
     final memPct = _parsePercent(status.memoryUsedPercent) / 100;
     final battPct = _parsePercent(status.batteryLevel) / 100;
-
-    switch (index) {
-      case 0:
-        return _metricCard(context, tr('monitorBattery'), Icons.battery_full,
-            _value(status.batteryLevel, suffix: '%'),
-            subtitle: _join([status.batteryStatus, status.batteryTemperature]),
-            progress: battPct,
-            warningThreshold: 0.3,
-            criticalThreshold: 0.15,
-            sparkline: _batteryHistory);
-      case 1:
-        return _metricCard(context, tr('monitorCpuUsage'), Icons.memory,
-            _value(status.cpuUsage),
-            subtitle: '${tr('monitorCpuLoad')}: ${_value(status.cpuLoad)}',
-            progress: cpuPct,
-            warningThreshold: 0.5,
-            criticalThreshold: 0.8,
-            sparkline: _cpuHistory);
-      case 2:
-        return _metricCard(context, tr('monitorMemory'), Icons.storage,
-            _value(status.memoryUsedPercent),
-            subtitle:
-                '${tr('monitorAvailable')}: ${_value(status.memoryAvailable)} / ${_value(status.memoryTotal)}',
-            progress: memPct,
-            warningThreshold: 0.5,
-            criticalThreshold: 0.8,
-            sparkline: _memHistory);
-      case 3:
-        return _metricCard(context, tr('monitorStorage'), Icons.folder_outlined,
-            _value(status.storageUsedPercent),
-            subtitle:
-                '${_value(status.storageUsed)} / ${_value(status.storageTotal)}',
-            progress: _parsePercent(status.storageUsedPercent) / 100);
-      case 4:
-        return _pairedCard(context, tr('monitorScreenAndFrames'),
-            Icons.screenshot_monitor_outlined, [
-          _PairItem(
-              tr('monitorResolution'), status.resolution, Icons.aspect_ratio),
-          _PairItem(tr('monitorDensity'), status.density, Icons.density_medium),
-        ]);
-      case 5:
-        return _pairedCard(context, tr('monitorDisplay'), Icons.refresh, [
-          _PairItem(
-              tr('monitorRefreshRate'), status.refreshRate, Icons.refresh),
-          _PairItem(tr('monitorFrameStats'), status.frameStats, Icons.speed),
-        ]);
-      case 6:
-        return _pairedCard(
-            context, tr('monitorNetworkSignal'), Icons.network_wifi, [
-          _PairItem(tr('monitorNetworkType'), status.networkType, Icons.wifi),
-          _PairItem(tr('monitorWifiSsid'), status.wifiSsid, Icons.wifi_find),
-        ]);
-      case 7:
-        return _pairedCard(
-            context, tr('monitorSignal'), Icons.signal_cellular_alt, [
-          _PairItem(tr('monitorWifiRssi'), status.wifiRssi,
-              Icons.signal_wifi_statusbar_4_bar),
-          _PairItem(tr('monitorMobileSignal'), status.mobileSignal,
-              Icons.signal_cellular_alt),
-        ]);
-      case 8:
-        return _pairedCard(
-            context, tr('monitorNetworkAndUptime'), Icons.language, [
-          _PairItem(tr('monitorIpAddress'), status.ipAddress, Icons.language),
-          _PairItem(tr('monitorUptime'), status.uptime, Icons.timer_outlined),
-        ]);
-      case 9:
-        return _pairedCard(context, tr('monitorSystemHealth'),
-            Icons.health_and_safety_outlined, [
-          _PairItem(tr('monitorThermalStatus'), status.thermalStatus,
-              Icons.thermostat),
-          _PairItem(tr('monitorCpuLoad'), status.cpuLoad, Icons.show_chart),
-        ]);
-      default:
-        return const SizedBox.shrink();
-    }
-  }
-
-  Widget _pairedCard(
-    BuildContext context,
-    String title,
-    IconData icon,
-    List<_PairItem> items,
-  ) {
-    final theme = Theme.of(context);
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(icon, size: 18, color: theme.colorScheme.primary),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    title,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            ...items.map((item) => _pairedRow(context, item)),
-            const SizedBox(height: 4),
-          ],
-        ),
+    return [
+      AppMetricCard(
+        title: tr('monitorBattery'),
+        icon: Icons.battery_full,
+        value: _value(status.batteryLevel, suffix: '%'),
+        subtitle: _join([status.batteryStatus, status.batteryTemperature]),
+        progress: battPct,
+        warningThreshold: 0.3,
+        criticalThreshold: 0.15,
+        invertedThresholds: true,
+        sparkline: _batteryHistory,
       ),
-    );
+      AppMetricCard(
+        title: tr('monitorCpuUsage'),
+        icon: Icons.memory,
+        value: _value(status.cpuUsage),
+        subtitle: '${tr('monitorCpuLoad')}: ${_value(status.cpuLoad)}',
+        progress: cpuPct,
+        warningThreshold: 0.5,
+        criticalThreshold: 0.8,
+        sparkline: _cpuHistory,
+      ),
+      AppMetricCard(
+        title: tr('monitorMemory'),
+        icon: Icons.storage,
+        value: _value(status.memoryUsedPercent),
+        subtitle:
+            '${tr('monitorAvailable')}: ${_value(status.memoryAvailable)} / ${_value(status.memoryTotal)}',
+        progress: memPct,
+        warningThreshold: 0.5,
+        criticalThreshold: 0.8,
+        sparkline: _memHistory,
+      ),
+      AppMetricCard(
+        title: tr('monitorStorage'),
+        icon: Icons.folder_outlined,
+        value: _value(status.storageUsedPercent),
+        subtitle:
+            '${_value(status.storageUsed)} / ${_value(status.storageTotal)}',
+        progress: _parsePercent(status.storageUsedPercent) / 100,
+      ),
+    ];
   }
 
-  Widget _pairedRow(BuildContext context, _PairItem item) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        children: [
-          Icon(item.icon,
-              size: 14, color: theme.colorScheme.primary.withAlpha(180)),
-          const SizedBox(width: 8),
-          SizedBox(
-            width: 90,
-            child: Text(item.label,
-                style: TextStyle(
-                    fontSize: 11, color: theme.colorScheme.onSurfaceVariant)),
-          ),
-          Expanded(
-            child: _tappableValue(context, item.value),
-          ),
+  List<Widget> _keyValueCards(BuildContext context, DeviceStatus status) {
+    AppKeyValueItem item(String label, String raw, IconData icon) {
+      final display = _value(raw);
+      return AppKeyValueItem(
+        label: label,
+        value: display,
+        icon: icon,
+        onTap: raw.trim().isNotEmpty
+            ? () => _showValueDetail(context, display)
+            : null,
+      );
+    }
+
+    return [
+      AppKeyValueCard(
+        title: tr('monitorScreenAndFrames'),
+        icon: Icons.screenshot_monitor_outlined,
+        items: [
+          item(tr('monitorResolution'), status.resolution, Icons.aspect_ratio),
+          item(tr('monitorDensity'), status.density, Icons.density_medium),
         ],
       ),
-    );
-  }
-
-  Widget _tappableValue(BuildContext context, String value) {
-    final display = _value(value);
-    return GestureDetector(
-      onTap: value.trim().isNotEmpty
-          ? () => _showValueDetail(context, display)
-          : null,
-      child: Text(
-        display,
-        style: const TextStyle(
-            fontSize: 11, fontFamily: 'Menlo', fontWeight: FontWeight.w600),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
+      AppKeyValueCard(
+        title: tr('monitorDisplay'),
+        icon: Icons.refresh,
+        items: [
+          item(tr('monitorRefreshRate'), status.refreshRate, Icons.refresh),
+          item(tr('monitorFrameStats'), status.frameStats, Icons.speed),
+        ],
       ),
-    );
+      AppKeyValueCard(
+        title: tr('monitorNetworkSignal'),
+        icon: Icons.network_wifi,
+        items: [
+          item(tr('monitorNetworkType'), status.networkType, Icons.wifi),
+          item(tr('monitorWifiSsid'), status.wifiSsid, Icons.wifi_find),
+        ],
+      ),
+      AppKeyValueCard(
+        title: tr('monitorSignal'),
+        icon: Icons.signal_cellular_alt,
+        items: [
+          item(tr('monitorWifiRssi'), status.wifiRssi,
+              Icons.signal_wifi_statusbar_4_bar),
+          item(tr('monitorMobileSignal'), status.mobileSignal,
+              Icons.signal_cellular_alt),
+        ],
+      ),
+      AppKeyValueCard(
+        title: tr('monitorNetworkAndUptime'),
+        icon: Icons.language,
+        items: [
+          item(tr('monitorIpAddress'), status.ipAddress, Icons.language),
+          item(tr('monitorUptime'), status.uptime, Icons.timer_outlined),
+        ],
+      ),
+      AppKeyValueCard(
+        title: tr('monitorSystemHealth'),
+        icon: Icons.health_and_safety_outlined,
+        items: [
+          item(tr('monitorThermalStatus'), status.thermalStatus,
+              Icons.thermostat),
+          item(tr('monitorCpuLoad'), status.cpuLoad, Icons.show_chart),
+        ],
+      ),
+    ];
   }
 
   void _showValueDetail(BuildContext context, String value) {
+    final palette = context.palette;
     showModalBottomSheet(
       context: context,
+      backgroundColor: palette.panel,
       builder: (ctx) {
-        final theme = Theme.of(ctx);
         return SafeArea(
           child: Padding(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.all(AppSpacing.xl),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   children: [
-                    const Icon(Icons.info_outline, size: 20),
-                    const SizedBox(width: 8),
-                    Text(tr('monitorDetailTitle'),
-                        style: theme.textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w600)),
-                    const Spacer(),
-                    IconButton(
-                      icon: const Icon(Icons.close, size: 20),
+                    Icon(Icons.info_outline,
+                        size: 18, color: palette.accent),
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(child: AppSectionLabel(tr('monitorDetailTitle'))),
+                    AppTopbarIconButton(
+                      icon: Icons.close,
+                      tooltip: tr('close'),
                       onPressed: () => Navigator.pop(ctx),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.surfaceContainerLow,
-                    borderRadius: BorderRadius.circular(10),
+                const SizedBox(height: AppSpacing.md),
+                AppPanel(
+                  padding: const EdgeInsets.all(AppSpacing.lg),
+                  color: palette.raised,
+                  child: SelectableText(
+                    value,
+                    style: TextStyle(
+                      fontSize: AppFontSize.subtitle,
+                      fontFamily: 'Noto Sans Mono',
+                      color: palette.textPrimary,
+                    ),
                   ),
-                  child: SelectableText(value,
-                      style:
-                          const TextStyle(fontSize: 13, fontFamily: 'Menlo')),
                 ),
               ],
             ),
@@ -602,269 +600,167 @@ class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
     );
   }
 
-  Widget _metricCard(
-    BuildContext context,
-    String title,
-    IconData icon,
-    String value, {
-    String subtitle = '',
-    double progress = -1,
-    double? warningThreshold,
-    double? criticalThreshold,
-    List<double>? sparkline,
-  }) {
-    final theme = Theme.of(context);
-    final hasProgress = progress >= 0;
-
-    // Threshold-based left border color
-    Color borderColor = Colors.transparent;
-    if (hasProgress && progress >= 0) {
-      if (criticalThreshold != null && progress >= criticalThreshold) {
-        borderColor = theme.colorScheme.error;
-      } else if (warningThreshold != null && progress >= warningThreshold) {
-        borderColor = Colors.orange;
-      } else if (warningThreshold != null) {
-        borderColor = Colors.green;
-      }
-    }
-
-    return Card(
-      margin: EdgeInsets.zero,
-      clipBehavior: Clip.antiAlias,
-      child: Container(
-        decoration: borderColor != Colors.transparent
-            ? BoxDecoration(
-                border: Border(left: BorderSide(width: 3, color: borderColor)),
-              )
-            : null,
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(icon, size: 18, color: theme.colorScheme.primary),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    title,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Text(
-              value,
-              style: theme.textTheme.headlineSmall
-                  ?.copyWith(fontWeight: FontWeight.w700),
-              overflow: TextOverflow.ellipsis,
-            ),
-            if (hasProgress) ...[
-              const SizedBox(height: 8),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: LinearProgressIndicator(
-                  value: progress.clamp(0.0, 1.0),
-                  minHeight: 8,
-                  backgroundColor: theme.colorScheme.surfaceContainerHighest,
-                  valueColor: AlwaysStoppedAnimation<Color>(
-                      _heatColor(progress * 100, theme)),
-                ),
-              ),
-            ],
-            // Sparkline
-            if (sparkline != null && sparkline.length >= 2) ...[
-              const SizedBox(height: AppSpacing.sm),
-              Sparkline(
-                data: sparkline,
-                height: 24,
-                color: borderColor != Colors.transparent
-                    ? borderColor
-                    : theme.colorScheme.primary,
-                showArea: true,
-              ),
-            ],
-            const SizedBox(height: 4),
-            Text(
-              subtitle.isEmpty ? tr('unknown') : subtitle,
-              style: TextStyle(
-                fontSize: 11,
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildProcesses(BuildContext context, List<ProcessStatus> processes) {
-    final theme = Theme.of(context);
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.format_list_numbered,
-                    size: 18, color: theme.colorScheme.primary),
-                const SizedBox(width: 8),
-                Text(tr('monitorTopProcesses'),
-                    style: theme.textTheme.titleSmall
-                        ?.copyWith(fontWeight: FontWeight.w700)),
-              ],
-            ),
-            const SizedBox(height: 12),
-            if (processes.isEmpty)
-              Text(tr('monitorNoData'),
-                  style: TextStyle(
-                      fontSize: 12, color: theme.colorScheme.onSurfaceVariant))
-            else
-              ...processes
-                  .asMap()
-                  .entries
-                  .map((e) => _buildProcessCard(context, e.key, e.value)),
-          ],
-        ),
+    final palette = context.palette;
+    return AppPanel(
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.format_list_numbered,
+                  size: 16, color: palette.accent),
+              const SizedBox(width: AppSpacing.xs),
+              AppSectionLabel(tr('monitorTopProcesses')),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          if (processes.isEmpty)
+            Text(tr('monitorNoData'),
+                style: TextStyle(
+                    fontSize: AppFontSize.body, color: palette.textDisabled))
+          else
+            ...processes
+                .asMap()
+                .entries
+                .map((e) => _buildProcessCard(context, e.key, e.value)),
+        ],
       ),
     );
   }
 
   Widget _buildProcessCard(
       BuildContext context, int index, ProcessStatus process) {
-    final theme = Theme.of(context);
+    final palette = context.palette;
     final cpuNum = _parsePercent(process.cpu);
     final memNum = _parsePercent(process.memory);
     final displayName =
         process.name.isNotEmpty ? process.name : process.command;
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
-      margin: const EdgeInsets.only(bottom: 4),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 20,
-                height: 20,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.primary.withAlpha(30),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  '${index + 1}',
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    color: theme.colorScheme.primary,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+            vertical: AppSpacing.sm, horizontal: AppSpacing.md),
+        decoration: BoxDecoration(
+          color: palette.raised,
+          borderRadius: BorderRadius.circular(AppRadius.md),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 20,
+                  height: 20,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: palette.activeNav,
+                    borderRadius: BorderRadius.circular(AppRadius.xs),
+                  ),
+                  child: Text(
+                    '${index + 1}',
+                    style: TextStyle(
+                      fontSize: AppFontSize.sm,
+                      fontWeight: FontWeight.w700,
+                      color: palette.accent,
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  displayName,
-                  style: const TextStyle(
-                      fontSize: 12,
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Text(
+                    displayName,
+                    style: TextStyle(
+                        fontSize: AppFontSize.body,
+                        fontWeight: FontWeight.w600,
+                        fontFamily: 'Noto Sans Mono',
+                        color: palette.textPrimary),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                Text('PID ${process.pid}',
+                    style: TextStyle(
+                        fontSize: AppFontSize.sm,
+                        color: palette.textDisabled)),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Row(
+              children: [
+                SizedBox(
+                  width: 36,
+                  child: Text('CPU',
+                      style: TextStyle(
+                          fontSize: AppFontSize.sm,
+                          color: palette.textDisabled)),
+                ),
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(AppRadius.xs),
+                    child: LinearProgressIndicator(
+                      value: (cpuNum / 100).clamp(0.0, 1.0),
+                      minHeight: 6,
+                      backgroundColor: palette.panel,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                          _heatColor(cpuNum, palette)),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                SizedBox(
+                  width: 42,
+                  child: Text(
+                    process.cpu.isEmpty ? '--' : process.cpu,
+                    style: TextStyle(
+                      fontSize: AppFontSize.md,
                       fontWeight: FontWeight.w600,
-                      fontFamily: 'Menlo'),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                      fontFamily: 'Noto Sans Mono',
+                      color: _heatColor(cpuNum, palette),
+                    ),
+                    textAlign: TextAlign.right,
+                  ),
                 ),
-              ),
-              Text('PID ${process.pid}',
-                  style: TextStyle(
-                      fontSize: 10, color: theme.colorScheme.onSurfaceVariant)),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              SizedBox(
-                width: 36,
-                child: Text('CPU',
+                const SizedBox(width: AppSpacing.md),
+                SizedBox(
+                  width: 36,
+                  child: Text('MEM',
+                      style: TextStyle(
+                          fontSize: AppFontSize.sm,
+                          color: palette.textDisabled)),
+                ),
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(AppRadius.xs),
+                    child: LinearProgressIndicator(
+                      value: (memNum / 100).clamp(0.0, 1.0),
+                      minHeight: 6,
+                      backgroundColor: palette.panel,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                          _heatColor(memNum, palette)),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                SizedBox(
+                  width: 42,
+                  child: Text(
+                    process.memory.isEmpty ? '--' : process.memory,
                     style: TextStyle(
-                        fontSize: 10,
-                        color: theme.colorScheme.onSurfaceVariant)),
-              ),
-              Expanded(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(3),
-                  child: LinearProgressIndicator(
-                    value: (cpuNum / 100).clamp(0.0, 1.0),
-                    minHeight: 6,
-                    backgroundColor: theme.colorScheme.surfaceContainerHighest,
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                        _heatColor(cpuNum, theme)),
+                      fontSize: AppFontSize.md,
+                      fontWeight: FontWeight.w600,
+                      fontFamily: 'Noto Sans Mono',
+                      color: _heatColor(memNum, palette),
+                    ),
+                    textAlign: TextAlign.right,
                   ),
                 ),
-              ),
-              const SizedBox(width: 6),
-              SizedBox(
-                width: 42,
-                child: Text(
-                  process.cpu.isEmpty ? '--' : process.cpu,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    fontFamily: 'Menlo',
-                    color: _heatColor(cpuNum, theme),
-                  ),
-                  textAlign: TextAlign.right,
-                ),
-              ),
-              const SizedBox(width: 12),
-              SizedBox(
-                width: 36,
-                child: Text('MEM',
-                    style: TextStyle(
-                        fontSize: 10,
-                        color: theme.colorScheme.onSurfaceVariant)),
-              ),
-              Expanded(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(3),
-                  child: LinearProgressIndicator(
-                    value: (memNum / 100).clamp(0.0, 1.0),
-                    minHeight: 6,
-                    backgroundColor: theme.colorScheme.surfaceContainerHighest,
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                        _heatColor(memNum, theme)),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 6),
-              SizedBox(
-                width: 42,
-                child: Text(
-                  process.memory.isEmpty ? '--' : process.memory,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    fontFamily: 'Menlo',
-                    color: _heatColor(memNum, theme),
-                  ),
-                  textAlign: TextAlign.right,
-                ),
-              ),
-            ],
-          ),
-        ],
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -875,11 +771,10 @@ class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
     return parsed ?? 0;
   }
 
-  Color _heatColor(double value, ThemeData theme) {
-    if (value >= 50) return Colors.red;
-    if (value >= 25) return Colors.orange;
-    if (value >= 10) return Colors.amber.shade700;
-    return theme.colorScheme.primary;
+  Color _heatColor(double value, AppPalette palette) {
+    if (value >= 50) return palette.red;
+    if (value >= 25) return palette.orange;
+    return palette.accent;
   }
 
   int _gridColumns(double width, {required int maxColumns}) {
@@ -898,12 +793,4 @@ class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
   String _join(List<String> values) {
     return values.where((e) => e.trim().isNotEmpty).join(' · ');
   }
-}
-
-class _PairItem {
-  final String label;
-  final String value;
-  final IconData icon;
-
-  const _PairItem(this.label, this.value, this.icon);
 }
