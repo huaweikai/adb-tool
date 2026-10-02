@@ -1,0 +1,746 @@
+{
+  "meta": {
+    "title": "ADB Tool 桌面端 UI 能力与页面分工",
+    "subtitle": "按侧边栏三个真实分组（mainMenu / debug / advanced）划分角色 · design/ 设计系统层的实际落地范围 · 15 个导航目标中图示 10 个（未画：视图层级检视、剪贴板历史、设备信息、后端日志、测试配置）",
+    "sourceRef": "adb_tool@feat/ui-visual-polish d7b3ce4",
+    "scope": "flutter_app/lib UI 层",
+    "diagramType": "usecase",
+    "locale": "zh-CN"
+  },
+  "groups": [
+    {
+      "id": "system",
+      "label": "ADB Tool 桌面端（HomeScreen 壳 + AppSidebar 三分组导航）",
+      "kind": "system",
+      "position": {
+        "x": 526,
+        "y": 32
+      },
+      "size": {
+        "width": 1513,
+        "height": 1510.5
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "id": "actor-dev",
+      "label": "日常调试者",
+      "kind": "actor",
+      "subtitle": "侧边栏 mainMenu 分组的使用者",
+      "facts": [
+        "分组来自 AppNavGroup.mainMenu（home_screen.dart:50-54）",
+        "该组 5 项：总览 / 状态 / 应用 / 文件 / 设备信息"
+      ],
+      "position": {
+        "x": 103,
+        "y": 1174
+      },
+      "size": {
+        "width": 315,
+        "height": 128
+      }
+    },
+    {
+      "id": "actor-qa",
+      "label": "测试工程师",
+      "kind": "actor",
+      "subtitle": "debug 分组与测试会话的使用者",
+      "facts": [
+        "分组来自 AppNavGroup.debug（home_screen.dart:55-59）",
+        "testSession 入口属 advanced 组（home_screen.dart:60）"
+      ],
+      "position": {
+        "x": 124,
+        "y": 521
+      },
+      "size": {
+        "width": 294,
+        "height": 128
+      }
+    },
+    {
+      "id": "actor-maintainer",
+      "label": "工具维护者",
+      "kind": "actor",
+      "subtitle": "advanced 分组：模拟器环境与外观设置",
+      "facts": [
+        "emulator / backendLogs / testConfig 被归入 _globalKeys（home_screen.dart:67）",
+        "外观开关在设置对话框的 _AppearancePanel"
+      ],
+      "position": {
+        "x": 56,
+        "y": 998
+      },
+      "size": {
+        "width": 362,
+        "height": 128
+      }
+    },
+    {
+      "id": "uc-dashboard",
+      "label": "总览设备并发起快捷行动",
+      "kind": "usecase",
+      "groupId": "system",
+      "module": "设备总览",
+      "tags": [
+        "core"
+      ],
+      "subtitle": "DashboardView：HomeScreen 的默认内容页",
+      "facts": [
+        "设计系统落地度最高的页面：唯一同时使用 AppTopbar / AppPanel / AppSectionLabel 的文件",
+        "AppPanel 调用点 dashboard_view.dart:310,396,847,981,1099,1368",
+        "AppTopbar 调用点 dashboard_view.dart:161",
+        "快捷行动 id 定义在 dashboard_view.dart:40-44，由壳层映射到真实导航目标",
+        "onSelectDevice 回调在 dashboard_view.dart:46",
+        "但仍有 59 处硬编码样式，且 _HeroCard(:290)、_RightPanel(:1129) 在 design/ 之外另起炉灶"
+      ],
+      "source": {
+        "kind": "source",
+        "file": "flutter_app/lib/screens/dashboard_view.dart",
+        "lineStart": 26,
+        "lineEnd": 47,
+        "symbol": "DashboardView"
+      },
+      "position": {
+        "x": 563.25,
+        "y": 1309
+      },
+      "size": {
+        "width": 473,
+        "height": 138
+      }
+    },
+    {
+      "id": "uc-status",
+      "label": "查看设备实时状态",
+      "kind": "usecase",
+      "groupId": "system",
+      "module": "设备总览",
+      "subtitle": "DeviceStatusScreen：与总览页职责重叠的独立页面",
+      "facts": [
+        "import design/（device_status_screen.dart:11），属 5 个接入页面之一",
+        "仍存 45 处硬编码样式，_buildSummaryHeader(:305) 绕过 palette",
+        "总览页的 realtimePerformance(:935) 与 connectedDevices(:1152) 区块已覆盖同一目标"
+      ],
+      "source": {
+        "kind": "source",
+        "file": "flutter_app/lib/screens/device_status_screen.dart",
+        "lineStart": 17,
+        "symbol": "DeviceStatusScreen"
+      },
+      "position": {
+        "x": 1527,
+        "y": 823
+      },
+      "size": {
+        "width": 480,
+        "height": 138
+      }
+    },
+    {
+      "id": "uc-apps",
+      "label": "管理设备上的应用",
+      "kind": "usecase",
+      "groupId": "system",
+      "module": "应用与文件",
+      "subtitle": "AppManagerScreen：安装、卸载、启动 APK",
+      "facts": [
+        "未 import design/",
+        "39 处硬编码样式",
+        "总览页 installApk 快捷行动是本能力的另一入口"
+      ],
+      "source": {
+        "kind": "source",
+        "file": "flutter_app/lib/screens/app_manager_screen.dart",
+        "lineStart": 15,
+        "symbol": "AppManagerScreen"
+      },
+      "position": {
+        "x": 1527,
+        "y": 1364
+      },
+      "size": {
+        "width": 464,
+        "height": 138
+      }
+    },
+    {
+      "id": "uc-files",
+      "label": "浏览并传输设备文件",
+      "kind": "usecase",
+      "groupId": "system",
+      "module": "应用与文件",
+      "subtitle": "FileBrowserScreen：读写设备文件系统",
+      "facts": [
+        "未 import design/",
+        "文件体量约 51K，AGENTS.md 列为稳定技术债",
+        "与测试会话共用 ScreenCaptureMixin（lib/mixins/screen_capture_mixin.dart）"
+      ],
+      "source": {
+        "kind": "source",
+        "file": "flutter_app/lib/screens/file_browser_screen.dart",
+        "lineStart": 45,
+        "symbol": "FileBrowserScreen"
+      },
+      "position": {
+        "x": 558,
+        "y": 703
+      },
+      "size": {
+        "width": 425,
+        "height": 138
+      }
+    },
+    {
+      "id": "uc-logcat",
+      "label": "抓取并过滤运行日志",
+      "kind": "usecase",
+      "groupId": "system",
+      "module": "调试观测",
+      "subtitle": "LogcatScreen：实时日志与过滤条件",
+      "facts": [
+        "未 import design/",
+        "57 处硬编码样式，为全 app 第二多",
+        "文件体量约 57K，是全库最大的 Dart 文件"
+      ],
+      "source": {
+        "kind": "source",
+        "file": "flutter_app/lib/screens/logcat_screen.dart",
+        "lineStart": 36,
+        "symbol": "LogcatScreen"
+      },
+      "position": {
+        "x": 558,
+        "y": 314
+      },
+      "size": {
+        "width": 379,
+        "height": 138
+      }
+    },
+    {
+      "id": "uc-command",
+      "label": "执行 ADB 快捷指令",
+      "kind": "usecase",
+      "groupId": "system",
+      "module": "调试观测",
+      "subtitle": "AdbCommandScreen：按分类下发指令",
+      "facts": [
+        "未 import design/",
+        "17 处硬编码样式",
+        "配套 adb_command_quick_actions.dart 同样未接入"
+      ],
+      "source": {
+        "kind": "source",
+        "file": "flutter_app/lib/screens/adb_command_screen.dart",
+        "lineStart": 11,
+        "symbol": "AdbCommandScreen"
+      },
+      "position": {
+        "x": 558,
+        "y": 516
+      },
+      "size": {
+        "width": 404,
+        "height": 138
+      }
+    },
+    {
+      "id": "uc-mirror",
+      "label": "镜像并操作设备屏幕",
+      "kind": "usecase",
+      "groupId": "system",
+      "module": "屏幕镜像",
+      "subtitle": "ScreenMirrorScreen：scrcpy 投屏与录屏",
+      "facts": [
+        "未 import design/，硬编码样式仅 3 处（页面主体由视频流占位）",
+        "录屏控件分散在 widgets/recording_*、video_preview.dart 等未接入文件",
+        "测试会话子包未复用投屏（screens/test_session 内无 scrcpy / Mirror 引用）"
+      ],
+      "source": {
+        "kind": "source",
+        "file": "flutter_app/lib/screens/screen_mirror_screen.dart",
+        "lineStart": 32,
+        "symbol": "ScreenMirrorScreen"
+      },
+      "position": {
+        "x": 1527,
+        "y": 621
+      },
+      "size": {
+        "width": 449,
+        "height": 138
+      }
+    },
+    {
+      "id": "uc-session",
+      "label": "执行测试会话",
+      "kind": "usecase",
+      "groupId": "system",
+      "module": "测试会话",
+      "subtitle": "TestSessionHubScreen → TestSessionActiveScreen",
+      "facts": [
+        "hub 与 active 两屏均未 import design/",
+        "hub 45 处硬编码样式；_StartCard(:153)、_HistoryPanel(:265)、_SessionPreviewPanel(:561) 自行实现卡片与面板",
+        "状态集中在 providers/test_session_provider.dart（约 47K）"
+      ],
+      "source": {
+        "kind": "source",
+        "file": "flutter_app/lib/screens/test_session/test_session_hub_screen.dart",
+        "lineStart": 28,
+        "symbol": "TestSessionHubScreen"
+      },
+      "position": {
+        "x": 558,
+        "y": 112
+      },
+      "size": {
+        "width": 480,
+        "height": 138
+      }
+    },
+    {
+      "id": "uc-emulator",
+      "label": "管理模拟器运行环境",
+      "kind": "usecase",
+      "groupId": "system",
+      "module": "模拟器管理",
+      "subtitle": "EmulatorSettingsScreen：引擎 / 镜像 / 实例 / JDK",
+      "facts": [
+        "未 import design/",
+        "19 处硬编码样式",
+        "四个卡片组件（emulator_engine_card 约 53K、image / instance / java card）各自持有样式，均不在 design/ 下",
+        "对应 6 个 emulator_* provider"
+      ],
+      "source": {
+        "kind": "source",
+        "file": "flutter_app/lib/screens/emulator_settings_screen.dart",
+        "lineStart": 24,
+        "symbol": "EmulatorSettingsScreen"
+      },
+      "position": {
+        "x": 558,
+        "y": 1107
+      },
+      "size": {
+        "width": 480,
+        "height": 138
+      }
+    },
+    {
+      "id": "uc-theme",
+      "label": "切换深浅主题与外观",
+      "kind": "usecase",
+      "groupId": "system",
+      "module": "外观设置",
+      "subtitle": "设置对话框外观面板 → ThemeProvider",
+      "facts": [
+        "设置面板 widgets/settings_dialog.dart:789 _AppearancePanel，:795 watch ThemeProvider",
+        "ThemeMode 切换实现在 providers/theme_provider.dart:266 toggle / :274 setDark",
+        "AppPalette 作为 ThemeExtension 注册于 theme_provider.dart:54 与 :156",
+        "全 app 仅 22 处 context.palette 引用，对比 354 处 colorScheme 引用",
+        "深色 scaffold 底色 #0D1117（theme_provider.dart:43）与 AppPalette.dark.canvas #0A0C12 不一致；浅色 scaffold 为纯白而 palette.canvas 为 #F5F7FB",
+        "settings_dialog 自身虽 import design/，仍在 :327 定义私有 _Panel 复制 AppPanel"
+      ],
+      "source": {
+        "kind": "source",
+        "file": "flutter_app/lib/widgets/settings_dialog.dart",
+        "lineStart": 789,
+        "symbol": "_AppearancePanel"
+      },
+      "position": {
+        "x": 558,
+        "y": 905
+      },
+      "size": {
+        "width": 418,
+        "height": 138
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "a1",
+      "source": "actor-dev",
+      "target": "uc-dashboard",
+      "kind": "association",
+      "evidence": "source",
+      "route": {
+        "via": [
+          {
+            "x": 260.5,
+            "y": 1162
+          },
+          {
+            "x": 260.5,
+            "y": 1150
+          },
+          {
+            "x": 466,
+            "y": 1150
+          },
+          {
+            "x": 466,
+            "y": 1378
+          },
+          {
+            "x": 551.25,
+            "y": 1378
+          }
+        ]
+      }
+    },
+    {
+      "id": "a2",
+      "source": "actor-dev",
+      "target": "uc-status",
+      "kind": "association",
+      "evidence": "source",
+      "route": {
+        "via": [
+          {
+            "x": 430,
+            "y": 1238
+          },
+          {
+            "x": 442,
+            "y": 1238
+          },
+          {
+            "x": 442,
+            "y": 1484.5
+          },
+          {
+            "x": 1479,
+            "y": 1484.5
+          },
+          {
+            "x": 1479,
+            "y": 880
+          },
+          {
+            "x": 1515,
+            "y": 880
+          }
+        ]
+      }
+    },
+    {
+      "id": "a3",
+      "source": "actor-dev",
+      "target": "uc-apps",
+      "kind": "association",
+      "evidence": "source",
+      "route": {
+        "via": [
+          {
+            "x": 260.5,
+            "y": 1314
+          },
+          {
+            "x": 260.5,
+            "y": 1509.5
+          },
+          {
+            "x": 1503,
+            "y": 1509.5
+          },
+          {
+            "x": 1503,
+            "y": 1421
+          },
+          {
+            "x": 1515,
+            "y": 1421
+          }
+        ]
+      }
+    },
+    {
+      "id": "a4",
+      "source": "actor-dev",
+      "target": "uc-files",
+      "kind": "association",
+      "evidence": "source",
+      "route": {
+        "via": [
+          {
+            "x": 91,
+            "y": 1238
+          },
+          {
+            "x": 32,
+            "y": 1238
+          },
+          {
+            "x": 32,
+            "y": 950
+          },
+          {
+            "x": 442,
+            "y": 950
+          },
+          {
+            "x": 442,
+            "y": 772
+          },
+          {
+            "x": 546,
+            "y": 772
+          }
+        ]
+      }
+    },
+    {
+      "id": "a5",
+      "source": "actor-qa",
+      "target": "uc-logcat",
+      "kind": "association",
+      "evidence": "source",
+      "route": {
+        "via": [
+          {
+            "x": 271,
+            "y": 509
+          },
+          {
+            "x": 271,
+            "y": 383
+          },
+          {
+            "x": 546,
+            "y": 383
+          }
+        ]
+      }
+    },
+    {
+      "id": "a6",
+      "source": "actor-qa",
+      "target": "uc-command",
+      "kind": "association",
+      "evidence": "source",
+      "route": {
+        "via": [
+          {
+            "x": 430,
+            "y": 585
+          },
+          {
+            "x": 546,
+            "y": 585
+          }
+        ]
+      }
+    },
+    {
+      "id": "a7",
+      "source": "actor-qa",
+      "target": "uc-mirror",
+      "kind": "association",
+      "evidence": "source",
+      "route": {
+        "via": [
+          {
+            "x": 271,
+            "y": 661
+          },
+          {
+            "x": 271,
+            "y": 678
+          },
+          {
+            "x": 1515,
+            "y": 678
+          }
+        ]
+      }
+    },
+    {
+      "id": "a8",
+      "source": "actor-qa",
+      "target": "uc-session",
+      "kind": "association",
+      "evidence": "source",
+      "route": {
+        "via": [
+          {
+            "x": 112,
+            "y": 585
+          },
+          {
+            "x": 32,
+            "y": 585
+          },
+          {
+            "x": 32,
+            "y": 359
+          },
+          {
+            "x": 442,
+            "y": 359
+          },
+          {
+            "x": 442,
+            "y": 181
+          },
+          {
+            "x": 546,
+            "y": 181
+          }
+        ]
+      }
+    },
+    {
+      "id": "a9",
+      "source": "actor-maintainer",
+      "target": "uc-emulator",
+      "kind": "association",
+      "evidence": "source",
+      "route": {
+        "via": [
+          {
+            "x": 430,
+            "y": 1062
+          },
+          {
+            "x": 490,
+            "y": 1062
+          },
+          {
+            "x": 490,
+            "y": 1176
+          },
+          {
+            "x": 546,
+            "y": 1176
+          }
+        ]
+      }
+    },
+    {
+      "id": "a10",
+      "source": "actor-maintainer",
+      "target": "uc-theme",
+      "kind": "association",
+      "evidence": "source",
+      "route": {
+        "via": [
+          {
+            "x": 237,
+            "y": 986
+          },
+          {
+            "x": 237,
+            "y": 974
+          },
+          {
+            "x": 546,
+            "y": 974
+          }
+        ]
+      }
+    },
+    {
+      "id": "i1",
+      "source": "uc-dashboard",
+      "target": "uc-status",
+      "kind": "include",
+      "label": "实时性能与已连接设备区块",
+      "evidence": "source",
+      "route": {
+        "via": [
+          {
+            "x": 1048.25,
+            "y": 1354
+          },
+          {
+            "x": 1062,
+            "y": 1354
+          },
+          {
+            "x": 1062,
+            "y": 904
+          },
+          {
+            "x": 1515,
+            "y": 904
+          }
+        ],
+        "labelAt": {
+          "x": 1274.5,
+          "y": 903.5
+        }
+      }
+    },
+    {
+      "id": "i2",
+      "source": "uc-dashboard",
+      "target": "uc-mirror",
+      "kind": "include",
+      "label": "快捷行动 mirror / screenRecord / screenshot",
+      "evidence": "source",
+      "route": {
+        "via": [
+          {
+            "x": 1048.25,
+            "y": 1378
+          },
+          {
+            "x": 1455,
+            "y": 1378
+          },
+          {
+            "x": 1455,
+            "y": 702
+          },
+          {
+            "x": 1515,
+            "y": 702
+          }
+        ],
+        "labelAt": {
+          "x": 1274.5,
+          "y": 1377.5
+        }
+      }
+    },
+    {
+      "id": "i3",
+      "source": "uc-dashboard",
+      "target": "uc-apps",
+      "kind": "include",
+      "label": "快捷行动 installApk",
+      "evidence": "source",
+      "route": {
+        "via": [
+          {
+            "x": 1048.25,
+            "y": 1402
+          },
+          {
+            "x": 1062,
+            "y": 1402
+          },
+          {
+            "x": 1062,
+            "y": 1445
+          },
+          {
+            "x": 1515,
+            "y": 1445
+          }
+        ],
+        "labelAt": {
+          "x": 1274.5,
+          "y": 1444.5
+        }
+      }
+    }
+  ],
+  "layout": {
+    "version": "adaptive-v2-elkjs-0.11.0",
+    "strategy": "layered-0"
+  }
+}
