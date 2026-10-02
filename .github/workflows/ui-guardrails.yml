@@ -1,0 +1,29 @@
+name: UI guardrails
+
+# Runs the two repo checkers on every change that can break them. The release
+# workflow is tag-triggered, so without this the checks would only matter at
+# publish time.
+
+on:
+  push:
+    paths:
+      - "flutter_app/lib/**"
+      - "scripts/**"
+      - ".github/workflows/ui-guardrails.yml"
+  pull_request:
+    paths:
+      - "flutter_app/lib/**"
+      - "scripts/**"
+
+jobs:
+  guardrails:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: i18n key completeness
+        run: python scripts/check_i18n_tr_keys.py
+      - name: hardcoded style ratchet
+        run: python scripts/check_design_style.py
