@@ -64,16 +64,28 @@ class TestConfigProvider extends ChangeNotifier {
 
   Future<TestConfigImportResult> importFromJsonString(String source) async {
     final config = TestConfigFile.fromJsonString(source);
-    final imported = config.apps;
-    for (final incoming in imported) {
-      // Insert path: brand-new packageName, or existing row was
-      // somehow missing its id. Drift assigns a fresh id.
-      await _dao.insertRow(incoming.copyWith(id: null, isChecked: false));
+    // Read the table fresh rather than trusting `_apps`: that list is stream-fed,
+    // so a row written earlier in this same call may not have landed yet, and a
+    // missed match turns an update back into a duplicate insert.
+    final existingIds = {
+      for (final row in await _dao.getAll()) row.packageName: row.id,
+    };
+    for (final incoming in config.apps) {
+      final existingId = existingIds[incoming.packageName];
+      if (existingId == null) {
+        // Brand-new packageName — drift assigns a fresh id, unselected.
+        await _dao.insertRow(incoming.copyWith(id: null, isChecked: false));
+      } else {
+        // Existing packageName — overwrite the body. `updateRow` deliberately
+        // never touches is_checked, so re-importing the current app leaves the
+        // user's selection on it.
+        await _dao.updateRow(existingId, incoming.copyWith(id: existingId));
+      }
     }
     return TestConfigImportResult(
       configName: config.configName,
-      importedCount: imported.length,
-      hasSensitiveValues: imported.any(
+      importedCount: config.apps.length,
+      hasSensitiveValues: config.apps.any(
         (app) => app.testTexts.any((item) => item.sensitive),
       ),
     );

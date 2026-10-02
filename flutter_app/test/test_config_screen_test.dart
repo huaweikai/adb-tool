@@ -27,18 +27,21 @@ void main() {
   testWidgets(
       'TestConfigScreen lists imported apps and renders the current card after manual select',
       (tester) async {
-    await provider.importFromJsonString(_musicConfigJson);
-    // The DAO streams are async — give them a couple of microtasks
-    // to land before we pump the widget.
-    await Future<void>.delayed(Duration.zero);
-    await Future<void>.delayed(Duration.zero);
+    // drift does real async I/O. Awaiting it inside the fake-async test zone
+    // deadlocks — and the zone's own timeout is a fake timer, so it never fires
+    // either and the runner just reprints this test's name forever. The writes
+    // and the stream reads that follow them must run on the real clock.
+    await tester.runAsync(() async {
+      await provider.importFromJsonString(_musicConfigJson);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
 
-    // Pre-select the first app so the "current" card is visible —
-    // imports no longer auto-select in this codebase.
-    final firstId = provider.apps.first.id;
-    expect(firstId, isNotNull);
-    await provider.selectApp(firstId!);
-    await Future<void>.delayed(Duration.zero);
+      // Pre-select the first app so the "current" card is visible — imports no
+      // longer auto-select in this codebase.
+      final firstId = provider.apps.first.id;
+      expect(firstId, isNotNull);
+      await provider.selectApp(firstId!);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
 
     await tester.pumpWidget(
       MultiProvider(
@@ -54,10 +57,18 @@ void main() {
     await tester.pump();
 
     expect(find.text('测试配置中心'), findsOneWidget);
-    expect(find.text('抽象音乐 - 测试包'), findsOneWidget);
+    // The selected app renders twice by design: once in the "current" card and
+    // once in the list row below it.
+    expect(find.text('抽象音乐 - 测试包'), findsNWidgets(2));
     expect(find.text('抽象音乐 - 正式包'), findsOneWidget);
     expect(find.text('当前测试 App'), findsOneWidget);
-    expect(find.text('com.hua.music.debug'), findsOneWidget);
+    expect(find.text('com.hua.music.debug'), findsNWidgets(2));
+
+    // Unmount inside the body: cancelling drift's stream queries schedules a
+    // cleanup timer in the fake-async zone, and one created by the framework's
+    // end-of-test teardown can never be flushed.
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(milliseconds: 100));
   });
 
   testWidgets(
