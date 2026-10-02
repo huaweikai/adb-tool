@@ -157,11 +157,6 @@
       "insets": 1,
       "radius": 2
     },
-    "flutter_app/lib/widgets/settings_dialog.dart": {
-      "hexColor": 3,
-      "insets": 3,
-      "radius": 7
-    },
     "flutter_app/lib/widgets/skeleton.dart": {
       "duration": 1
     },
@@ -180,5 +175,5 @@
       "radius": 1
     }
   },
-  "total": 478
+  "total": 465
 }

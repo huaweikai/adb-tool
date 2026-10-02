@@ -2,10 +2,12 @@
 // multi-window panel). Opened from both the launch page and the main
 // app, so it is intentionally a dialog, not a route.
 //
-// Visual language matches the launch page (design node 64:2): dark
-// surface, green accent (#2EA043 / #3FB950), bordered panels, custom
-// rows / toggles / pill-segments — deliberately NOT the stock Material
-// Card / AppBar / SwitchListTile / SegmentedButton widgets.
+// Visual language comes from lib/design/ (AppPalette / AppPanel /
+// AppSectionLabel / tokens): panel surfaces, palette accent, bordered
+// panels, custom rows / toggles / pill-segments — deliberately NOT the
+// stock Material Card / AppBar / SwitchListTile / SegmentedButton widgets.
+// The dialog previously carried its own GitHub-green hex accent, which
+// fought the single-track palette; it now reads palette.accent.
 //
 // Sections:
 //   * 后端 (Backend / Bridge) — live status pill (green running /
@@ -21,7 +23,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../i18n.dart';
+import '../design/app_palette.dart';
 import '../design/design_tokens.dart';
+import '../design/panel.dart';
+import '../design/section_label.dart';
+import '../design/topbar.dart';
 import '../providers/app_settings_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/locale_provider.dart';
@@ -33,10 +39,6 @@ const String kAppVersion =
     String.fromEnvironment('APP_VERSION', defaultValue: 'dev');
 const String kAppBuild =
     String.fromEnvironment('APP_BUILD', defaultValue: '0');
-
-/// Accent colors — keep in sync with lib/screens/launch_page.dart (64:2).
-const Color _accent = Color(0xFF2EA043);
-const Color _accentBorder = Color(0xFF3FB950);
 
 /// Open the settings as a floating "window" dialog. Reusable from both
 /// the launch page and the main app. [onRestartBackend] / [onPortChanged]
@@ -136,7 +138,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final palette = context.palette;
     final settings = context.watch<AppSettings>();
     final canEditPort = widget.onPortChanged != null;
     final maxW =
@@ -148,17 +150,15 @@ class _SettingsDialogState extends State<_SettingsDialog> {
         maxHeight: MediaQuery.of(context).size.height * 0.86,
       ),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6),
-        ),
-        boxShadow: const [
+        color: palette.panel,
+        borderRadius: BorderRadius.circular(AppRadius.xl),
+        border: Border.all(color: palette.hairline),
+        boxShadow: [
           BoxShadow(
-            color: Color(0x40000000),
+            color: Colors.black.withAlpha(64),
             blurRadius: 40,
             spreadRadius: 2,
-            offset: Offset(0, 16),
+            offset: const Offset(0, 16),
           ),
         ],
       ),
@@ -175,7 +175,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
             ),
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.all(20),
+                padding: const EdgeInsets.all(AppSpacing.xl),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -260,37 +260,32 @@ class _TitleBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final palette = context.palette;
     return GestureDetector(
       onPanUpdate: (d) => onDrag(d.delta),
       child: Container(
         height: 48,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
         decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainerHighest
-              .withValues(alpha: 0.4),
-          border: Border(
-            bottom: BorderSide(
-              color: theme.colorScheme.outlineVariant
-                  .withValues(alpha: 0.5),
-            ),
-          ),
+          color: palette.raised,
+          border: Border(bottom: BorderSide(color: palette.hairline)),
         ),
         child: Row(
           children: [
-            const Icon(Icons.settings_outlined, size: 18, color: _accent),
-            const SizedBox(width: 10),
+            Icon(Icons.settings_outlined, size: 18, color: palette.accent),
+            const SizedBox(width: AppSpacing.md),
             Text(
               tr('settings.title'),
-              style: theme.textTheme.titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w600),
+              style: TextStyle(
+                fontSize: AppFontSize.title,
+                fontWeight: FontWeight.w600,
+                color: palette.textPrimary,
+              ),
             ),
             const Spacer(),
-            IconButton(
-              icon: const Icon(Icons.close, size: 18),
+            AppTopbarIconButton(
+              icon: Icons.close,
               tooltip: tr('close'),
-              color: theme.colorScheme.onSurfaceVariant,
-              splashRadius: 18,
               onPressed: onClose,
             ),
           ],
@@ -300,7 +295,7 @@ class _TitleBar extends StatelessWidget {
   }
 }
 
-/// Section heading — green icon + bold label (matches launch page).
+/// Section heading — palette-accent icon + [AppSectionLabel].
 class _SectionTitle extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -308,42 +303,12 @@ class _SectionTitle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Row(
       children: [
-        Icon(icon, color: _accent, size: 18),
-        const SizedBox(width: 8),
-        Text(
-          label,
-          style: theme.textTheme.titleMedium
-              ?.copyWith(fontWeight: FontWeight.w600),
-        ),
+        Icon(icon, color: context.palette.accent, size: 18),
+        const SizedBox(width: AppSpacing.sm),
+        AppSectionLabel(label),
       ],
-    );
-  }
-}
-
-/// Dark, bordered content panel — replaces Material Card.
-class _Panel extends StatelessWidget {
-  final Widget child;
-  const _Panel({required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest
-            .withValues(alpha: 0.28),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color:
-              theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
-        ),
-      ),
-      child: child,
     );
   }
 }
@@ -356,21 +321,24 @@ class _StatusPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final palette = context.palette;
     final Color color;
     final String text;
     if (checking) {
-      color = theme.colorScheme.onSurfaceVariant;
+      color = palette.textSecondary;
       text = tr('settings.backend.checking');
     } else if (reachable) {
-      color = _accentBorder;
+      color = palette.online;
       text = tr('settings.backend.statusRunning');
     } else {
-      color = Colors.redAccent;
+      color = palette.red;
       text = tr('settings.backend.statusStopped');
     }
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.xs,
+      ),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.14),
         borderRadius: BorderRadius.circular(AppRadius.full),
@@ -384,10 +352,11 @@ class _StatusPill extends StatelessWidget {
             height: 7,
             decoration: BoxDecoration(color: color, shape: BoxShape.circle),
           ),
-          const SizedBox(width: 6),
+          const SizedBox(width: AppSpacing.sm),
           Text(
             text,
-            style: theme.textTheme.bodySmall?.copyWith(
+            style: TextStyle(
+              fontSize: AppFontSize.body,
               color: color,
               fontWeight: FontWeight.w600,
             ),
@@ -398,35 +367,34 @@ class _StatusPill extends StatelessWidget {
   }
 }
 
-/// Green filled button used across the dialog.
+/// Accent-filled button used across the dialog.
 class _DialogButton extends StatelessWidget {
   final String label;
   final VoidCallback? onPressed;
   final bool loading;
-  final Color accent;
 
   const _DialogButton({
     required this.label,
     this.onPressed,
     this.loading = false,
-    required this.accent,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final palette = context.palette;
     return SizedBox(
       height: 36,
       child: FilledButton(
         onPressed: loading ? null : onPressed,
         style: FilledButton.styleFrom(
-          backgroundColor: accent,
-          foregroundColor: Colors.white,
+          backgroundColor: palette.accent,
+          foregroundColor: palette.onAccent,
           disabledBackgroundColor:
               theme.colorScheme.onSurface.withValues(alpha: 0.12),
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(AppRadius.md),
           ),
           textStyle: const TextStyle(
             fontSize: AppFontSize.body,
@@ -437,15 +405,15 @@ class _DialogButton extends StatelessWidget {
             ? Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const SizedBox(
+                  SizedBox(
                     width: 14,
                     height: 14,
                     child: CircularProgressIndicator(
                       strokeWidth: 2,
-                      color: Colors.white,
+                      color: palette.onAccent,
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: AppSpacing.sm),
                   Text(label),
                 ],
               )
@@ -495,28 +463,23 @@ class _Segmented<T> extends StatelessWidget {
   final List<_SegOption<T>> options;
   final T selected;
   final ValueChanged<T> onChanged;
-  final Color accent;
 
   const _Segmented({
     required this.options,
     required this.selected,
     required this.onChanged,
-    required this.accent,
   });
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final palette = context.palette;
     return Container(
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest
-            .withValues(alpha: 0.4),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6),
-        ),
+        color: palette.raised,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: palette.hairline),
       ),
-      padding: const EdgeInsets.all(3),
+      padding: const EdgeInsets.all(AppSpacing.xs),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: options.map((opt) {
@@ -525,10 +488,13 @@ class _Segmented<T> extends StatelessWidget {
             onTap: () => onChanged(opt.value),
             child: Container(
               constraints: const BoxConstraints(minWidth: 64),
-              padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 12),
+              padding: const EdgeInsets.symmetric(
+                vertical: AppSpacing.sm,
+                horizontal: AppSpacing.md,
+              ),
               decoration: BoxDecoration(
-                color: sel ? accent : Colors.transparent,
-                borderRadius: BorderRadius.circular(6),
+                color: sel ? palette.accent : Colors.transparent,
+                borderRadius: BorderRadius.circular(AppRadius.sm),
               ),
               child: Center(
                 child: Text(
@@ -536,9 +502,7 @@ class _Segmented<T> extends StatelessWidget {
                   style: TextStyle(
                     fontSize: AppFontSize.body,
                     fontWeight: sel ? FontWeight.w600 : FontWeight.w500,
-                    color: sel
-                        ? Colors.white
-                        : theme.colorScheme.onSurfaceVariant,
+                    color: sel ? palette.onAccent : palette.textSecondary,
                   ),
                 ),
               ),
@@ -582,162 +546,160 @@ class _BackendPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return _Panel(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Text(
-                tr('settings.backend.bridge'),
-                style: theme.textTheme.titleSmall
-                    ?.copyWith(fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(width: 10),
-              _StatusPill(checking: checking, reachable: reachable),
-            ],
-          ),
-          const SizedBox(height: 14),
-
-          // Port
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(
-                width: 64,
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    tr('settings.backend.port'),
-                    style: theme.textTheme.bodyMedium,
-                  ),
+    final palette = context.palette;
+    return SizedBox(
+      width: double.infinity,
+      child: AppPanel(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        color: palette.raised,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(
+                  tr('settings.backend.bridge'),
+                  style: theme.textTheme.titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w600),
                 ),
-              ),
-              Expanded(
-                child: SizedBox(
-                  width: 140,
-                  child: TextField(
-                    controller: portController,
-                    enabled: canEditPort,
-                    keyboardType: TextInputType.number,
-                    decoration: InputDecoration(
-                      isDense: true,
-                      filled: true,
-                      fillColor: theme.colorScheme.surfaceContainerHighest
-                          .withValues(alpha: 0.4),
-                      hintText: tr('settings.backend.portHint'),
-                      errorText: portError,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide(
-                          color: theme.colorScheme.outlineVariant
-                              .withValues(alpha: 0.6),
-                        ),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide(
-                          color: theme.colorScheme.outlineVariant
-                              .withValues(alpha: 0.6),
-                        ),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                    ),
-                    onSubmitted: (_) => onApplyPort(),
-                  ),
-                ),
-              ),
-              if (canEditPort) ...[
-                const SizedBox(width: 8),
-                _DialogButton(
-                  label: tr('settings.backend.apply'),
-                  onPressed: onApplyPort,
-                  accent: _accent,
-                ),
+                const SizedBox(width: AppSpacing.md),
+                _StatusPill(checking: checking, reachable: reachable),
               ],
-            ],
-          ),
-          if (portError == null && canEditPort)
-            Padding(
-              padding: const EdgeInsets.only(left: 64, top: 4),
-              child: Text(
-                tr('settings.backend.portHint'),
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-              ),
             ),
-          const SizedBox(height: 12),
+            const SizedBox(height: AppSpacing.lg),
 
-          // Auto-start
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      tr('settings.backend.autoStart'),
+            // Port
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: 64,
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: AppSpacing.sm),
+                    child: Text(
+                      tr('settings.backend.port'),
                       style: theme.textTheme.bodyMedium,
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      tr('settings.backend.autoStartDesc'),
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                Expanded(
+                  child: SizedBox(
+                    width: 140,
+                    child: TextField(
+                      controller: portController,
+                      enabled: canEditPort,
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        isDense: true,
+                        filled: true,
+                        fillColor: palette.panel,
+                        hintText: tr('settings.backend.portHint'),
+                        errorText: portError,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(AppRadius.md),
+                          borderSide: BorderSide(color: palette.hairline),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(AppRadius.md),
+                          borderSide: BorderSide(color: palette.hairline),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.md,
+                          vertical: AppSpacing.sm,
+                        ),
                       ),
+                      onSubmitted: (_) => onApplyPort(),
                     ),
-                  ],
+                  ),
+                ),
+                if (canEditPort) ...[
+                  const SizedBox(width: AppSpacing.sm),
+                  _DialogButton(
+                    label: tr('settings.backend.apply'),
+                    onPressed: onApplyPort,
+                  ),
+                ],
+              ],
+            ),
+            if (portError == null && canEditPort)
+              Padding(
+                padding: const EdgeInsets.only(
+                  left: 64,
+                  top: AppSpacing.xs,
+                ),
+                child: Text(
+                  tr('settings.backend.portHint'),
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: palette.textSecondary),
                 ),
               ),
-              Switch(
-                value: autoStart,
-                activeColor: _accent,
-                onChanged: onAutoStartChanged,
+            const SizedBox(height: AppSpacing.md),
+
+            // Auto-start
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        tr('settings.backend.autoStart'),
+                        style: theme.textTheme.bodyMedium,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        tr('settings.backend.autoStartDesc'),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: palette.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Switch(
+                  value: autoStart,
+                  activeThumbColor: palette.accent,
+                  onChanged: onAutoStartChanged,
+                ),
+              ],
+            ),
+
+            // Restart
+            if (canRestart) ...[
+              const SizedBox(height: AppSpacing.md),
+              _DialogButton(
+                label: restarting
+                    ? tr('settings.backend.restarting')
+                    : tr('settings.backend.restart'),
+                onPressed: restarting ? null : onRestart,
+                loading: restarting,
               ),
             ],
-          ),
 
-          // Restart
-          if (canRestart) ...[
-            const SizedBox(height: 12),
-            _DialogButton(
-              label: restarting
-                  ? tr('settings.backend.restarting')
-                  : tr('settings.backend.restart'),
-              onPressed: restarting ? null : onRestart,
-              loading: restarting,
-              accent: _accent,
-            ),
-          ],
-
-          // Runtime info
-          if (backendInfo != null) ...[
-            const SizedBox(height: 14),
-            Divider(
-              color: theme.colorScheme.outlineVariant.withValues(alpha: 0.4),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              tr('settings.backend.runtimeInfo'),
-              style: theme.textTheme.labelMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-                fontWeight: FontWeight.w600,
+            // Runtime info
+            if (backendInfo != null) ...[
+              const SizedBox(height: AppSpacing.lg),
+              Divider(color: palette.hairline),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                tr('settings.backend.runtimeInfo'),
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: palette.textSecondary,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
-            ),
-            const SizedBox(height: 6),
-            _InfoRow(
-              label: tr('settings.backend.pid'),
-              value: backendInfo!['pid']?.toString() ?? '—',
-            ),
-            _InfoRow(
-              label: tr('settings.backend.started'),
-              value: _formatStarted(backendInfo!['started']?.toString()),
-            ),
+              const SizedBox(height: AppSpacing.sm),
+              _InfoRow(
+                label: tr('settings.backend.pid'),
+                value: backendInfo!['pid']?.toString() ?? '—',
+              ),
+              _InfoRow(
+                label: tr('settings.backend.started'),
+                value: _formatStarted(backendInfo!['started']?.toString()),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -749,38 +711,43 @@ class _CachePanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return _Panel(
-      child: Row(
-        children: [
-          const Icon(Icons.delete_sweep_outlined,
-              color: _accent, size: 20),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  tr('settings.cache.cleanup'),
-                  style: theme.textTheme.titleSmall
-                      ?.copyWith(fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  tr('settings.cache.cleanupDesc'),
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
+    final palette = context.palette;
+    return SizedBox(
+      width: double.infinity,
+      child: AppPanel(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        color: palette.raised,
+        child: Row(
+          children: [
+            Icon(Icons.delete_sweep_outlined,
+                color: palette.accent, size: 20),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    tr('settings.cache.cleanup'),
+                    style: theme.textTheme.titleSmall
+                        ?.copyWith(fontWeight: FontWeight.w600),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 2),
+                  Text(
+                    tr('settings.cache.cleanupDesc'),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: palette.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(width: 8),
-          _DialogButton(
-            label: tr('settings.cache.cleanupButton'),
-            onPressed: () => showCleanupCacheDialog(context),
-            accent: _accent,
-          ),
-        ],
+            const SizedBox(width: AppSpacing.sm),
+            _DialogButton(
+              label: tr('settings.cache.cleanupButton'),
+              onPressed: () => showCleanupCacheDialog(context),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -792,52 +759,56 @@ class _AppearancePanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final palette = context.palette;
     final themeProvider = context.watch<ThemeProvider>();
     final locale = context.watch<LocaleProvider>();
-    return _Panel(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  tr('settings.appearance.theme'),
-                  style: theme.textTheme.bodyMedium,
+    return SizedBox(
+      width: double.infinity,
+      child: AppPanel(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        color: palette.raised,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    tr('settings.appearance.theme'),
+                    style: theme.textTheme.bodyMedium,
+                  ),
                 ),
-              ),
-              _Segmented<bool>(
-                selected: themeProvider.isDark,
-                onChanged: (v) => themeProvider.setDark(v),
-                accent: _accent,
-                options: [
-                  _SegOption(true, tr('settings.appearance.themeDark')),
-                  _SegOption(false, tr('settings.appearance.themeLight')),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  tr('settings.appearance.language'),
-                  style: theme.textTheme.bodyMedium,
+                _Segmented<bool>(
+                  selected: themeProvider.isDark,
+                  onChanged: (v) => themeProvider.setDark(v),
+                  options: [
+                    _SegOption(true, tr('settings.appearance.themeDark')),
+                    _SegOption(false, tr('settings.appearance.themeLight')),
+                  ],
                 ),
-              ),
-              _Segmented<String>(
-                selected: locale.currentLang,
-                onChanged: (v) => locale.setLocale(v),
-                accent: _accent,
-                options: [
-                  _SegOption('zh', tr('settings.appearance.langZh')),
-                  _SegOption('en', tr('settings.appearance.langEn')),
-                ],
-              ),
-            ],
-          ),
-        ],
+              ],
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    tr('settings.appearance.language'),
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                ),
+                _Segmented<String>(
+                  selected: locale.currentLang,
+                  onChanged: (v) => locale.setLocale(v),
+                  options: [
+                    _SegOption('zh', tr('settings.appearance.langZh')),
+                    _SegOption('en', tr('settings.appearance.langEn')),
+                  ],
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -849,31 +820,37 @@ class _AboutPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return _Panel(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.adb, color: _accent),
-              const SizedBox(width: 8),
-              Text(
-                tr('settings.about.appName'),
-                style: theme.textTheme.titleSmall
-                    ?.copyWith(fontWeight: FontWeight.w600),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          _InfoRow(label: tr('settings.about.version'), value: kAppVersion),
-          _InfoRow(label: tr('settings.about.build'), value: kAppBuild),
-          const SizedBox(height: 4),
-          Text(
-            tr('settings.about.copyright'),
-            style: theme.textTheme.bodySmall
-                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-          ),
-        ],
+    final palette = context.palette;
+    return SizedBox(
+      width: double.infinity,
+      child: AppPanel(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        color: palette.raised,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.adb, color: palette.accent),
+                const SizedBox(width: AppSpacing.sm),
+                Text(
+                  tr('settings.about.appName'),
+                  style: theme.textTheme.titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w600),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.md),
+            _InfoRow(label: tr('settings.about.version'), value: kAppVersion),
+            _InfoRow(label: tr('settings.about.build'), value: kAppBuild),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              tr('settings.about.copyright'),
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: palette.textSecondary),
+            ),
+          ],
+        ),
       ),
     );
   }
