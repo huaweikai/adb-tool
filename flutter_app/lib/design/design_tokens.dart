@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 /// App-wide spacing tokens — the only source of truth for padding/margin.
 /// All widgets must use these constants; hard-coded spacing values are
 /// forbidden unless there is a very strong justification documented inline.
@@ -62,78 +60,4 @@ class AppElevation {
   static const double elevated = 3;
   static const double dialog = 6;
   static const double popover = 12;
-}
-
-/// ── AppColors ───────────────────────────────────────────────
-///
-/// **DEPRECATED for new code. Use [AppPalette] via `context.palette.<token>`
-/// instead** — the palette switches with `ThemeMode` and interpolates on
-/// theme changes; this class is a frozen dark-only snapshot kept alive so
-/// legacy screens keep rendering unchanged during the incremental migration.
-///
-/// Original doc (kept for historical context):
-///
-/// Color tokens for the **new design system** (Ardot 主文件 706601156104862,
-/// 深色专用). These are intentionally a *separate* semantic layer from
-/// `Theme.of(context).colorScheme` — the existing dark theme is GitHub-style
-/// (`#0D1117` + blue seed), while this new system is a custom dark palette
-/// anchored on Android green `#3DDC84`.
-///
-/// Values sourced from the design file node `fills` (no Ardot variables used).
-@Deprecated('Use context.palette.<token> from AppPalette instead. '
-    'AppColors is a frozen dark-only snapshot; new widgets must read '
-    'colors from the palette so they switch correctly under ThemeMode.')
-class AppColors {
-  const AppColors._();
-
-  // ── Surfaces (背景层级) ──
-  /// App canvas / scaffold background. `#0A0C12`
-  static const Color canvas = Color(0xFF0A0C12);
-
-  /// Sidebar / card panel base. `#0E1118`  (sidebar 34:52 fill, card fill)
-  static const Color panel = Color(0xFF0E1118);
-
-  /// Raised surface (device switcher card, hover). `#161B24`
-  static const Color raised = Color(0xFF161B24);
-
-  /// Active navigation item background. `#162031`  (nav active 34:60 fill)
-  static const Color activeNav = Color(0xFF162031);
-
-  /// Hairline / border / stroke. `#1E2430`  (sidebar stroke, topbar stroke)
-  static const Color hairline = Color(0xFF1E2430);
-
-  // ── Accent ──
-  /// Primary accent — Android green. `#3DDC84`
-  /// Used for: active nav icon/label, online dot, brand logo, CTA buttons.
-  static const Color accent = Color(0xFF3DDC84);
-
-  // ── Text ──
-  /// Primary text / titles. `#E7EAF0`
-  static const Color textPrimary = Color(0xFFE7EAF0);
-
-  /// Secondary text / labels / nav default. `#9AA4B2`
-  static const Color textSecondary = Color(0xFF9AA4B2);
-
-  /// Disabled / group labels / hints. `#5B6472`
-  static const Color textDisabled = Color(0xFF5B6472);
-
-  // ── Semantic ──
-  /// Blue accent (info / screenshot quick action). `#4C8DFF`
-  static const Color blue = Color(0xFF4C8DFF);
-
-  /// Orange accent (warning). `#FF9F43`
-  static const Color orange = Color(0xFFFF9F43);
-
-  /// Red accent (error / record). `#FF6B6B`
-  static const Color red = Color(0xFFFF6B6B);
-
-  // ── Derived helpers ──
-  /// Active nav foreground (icon + label) — same as [accent].
-  static const Color navActiveFg = accent;
-
-  /// Default nav foreground (icon + label) — same as [textSecondary].
-  static const Color navDefaultFg = textSecondary;
-
-  /// Online status dot — same as [accent].
-  static const Color online = accent;
 }

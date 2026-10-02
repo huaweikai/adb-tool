@@ -1,4 +1,4 @@
-import 'package:adb_tool/design/design_tokens.dart';
+import 'package:adb_tool/design/app_palette.dart';
 import 'package:adb_tool/widgets/app_sidebar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -94,12 +94,12 @@ void main() {
 
     // The active item's text should use the accent color.
     final filesLabel = tester.widget<Text>(find.text('文件浏览'));
-    expect(filesLabel.style?.color, AppColors.accent,
+    expect(filesLabel.style?.color, AppPalette.dark.accent,
         reason: 'active nav label must be accent green');
 
     // A non-active item must NOT be accent.
     final dashboardLabel = tester.widget<Text>(find.text('仪表盘'));
-    expect(dashboardLabel.style?.color, isNot(AppColors.accent),
+    expect(dashboardLabel.style?.color, isNot(AppPalette.dark.accent),
         reason: 'non-active nav must not be accent — guards against the '
             'legacy double-active bug where master defaulted one item active');
   });
@@ -112,7 +112,7 @@ void main() {
       find.byWidgetPredicate((w) => w is Text && navItems.any((i) => i.label == (w).data)),
     );
     for (final label in labels) {
-      expect(label.style?.color, isNot(AppColors.accent),
+      expect(label.style?.color, isNot(AppPalette.dark.accent),
           reason: 'with null activeNavId, no item should be accent');
     }
   });
