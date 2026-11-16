@@ -1,12 +1,10 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:file_selector/file_selector.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_typeahead/flutter_typeahead.dart';
 import 'package:provider/provider.dart';
 import '../models/app_package.dart';
-import '../models/device.dart';
 import '../models/test_config.dart';
 import '../services/api_client.dart';
 import '../i18n.dart';
@@ -15,24 +13,11 @@ import '../providers/device_provider.dart';
 import '../providers/logcat_state_provider.dart';
 import '../providers/test_config_provider.dart';
 import '../widgets/logcat/highlight_rule.dart';
+import '../widgets/logcat/logcat_list.dart';
 import '../widgets/offline_guard.dart';
 
-/// Logcat screen — entries / filter / streaming state live in
-/// [LogcatStateProvider] (keyed by device serial). This widget owns only
-/// the genuinely widget-scoped resources (text controllers, scroll
-/// controller, flush timer, applied-config marker, highlight rules).
-///
-/// Per-device state survives screen rebuild AND navigation to other
-/// devices' logcat screens: switching to device B does NOT touch
-/// device A's entries / filter / scroll.
-///
-/// Performance posture: the screen itself does NOT watch
-/// [LogcatStateProvider] directly. Instead each region (toolbar, log
-/// list, status bar) is its own widget that uses `Selector` to subscribe
-/// to only the slice of provider state it cares about. That means a
-/// 12.5 Hz stream-batch notify only rebuilds the log list, not the
-/// toolbar or status bar — the heaviest UI work (toolbar rebuild +
-/// status-bar rebuild) is decoupled from the highest-frequency notify.
+/// Device log controls and filters. The list and toolbar subscribe to their
+/// own state so incoming logs can update without rebuilding the controls.
 class LogcatScreen extends StatefulWidget {
   const LogcatScreen({super.key});
 
@@ -52,12 +37,7 @@ class _LogcatScreenState extends State<LogcatScreen> {
   final List<HighlightRule> _highlightRules = HighlightRules.defaults();
   final List<Color> _customRuleColors = HighlightRules.customPalette;
 
-  // Widget-scoped UI resources only. NOT business state.
-  final ScrollController _scrollCtrl = ScrollController();
-  bool _autoScroll = true;
-  Timer? _autoScrollTimer;
-  Timer? _flushTimer;
-  String? _flushTimerSerial;
+  int _highlightVersion = 0;
 
   late final TextEditingController _tagCtrl;
   late final TextEditingController _kwCtrl;
@@ -74,6 +54,7 @@ class _LogcatScreenState extends State<LogcatScreen> {
   // rebuild — re-hydrating per-build would clobber whatever the user
   // has typed since the last notifyListeners().
   String? _hydratedSerial;
+  int _packageRequest = 0;
 
   // Subscription for "recording was force-stopped because device went
   // offline" — surface a different snackbar than the normal
@@ -87,8 +68,6 @@ class _LogcatScreenState extends State<LogcatScreen> {
     _kwCtrl = TextEditingController();
     _pkgCtrl = TextEditingController();
     _ruleCtrl = TextEditingController();
-    _scrollCtrl.addListener(_onScrollPositionChanged);
-    _startFlushTimer();
     // Subscribe via post-frame so we have a context to read providers
     // and ScaffoldMessenger from. The provider itself was already
     // wired in di.dart; this just hooks the UI-side snackbar.
@@ -110,39 +89,6 @@ class _LogcatScreenState extends State<LogcatScreen> {
     });
   }
 
-  /// Owns the periodic flush loop for the currently-active device's
-  /// pending entries. Restarted when the active serial changes so
-  /// each device gets its own flush cadence.
-  void _startFlushTimer() {
-    _flushTimer?.cancel();
-    _flushTimer = Timer.periodic(
-      const Duration(milliseconds: 80),
-      (_) {
-        if (!mounted) return;
-        final deviceSerial = _selectedSerial;
-        if (deviceSerial == null) return;
-        context.read<LogcatStateProvider>().flushPending(deviceSerial);
-        if (_autoScroll) _tryAutoScroll();
-      },
-    );
-  }
-
-  void _onScrollPositionChanged() {
-    if (!_scrollCtrl.hasClients) return;
-    final pos = _scrollCtrl.position;
-    final distanceFromBottom = pos.maxScrollExtent - pos.pixels;
-    if (distanceFromBottom > 80 && _autoScroll) {
-      setState(() {
-        _autoScroll = false;
-      });
-    } else if (distanceFromBottom <= 24 && !_autoScroll) {
-      setState(() {
-        _autoScroll = true;
-      });
-      _jumpToBottomAfterFrame();
-    }
-  }
-
   /// Pull the current device's filter from the provider and load it
   /// into the input controllers. Called only when [_hydratedSerial]
   /// changes (i.e. first mount, or device switch). Never call from
@@ -157,51 +103,39 @@ class _LogcatScreenState extends State<LogcatScreen> {
 
   @override
   void dispose() {
-    _autoScrollTimer?.cancel();
-    _flushTimer?.cancel();
-    _scrollCtrl.removeListener(_onScrollPositionChanged);
     _recordingInterruptedSub?.cancel();
     _tagCtrl.dispose();
     _kwCtrl.dispose();
     _pkgCtrl.dispose();
     _ruleCtrl.dispose();
-    _scrollCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _resolvePackage() async {
-    final deviceSerial = _selectedSerial;
-    final pkg = _pkgCtrl.text.trim();
-    if (pkg.isEmpty || deviceSerial == null) {
-      context
-          .read<LogcatStateProvider>()
-          .setPackagePid(deviceSerial ?? '', null);
+    final serial = _selectedSerial;
+    if (serial == null) return;
+    final request = ++_packageRequest;
+    final package = _pkgCtrl.text.trim();
+    final provider = context.read<LogcatStateProvider>();
+    if (package.isEmpty) {
+      provider.setPackagePid(serial, null);
       return;
     }
-    context
-        .read<LogcatStateProvider>()
-        .updateField(deviceSerial, packageName: pkg);
+    provider.updateField(serial, packageName: package);
+    String? pid;
     try {
-      final pid =
-          await context.read<ApiClient>().getPackagePid(deviceSerial, pkg);
-      if (!mounted) return;
-      if (pid == null) {
-        _showPidNotFound(pkg);
-        context.read<LogcatStateProvider>().updateField(
-              deviceSerial,
-              packagePid: '',
-            );
-        return;
-      }
-      context.read<LogcatStateProvider>().setPackagePid(deviceSerial, pid);
+      pid = await context.read<ApiClient>().getPackagePid(serial, package);
     } catch (_) {
-      if (!mounted) return;
-      _showPidNotFound(pkg);
-      context.read<LogcatStateProvider>().updateField(
-            deviceSerial,
-            packagePid: '',
-          );
+      // The same feedback applies if the process is gone or unavailable.
     }
+    if (!mounted ||
+        request != _packageRequest ||
+        serial != _selectedSerial ||
+        package != _pkgCtrl.text.trim()) {
+      return;
+    }
+    provider.setPackagePid(serial, pid, clearPackage: false);
+    if (pid == null) _showPidNotFound(package);
   }
 
   void _showPidNotFound(String pkg) {
@@ -212,39 +146,6 @@ class _LogcatScreenState extends State<LogcatScreen> {
         duration: const Duration(seconds: 3),
       ),
     );
-  }
-
-  void _tryAutoScroll() {
-    if (!_autoScroll) return;
-    _autoScrollTimer ??= Timer(const Duration(milliseconds: 120), () {
-      _autoScrollTimer = null;
-      _jumpToBottomAfterFrame();
-    });
-  }
-
-  void _jumpToBottomAfterFrame() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_autoScroll || !_scrollCtrl.hasClients) return;
-      final max = _scrollCtrl.position.maxScrollExtent;
-      if (max > 0 && _scrollCtrl.position.pixels != max) {
-        _scrollCtrl.jumpTo(max);
-      }
-    });
-  }
-
-  void _animateToBottomAfterFrame() {
-    _autoScrollTimer?.cancel();
-    _autoScrollTimer = null;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_scrollCtrl.hasClients) return;
-      final max = _scrollCtrl.position.maxScrollExtent;
-      if (max <= 0) return;
-      _scrollCtrl.animateTo(
-        max,
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOutCubic,
-      );
-    });
   }
 
   Future<void> _startRecording() async {
@@ -330,36 +231,24 @@ class _LogcatScreenState extends State<LogcatScreen> {
     final deviceSerial = _selectedSerial;
     if (deviceSerial == null) return;
     context.read<LogcatStateProvider>().startStream(deviceSerial);
-    // Entries will start arriving — arm the flush loop.
-    _startFlushTimer();
   }
 
   void _stopStream() {
     final deviceSerial = _selectedSerial;
     if (deviceSerial == null) return;
     context.read<LogcatStateProvider>().stopStream(deviceSerial);
-    // Drain anything still pending, then stop the loop — no more
-    // entries will arrive so the 80ms tick would just spin idle.
-    context.read<LogcatStateProvider>().flushPending(deviceSerial);
-    _flushTimer?.cancel();
-    _flushTimer = null;
   }
 
   void _pauseStream() {
     final deviceSerial = _selectedSerial;
     if (deviceSerial == null) return;
     context.read<LogcatStateProvider>().pauseStream(deviceSerial);
-    // Paused stream produces no entries — pause the flush loop too.
-    _flushTimer?.cancel();
-    _flushTimer = null;
   }
 
   void _resumeStream() {
     final deviceSerial = _selectedSerial;
     if (deviceSerial == null) return;
     context.read<LogcatStateProvider>().resumeStream(deviceSerial);
-    // Entries flow again — re-arm the flush loop.
-    _startFlushTimer();
   }
 
   void _clearLogs() {
@@ -367,7 +256,6 @@ class _LogcatScreenState extends State<LogcatScreen> {
     if (deviceSerial == null) return;
     final p = context.read<LogcatStateProvider>();
     p.clearBuffers(deviceSerial);
-    context.read<ApiClient>().clearLogcat(deviceSerial);
   }
 
   void _applyConfig(TestAppConfig config) {
@@ -400,11 +288,6 @@ class _LogcatScreenState extends State<LogcatScreen> {
   @override
   Widget build(BuildContext context) {
     context.watch<DeviceSerialScope>();
-    // Watch the LOW-frequency providers only. We deliberately do NOT
-    // watch LogcatStateProvider here — its notify rate is ~12.5 Hz
-    // during stream floods, and watching it here would rebuild the
-    // entire screen (toolbar + list + status bar) every batch. Instead
-    // each region subscribes via Selector.
     context.watch<LocaleProvider>();
     // `select` (not `watch`) so the screen rebuilds only when the
     // currentApp instance actually changes (switch / edit), not on
@@ -437,21 +320,8 @@ class _LogcatScreenState extends State<LogcatScreen> {
       _lastAppliedConfigId = null;
     }
 
-    // Restart the flush timer if the active device changed — but only
-    // when that device is actually streaming. The previous version ran
-    // the 80ms tick for the whole screen lifetime, even with no stream
-    // and no pending entries.
-    if (_flushTimerSerial != deviceSerial) {
-      _flushTimerSerial = deviceSerial;
-      final streaming =
-          context.read<LogcatStateProvider>().stateFor(deviceSerial).streaming;
-      if (streaming) {
-        _startFlushTimer();
-      } else {
-        _flushTimer?.cancel();
-        _flushTimer = null;
-      }
-    }
+    final active = context.watch<DeviceScreenActiveScope?>()?.active ?? true;
+    final logState = context.read<LogcatStateProvider>().stateFor(deviceSerial);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -468,11 +338,8 @@ class _LogcatScreenState extends State<LogcatScreen> {
             ruleCtrl: _ruleCtrl,
             highlightRules: _highlightRules,
             customRuleColors: _customRuleColors,
-            autoScroll: _autoScroll,
-            onAutoScrollChanged: (v) {
-              setState(() => _autoScroll = v);
-              if (v) _animateToBottomAfterFrame();
-            },
+            followLatest: logState.followLatest,
+            softWrap: logState.softWrap,
             onStartStream: _startStream,
             onStopStream: _stopStream,
             onPauseStream: _pauseStream,
@@ -481,18 +348,23 @@ class _LogcatScreenState extends State<LogcatScreen> {
             onStartRecording: _startRecording,
             onStopRecording: _stopAndPromptSave,
             onResolvePackage: _resolvePackage,
-            onHighlightRulesChanged: () => setState(() {}),
+            onHighlightRulesChanged: () => setState(() => _highlightVersion++),
           ),
         ),
         Expanded(
-          child: _LogList(
+          child: LogcatList(
+            key: ValueKey(deviceSerial),
             deviceSerial: deviceSerial,
-            scrollCtrl: _scrollCtrl,
+            active: active,
             highlightRules: _highlightRules,
+            highlightVersion: _highlightVersion,
           ),
         ),
         _LogcatStatusBar(
-            deviceSerial: deviceSerial, highlightRules: _highlightRules),
+          deviceSerial: deviceSerial,
+          active: active,
+          highlightRules: _highlightRules,
+        ),
       ],
     );
   }
@@ -533,8 +405,8 @@ class _LogcatToolbar extends StatelessWidget {
     required this.ruleCtrl,
     required this.highlightRules,
     required this.customRuleColors,
-    required this.autoScroll,
-    required this.onAutoScrollChanged,
+    required this.followLatest,
+    required this.softWrap,
     required this.onStartStream,
     required this.onStopStream,
     required this.onPauseStream,
@@ -554,8 +426,8 @@ class _LogcatToolbar extends StatelessWidget {
   final TextEditingController ruleCtrl;
   final List<HighlightRule> highlightRules;
   final List<Color> customRuleColors;
-  final bool autoScroll;
-  final ValueChanged<bool> onAutoScrollChanged;
+  final ValueNotifier<bool> followLatest;
+  final ValueNotifier<bool> softWrap;
   final VoidCallback onStartStream;
   final VoidCallback onStopStream;
   final VoidCallback onPauseStream;
@@ -576,6 +448,7 @@ class _LogcatToolbar extends StatelessWidget {
           streaming: s.streaming,
           paused: s.paused,
           hasLogs: s.hasLogs,
+          historyLimit: s.historyLimit,
           priority: s.filter.priority,
           packagePid: s.packagePid,
           recording: s.recording,
@@ -625,7 +498,9 @@ class _LogcatToolbar extends StatelessWidget {
               _sep(ctx),
               _buildHighlightRulesButton(ctx),
               _sep(ctx),
-              _buildAutoScrollToggle(ctx),
+              _buildAutoScrollToggle(),
+              _buildSoftWrapToggle(ctx),
+              _buildHistoryMenu(ctx, snap.historyLimit),
             ],
           ),
         );
@@ -824,24 +699,47 @@ class _LogcatToolbar extends StatelessWidget {
     );
   }
 
-  Widget _buildAutoScrollToggle(BuildContext ctx) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        SizedBox(
-          height: 24,
-          width: 24,
-          child: Checkbox(
-            value: autoScroll,
-            onChanged: (v) => onAutoScrollChanged(v ?? true),
-            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          ),
+  Widget _buildAutoScrollToggle() => ValueListenableBuilder<bool>(
+        valueListenable: followLatest,
+        builder: (_, following, child) => IconButton(
+          tooltip: tr(following ? 'logcatPauseFollow' : 'logcatJumpToEnd'),
+          icon: const Icon(Icons.vertical_align_bottom, size: 18),
+          isSelected: following,
+          selectedIcon: const Icon(Icons.vertical_align_bottom,
+              size: 18, color: Colors.blue),
+          onPressed: () => followLatest.value = !following,
         ),
-        const SizedBox(width: 4),
-        Text(tr('autoScroll'), style: const TextStyle(fontSize: 11)),
-      ],
-    );
-  }
+      );
+
+  Widget _buildSoftWrapToggle(BuildContext context) =>
+      ValueListenableBuilder<bool>(
+        valueListenable: softWrap,
+        builder: (_, enabled, child) => IconButton(
+          tooltip: tr('logcatSoftWrap'),
+          isSelected: enabled,
+          icon: const Icon(Icons.wrap_text, size: 18),
+          selectedIcon: Icon(Icons.wrap_text,
+              size: 18, color: Theme.of(context).colorScheme.primary),
+          onPressed: () =>
+              context.read<LogcatStateProvider>().setSoftWrap(!enabled),
+        ),
+      );
+
+  Widget _buildHistoryMenu(BuildContext context, int limit) =>
+      PopupMenuButton<int>(
+        tooltip: tr('logcatHistoryLimit'),
+        icon: const Icon(Icons.inventory_2_outlined, size: 18),
+        initialValue: limit,
+        itemBuilder: (_) => [
+          for (final value in LogcatDeviceState.historyOptions)
+            CheckedPopupMenuItem(
+              value: value,
+              checked: value == limit,
+              child: Text(tr('logcatHistoryLines', {'count': '$value'})),
+            ),
+        ],
+        onSelected: context.read<LogcatStateProvider>().setHistoryLimit,
+      );
 
   Future<void> _showHighlightRulesDialog(BuildContext ctx) async {
     ruleCtrl.clear();
@@ -1006,6 +904,7 @@ class _ToolbarSnapshot {
     required this.streaming,
     required this.paused,
     required this.hasLogs,
+    required this.historyLimit,
     required this.priority,
     required this.packagePid,
     required this.recording,
@@ -1015,6 +914,7 @@ class _ToolbarSnapshot {
   final bool streaming;
   final bool paused;
   final bool hasLogs;
+  final int historyLimit;
   final String priority;
   final String? packagePid;
 
@@ -1031,6 +931,7 @@ class _ToolbarSnapshot {
           other.streaming == streaming &&
           other.paused == paused &&
           other.hasLogs == hasLogs &&
+          other.historyLimit == historyLimit &&
           other.priority == priority &&
           other.packagePid == packagePid &&
           other.recording == recording &&
@@ -1041,228 +942,12 @@ class _ToolbarSnapshot {
         streaming,
         paused,
         hasLogs,
+        historyLimit,
         priority,
         packagePid,
         recording,
         elapsedLabel,
       );
-}
-
-/// Log list region. Subscribes ONLY to the displayed entry list. Each
-/// stream batch produces a fresh List snapshot (see
-/// [LogcatDeviceState.displayed]), so the Selector's identity check
-/// fires and the ListView rebuilds — but the toolbar and status bar
-/// do not, because their Selectors see the same snapshot value.
-class _LogList extends StatelessWidget {
-  const _LogList({
-    required this.deviceSerial,
-    required this.scrollCtrl,
-    required this.highlightRules,
-  });
-
-  final String deviceSerial;
-  final ScrollController scrollCtrl;
-  final List<HighlightRule> highlightRules;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Selector<LogcatStateProvider, List<LogEntry>>(
-      selector: (_, p) => p.stateFor(deviceSerial).displayed,
-      builder: (ctx, entries, _) {
-        if (entries.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.article_outlined,
-                    size: 48,
-                    color: theme.colorScheme.onSurfaceVariant.withAlpha(80)),
-                const SizedBox(height: 12),
-                Text(tr('logcatSelectDevice'),
-                    style: theme.textTheme.bodyMedium
-                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-                const SizedBox(height: 4),
-                Text(tr('logsHint'),
-                    style: theme.textTheme.bodySmall?.copyWith(
-                        color:
-                            theme.colorScheme.onSurfaceVariant.withAlpha(150))),
-              ],
-            ),
-          );
-        }
-        return ListView.builder(
-          controller: scrollCtrl,
-          // PageStorageKey gives Flutter the signal to retain scroll
-          // position across widget unmount/remount. Combined with the
-          // per-device Provider state, this means switching devices and
-          // coming back finds you exactly where you left off.
-          key: PageStorageKey('logcat:$deviceSerial'),
-          itemCount: entries.length,
-          padding: EdgeInsets.zero,
-          itemBuilder: (ctx, i) {
-            final entry = entries[i];
-            return KeyedSubtree(
-              // ValueKey on identity-hashCode prevents the Element tree
-              // from being torn down when FIFO eviction shifts an
-              // entry's index — the same LogEntry object maps to the
-              // same Element.
-              key: ValueKey(identityHashCode(entry)),
-              child: _buildLogEntry(ctx, entry),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Widget _buildLogEntry(BuildContext context, LogEntry entry) {
-    final theme = Theme.of(context);
-    const mono = TextStyle(fontFamily: 'Menlo', height: 1.5);
-    final highlightRule = HighlightRules.match(highlightRules, entry, tr);
-    final highlightColor = highlightRule?.color;
-    final rowBackground = highlightColor?.withAlpha(26);
-    final messageColor = highlightColor ?? theme.colorScheme.onSurface;
-
-    return InkWell(
-      onTap: () => Clipboard.setData(ClipboardData(text: entry.raw)),
-      child: Container(
-        color: rowBackground,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: _buildLogEntryContent(
-          entry,
-          theme,
-          mono,
-          messageColor,
-          highlightColor,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLogEntryContent(
-    LogEntry entry,
-    ThemeData theme,
-    TextStyle mono,
-    Color messageColor,
-    Color? highlightColor,
-  ) {
-    if (entry.isContinuation) {
-      return Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('│ ',
-              style: mono.copyWith(fontSize: 12, color: theme.dividerColor)),
-          Expanded(
-            child: Text(
-              entry.message.replaceAll('\n', '↵ '),
-              style: mono.copyWith(
-                fontSize: 12,
-                color: highlightColor ?? theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-        ],
-      );
-    }
-    if (entry.time.isEmpty) {
-      return Text(
-        entry.raw,
-        style: mono.copyWith(fontSize: 12, color: messageColor),
-      );
-    }
-
-    final prioColor = _prioColor(entry.priority, theme);
-    final displayTime = _formatLogTimeWithYear(entry.time);
-    final pidTid = '${entry.pid}-${entry.tid}';
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 175,
-          child: Text(
-            displayTime,
-            style: mono.copyWith(
-                fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
-            softWrap: false,
-          ),
-        ),
-        const SizedBox(width: 8),
-        SizedBox(
-          width: 160,
-          child: Text(
-            entry.tag.replaceAll('\n', '↵ '),
-            style:
-                mono.copyWith(fontSize: 11, color: theme.colorScheme.primary),
-            overflow: TextOverflow.ellipsis,
-            softWrap: false,
-          ),
-        ),
-        const SizedBox(width: 8),
-        SizedBox(
-          width: 100,
-          child: Text(
-            pidTid,
-            style: mono.copyWith(fontSize: 11, color: Colors.green.shade300),
-            softWrap: false,
-            overflow: TextOverflow.visible,
-          ),
-        ),
-        const SizedBox(width: 8),
-        Container(
-          width: 24,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-              color: prioColor.withAlpha(30),
-              borderRadius: BorderRadius.circular(3)),
-          child: Text(entry.priority,
-              style: mono.copyWith(
-                  fontSize: 11, fontWeight: FontWeight.w700, color: prioColor)),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            entry.message.replaceAll('\n', '↵ '),
-            style: mono.copyWith(fontSize: 11, color: messageColor),
-          ),
-        ),
-      ],
-    );
-  }
-
-  String _formatLogTimeWithYear(String raw) {
-    final m = RegExp(r'^(\d{2})-(\d{2})\s+\d{2}:\d{2}:\d{2}\.\d+$')
-        .firstMatch(raw.trim());
-    if (m == null) return raw;
-    final month = int.parse(m.group(1)!);
-    final day = int.parse(m.group(2)!);
-    final now = DateTime.now();
-    var year = now.year;
-    final parsedThisYear = DateTime(year, month, day);
-    if (parsedThisYear.difference(now).inDays > 30) {
-      year -= 1;
-    }
-    return '$year-$raw';
-  }
-
-  Color _prioColor(String prio, ThemeData theme) {
-    switch (prio) {
-      case 'V':
-        return theme.colorScheme.onSurfaceVariant;
-      case 'D':
-        return Colors.blue;
-      case 'I':
-        return Colors.green;
-      case 'W':
-        return Colors.orange;
-      case 'E':
-        return Colors.red;
-      case 'F':
-        return Colors.purple;
-      default:
-        return theme.colorScheme.onSurfaceVariant;
-    }
-  }
 }
 
 /// Status bar region. Subscribes only to streaming / paused / WS
@@ -1271,15 +956,18 @@ class _LogList extends StatelessWidget {
 class _LogcatStatusBar extends StatelessWidget {
   const _LogcatStatusBar({
     required this.deviceSerial,
+    required this.active,
     required this.highlightRules,
   });
 
   final String deviceSerial;
+  final bool active;
   final List<HighlightRule> highlightRules;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final device = context.read<LogcatStateProvider>().stateFor(deviceSerial);
     return Selector<LogcatStateProvider, _StatusSnapshot>(
       selector: (_, p) {
         final s = p.stateFor(deviceSerial);
@@ -1287,7 +975,8 @@ class _LogcatStatusBar extends StatelessWidget {
           streaming: s.streaming,
           paused: s.paused,
           wsConnected: s.wsConnected,
-          displayedCount: s.displayed.length,
+          displayedCount: active ? s.displayed.length : 0,
+          evictedCount: active ? s.evictedRows : 0,
           packagePid: s.packagePid,
         );
       },
@@ -1306,28 +995,53 @@ class _LogcatStatusBar extends StatelessWidget {
             color: theme.colorScheme.surfaceContainerLow,
             border: Border(top: BorderSide(color: theme.dividerColor)),
           ),
-          child: Row(children: [
-            Text('${tr('status')}: $statusStr',
-                style: const TextStyle(fontSize: 11)),
-            const SizedBox(width: 16),
-            Text('${tr('lines')}: ${snap.displayedCount}',
-                style: const TextStyle(fontSize: 11)),
-            const SizedBox(width: 16),
-            Text('${tr('highlightRules')}: $activeRules',
-                style: const TextStyle(fontSize: 11)),
-            const SizedBox(width: 16),
-            Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(shape: BoxShape.circle, color: wsColor),
-            ),
-            if (snap.packagePid != null) ...[
-              const Spacer(),
-              Text('${tr('pid')}: ${snap.packagePid}',
-                  style: TextStyle(
-                      fontSize: 11, color: theme.colorScheme.primary)),
-            ],
-          ]),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(children: [
+              Text('${tr('status')}: $statusStr',
+                  style: const TextStyle(fontSize: 11)),
+              const SizedBox(width: 16),
+              Text('${tr('lines')}: ${snap.displayedCount}',
+                  style: const TextStyle(fontSize: 11)),
+              const SizedBox(width: 16),
+              if (snap.evictedCount > 0) ...[
+                Text(tr('logcatEvictedRows', {'count': '${snap.evictedCount}'}),
+                    style: const TextStyle(fontSize: 11)),
+                const SizedBox(width: 16),
+              ],
+              if (active)
+                ValueListenableBuilder<int>(
+                  valueListenable: device.unseenRows,
+                  builder: (_, count, child) => count == 0
+                      ? const SizedBox.shrink()
+                      : TextButton(
+                          onPressed: () => device.followLatest.value = true,
+                          style: TextButton.styleFrom(
+                            minimumSize: Size.zero,
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            textStyle: const TextStyle(fontSize: 11),
+                          ),
+                          child: Text(tr('logcatNewRows', {'count': '$count'})),
+                        ),
+                ),
+              Text('${tr('highlightRules')}: $activeRules',
+                  style: const TextStyle(fontSize: 11)),
+              const SizedBox(width: 16),
+              Container(
+                width: 8,
+                height: 8,
+                decoration:
+                    BoxDecoration(shape: BoxShape.circle, color: wsColor),
+              ),
+              if (snap.packagePid != null) ...[
+                const SizedBox(width: 16),
+                Text('${tr('pid')}: ${snap.packagePid}',
+                    style: TextStyle(
+                        fontSize: 11, color: theme.colorScheme.primary)),
+              ],
+            ]),
+          ),
         );
       },
     );
@@ -1341,6 +1055,7 @@ class _StatusSnapshot {
     required this.paused,
     required this.wsConnected,
     required this.displayedCount,
+    required this.evictedCount,
     required this.packagePid,
   });
 
@@ -1348,6 +1063,7 @@ class _StatusSnapshot {
   final bool paused;
   final bool wsConnected;
   final int displayedCount;
+  final int evictedCount;
   final String? packagePid;
 
   @override
@@ -1358,11 +1074,12 @@ class _StatusSnapshot {
           other.paused == paused &&
           other.wsConnected == wsConnected &&
           other.displayedCount == displayedCount &&
+          other.evictedCount == evictedCount &&
           other.packagePid == packagePid);
 
   @override
-  int get hashCode =>
-      Object.hash(streaming, paused, wsConnected, displayedCount, packagePid);
+  int get hashCode => Object.hash(
+      streaming, paused, wsConnected, displayedCount, evictedCount, packagePid);
 }
 
 /// Tiny red blinking dot used as the recording-active indicator in the
@@ -1409,8 +1126,6 @@ class _PulseDotState extends State<_PulseDot>
     );
   }
 }
-
-// (no extension needed — the flush timer is owned by State)
 
 /// Manual YYYYMMDD_HHMMSS timestamp formatter so we don't pull intl in
 /// just for one file name. Mirrors `DateFormat('yyyyMMdd_HHmmss')`.

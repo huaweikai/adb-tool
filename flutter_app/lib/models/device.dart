@@ -77,23 +77,54 @@ class LogFilter {
   String _tagLower;
   String _keywordLower;
 
-  String priority;
+  static const _priorities = 'VDIWEF';
+  String _priority;
+  int _minimumLevel;
   String packageName;
-  String packagePid;
+  String _packagePid;
+  Set<String> _pids;
 
   LogFilter({
     String tag = '',
-    this.priority = 'W',
+    String priority = 'W',
     String keyword = '',
     this.packageName = '',
-    this.packagePid = '',
+    String packagePid = '',
   })  : _tag = tag,
         _keyword = keyword,
         _tagLower = tag.toLowerCase(),
-        _keywordLower = keyword.toLowerCase();
+        _keywordLower = keyword.toLowerCase(),
+        _priority = priority,
+        _minimumLevel = _priorities.indexOf(priority),
+        _packagePid = packagePid,
+        _pids = _parsePids(packagePid);
 
   String get tag => _tag;
   String get keyword => _keyword;
+  String get priority => _priority;
+  String get packagePid => _packagePid;
+
+  set priority(String value) {
+    _priority = value;
+    _minimumLevel = _priorities.indexOf(value);
+  }
+
+  set packagePid(String value) {
+    _packagePid = value;
+    _pids = _parsePids(value);
+  }
+
+  static Set<String> _parsePids(String value) => value.trim().isEmpty
+      ? const {}
+      : value.trim().split(RegExp(r'\s+')).toSet();
+
+  LogFilter copy() => LogFilter(
+        tag: tag,
+        keyword: keyword,
+        priority: priority,
+        packageName: packageName,
+        packagePid: packagePid,
+      );
 
   set tag(String v) {
     if (_tag == v) return;
@@ -145,11 +176,12 @@ class LogEntry {
     this.isContinuation = false,
   });
 
+  static final _threadtimePattern = RegExp(
+    r'^((?:\d{4}-)?\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d+)\s+(\d+)\s+(\d+)\s+([VDIWEF])\s+(.+?):\s?(.*)$',
+  );
+
   factory LogEntry.parse(String line) {
-    final re = RegExp(
-      r'^(\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d+)\s+(\d+)\s+(\d+)\s+([VDIWEF])\s+(.+?):\s?(.*)$',
-    );
-    final m = re.firstMatch(line);
+    final m = _threadtimePattern.firstMatch(line);
     if (m != null) {
       return LogEntry(
         raw: line,
@@ -165,9 +197,9 @@ class LogEntry {
     final trimmed = line.trim();
     if (trimmed.isNotEmpty &&
         (trimmed.startsWith('at ') ||
-         trimmed.startsWith('Caused by:') ||
-         trimmed.startsWith('... ') ||
-         line.startsWith('\t'))) {
+            trimmed.startsWith('Caused by:') ||
+            trimmed.startsWith('... ') ||
+            line.startsWith('\t'))) {
       return LogEntry(raw: line, message: line, isContinuation: true);
     }
 
@@ -175,29 +207,17 @@ class LogEntry {
   }
 
   bool matchesFilter(LogFilter filter) {
-    // Filter tag / keyword come pre-lowercased by LogFilter setters.
-    // raw and tag are per-entry, but matched against the cached lower
-    // form, so each call only allocates 1-2 lowercase strings instead
-    // of 3.
-    if (filter.keyword.isNotEmpty &&
-        !raw.toLowerCase().contains(filter._keywordLower)) {
+    if (filter._pids.isNotEmpty && !filter._pids.contains(pid)) return false;
+    if (priority.isNotEmpty &&
+        LogFilter._priorities.indexOf(priority) < filter._minimumLevel) {
       return false;
     }
-    if (filter.tag.isNotEmpty) {
-      if (tag.isEmpty) return true;
-      if (!tag.toLowerCase().contains(filter._tagLower)) {
-        return false;
-      }
-    }
-    // Package filter: when a PID is resolved (state.packagePid / filter
-    // .packagePid), drop any entry that doesn't match it. Without this,
-    // changing the package filter on a stopped/slow stream would leave
-    // the old non-matching entries visible in the buffer — the backend
-    // stops sending new non-matching lines but never re-prunes the
-    // already-buffered ones.
-    if (filter.packagePid.isNotEmpty && pid != filter.packagePid) {
+    if (filter._tagLower.isNotEmpty &&
+        tag.isNotEmpty &&
+        !tag.toLowerCase().contains(filter._tagLower)) {
       return false;
     }
-    return true;
+    return filter._keywordLower.isEmpty ||
+        raw.toLowerCase().contains(filter._keywordLower);
   }
 }

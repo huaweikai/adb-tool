@@ -1,68 +1,133 @@
 import 'dart:async';
+import 'dart:collection';
+
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/device.dart';
 import '../services/api_client.dart';
 import '../services/log_stream.dart';
 import 'device_provider.dart';
 
-/// Per-device UI state for the logcat screen.
-///
-/// One instance per device serial. Created lazily on first access via
-/// [stateFor]. Entries, filter, and streaming state persist across
-/// screen rebuilds and across switching to other devices — switching
-/// away from device A and back leaves A's state untouched.
-///
-/// This class is intentionally NOT a [ChangeNotifier] on its own; the
-/// outer [LogcatStateProvider] notifies listeners once per batched
-/// update so consumers don't get spammed when a stream batch lands.
-class LogcatDeviceState {
-  LogcatDeviceState({required this.serial});
+/// One retained log occurrence. Identical log messages still have distinct IDs.
+class LogcatLine {
+  LogcatLine(this.id, this.entry)
+      : columns = _columns(entry.raw),
+        estimatedBytes = 192 + 4 * entry.raw.length;
 
-  final String serial;
+  final int id;
+  final LogEntry entry;
+  final int columns;
+  final int estimatedBytes;
 
-  /// Raw incoming entries — capped at [_maxEntries] via FIFO eviction.
-  final List<LogEntry> entries = [];
-
-  /// Filtered view of [entries] — what the ListView actually renders.
-  ///
-  /// Backed by two structures:
-  ///   * [_displayedList] — preserves insertion order, fed to ListView.
-  ///   * [_displayedSet]  — identity Set for O(1) presence checks during
-  ///     FIFO eviction. With List-only, evicting K entries used to cost
-  ///     O(K*N) (indexOf + removeAt for each); with the Set it's O(K) +
-  ///     a single O(N) rebuild of the list when anything actually moved.
-  ///
-  /// [_displayedVersion] tracks mutations; [displayed] returns a cached
-  /// snapshot that only creates a new List when the content changed.
-  ///
-  /// IMPORTANT: any new mutator that changes [_displayedList] MUST
-  /// bump [_displayedVersion] (so the [Selector] in
-  /// `logcat_screen.dart` sees a new list identity and triggers a
-  /// rebuild). Current mutators that bump the version:
-  ///   * [flushPending]  — when a new batch is merged
-  ///   * [refilter]      — when the filter changes
-  ///   * [clear]         — when the user clicks "Clear Logs"
-  /// If you add a fourth mutator, add the bump there too or the
-  /// log list will silently stop updating.
-  final List<LogEntry> _displayedList = [];
-  final Set<LogEntry> _displayedSet = Set<LogEntry>.identity();
-  int _displayedVersion = 0;
-  int _cachedVersion = -1;
-  List<LogEntry>? _cachedDisplayed;
-  List<LogEntry> get displayed {
-    if (_cachedVersion != _displayedVersion) {
-      _cachedVersion = _displayedVersion;
-      _cachedDisplayed = List<LogEntry>.of(_displayedList);
+  static int _columns(String text) {
+    var columns = text.length;
+    for (var i = 0; i < text.length; i++) {
+      final unit = text.codeUnitAt(i);
+      if (unit > 0x7f) columns++;
+      if (unit == 9) columns += 7;
     }
-    return _cachedDisplayed!;
+    return columns;
+  }
+}
+
+/// An indexed FIFO with constant-time lookup and amortized constant-time
+/// updates to the longest line, used by the horizontal viewport.
+class LogcatLines {
+  final ListQueue<LogcatLine> _lines = ListQueue();
+  final ListQueue<LogcatLine> _widest = ListQueue();
+  int _removed = 0;
+
+  int get removed => _removed;
+  int get length => _lines.length;
+  int get widestColumns => _widest.isEmpty ? 0 : _widest.first.columns;
+  LogcatLine operator [](int index) => _lines.elementAt(index);
+
+  void _add(LogcatLine line) {
+    _lines.addLast(line);
+    while (_widest.isNotEmpty && _widest.last.columns <= line.columns) {
+      _widest.removeLast();
+    }
+    _widest.addLast(line);
   }
 
-  /// Entries received from the stream but not yet merged into [entries].
-  /// Batched flush keeps the rebuild rate bounded.
-  final List<LogEntry> pending = [];
+  void _removeFirst() {
+    final line = _lines.removeFirst();
+    _removed++;
+    if (identical(line, _widest.first)) _widest.removeFirst();
+  }
+
+  void _clear() {
+    _lines.clear();
+    _widest.clear();
+  }
+
+  bool containsId(int id) {
+    final index = indexAfter(id) - 1;
+    return index >= 0 && this[index].id == id;
+  }
+
+  /// Find the boundary after [id], even if that line was filtered or evicted.
+  int indexAfter(int id) {
+    var low = 0;
+    var high = length;
+    while (low < high) {
+      final mid = (low + high) >> 1;
+      if (this[mid].id <= id) {
+        low = mid + 1;
+      } else {
+        high = mid;
+      }
+    }
+    return low;
+  }
+
+  LogcatLines snapshot() => LogcatLines()
+    .._lines.addAll(_lines)
+    .._widest.addAll(_widest)
+    .._removed = _removed;
+}
+
+/// Per-device log history, filter and stream state.
+class LogcatDeviceState {
+  LogcatDeviceState({
+    required this.serial,
+    int historyLimit = defaultHistoryLines,
+    bool wrap = false,
+  })  : _historyLimit = historyLimit,
+        softWrap = ValueNotifier(wrap) {
+    followLatest.addListener(() => unseenRows.value = 0);
+  }
+
+  static const historyOptions = [5000, 20000, 50000, 100000];
+  static const defaultHistoryLines = 20000;
+  static const _byteBudget = 32 * 1024 * 1024;
+
+  final String serial;
+  final _entries = ListQueue<LogcatLine>();
+  final displayed = LogcatLines();
+  final _pending = ListQueue<LogcatLine>();
+  int _historyLimit;
+  int _pendingBytes = 0;
+  int _historyBytes = 0;
+  int _evicted = 0;
+  int _nextId = 0;
+  int _displayedVersion = 0;
+  int _filterRevision = 0;
+  int? _pauseAtId;
+
+  int get displayedVersion => _displayedVersion;
+  int get filterRevision => _filterRevision;
+  int get historyLimit => _historyLimit;
+  int get evictedRows => _evicted;
+
+  final followLatest = ValueNotifier(true);
+  final ValueNotifier<bool> softWrap;
+  final unseenRows = ValueNotifier(0);
+  int? reviewAfterId;
 
   LogFilter filter = LogFilter();
+  LogFilter _appliedFilter = LogFilter();
   bool streaming = false;
   bool paused = false;
   bool wsConnected = false;
@@ -79,69 +144,103 @@ class LogcatDeviceState {
   /// device gets a fresh state (userStopped=false) and will auto-start.
   bool userStopped = false;
 
-  /// Cap on retained raw entries. Older entries are evicted FIFO; the
-  /// displayed view is also pruned so highlighted background stays
-  /// consistent.
-  static const _maxEntries = 5000;
+  void enqueue(Iterable<LogEntry> batch) {
+    for (final entry in batch) {
+      final line = LogcatLine(_nextId++, entry);
+      _pending.addLast(line);
+      _pendingBytes += line.estimatedBytes;
+      _trimPending();
+    }
+  }
 
-  /// Merge pending entries into entries + displayed, applying the FIFO
-  /// cap and refreshing the displayed view from the current filter.
+  void _trimPending() {
+    while (_pending.length > _historyLimit || _pendingBytes > _byteBudget) {
+      _pendingBytes -= _pending.removeFirst().estimatedBytes;
+      _evicted++;
+    }
+  }
+
   void flushPending() {
-    if (pending.isEmpty) return;
-    final batch = List<LogEntry>.from(pending);
-    pending.clear();
-    entries.addAll(batch);
+    final previousLength = displayed.length;
+    var appended = 0;
+    while (_pending.isNotEmpty) {
+      final line = _pending.removeFirst();
+      _entries.addLast(line);
+      _historyBytes += line.estimatedBytes;
+      if (!paused && line.entry.matchesFilter(_appliedFilter)) {
+        displayed._add(line);
+        appended++;
+      }
+    }
+    _pendingBytes = 0;
+    final removed = _trimHistory();
+    if (displayed.length != previousLength || appended > 0 || removed) {
+      _displayedVersion++;
+    }
+    if (!followLatest.value && appended > 0) {
+      unseenRows.value += appended;
+    }
+  }
+
+  bool _trimHistory() {
     var changed = false;
-    for (final e in batch) {
-      if (e.matchesFilter(filter) && _displayedSet.add(e)) {
-        _displayedList.add(e);
+    while (_entries.length > _historyLimit || _historyBytes > _byteBudget) {
+      final oldest = _entries.removeFirst();
+      _historyBytes -= oldest.estimatedBytes;
+      _evicted++;
+      if (!paused && displayed.length > 0 && identical(displayed[0], oldest)) {
+        displayed._removeFirst();
         changed = true;
       }
     }
-    if (entries.length > _maxEntries) {
-      final extra = entries.length - _maxEntries;
-      final removed = entries.sublist(0, extra);
-      entries.removeRange(0, extra);
-      var dirty = false;
-      for (final entry in removed) {
-        if (_displayedSet.remove(entry)) dirty = true;
-      }
-      if (dirty) {
-        // Single O(n) rebuild of the ordered list from the Set. Only
-        // pays this cost when at least one evicted entry was visible.
-        _displayedList
-          ..clear()
-          ..addAll(_displayedSet);
-        changed = true;
-      }
-    }
-    if (changed) _displayedVersion++;
+    return changed;
   }
 
-  /// Re-filter the displayed view against the current filter.
+  void setHistoryLimit(int limit) {
+    _historyLimit = limit;
+    _trimPending();
+    if (_trimHistory()) _displayedVersion++;
+    if (paused) refreshDisplayed();
+  }
+
   void refreshDisplayed() {
-    _displayedSet.clear();
-    for (final e in entries) {
-      if (e.matchesFilter(filter)) _displayedSet.add(e);
+    _appliedFilter = filter.copy();
+    displayed._clear();
+    for (final line in _entries) {
+      if (paused && line.id >= _pauseAtId!) break;
+      if (line.entry.matchesFilter(_appliedFilter)) displayed._add(line);
     }
-    _displayedList
-      ..clear()
-      ..addAll(_displayedSet);
+    unseenRows.value = 0;
+    _filterRevision++;
     _displayedVersion++;
   }
 
-  /// Wipe both the raw and displayed buffers (e.g. user clicked "clear").
+  void pausePresentation() {
+    flushPending();
+    _pauseAtId = _nextId;
+    paused = true;
+  }
+
+  void resumePresentation() {
+    flushPending();
+    paused = false;
+    _pauseAtId = null;
+    refreshDisplayed();
+  }
+
   void clearBuffers() {
-    entries.clear();
-    _displayedList.clear();
-    _displayedSet.clear();
-    pending.clear();
+    _entries.clear();
+    displayed._clear();
+    _pending.clear();
+    _pendingBytes = 0;
+    _historyBytes = 0;
+    _evicted = 0;
+    unseenRows.value = 0;
+    _filterRevision++;
     _displayedVersion++;
   }
 
-  /// True if there is anything to render or display in the status bar.
-  bool get hasLogs =>
-      entries.isNotEmpty || _displayedList.isNotEmpty || pending.isNotEmpty;
+  bool get hasLogs => _entries.isNotEmpty || _pending.isNotEmpty;
 }
 
 /// App-wide logcat state. Holds a per-device [LogcatDeviceState] so
@@ -153,11 +252,16 @@ class LogcatDeviceState {
 /// the adb address) doesn't lose the user's filter / pause / scroll
 /// state.
 ///
-/// Notifications are debounced: a stream batch of N entries triggers at
-/// most one [notifyListeners] per frame, so a flood of log lines doesn't
-/// thrash the widget tree.
+/// Incoming batches are merged on demand at a bounded rate per device.
 class LogcatStateProvider extends ChangeNotifier {
-  LogcatStateProvider(this._svc, this._api, this._deviceProvider) {
+  LogcatStateProvider(this._svc, this._api, this._deviceProvider,
+      {SharedPreferences? preferences})
+      : _preferences = preferences {
+    final savedLimit = preferences?.getInt(_historyLimitKey);
+    if (LogcatDeviceState.historyOptions.contains(savedLimit)) {
+      _historyLimit = savedLimit!;
+    }
+    _softWrap = preferences?.getBool(_wrapKey) ?? false;
     // When a device goes offline, any in-flight local recording is dead —
     // the adb logcat subprocess on the host lost its upstream pipe. Best-
     // effort stop so the UI state doesn't get stuck in "recording" limbo
@@ -193,12 +297,36 @@ class LogcatStateProvider extends ChangeNotifier {
   final Map<String, StreamSubscription<List<LogEntry>>> _logSubs = {};
   final Map<String, StreamSubscription<bool>> _connSubs = {};
   StreamSubscription<DeviceOfflineEvent>? _offlineSub;
-  // Per-serial debounce for updateField's expensive tail (refilter +
-  // WebSocket filter msg + notify). The tag/keyword TextFields fire
-  // onChanged per keystroke; without this, each tap refilters the whole
-  // 5000-entry buffer and sends a WS message.
+  // Coalesce text edits so the retained history is filtered once per query.
   final Map<String, Timer> _filterDebounce = {};
-  final Map<String, bool> _pendingRestart = {};
+  final Map<String, Timer> _batchTimers = {};
+  static const _historyLimitKey = 'logcat.historyLines';
+  static const _wrapKey = 'logcat.softWrap';
+  final SharedPreferences? _preferences;
+  int _historyLimit = LogcatDeviceState.defaultHistoryLines;
+  bool _softWrap = false;
+
+  void setHistoryLimit(int limit) {
+    if (!LogcatDeviceState.historyOptions.contains(limit)) return;
+    _historyLimit = limit;
+    final preferences = _preferences;
+    if (preferences != null) {
+      unawaited(preferences.setInt(_historyLimitKey, limit));
+    }
+    for (final state in _states.values) {
+      state.setHistoryLimit(limit);
+    }
+    _notify();
+  }
+
+  void setSoftWrap(bool enabled) {
+    _softWrap = enabled;
+    final preferences = _preferences;
+    if (preferences != null) unawaited(preferences.setBool(_wrapKey, enabled));
+    for (final state in _states.values) {
+      state.softWrap.value = enabled;
+    }
+  }
 
   /// Emits the serial whose local logcat recording was force-stopped
   /// because its target device went offline. UI subscribes to show
@@ -213,8 +341,14 @@ class LogcatStateProvider extends ChangeNotifier {
   /// Get-or-create the state for a device. Safe to call repeatedly.
   /// The [serial] is the device's stable identity (ro.serialno) so
   /// state survives wireless reconnects.
-  LogcatDeviceState stateFor(String serial) =>
-      _states.putIfAbsent(serial, () => LogcatDeviceState(serial: serial));
+  LogcatDeviceState stateFor(String serial) => _states.putIfAbsent(
+        serial,
+        () => LogcatDeviceState(
+          serial: serial,
+          historyLimit: _historyLimit,
+          wrap: _softWrap,
+        ),
+      );
 
   /// True if a channel has been opened for the device (whether or not
   /// it is currently streaming).
@@ -226,7 +360,8 @@ class LogcatStateProvider extends ChangeNotifier {
     final state = stateFor(serial);
     if (state.streaming) return;
     state.userStopped = false;
-    _svc.connect(serial, state.filter);
+    state.wsConnected = false;
+    _svc.connect(serial);
     state.streaming = true;
     _wireSubscriptions(serial);
     _notify();
@@ -240,24 +375,24 @@ class LogcatStateProvider extends ChangeNotifier {
     final state = stateFor(serial);
     state.userStopped = true;
     state.streaming = false;
-    state.paused = false;
-    _flush(serial); // drain pending into entries before tearing down
+    state.wsConnected = false;
+    _batchTimers.remove(serial)?.cancel();
+    if (state.paused) {
+      state.resumePresentation();
+    } else {
+      state.flushPending();
+    }
     _logSubs.remove(serial)?.cancel();
     _connSubs.remove(serial)?.cancel();
     _svc.stop(serial);
     _notify();
   }
 
-  /// Apply a new filter to the device's stream and refresh the
-  /// displayed view. Does NOT restart the channel — just sends
-  /// `filter` over the existing WS.
   void updateFilter(String serial, LogFilter filter) {
+    _filterDebounce.remove(serial)?.cancel();
     final state = stateFor(serial);
     state.filter = filter;
     state.refreshDisplayed();
-    if (state.streaming) {
-      _svc.updateFilter(serial, filter);
-    }
     _notify();
   }
 
@@ -275,52 +410,32 @@ class LogcatStateProvider extends ChangeNotifier {
     String? packagePid,
   }) {
     final state = stateFor(serial);
-    final needsRestart =
-        (priority != null && priority != state.filter.priority) ||
-            (packagePid != null && packagePid != state.filter.packagePid);
-    // Update the filter fields immediately (cheap) — the expensive
-    // tail (refilter 5000 entries + WebSocket filter msg + notify) is
-    // debounced per-serial so a burst of keystrokes runs it once after
-    // the user stops typing, not per-tap.
     if (tag != null) state.filter.tag = tag;
     if (keyword != null) state.filter.keyword = keyword;
     if (packageName != null) state.filter.packageName = packageName;
     if (priority != null) state.filter.priority = priority;
     if (packagePid != null) state.filter.packagePid = packagePid;
-    if (needsRestart) _pendingRestart[serial] = true;
     _filterDebounce[serial]?.cancel();
     _filterDebounce[serial] = Timer(const Duration(milliseconds: 200), () {
       _filterDebounce.remove(serial);
       if (_disposed) return;
-      final s = stateFor(serial);
-      final restart = _pendingRestart.remove(serial) ?? false;
-      s.refreshDisplayed();
-      if (s.streaming) {
-        if (restart) {
-          _restartStream(serial);
-        } else {
-          _svc.updateFilter(serial, s.filter);
-        }
-      }
+      state.refreshDisplayed();
       _notify();
     });
   }
 
-  /// Stop streaming for the device, but keep its entries in memory so
-  /// switching back shows the last seen log without re-fetching.
+  /// Freeze the visible document while capture continues into history.
   void pauseStream(String serial) {
     final state = stateFor(serial);
-    if (!state.streaming) return;
-    _svc.pause(serial);
-    state.paused = true;
+    if (!state.streaming || state.paused) return;
+    state.pausePresentation();
     _notify();
   }
 
   void resumeStream(String serial) {
     final state = stateFor(serial);
-    if (!state.streaming) return;
-    _svc.resume(serial);
-    state.paused = false;
+    if (!state.streaming || !state.paused) return;
+    state.resumePresentation();
     _notify();
   }
 
@@ -331,38 +446,22 @@ class LogcatStateProvider extends ChangeNotifier {
   void clearBuffers(String serial) {
     final state = stateFor(serial);
     state.clearBuffers();
-    if (state.streaming) {
+    if (state.streaming && state.wsConnected) {
       _svc.clear(serial);
+    } else {
+      _svc.resetCursor(serial);
+      unawaited(_api.clearLogcat(serial));
     }
     _notify();
   }
 
-  /// Periodic flush (called by the screen's flush timer) to drain
-  /// pending entries into the visible list.
-  void flushPending(String serial) {
-    _flush(serial);
-  }
-
-  /// Update the resolved PID for a package filter; forces a notify so
-  /// the status bar refreshes, and ALSO propagates the new pid to the
-  /// filter + backend + displayed view.
-  ///
-  /// Without this, setting the pid after [updateField] would only
-  /// update the status-bar cosmetic state — the LogFilter's packagePid
-  /// would stay empty so [LogEntry.matchesFilter] would still let every
-  /// buffered entry through (the backend wouldn't re-filter the
-  /// already-buffered batch either).
-  void setPackagePid(String serial, String? pid) {
+  void setPackagePid(String serial, String? pid, {bool clearPackage = true}) {
+    _filterDebounce.remove(serial)?.cancel();
     final state = stateFor(serial);
     state.packagePid = pid;
     state.filter.packagePid = pid ?? '';
-    if (pid == null) {
-      state.filter.packageName = '';
-    }
+    if (pid == null && clearPackage) state.filter.packageName = '';
     state.refreshDisplayed();
-    if (state.streaming) {
-      _restartStream(serial);
-    }
     _notify();
   }
 
@@ -430,50 +529,38 @@ class LogcatStateProvider extends ChangeNotifier {
     _api.stopLocalRecording(serial);
   }
 
-  void _flush(String serial) {
-    final state = _states[serial];
-    if (state == null || state.pending.isEmpty) return;
-    state.flushPending();
-    _notify();
-  }
-
   void _notify() {
     if (_disposed) return;
     notifyListeners();
   }
 
   /// Wire up stream and connection-state subscriptions for [serial].
-  /// Shared by [startStream] and [_restartStream] to avoid duplicating
-  /// the listener setup.
   void _wireSubscriptions(String serial) {
     final state = stateFor(serial);
     _logSubs[serial]?.cancel();
+    var lastEvicted = state.evictedRows;
     _logSubs[serial] = _svc.streamFor(serial).listen((batch) {
       if (batch.isEmpty) return;
-      state.pending.addAll(batch);
-      if (state.pending.length >= 300) {
-        _flush(serial);
-      }
+      state.enqueue(batch);
+      _batchTimers[serial] ??= Timer(const Duration(milliseconds: 80), () {
+        _batchTimers.remove(serial);
+        final previousVersion = state.displayedVersion;
+        final hadLogs = state._entries.isNotEmpty;
+        state.flushPending();
+        final evicted = state.evictedRows;
+        if (state.displayedVersion != previousVersion ||
+            evicted != lastEvicted ||
+            state.hasLogs != hadLogs) {
+          lastEvicted = evicted;
+          _notify();
+        }
+      });
     });
     _connSubs[serial]?.cancel();
     _connSubs[serial] = _svc.connectionStateFor(serial).listen((connected) {
       state.wsConnected = connected;
       _notify();
     });
-  }
-
-  /// Restart the backend logcat process with the current filter.
-  /// Properly tears down the old channel and re-subscribes to the new
-  /// one's stream so logs keep flowing. Used by [updateField] and
-  /// [setPackagePid] when a priority / --pid change requires a process
-  /// restart.
-  void _restartStream(String serial) {
-    final state = stateFor(serial);
-    _logSubs.remove(serial)?.cancel();
-    _connSubs.remove(serial)?.cancel();
-    _svc.stop(serial);
-    _svc.connect(serial, state.filter);
-    _wireSubscriptions(serial);
   }
 
   @override
@@ -490,8 +577,15 @@ class LogcatStateProvider extends ChangeNotifier {
     for (final t in _filterDebounce.values) {
       t.cancel();
     }
+    for (final timer in _batchTimers.values) {
+      timer.cancel();
+    }
+    _batchTimers.clear();
     for (final state in _states.values) {
       state.recording?.dispose();
+      state.followLatest.dispose();
+      state.softWrap.dispose();
+      state.unseenRows.dispose();
     }
     _logSubs.clear();
     _connSubs.clear();

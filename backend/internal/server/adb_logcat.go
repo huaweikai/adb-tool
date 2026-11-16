@@ -1,19 +1,28 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os/exec"
+	"regexp"
 	"sort"
 	"strings"
 )
 
-func (m *AdbManager) StartLogcat(serial string, filter LogFilter) (*exec.Cmd, io.ReadCloser, error) {
-	if err := m.ClearLogcat(serial); err != nil {
-		Log.Add("adb logcat -c", "", err, 0)
-	}
+// A timestamp cursor lets the client resume from the device ring after a
+// transport reconnect. A fresh stream starts at the most recent 1,000 records.
+var logcatCursor = regexp.MustCompile(`^(\d{4}-)?\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3,6}$`)
 
-	args := []string{"-s", serial, "logcat", "-v", "threadtime"}
+func (m *AdbManager) StartLogcat(ctx context.Context, serial string, filter LogFilter, since string) (*exec.Cmd, io.ReadCloser, error) {
+	tail := "1000"
+	if since != "" {
+		if !logcatCursor.MatchString(since) {
+			return nil, nil, fmt.Errorf("invalid logcat cursor")
+		}
+		tail = since
+	}
+	args := []string{"-s", serial, "logcat", "-v", "threadtime", "-v", "usec", "-v", "year", "-T", tail}
 
 	if filter.Priority != "" {
 		args = append(args, "*:"+filter.Priority)
@@ -23,7 +32,7 @@ func (m *AdbManager) StartLogcat(serial string, filter LogFilter) (*exec.Cmd, io
 		args = append(args, "--pid="+filter.PackagePid)
 	}
 
-	cmd := exec.Command(m.adbPath, args...)
+	cmd := exec.CommandContext(ctx, m.adbPath, args...)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {

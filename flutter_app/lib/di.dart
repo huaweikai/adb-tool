@@ -18,8 +18,9 @@
 // Registration order matters — dependencies must be registered before
 // anything that depends on them.
 import 'package:get_it/get_it.dart';
-import 'package:nested/nested.dart' show SingleChildWidget;
 import 'package:provider/provider.dart';
+import 'package:provider/single_child_widget.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'db/database.dart';
 import 'providers/theme_provider.dart';
@@ -39,8 +40,6 @@ import 'providers/recording_settings_provider.dart';
 import 'providers/scrcpy_record_state_provider.dart';
 import 'services/api_client.dart';
 import 'services/log_stream.dart';
-
-export 'package:get_it/get_it.dart' show getIt;
 
 final GetIt getIt = GetIt.instance;
 
@@ -124,6 +123,7 @@ Future<void> setupDependencies() async {
       getIt<LogStreamService>(),
       getIt<ApiClient>(),
       getIt<DeviceProvider>(),
+      preferences: await SharedPreferences.getInstance(),
     ),
   );
 

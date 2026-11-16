@@ -5,6 +5,8 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import '../models/device.dart';
 import '../providers/device_provider.dart';
 
+typedef _LogCheckpoint = ({String time, Map<String, int> occurrences});
+
 /// Per-device WebSocket channel for logcat streaming.
 ///
 /// Each device gets its own channel so switching between devices does not
@@ -22,229 +24,231 @@ class _DeviceLogChannel {
   /// backend's `start` action carries the adb-serial in its
   /// payload, and that serial churns on wireless reconnects.
   final DeviceProvider deviceProvider;
+  final WebSocketChannel Function(Uri uri) openSocket;
 
-  LogFilter filter;
-  WebSocketChannel? ws;
-  StreamSubscription? sub;
-  Timer? reconnectTimer;
-  int reconnectAttempt = 0;
-  // Guards _scheduleReconnect against the burst of error events a single
-  // failed connection can emit (onError + onDone + ready.catchError can
-  // all fire in quick succession). Without it, each call incremented
-  // reconnectAttempt and reset the timer, inflating the backoff from 1s
-  // to 30s before the first reconnect even ran.
-  bool _reconnecting = false;
+  WebSocketChannel? _socket;
+  StreamSubscription? _subscription;
+  Timer? _reconnectTimer;
+  int _reconnectAttempt = 0;
+  bool _disposed = false;
+  bool _clearing = false;
+
+  // Track occurrences rather than just raw text: two identical entries
+  // with the same printed timestamp are valid device logs.
+  String? _cursor;
+  final _atCursor = <String, int>{};
+  Map<String, int>? _replay;
 
   final _controller = StreamController<List<LogEntry>>.broadcast();
   final _connectionController = StreamController<bool>.broadcast();
 
-  static const _maxBackoffSeconds = 30;
-
   _DeviceLogChannel({
     required this.stableSerial,
     required this.deviceProvider,
-    required this.filter,
-  });
+    required this.openSocket,
+    _LogCheckpoint? checkpoint,
+  }) {
+    if (checkpoint != null) {
+      _cursor = checkpoint.time;
+      _atCursor.addAll(checkpoint.occurrences);
+    }
+  }
+
+  _LogCheckpoint? get checkpoint {
+    final cursor = _cursor;
+    return cursor == null
+        ? null
+        : (time: cursor, occurrences: Map.of(_atCursor));
+  }
 
   Stream<List<LogEntry>> get stream => _controller.stream;
   Stream<bool> get connectionState => _connectionController.stream;
 
   void start() {
-    _doConnect();
-  }
-
-  void _doConnect() {
-    const wsUrl = 'ws://127.0.0.1:9876/ws/logs';
-    final channel = WebSocketChannel.connect(Uri.parse(wsUrl));
-    ws = channel;
-
-    channel.ready.then((_) {
-      reconnectAttempt = 0;
-      // Resolve stable identity → live adb address on every
-      // (re)connect. The address churns on wireless reconnects, so
-      // using the value cached at channel-creation time would strand
-      // us on a dead transport after the first reconnect.
-      final adbSerial = deviceProvider.onlineAddressFor(stableSerial);
-      if (adbSerial == null || adbSerial.isEmpty) {
-        _connectionController.add(false);
-        _scheduleReconnect();
-        return;
-      }
+    if (_disposed) return;
+    final address = deviceProvider.onlineAddressFor(stableSerial);
+    if (address == null || address.isEmpty) {
+      _retry();
+      return;
+    }
+    const url = 'ws://127.0.0.1:9876/ws/logs';
+    final socket = openSocket(Uri.parse(url));
+    _socket = socket;
+    _subscription = socket.stream.listen(
+      (data) {
+        if (identical(_socket, socket)) _receive(data);
+      },
+      onError: (_) => _disconnect(socket),
+      onDone: () => _disconnect(socket),
+    );
+    socket.ready.then<void>((_) {
+      if (!identical(_socket, socket)) return;
+      _replay = _cursor == null ? null : Map.of(_atCursor);
       _send({
         'action': 'start',
-        'serial': adbSerial,
-        'filters': filter.toJson(),
+        'serial': address,
+        'filters': {'priority': 'V'},
+        if (_cursor != null) 'since': _cursor,
       });
-      _connectionController.add(true);
-    }).catchError((_) {
-      _connectionController.add(false);
-      _scheduleReconnect();
-    });
+    }).catchError((_) => _disconnect(socket));
+  }
 
-    sub = channel.stream.listen(
-      (data) {
-        try {
-          final msg = json.decode(data as String) as Map<String, dynamic>;
-          final f = filter;
-          if (msg['type'] == 'log') {
-            final entry = LogEntry.parse(msg['data'] as String);
-            if (entry.matchesFilter(f)) {
-              _controller.add([entry]);
-            }
-          } else if (msg['type'] == 'logs') {
-            final lines = msg['lines'];
-            if (lines is! List) return;
-            final entries = <LogEntry>[];
-            for (final line in lines) {
-              if (line is! String) continue;
-              final entry = LogEntry.parse(line);
-              if (entry.matchesFilter(f)) {
-                entries.add(entry);
-              }
-            }
-            if (entries.isNotEmpty) {
-              _controller.add(entries);
-            }
+  void _receive(Object? data) {
+    if (data is! String) return;
+    try {
+      final message = jsonDecode(data);
+      if (message is! Map<String, dynamic>) return;
+      if (message['type'] == 'status') {
+        switch (message['data']) {
+          case 'running':
+            _reconnectAttempt = 0;
+            _connectionController.add(true);
+          case 'cleared':
+            _clearing = false;
+        }
+        return;
+      }
+      if (message['type'] == 'error') {
+        _clearing = false;
+        return;
+      }
+      if (_clearing) return;
+      final lines = switch (message['type']) {
+        'log' => [message['data']],
+        'logs' => message['lines'],
+        _ => null,
+      };
+      if (lines is! List) return;
+      final batch = <LogEntry>[];
+      for (final raw in lines.whereType<String>()) {
+        final entry = LogEntry.parse(raw);
+        if (entry.time.isNotEmpty) {
+          if (_cursor != entry.time) {
+            _cursor = entry.time;
+            _atCursor.clear();
+            _replay = null;
+          } else if (_replay?[raw] case final int remaining
+              when remaining > 0) {
+            _replay![raw] = remaining - 1;
+            continue;
           }
-        } catch (_) {}
-      },
-      onError: (_) {
-        _connectionController.add(false);
-        _scheduleReconnect();
-      },
-      onDone: () {
-        _connectionController.add(false);
-        _scheduleReconnect();
-      },
-      cancelOnError: false,
-    );
+          _atCursor.update(raw, (count) => count + 1, ifAbsent: () => 1);
+        } else if (_replay != null && raw.startsWith('---------')) {
+          continue;
+        }
+        batch.add(entry);
+      }
+      if (batch.isNotEmpty) _controller.add(batch);
+    } on FormatException {
+      // The peer sent an invalid WebSocket envelope.
+    }
   }
 
-  void _scheduleReconnect() {
-    // Drop overlapping schedules from the burst of error events one
-    // failed connection can emit — only the first one arms a timer.
-    if (_reconnecting) return;
-    _reconnecting = true;
-    final delaySeconds = min(
-      _maxBackoffSeconds,
-      1 << reconnectAttempt.clamp(0, 5),
-    );
-    reconnectTimer?.cancel();
-    reconnectTimer = Timer(Duration(seconds: delaySeconds), () {
-      // Increment in the callback (not at schedule time) so a burst of
-      // errors doesn't inflate the backoff before the reconnect runs.
-      reconnectAttempt++;
-      _reconnecting = false;
-      _doConnect();
+  void _disconnect(WebSocketChannel socket) {
+    if (!identical(_socket, socket)) return;
+    _socket = null;
+    _clearing = false;
+    _subscription?.cancel();
+    socket.sink.close();
+    _retry();
+  }
+
+  void _retry() {
+    if (_disposed || _reconnectTimer != null) return;
+    _connectionController.add(false);
+    final delay = min(30, 1 << _reconnectAttempt.clamp(0, 5));
+    _reconnectTimer = Timer(Duration(seconds: delay), () {
+      _reconnectTimer = null;
+      _reconnectAttempt++;
+      start();
     });
   }
 
-  void updateFilter(LogFilter newFilter) {
-    filter = newFilter;
-    _send({'action': 'filter', 'filters': newFilter.toJson()});
+  void resetCursor() {
+    _cursor = null;
+    _atCursor.clear();
+    _replay = null;
   }
 
-  void stop() {
-    reconnectTimer?.cancel();
-    sub?.cancel();
-    _send({'action': 'stop'});
-    ws?.sink.close();
-    ws = null;
+  void clear() {
+    resetCursor();
+    _clearing = _socket != null;
+    _send({'action': 'clear'});
   }
-
-  void pause() => _send({'action': 'pause'});
-  void resume() => _send({'action': 'resume'});
-  void clear() => _send({'action': 'clear'});
 
   void _send(Map<String, dynamic> data) {
+    final socket = _socket;
+    if (socket == null) return;
     try {
-      ws?.sink.add(json.encode(data));
-    } catch (_) {}
+      socket.sink.add(jsonEncode(data));
+    } catch (_) {
+      _disconnect(socket);
+    }
   }
 
   Future<void> dispose() async {
-    stop();
+    _disposed = true;
+    _reconnectTimer?.cancel();
+    final socket = _socket;
+    _socket = null;
+    await _subscription?.cancel();
+    await socket?.sink.close();
     await _controller.close();
     await _connectionController.close();
   }
 }
 
-/// Multi-device logcat stream service.
-///
-/// Each device gets its own WebSocket channel, filter state, and stream.
-/// Switching devices does NOT stop other devices' streams — entries
-/// continue accumulating in the background for the device you switch
-/// back to.
-///
-/// Lifecycle: this service is a top-level singleton (registered in di.dart).
-/// It lives for the entire app session; channels are created lazily on
-/// first `connect()` and torn down on `stop(serial)`.
-///
-/// All public methods take the device's **stable identity** (ro.serialno).
-/// The channel resolves that to the current adb address on every
-/// (re)connect via the injected [DeviceProvider] so a wireless port
-/// change picks up the new transport without losing accumulated state.
+/// Raw per-device log streams. View filters and pause live with the history
+/// buffer so changing the view never restarts ADB.
 class LogStreamService {
-  LogStreamService(this._deviceProvider);
+  LogStreamService(
+    this._deviceProvider, {
+    WebSocketChannel Function(Uri uri) openSocket = WebSocketChannel.connect,
+  }) : _openSocket = openSocket;
 
   final DeviceProvider _deviceProvider;
+  final WebSocketChannel Function(Uri uri) _openSocket;
   final Map<String, _DeviceLogChannel> _channels = {};
+  final Map<String, _LogCheckpoint> _checkpoints = {};
 
-  /// Returns the live entry stream for a specific device.
-  /// Empty stream if the device has not been connected yet.
   Stream<List<LogEntry>> streamFor(String serial) =>
       _channels[serial]?.stream ?? const Stream.empty();
 
-  /// Returns the WebSocket connection-state stream for a specific device.
   Stream<bool> connectionStateFor(String serial) =>
-      _channels[serial]?.connectionState ?? const Stream<bool>.empty();
+      _channels[serial]?.connectionState ?? const Stream.empty();
 
-  /// Open a stream for the given device with the given filter.
-  /// If a channel already exists for this serial, the filter is updated
-  /// and the existing connection is reused.
-  void connect(String serial, LogFilter filter) {
-    final existing = _channels[serial];
-    if (existing != null) {
-      existing.updateFilter(filter);
-      return;
-    }
-    final channel = _DeviceLogChannel(
-      stableSerial: serial,
-      deviceProvider: _deviceProvider,
-      filter: filter,
-    );
-    _channels[serial] = channel;
-    channel.start();
+  void connect(String serial) {
+    _channels.putIfAbsent(serial, () {
+      return _DeviceLogChannel(
+        stableSerial: serial,
+        deviceProvider: _deviceProvider,
+        openSocket: _openSocket,
+        checkpoint: _checkpoints.remove(serial),
+      )..start();
+    });
   }
 
-  /// Update the filter for an existing channel without restart.
-  /// No-op if the device has not been connected.
-  void updateFilter(String serial, LogFilter filter) {
-    _channels[serial]?.updateFilter(filter);
-  }
-
-  /// Pause a specific device's stream.
-  void pause(String serial) => _channels[serial]?.pause();
-
-  /// Resume a specific device's stream.
-  void resume(String serial) => _channels[serial]?.resume();
-
-  /// Send "clear" to a specific device's backend session.
   void clear(String serial) => _channels[serial]?.clear();
 
-  /// Stop and dispose a specific device's channel.
-  void stop(String serial) {
-    final ch = _channels.remove(serial);
-    ch?.dispose();
+  void resetCursor(String serial) {
+    _checkpoints.remove(serial);
+    _channels[serial]?.resetCursor();
   }
 
-  /// Whether a device currently has an active channel.
+  void stop(String serial) {
+    final channel = _channels.remove(serial);
+    if (channel == null) return;
+    final checkpoint = channel.checkpoint;
+    if (checkpoint != null) _checkpoints[serial] = checkpoint;
+    unawaited(channel.dispose());
+  }
+
   bool isConnected(String serial) => _channels.containsKey(serial);
 
-  /// Dispose all channels. Called only on app shutdown.
   Future<void> dispose() async {
     final channels = _channels.values.toList();
     _channels.clear();
-    await Future.wait(channels.map((c) => c.dispose()));
+    _checkpoints.clear();
+    await Future.wait(channels.map((channel) => channel.dispose()));
   }
 }
