@@ -145,13 +145,13 @@ flutter pub get
 flutter run -d macos
 ```
 
-On Windows:
+On Windows, rebuild the backend and start the app from the repository root:
 
 ```powershell
-cd flutter_app
-flutter pub get
-flutter run -d windows
+.\scripts\dev.ps1 -SkipApk -Device windows
 ```
+
+For iPhone debugging, first run `scripts/build_pymobiledevice3.py dist/ios-tools` with Python 3.12. The Windows development build copies `pymobiledevice3.exe` next to `runtime.exe`. Stop the Flutter debug session before rerunning the development script after Go changes.
 
 ## Build
 

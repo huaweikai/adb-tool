@@ -145,13 +145,13 @@ flutter pub get
 flutter run -d macos
 ```
 
-Windows 开发环境下可以使用：
+Windows 开发时，从仓库根目录重新编译后端并启动桌面端：
 
 ```powershell
-cd flutter_app
-flutter pub get
-flutter run -d windows
+.\scripts\dev.ps1 -SkipApk -Device windows
 ```
+
+调试 iPhone 时，先用 Python 3.12 运行 `scripts/build_pymobiledevice3.py dist/ios-tools`。Windows 开发构建会把生成的 `pymobiledevice3.exe` 复制到 `runtime.exe` 旁边。修改 Go 后端后，停止 Flutter 调试会话再运行开发脚本。
 
 ## 构建
 

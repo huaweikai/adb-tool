@@ -113,3 +113,7 @@ if(EXISTS "${ADB_TOOL_BACKEND}")
   install(FILES "${ADB_TOOL_BACKEND}" DESTINATION "${CMAKE_INSTALL_PREFIX}"
     COMPONENT Runtime)
 endif()
+
+# Development builds can reuse the CLI produced by the packaging script.
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../../dist/ios-tools/pymobiledevice3.exe"
+  DESTINATION "${CMAKE_INSTALL_PREFIX}" COMPONENT Runtime OPTIONAL)

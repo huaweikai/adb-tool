@@ -172,6 +172,7 @@ function Build-GoBackend {
 function Sync-BackendToFlutterBuild {
   $src = Join-Path $Root 'flutter_app\windows\runner\Resources\runtime.exe'
   if (-not (Test-Path $src)) { return }
+  $iosCli = Join-Path $Root 'dist\ios-tools\pymobiledevice3.exe'
 
   $buildRoot = Join-Path $Root 'flutter_app\build\windows\x64\runner'
   if (-not (Test-Path $buildRoot)) { return }
@@ -180,8 +181,12 @@ function Sync-BackendToFlutterBuild {
     $dst = Join-Path $buildRoot $mode
     if (Test-Path $dst) {
       try {
-        Copy-Item -Path $src -Destination (Join-Path $dst 'runtime.exe') -Force
+        Copy-Item -Path $src -Destination (Join-Path $dst 'runtime.exe') -Force -ErrorAction Stop
         Write-Host "  synced runtime.exe -> $dst" -ForegroundColor DarkGray
+        if (Test-Path -LiteralPath $iosCli) {
+          Copy-Item -LiteralPath $iosCli -Destination $dst -Force -ErrorAction Stop
+          Write-Host "  synced pymobiledevice3.exe -> $dst" -ForegroundColor DarkGray
+        }
       } catch {
         Write-Host "  could not sync to $dst (binary may be in use): $_" -ForegroundColor Yellow
       }
