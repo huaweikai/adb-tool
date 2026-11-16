@@ -60,13 +60,17 @@ function Build-MSI {
 
   # Ensure WiX v5 is available — v7 requires an OSMF EULA and breaks
   # WixToolset.UI.wixext/5.0.2.
-  dotnet tool uninstall --global wix 2>$null
-  dotnet tool install --global wix --version 5.0.2 2>$null
-  if ($LASTEXITCODE -ne 0) {
-    dotnet tool update --global wix --version 5.0.2 2>$null
+  $wixVersion = if (Get-Command wix -CommandType Application -ErrorAction SilentlyContinue) {
+    (& wix --version 2>$null | Select-Object -First 1) -join ''
   }
-
-  $wixVersion = (& wix --version 2>$null | Select-Object -First 1) -join ''
+  if ($wixVersion -notmatch '^5\.0\.2\b') {
+    dotnet tool uninstall --global wix 2>$null
+    dotnet tool install --global wix --version 5.0.2 2>$null
+    if ($LASTEXITCODE -ne 0) {
+      dotnet tool update --global wix --version 5.0.2 2>$null
+    }
+    $wixVersion = (& wix --version 2>$null | Select-Object -First 1) -join ''
+  }
   if ([string]::IsNullOrWhiteSpace($wixVersion)) {
     throw "WiX not found. Install it: dotnet tool install --global wix --version 5.0.2"
   }
