@@ -103,7 +103,7 @@ func New(adbPath string, webFS fs.FS, clipboardApk []byte, scrcpyFS embed.FS) *S
 
 	go eventStream.Run(streamCtx)
 	if cli := findIOSCLI(); cli != "" {
-		s.ios = newIOSDiscovery(cli)
+		s.ios = newIOSDiscovery(streamCtx, cli)
 		go s.ios.run(streamCtx, func(added, removed []string) {
 			s.broadcastDeviceChange(trackDeviceChange{
 				Current: eventStream.Snapshot(), Added: added, Removed: removed,
@@ -321,6 +321,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/devices", s.handleDevices)
 	mux.HandleFunc("GET /api/ios/crash-reports", s.handleIOSCrashReports)
 	mux.HandleFunc("GET /api/ios/crash-report", s.handleIOSCrashReport)
+	mux.HandleFunc("GET /ws/ios/logs", s.handleIOSLogs)
 	mux.HandleFunc("/ws/devices", s.handleDeviceWS)
 	mux.HandleFunc("/api/clear", s.handleClear)
 	mux.HandleFunc("/api/info", s.handleDeviceInfo)

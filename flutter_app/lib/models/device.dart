@@ -10,7 +10,8 @@ enum DeviceCapability {
   testSession,
   screenMirror,
   screenshot,
-  crashReports;
+  crashReports,
+  iosLiveLogs;
 
   // Default for older backends and Android rows saved while offline.
   static const androidDefaults = {

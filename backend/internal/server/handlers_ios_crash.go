@@ -32,14 +32,14 @@ func parseIOSCrashReports(output []byte) []string {
 	return slices.Compact(names)
 }
 
-func (s *Server) iosCrashTarget(w http.ResponseWriter, r *http.Request) string {
+func (s *Server) iosTarget(w http.ResponseWriter, r *http.Request, capability DeviceCapability) string {
 	serial := r.URL.Query().Get("serial")
 	if !strings.HasPrefix(serial, "ios:") || serial == "ios:" {
 		writeAPIError(w, http.StatusBadRequest, "iOS device ID required")
 		return ""
 	}
 	for _, device := range s.ios.snapshot() {
-		if device.Serial == serial && slices.Contains(device.Capabilities, capabilityCrashReports) {
+		if device.Serial == serial && slices.Contains(device.Capabilities, capability) {
 			return strings.TrimPrefix(device.Serial, "ios:")
 		}
 	}
@@ -48,7 +48,7 @@ func (s *Server) iosCrashTarget(w http.ResponseWriter, r *http.Request) string {
 }
 
 func (s *Server) handleIOSCrashReports(w http.ResponseWriter, r *http.Request) {
-	udid := s.iosCrashTarget(w, r)
+	udid := s.iosTarget(w, r, capabilityCrashReports)
 	if udid == "" {
 		return
 	}
@@ -62,7 +62,7 @@ func (s *Server) handleIOSCrashReports(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleIOSCrashReport(w http.ResponseWriter, r *http.Request) {
-	udid := s.iosCrashTarget(w, r)
+	udid := s.iosTarget(w, r, capabilityCrashReports)
 	if udid == "" {
 		return
 	}

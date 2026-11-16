@@ -2,6 +2,9 @@
 part of 'package:adb_tool/i18n.dart';
 
 const _locLogcatZh = <String, String>{
+  'iosLiveLogs': '实时日志',
+  'iosLiveLogsConnecting': '等待 iPhone 日志…',
+  'iosLiveLogsFailed': '日志连接已中断，可以重新开始。',
   'start': '开始',
   'stop': '停止',
   'pause': '暂停',
@@ -50,6 +53,9 @@ const _locLogcatZh = <String, String>{
 };
 
 const _locLogcatEn = <String, String>{
+  'iosLiveLogs': 'Live logs',
+  'iosLiveLogsConnecting': 'Waiting for iPhone logs…',
+  'iosLiveLogsFailed': 'Log stream disconnected. Start again to reconnect.',
   'start': 'Start',
   'stop': 'Stop',
   'pause': 'Pause',

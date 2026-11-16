@@ -23,6 +23,7 @@ import '../design/design_tokens.dart';
 import '../widgets/recording_fab.dart';
 import 'device_status_screen.dart';
 import 'ios_crash_reports_screen.dart';
+import 'ios_logs_screen.dart';
 import 'logcat_screen.dart';
 import 'file_browser_screen.dart';
 import 'app_manager_screen.dart';
@@ -51,7 +52,8 @@ enum NavItem {
   command(DeviceCapability.adbCommands),
   session(DeviceCapability.testSession),
   mirror(DeviceCapability.screenMirror),
-  crashReports(DeviceCapability.crashReports);
+  crashReports(DeviceCapability.crashReports),
+  iosLogs(DeviceCapability.iosLiveLogs);
 
   const NavItem(this.capability);
 
@@ -68,6 +70,7 @@ const _navConfig = {
   NavItem.apps: _NavConfig(Icons.android, 'apps'),
   NavItem.info: _NavConfig(Icons.info_outline, 'info'),
   NavItem.crashReports: _NavConfig(Icons.bug_report_outlined, 'iosCrashReports'),
+  NavItem.iosLogs: _NavConfig(Icons.list_alt, 'iosLiveLogs'),
   NavItem.clipboard: _NavConfig(Icons.content_paste, 'clipboard'),
   NavItem.hierarchy: _NavConfig(Icons.account_tree, 'viewHierarchy'),
   NavItem.command: _NavConfig(Icons.terminal, 'command'),
@@ -321,6 +324,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           screen = const ScreenMirrorScreen();
         case NavItem.crashReports:
           screen = const IosCrashReportsScreen();
+        case NavItem.iosLogs:
+          screen = const IosLogsScreen();
       }
       _screens[key] = _CachedScreen(
         key: ValueKey(key),

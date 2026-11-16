@@ -8,8 +8,10 @@ void main() {
 
     expect(device.platform, 'android');
     expect(device.capabilities, contains(DeviceCapability.screenshot));
-    expect(NavItem.availableTo(device.capabilities),
-        NavItem.values.where((item) => item != NavItem.crashReports));
+    expect(
+        NavItem.availableTo(device.capabilities),
+        NavItem.values.where(
+            (item) => item != NavItem.crashReports && item != NavItem.iosLogs));
   });
 
   test('explicit capability list limits navigation and ignores unknown names',

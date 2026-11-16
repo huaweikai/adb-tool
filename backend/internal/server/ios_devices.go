@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,19 +15,23 @@ import (
 )
 
 type iosDiscovery struct {
+	ctx     context.Context
 	command func(context.Context, ...string) ([]byte, error)
+	logs    func(context.Context, string, io.Writer) error
 	mu      sync.RWMutex
 	devices []Device
 }
 
-func newIOSDiscovery(cli string) *iosDiscovery {
-	return &iosDiscovery{command: func(ctx context.Context, args ...string) ([]byte, error) {
+func newIOSDiscovery(ctx context.Context, cli string) *iosDiscovery {
+	return &iosDiscovery{ctx: ctx, command: func(ctx context.Context, args ...string) ([]byte, error) {
 		ctx, cancel := context.WithTimeout(ctx, 25*time.Second)
 		defer cancel()
 		cmd := exec.CommandContext(ctx, cli, args...)
 		configureScrcpySysProc(cmd)
 		cmd.WaitDelay = time.Second
 		return cmd.Output()
+	}, logs: func(ctx context.Context, udid string, output io.Writer) error {
+		return streamIOSLogs(ctx, cli, udid, output)
 	}}
 }
 
@@ -150,7 +155,8 @@ func parseIOSDevices(output []byte) ([]Device, error) {
 		}
 		byID[serial] = Device{
 			Serial: serial, HardwareSerial: serial, State: "device", Model: name,
-			Brand: "Apple", Platform: "ios", Transport: transport, Capabilities: []DeviceCapability{capabilityCrashReports},
+			Brand: "Apple", Platform: "ios", Transport: transport,
+			Capabilities: []DeviceCapability{capabilityCrashReports, capabilityIOSLiveLogs},
 		}
 	}
 	devices := make([]Device, 0, len(byID))
