@@ -205,7 +205,7 @@
 				33CC10EB2044A3C60003C045 /* Resources */,
 				33CC110E2044A8840003C045 /* Bundle Framework */,
 				3399D490228B24CF009A79C7 /* ShellScript */,
-				AABB00010000000000ADBTOOL01 /* Copy adb-tool */,
+				AABB00010000000000ADBTOOL01 /* Copy bundled tools */,
 			);
 			buildRules = (
 			);
@@ -332,7 +332,7 @@
 			shellPath = /bin/sh;
 			shellScript = "\"$FLUTTER_ROOT\"/packages/flutter_tools/bin/macos_assemble.sh && touch Flutter/ephemeral/tripwire";
 		};
-		AABB00010000000000ADBTOOL01 /* Copy adb-tool */ = {
+		AABB00010000000000ADBTOOL01 /* Copy bundled tools */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
@@ -342,15 +342,17 @@
 			);
 			inputPaths = (
 			);
-			name = "Copy adb-tool";
+			name = "Copy bundled tools";
 			outputFileListPaths = (
 			);
 			outputPaths = (
 				"$(CODESIGNING_FOLDER_PATH)/Contents/MacOS/adb-tool",
+				"$(CODESIGNING_FOLDER_PATH)/Contents/MacOS/pymobiledevice3",
+				"$(CODESIGNING_FOLDER_PATH)/Contents/Resources/pymobiledevice3-source.zip",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "SRC=\"$SRCROOT/Runner/adb-tool\"\nDST=\"$CODESIGNING_FOLDER_PATH/Contents/MacOS/adb-tool\"\nif [ -f \"$SRC\" ]; then\n  cp \"$SRC\" \"$DST\"\n  chmod +x \"$DST\"\n  echo \"Copied adb-tool to $DST\"\n  # 单独给 adb-tool 签 ad-hoc,让父 .app 签名时能找到有效的子签名\n  codesign --force --sign - \"$DST\" || {\n    echo \"error: failed to codesign adb-tool at $DST\"\n    exit 1\n  }\nelse\n  echo \"Warning: adb-tool not found at $SRC\"\nfi\n";
+			shellScript = "SRC=\"$SRCROOT/Runner/adb-tool\"\nDST=\"$CODESIGNING_FOLDER_PATH/Contents/MacOS/adb-tool\"\nif [ -f \"$SRC\" ]; then\n  cp \"$SRC\" \"$DST\"\n  chmod +x \"$DST\"\n  echo \"Copied adb-tool to $DST\"\n  # 单独给 adb-tool 签 ad-hoc,让父 .app 签名时能找到有效的子签名\n  codesign --force --sign - \"$DST\" || {\n    echo \"error: failed to codesign adb-tool at $DST\"\n    exit 1\n  }\nelse\n  echo \"Warning: adb-tool not found at $SRC\"\nfi\nIOS_TOOLS=\"$SRCROOT/../../dist/ios-tools\"\nCLI_DST=\"$CODESIGNING_FOLDER_PATH/Contents/MacOS/pymobiledevice3\"\nSOURCE_DST=\"$CODESIGNING_FOLDER_PATH/Contents/Resources/pymobiledevice3-source.zip\"\nif [ -f \"$IOS_TOOLS/pymobiledevice3\" ]; then\n  mkdir -p \"$(dirname \"$SOURCE_DST\")\" || exit 1\n  cp \"$IOS_TOOLS/pymobiledevice3\" \"$CLI_DST\" || exit 1\n  cp \"$IOS_TOOLS/pymobiledevice3-source.zip\" \"$SOURCE_DST\" || exit 1\nelse\n  rm -f \"$CLI_DST\" \"$SOURCE_DST\" || exit 1\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

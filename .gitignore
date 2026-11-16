@@ -36,3 +36,7 @@ flutter_app/ADBToolData/
 /.agents/*
 /.mimocode/*
 /.opencode/*
+
+# Project-local code-review-graph runtime and Codex configuration
+/.code-review-graph/
+/.codex/config.toml

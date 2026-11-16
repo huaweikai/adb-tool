@@ -111,6 +111,7 @@ ADB Tool 是一个面向 Android 调试与测试场景的跨平台桌面工具�
 
 - Flutter 3.4+ / Dart 3.4+
 - Go 1.26.3+
+- Python 3.12（构建桌面安装包时用于打包 `pymobiledevice3`）。Windows 构建脚本会查找 PATH 或 `uv` 管理的 3.12，也可以用 `-PythonExecutable` 指定解释器。
 - Android SDK（需要重新构建剪贴板辅助 APK 时）
 - macOS 或 Windows 桌面构建环境
 
@@ -213,3 +214,11 @@ flutter run -d windows
 
 - [API 响应协议与接口字段](api/README.md)
 - [项目架构说明](PROJECT_OVERVIEW.md)
+
+## 第三方开源组件
+
+桌面安装包附带 `pymobiledevice3`，用于 iOS 真机通信和诊断。CLI 与 Python 运行时在发布时打包，安装后可以从本地启动。Windows 连接 iPhone 还需要 Apple Mobile Device Service。 [项目源码](https://github.com/doronz88/pymobiledevice3) · [Windows 连接要求](https://doronz88.github.io/pymobiledevice3/installation/)
+
+应用内的 iOS 设备操作仍在接入。 [iOS 接入方案](docs/DEVICE_BACKEND_PLAN.md)
+
+`pymobiledevice3` 由 doronz88 和项目贡献者维护，采用 GPL-3.0-or-later。安装包内的 `pymobiledevice3-source.zip` 提供随包版本的相关源码、许可证与构建脚本。 [上游许可证](https://github.com/doronz88/pymobiledevice3/blob/master/LICENSE)

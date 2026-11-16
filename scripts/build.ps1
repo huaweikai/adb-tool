@@ -1,31 +1,42 @@
 param(
   [ValidateSet('Debug','Release')][string]$Mode = 'Release',
-  [string]$ProductVersion = '0.0.0'
+  [string]$ProductVersion = '0.0.0',
+  [string]$PythonExecutable
 )
 
 $Root = (Resolve-Path "$PSScriptRoot/..").Path
 
 $Dist = "$Root/dist/windows"
 $Android = "$Root/dist/android"
+$IosTools = "$Root/dist/ios-tools"
 
 function Build-Go {
   $runner="$Root/flutter_app/windows/runner"
 
   Push-Location "$Root/backend"
-  go build -ldflags "-s -w" -o "$runner/runtime.exe" .
-  go build -ldflags "-H windowsgui -s -w" -o "$runner/uninstall.exe" ./uninstall/
-  Pop-Location
+  try {
+    go build -ldflags "-s -w" -o "$runner/runtime.exe" .
+    if ($LASTEXITCODE -ne 0) { throw "Failed to build the Go backend" }
+    go build -ldflags "-H windowsgui -s -w" -o "$runner/uninstall.exe" ./uninstall/
+    if ($LASTEXITCODE -ne 0) { throw "Failed to build the Windows uninstaller" }
+  } finally {
+    Pop-Location
+  }
 }
 
 function Build-Flutter {
-  Push-Location "$Root/flutter_app"
   $fullVer = (Select-String -Path "$Root/flutter_app/pubspec.yaml" -Pattern '^version:\s*(\S+)').Matches[0].Groups[1].Value
   $ver = $fullVer -replace '\+.*$',''
   $build = if ($fullVer -match '\+(\d+)$') { $Matches[1] } else { '0' }
-  flutter build windows --release `
-    --dart-define=APP_VERSION=$ver `
-    --dart-define=APP_BUILD=$build
-  Pop-Location
+  Push-Location "$Root/flutter_app"
+  try {
+    flutter build windows --release `
+      --dart-define=APP_VERSION=$ver `
+      --dart-define=APP_BUILD=$build
+    if ($LASTEXITCODE -ne 0) { throw "Failed to build the Flutter Windows app" }
+  } finally {
+    Pop-Location
+  }
 
   # Build-Go writes runtime.exe / uninstall.exe into flutter_app/windows/runner/
   # but Flutter's CMake build does not pick them up (they are not in the install
@@ -39,6 +50,8 @@ function Build-Flutter {
       }
     }
   }
+  Copy-Item -Force -ErrorAction Stop "$IosTools/pymobiledevice3.exe" "$release/"
+  Copy-Item -Force -ErrorAction Stop "$IosTools/pymobiledevice3-source.zip" "$release/"
 }
 
 function Build-MSI {
@@ -72,6 +85,7 @@ function Build-MSI {
     -ext WixToolset.UI.wixext `
     -d "ProductVersion=$ProductVersion" `
     -o "$Dist/ADBTool-$ProductVersion.msi"
+  if ($LASTEXITCODE -ne 0) { throw "Failed to build the Windows MSI" }
 }
 
 function Expand-WixTemplate {
@@ -139,8 +153,35 @@ function Expand-WixTemplate {
   Set-Content -Path $Out -Value $xml -Encoding UTF8
 }
 
+function Test-PackagingPython([string]$Executable) {
+  if (-not (Get-Command $Executable -CommandType Application -ErrorAction SilentlyContinue)) {
+    return $false
+  }
+  $version = & $Executable --version
+  return ($LASTEXITCODE -eq 0 -and $version -match '^Python 3\.12\.')
+}
+
+if (-not $PSBoundParameters.ContainsKey('PythonExecutable')) {
+  foreach ($candidate in 'python3.12.exe', 'python.exe') {
+    if (Test-PackagingPython $candidate) {
+      $PythonExecutable = $candidate
+      break
+    }
+  }
+  if (-not $PythonExecutable -and (Get-Command uv -CommandType Application -ErrorAction SilentlyContinue)) {
+    $PythonExecutable = uv --no-cache python find --managed-python 3.12 2>$null
+  }
+}
+if (-not $PythonExecutable -or -not (Test-PackagingPython $PythonExecutable)) {
+  throw "The Windows packaging script uses Python 3.12. Install it with 'uv python install 3.12' or pass its executable path with -PythonExecutable."
+}
+
 New-Item -ItemType Directory -Force -Path $Dist,$Android | Out-Null
 
+& $PythonExecutable "$Root/scripts/build_pymobiledevice3.py" $IosTools
+if ($LASTEXITCODE -ne 0) {
+  throw "Failed to build pymobiledevice3"
+}
 Build-Go
 Build-Flutter
 Build-MSI

@@ -17,6 +17,7 @@
 // like siblings.
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/link.dart';
 
 import '../i18n.dart';
 import '../providers/locale_provider.dart';
@@ -133,6 +134,23 @@ class _AboutSection extends StatelessWidget {
               tr('settings.about.copyright'),
               style: theme.textTheme.bodySmall
                   ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+            const Divider(height: 24),
+            Text(
+              tr('settings.about.thirdParty'),
+              style: theme.textTheme.titleSmall,
+            ),
+            Link(
+              uri: Uri.https('github.com', '/doronz88/pymobiledevice3'),
+              target: LinkTarget.blank,
+              builder: (context, followLink) => TextButton(
+                onPressed: followLink,
+                child: const Text('pymobiledevice3'),
+              ),
+            ),
+            Text(
+              tr('settings.about.pymobiledevice3'),
+              style: theme.textTheme.bodySmall,
             ),
           ],
         ),

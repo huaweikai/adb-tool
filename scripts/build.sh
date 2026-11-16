@@ -50,6 +50,10 @@ copy_app() {
   rm -rf "$dst"
   mkdir -p "$MACOS/$arch"
   cp -R "$app" "$dst"
+  test -x "$dst/Contents/MacOS/pymobiledevice3"
+  test -f "$dst/Contents/Resources/pymobiledevice3-source.zip"
+  codesign --verify --strict "$dst/Contents/MacOS/pymobiledevice3"
+  codesign --verify --strict "$dst"
 }
 
 # ---------------- dmg ----------------
@@ -74,6 +78,7 @@ create_dmg() {
     "$dmg"
 }
 
+python3 "$ROOT/scripts/build_pymobiledevice3.py" "$DIST/ios-tools"
 build_backend
 build_flutter
 copy_app

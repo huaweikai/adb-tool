@@ -37,6 +37,9 @@ const _locSettingsZh = <String, String>{
   'settings.about.version': '版本',
   'settings.about.build': '构建号',
   'settings.about.copyright': '© ADB Tool contributors',
+  'settings.about.thirdParty': '第三方开源组件',
+  'settings.about.pymobiledevice3':
+      '由 doronz88 和项目贡献者维护，用于 iOS 真机通信和诊断。许可证为 GPL-3.0-or-later。',
 
   // ── Capture mixin / mirror page cross-screen prompts ─────────────
   'recording.scrcpyBusyMirrorTitle': '检测到 scrcpy 投屏正在运行',
@@ -86,6 +89,9 @@ const _locSettingsEn = <String, String>{
   'settings.about.version': 'Version',
   'settings.about.build': 'Build',
   'settings.about.copyright': '© ADB Tool contributors',
+  'settings.about.thirdParty': 'Third-party open source',
+  'settings.about.pymobiledevice3':
+      'iOS device communication and diagnostics by doronz88 and contributors. Licensed under GPL-3.0-or-later.',
 
   'recording.scrcpyBusyMirrorTitle': 'scrcpy mirror is running',
   'recording.scrcpyBusyMirrorBody':

@@ -82,6 +82,10 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Using version: $VERSION"
 
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
       - name: Build macOS
         env:
           PRODUCT_VERSION: ${{ steps.ver.outputs.version }}
@@ -141,6 +145,10 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Using version: $VERSION"
 
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
       - name: Build macOS
         env:
           PRODUCT_VERSION: ${{ steps.ver.outputs.version }}
@@ -193,6 +201,10 @@ jobs:
           $v = (Select-String -Path flutter_app/pubspec.yaml -Pattern '^version:' | ForEach-Object { ($_.Line -split '\s+')[1] }) -replace '\+.*$',''
           "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           Write-Host "Using version: $v"
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
 
       - name: Build Windows
         env:

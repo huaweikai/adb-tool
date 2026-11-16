@@ -111,6 +111,7 @@ Basic development environment:
 
 - Flutter 3.4+ / Dart 3.4+
 - Go 1.26.3+
+- Python 3.12 (used to build the `pymobiledevice3` executable for desktop installers). The Windows build script looks for 3.12 on PATH or through `uv`. Use `-PythonExecutable` to select an interpreter explicitly.
 - Android SDK, required when rebuilding the clipboard helper APK
 - macOS or Windows desktop build environment
 
@@ -213,3 +214,11 @@ Successful binary download endpoints are not wrapped in the JSON envelope, such 
 
 - [API response protocol and fields](api/README.md)
 - [Project architecture overview](PROJECT_OVERVIEW.md)
+
+## Third-party open source
+
+Desktop installers bundle `pymobiledevice3` and its Python runtime for iOS device communication and diagnostics. The CLI runs locally after installation. Windows still requires Apple Mobile Device Service to connect to an iPhone. [Project source](https://github.com/doronz88/pymobiledevice3) · [Windows requirements](https://doronz88.github.io/pymobiledevice3/installation/)
+
+In-app iOS device workflows are in development. [iOS integration plan](docs/DEVICE_BACKEND_PLAN.md)
+
+`pymobiledevice3` is maintained by doronz88 and contributors and is licensed under GPL-3.0-or-later. The installer includes `pymobiledevice3-source.zip` with related source code, license files, and build scripts for the bundled version. [Upstream license](https://github.com/doronz88/pymobiledevice3/blob/master/LICENSE)
