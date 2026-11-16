@@ -10,9 +10,9 @@ type screenshotCapturer interface {
 	CaptureScreenshot(ctx context.Context, serial string) ([]byte, error)
 }
 
-// Device describes one connection in GET /api/devices. Serial targets the
-// current connection (for example, an ADB Wi-Fi address). HardwareSerial is
-// the stable identity used to associate the physical device with saved sessions.
+// Device describes one row in GET /api/devices. Android reports one row per
+// transport; iOS reports one per physical device with its preferred transport.
+// HardwareSerial associates the physical device with saved sessions.
 type Device struct {
 	Serial         string             `json:"serial"`
 	HardwareSerial string             `json:"hardwareSerial,omitempty"`
@@ -21,6 +21,7 @@ type Device struct {
 	Brand          string             `json:"brand"`
 	SDK            string             `json:"sdk"`
 	Platform       string             `json:"platform"`
+	Transport      string             `json:"transport,omitempty"`
 	Capabilities   []DeviceCapability `json:"capabilities"`
 }
 
@@ -38,4 +39,5 @@ const (
 	capabilityTestSession   DeviceCapability = "testSession"
 	capabilityScreenMirror  DeviceCapability = "screenMirror"
 	capabilityScreenshot    DeviceCapability = "screenshot"
+	capabilityCrashReports  DeviceCapability = "crashReports"
 )

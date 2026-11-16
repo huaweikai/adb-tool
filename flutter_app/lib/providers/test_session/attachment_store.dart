@@ -112,6 +112,37 @@ class SessionAttachmentStore {
     );
   }
 
+  Future<TestSessionArtifactDescriptor> writeReport({
+    required String sessionId,
+    required String artifactId,
+    required String name,
+    required List<int> bytes,
+  }) async {
+    if (name.isEmpty ||
+        name == '.' ||
+        name == '..' ||
+        p.posix.basename(name) != name ||
+        p.windows.basename(name) != name ||
+        name.contains(':')) {
+      throw ArgumentError.value(name, 'name', 'Expected a report filename');
+    }
+    final subdir = p.join('reports', artifactId);
+    final relative = _relativePath(sessionId, subdir, name);
+    final file = await _fileFor(sessionId, subdir, name);
+    await file.create(exclusive: true);
+    try {
+      await file.writeAsBytes(bytes);
+    } catch (_) {
+      await deleteFile(relative);
+      rethrow;
+    }
+    return TestSessionArtifactDescriptor(
+      name: name,
+      relativePath: relative,
+      size: bytes.length,
+    );
+  }
+
   /// Snapshot of the last N logcat lines at the moment an issue is marked.
   Future<TestSessionArtifactDescriptor> writeIssueRecentLog({
     required String sessionId,

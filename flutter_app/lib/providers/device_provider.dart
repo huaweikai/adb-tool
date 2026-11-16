@@ -181,7 +181,8 @@ class DeviceProvider extends ChangeNotifier {
     if (device != null) return device.capabilities;
     // Persisted devices are Android. Record platform and last known
     // capabilities before persisting devices from another backend.
-    return _savedDevices.any((d) => d.serial == stableSerial)
+    return !Device.isIosIdentity(stableSerial) &&
+            _savedDevices.any((d) => d.serial == stableSerial)
         ? DeviceCapability.androidDefaults
         : const {};
   }
@@ -190,7 +191,12 @@ class DeviceProvider extends ChangeNotifier {
     return transportsFor(stableSerial)
         .map((d) => DeviceTransportSummary(
               adbSerial: d.serial,
-              type: transportTypeForSerial(d.serial),
+              type: switch (d.transport) {
+                'usb' => DeviceTransportType.usb,
+                'wifi' => DeviceTransportType.wifi,
+                _ when d.platform == 'android' => transportTypeForSerial(d.serial),
+                _ => DeviceTransportType.unknown,
+              },
               state: d.state,
             ))
         .toList();
@@ -231,8 +237,8 @@ class DeviceProvider extends ChangeNotifier {
   /// may be transient).
   Device? wifiTransportFor(String stableSerial) {
     final wifiTransports = transportsFor(stableSerial)
-        .where(
-            (d) => transportTypeForSerial(d.serial) == DeviceTransportType.wifi)
+        .where((d) => d.platform == 'android' &&
+            transportTypeForSerial(d.serial) == DeviceTransportType.wifi)
         .toList();
     // Prefer the legacy `ip:port` form (user-initiated) over the
     // mDNS `_tcp` form (system-initiated, re-created on disconnect).
@@ -252,6 +258,7 @@ class DeviceProvider extends ChangeNotifier {
   bool hasWifiTransport(String stableSerial) {
     return _onlineDevices.any((d) =>
         d.isOnline &&
+        d.platform == 'android' &&
         d.matchesIdentity(stableSerial) &&
         transportTypeForSerial(d.serial) == DeviceTransportType.wifi);
   }

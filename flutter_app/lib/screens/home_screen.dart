@@ -9,7 +9,11 @@ import '../services/api_client.dart';
 import '../services/device_stream.dart';
 import '../providers/theme_provider.dart';
 import '../providers/device_provider.dart'
-    show DeviceSerialScope, DeviceScreenActiveScope, DeviceProvider;
+    show
+        DeviceSerialScope,
+        DeviceScreenActiveScope,
+        DeviceProvider,
+        DeviceTransportType;
 import '../providers/locale_provider.dart';
 import '../providers/test_session_provider.dart';
 import '../providers/emulator_engine_provider.dart';
@@ -18,6 +22,7 @@ import '../i18n.dart';
 import '../design/design_tokens.dart';
 import '../widgets/recording_fab.dart';
 import 'device_status_screen.dart';
+import 'ios_crash_reports_screen.dart';
 import 'logcat_screen.dart';
 import 'file_browser_screen.dart';
 import 'app_manager_screen.dart';
@@ -45,7 +50,8 @@ enum NavItem {
   hierarchy(DeviceCapability.viewHierarchy),
   command(DeviceCapability.adbCommands),
   session(DeviceCapability.testSession),
-  mirror(DeviceCapability.screenMirror);
+  mirror(DeviceCapability.screenMirror),
+  crashReports(DeviceCapability.crashReports);
 
   const NavItem(this.capability);
 
@@ -61,6 +67,7 @@ const _navConfig = {
   NavItem.files: _NavConfig(Icons.folder_open, 'files'),
   NavItem.apps: _NavConfig(Icons.android, 'apps'),
   NavItem.info: _NavConfig(Icons.info_outline, 'info'),
+  NavItem.crashReports: _NavConfig(Icons.bug_report_outlined, 'iosCrashReports'),
   NavItem.clipboard: _NavConfig(Icons.content_paste, 'clipboard'),
   NavItem.hierarchy: _NavConfig(Icons.account_tree, 'viewHierarchy'),
   NavItem.command: _NavConfig(Icons.terminal, 'command'),
@@ -312,6 +319,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           screen = const TestSessionHubScreen();
         case NavItem.mirror:
           screen = const ScreenMirrorScreen();
+        case NavItem.crashReports:
+          screen = const IosCrashReportsScreen();
       }
       _screens[key] = _CachedScreen(
         key: ValueKey(key),
@@ -1476,6 +1485,12 @@ class _DeviceTreeArea extends StatelessWidget {
     final isExpanded = expandedSerials.contains(d.serial);
     final hasActiveScreen = activeDeviceSerials.contains(d.serial);
     final isConnected = d.isConnected;
+    final isIos = Device.isIosIdentity(d.serial);
+    final pages = NavItem.availableTo(devices.capabilitiesFor(d.serial))
+        .where((item) => item != NavItem.info);
+    final iosTransport = isIos
+        ? devices.transportSummariesFor(d.serial).firstOrNull?.type
+        : null;
     // SavedDevice.serial is the stable identity (ro.serialno, e.g.
     // 'R5CT70AHPDR'); its current Wi-Fi transport (if any) lives on
     // the DeviceProvider's online list. We must NOT gate the
@@ -1492,13 +1507,15 @@ class _DeviceTreeArea extends StatelessWidget {
               ? theme.colorScheme.primaryContainer.withAlpha(80)
               : Colors.transparent,
           child: InkWell(
-            onTap: () => onToggleExpand(d.serial),
+            onTap: pages.isEmpty ? null : () => onToggleExpand(d.serial),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               child: Row(
                 children: [
                   Icon(
-                    isExpanded ? Icons.expand_more : Icons.chevron_right,
+                    pages.isEmpty
+                        ? Icons.phone_iphone
+                        : (isExpanded ? Icons.expand_more : Icons.chevron_right),
                     size: 18,
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
@@ -1512,6 +1529,18 @@ class _DeviceTreeArea extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 8),
+                  if (iosTransport != null) ...[
+                    Icon(
+                      switch (iosTransport) {
+                        DeviceTransportType.wifi => Icons.wifi,
+                        DeviceTransportType.usb => Icons.usb,
+                        _ => Icons.phone_iphone,
+                      },
+                      size: 14,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 4),
+                  ],
                   Expanded(
                     child: Text(
                       d.displayName,
@@ -1570,9 +1599,7 @@ class _DeviceTreeArea extends StatelessWidget {
           ),
         ),
         if (isExpanded)
-          ...NavItem.availableTo(devices.capabilitiesFor(d.serial))
-              .where((item) => item != NavItem.info)
-              .map((item) => _buildFunctionItem(context, d, item, theme)),
+          ...pages.map((item) => _buildFunctionItem(context, d, item, theme)),
       ],
     );
   }

@@ -69,8 +69,19 @@ HTTP 状态码含义：
 - `model`：设备型号。
 - `brand`：设备品牌。
 - `sdk`：Android SDK 版本。
-- `platform`：设备平台，当前为 `android`。
+- `platform`：设备平台，当前为 `android` 或 `ios`。
+- `transport`：iOS 当前连接类型，`usb` 或 `wifi`。同一台 iPhone 双连时优先报告 USB，拔线后若无线仍在线，稳定标识不变。
+- iOS 的 `serial` 和 `hardwareSerial` 均为 `ios:<UDID>`。Android 字段语义保持兼容。
+- iOS 当前声明 `crashReports` 能力。
 - `capabilities`：设备后端支持的功能名列表。Android 当前声明 `deviceStatus`、`deviceInfo`、`liveLogs`、`files`、`apps`、`clipboard`、`viewHierarchy`、`adbCommands`、`testSession`、`screenMirror`、`screenshot`。连接状态由 `state` 单独表示。
+
+`GET /api/ios/crash-reports?serial=ios:<UDID>`
+
+返回顶层 `.ips`、`.crash`、`.panic` 报告文件名数组。
+
+`GET /api/ios/crash-report?serial=ios:<UDID>&name=<文件名>`
+
+下载单份原始报告，响应为 `application/octet-stream`，手机保留原件。
 
 `GET /api/adb-path`
 

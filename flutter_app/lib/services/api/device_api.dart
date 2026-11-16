@@ -21,6 +21,21 @@ mixin DeviceApi on ApiBase {
     return list.map((e) => Device.fromJson(asMap(e))).toList();
   }
 
+  Future<List<String>> getIOSCrashReports(String serial) async {
+    final response = await dio.get('/api/ios/crash-reports',
+        queryParameters: deviceQueryParameters(serial));
+    throwIfNotOk(response);
+    return asList(responseData(response)).cast<String>();
+  }
+
+  Future<List<int>> getIOSCrashReport(String serial, String name) async {
+    final response = await dio.get<List<int>>('/api/ios/crash-report',
+        queryParameters: deviceQueryParameters(serial, {'name': name}),
+        options: Options(responseType: ResponseType.bytes));
+    throwIfNotOk(response);
+    return response.data!;
+  }
+
   Future<List<String>> getRunningPackages(String serial) async {
     final resp = await dio.get(
       '/api/running-packages',

@@ -10,10 +10,10 @@ Flutter 复用设备列表、导航、测试会话和附件导出。Go 后端按
 
 ## 第二阶段 · iOS 真机
 
-iOS 真机统一使用 `pymobiledevice3`。安装包附带预打包的 CLI 和 Python 运行时，Go 后端通过安装目录里与后端相邻的可执行文件调用 CLI。首版通过 USB 连接。Windows 按上游要求配置 Apple Mobile Device Service，并单独验证连接。 [上游安装与平台说明](https://doronz88.github.io/pymobiledevice3/installation/)
+iOS 真机统一使用 `pymobiledevice3`。安装包附带预打包的 CLI 和 Python 运行时，Go 后端通过安装目录里与后端相邻的可执行文件调用 CLI。本地开发可用 `ADB_TOOL_PYMOBILEDEVICE3` 指定 CLI 的绝对路径。设备发现支持 USB 和 Apple Mobile Device Service 已发现的无线设备。 [上游安装与平台说明](https://doronz88.github.io/pymobiledevice3/latest/installation/)
 
 1. 用 `usbmux list` 发现设备，用 `crash ls` 查看报告，用 `crash pull` 导出选中的原始报告并保留手机上的副本。先走通「发现 iPhone → 查看崩溃报告 → 附到测试问题」。 [崩溃报告命令](https://doronz88.github.io/pymobiledevice3/latest/cli/crash/)
-2. 聚合 Android 和 iOS 设备列表，按目标设备分派操作。同一台 iPhone 按 UDID 识别，用带类型的稳定 ID 区分真机和模拟器，保留历史 Android 主键。入库时记录平台及已知能力，以支持离线导航。后端按设备身份和能力校验请求。
+2. 聚合 Android 和 iOS 设备列表。同一台 iPhone 使用 `ios:<UDID>` 作为稳定标识，双连优先显示 USB，拔线后若无线仍在线则沿用同一条记录。后续开放设备操作时，按稳定标识分派，并保存离线导航需要的能力。Android 主键保持兼容。
 3. 用 QA 实际使用的 iOS 版本和安装包验证实时日志、截图和 App 容器访问，再开放相应入口。日志保留原文，文件入口按目标 App 可访问范围提供。录屏先支持导入并保留实际文件格式。工具内录屏单独验证屏幕流的系统要求和输出格式。 [日志、截图和屏幕流命令](https://doronz88.github.io/pymobiledevice3/guides/cli-recipes/)
 
 `pymobiledevice3` 使用 GPL-3.0-or-later。桌面安装包以独立 CLI 交付，并附上 `pymobiledevice3-source.zip`，包含相关源码、许可文件、依赖版本和构建脚本。 [上游许可说明](https://github.com/doronz88/pymobiledevice3/blob/master/docs/index.md#license-and-credits)

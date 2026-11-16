@@ -2,6 +2,15 @@
 part of 'package:adb_tool/i18n.dart';
 
 const _locSidebarZh = <String, String>{
+  'iosCrashReports': '崩溃报告',
+  'iosCrashReportsOffline': 'iPhone 当前离线',
+  'iosCrashReportsLoadFailed': '无法读取崩溃报告',
+  'iosCrashReportsEmpty': '没有可用的崩溃报告',
+  'iosCrashReportSave': '保存原始报告',
+  'iosCrashReportAttach': '附到测试问题',
+  'iosCrashReportNoIssues': '还没有可添加附件的测试问题',
+  'iosCrashReportAttached': '已添加崩溃报告附件',
+  'iosCrashReportActionFailed': '无法处理崩溃报告',
   'title': 'ADB 工具',
   'devices': '设备',
   'tools': '工具',
@@ -125,6 +134,15 @@ const _locSidebarZh = <String, String>{
 };
 
 const _locSidebarEn = <String, String>{
+  'iosCrashReports': 'Crash reports',
+  'iosCrashReportsOffline': 'iPhone is offline',
+  'iosCrashReportsLoadFailed': 'Could not list crash reports',
+  'iosCrashReportsEmpty': 'No crash reports available',
+  'iosCrashReportSave': 'Save original report',
+  'iosCrashReportAttach': 'Attach to test issue',
+  'iosCrashReportNoIssues': 'No test issues available for this attachment',
+  'iosCrashReportAttached': 'Crash report attached',
+  'iosCrashReportActionFailed': 'Could not process crash report',
   'title': 'ADB Tool',
   'devices': 'Devices',
   'tools': 'Tools',

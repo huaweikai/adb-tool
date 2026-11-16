@@ -118,6 +118,37 @@ class TestSessionsDao extends DatabaseAccessor<AppDatabase>
         .getSingleOrNull();
   }
 
+  Future<List<({TestSessionIssueRow issue, TestSessionRow session})>>
+      issueAttachmentTargets() async {
+    final query = select(testSessionIssues).join([
+      innerJoin(
+          testSessions, testSessions.id.equalsExp(testSessionIssues.sessionId)),
+    ])
+      ..orderBy([OrderingTerm.desc(testSessionIssues.createdAt)]);
+    return query
+        .map((row) => (
+              issue: row.readTable(testSessionIssues),
+              session: row.readTable(testSessions),
+            ))
+        .get();
+  }
+
+  Future<void> insertIssueReport(
+    String issueId,
+    String sessionId,
+    TestSessionArtifactsCompanion report,
+  ) async {
+    await transaction(() async {
+      final issue = await (select(testSessionIssues)
+            ..where((row) =>
+                row.id.equals(issueId) & row.sessionId.equals(sessionId)))
+          .getSingleOrNull();
+      if (issue == null) throw StateError('Test issue is unavailable');
+      await insertArtifact(report);
+      await linkIssueArtifact(issueId, report.id.value);
+    });
+  }
+
   /// All artifact rows linked to one issue (via the m:n table). Used by
   /// the "related artifacts" preview on the issue card.
   Future<List<TestSessionArtifactRow>> findArtifactsForIssue(

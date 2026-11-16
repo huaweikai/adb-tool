@@ -9,10 +9,23 @@ enum DeviceCapability {
   adbCommands,
   testSession,
   screenMirror,
-  screenshot;
+  screenshot,
+  crashReports;
 
   // Default for older backends and Android rows saved while offline.
-  static const androidDefaults = {...DeviceCapability.values};
+  static const androidDefaults = {
+    deviceStatus,
+    deviceInfo,
+    liveLogs,
+    files,
+    apps,
+    clipboard,
+    viewHierarchy,
+    adbCommands,
+    testSession,
+    screenMirror,
+    screenshot,
+  };
 }
 
 /// One row from `GET /api/devices`. Carries two distinct identifiers
@@ -32,7 +45,11 @@ enum DeviceCapability {
 ///                         props (e.g. unauthorized devices); the
 ///                         reconcile logic treats that as "no match
 ///                         by hardware" and falls back to adb-serial.
+/// iOS uses the same namespaced UDID for both identifiers and reports the
+/// current connection separately in [transport].
 class Device {
+  static bool isIosIdentity(String serial) => serial.startsWith('ios:');
+
   final String serial;
   final String hardwareSerial;
   final String state;
@@ -40,6 +57,7 @@ class Device {
   final String brand;
   final String sdk;
   final String platform;
+  final String? transport;
   final Set<DeviceCapability> capabilities;
 
   const Device({
@@ -50,6 +68,7 @@ class Device {
     this.brand = '',
     this.sdk = '',
     this.platform = 'android',
+    this.transport,
     Set<DeviceCapability>? capabilities,
   }) : capabilities = capabilities ??
             (platform == 'android'
@@ -67,6 +86,7 @@ class Device {
       brand: json['brand'] ?? '',
       sdk: json['sdk'] ?? '',
       platform: platform,
+      transport: json['transport'] as String?,
       capabilities: advertised is List
           ? Set.unmodifiable(DeviceCapability.values
               .where((capability) => advertised.contains(capability.name)))

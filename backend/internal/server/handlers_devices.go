@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"net/http"
+	"slices"
 	"time"
 )
 
@@ -12,11 +13,16 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 	Log.Add("handle devices start", "", nil, 0)
 
 	devices, err := s.deviceDiscovery.DevicesContext(r.Context())
-	if err != nil {
+	iosDevices := s.ios.snapshot()
+	if err != nil && len(iosDevices) == 0 {
 		Log.Add("handle devices error", err.Error(), err, time.Since(start))
 		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	if err != nil {
+		Log.Add("Android device discovery", err.Error(), err, time.Since(start))
+	}
+	devices = append(devices, iosDevices...)
 	if devices == nil {
 		devices = []Device{}
 	}
@@ -161,7 +167,7 @@ func (s *Server) handleDeviceWS(w http.ResponseWriter, r *http.Request) {
 	Log.Add("ws-devices", "client connected", nil, 0)
 
 	// Send current snapshot on connect so the client has a base right away.
-	if snap := s.eventStream.Snapshot(); len(snap) > 0 {
+	if snap := append(s.eventStream.Snapshot(), s.ios.snapshot()...); len(snap) > 0 {
 		Log.Add("ws-devices", fmt.Sprintf("sending snapshot: %d devices", len(snap)), nil, 0)
 		_ = conn.WriteJSON(map[string]interface{}{
 			"type":    "snapshot",
@@ -172,7 +178,7 @@ func (s *Server) handleDeviceWS(w http.ResponseWriter, r *http.Request) {
 	for change := range ch {
 		msg := map[string]interface{}{
 			"type":    "change",
-			"current": change.Current,
+			"current": append(slices.Clone(change.Current), s.ios.snapshot()...),
 			"added":   change.Added,
 			"removed": change.Removed,
 		}

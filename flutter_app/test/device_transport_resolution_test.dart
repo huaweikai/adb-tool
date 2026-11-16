@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:adb_tool/db/database.dart';
 import 'package:adb_tool/models/device.dart';
 import 'package:adb_tool/providers/device_provider.dart';
@@ -140,6 +142,31 @@ void main() {
     tearDown(() async {
       provider.dispose();
       await db.close();
+    });
+
+    test('keeps one iPhone row across USB, Wi-Fi, and offline', () async {
+      const id = 'ios:PHONE-A';
+      for (final transport in ['usb', 'wifi']) {
+        await provider.refresh(_DevicesApi([
+          Device.fromJson({
+            'serial': id,
+            'hardwareSerial': id,
+            'state': 'device',
+            'platform': 'ios',
+            'transport': transport,
+            'capabilities': [],
+          }),
+        ]));
+        expect(provider.savedDevices.single.serial, id);
+        expect(provider.savedDevices.single.isConnected, isTrue);
+        expect(provider.transportSummariesFor(id).single.type.name, transport);
+        expect(provider.hasWifiTransport(id), isFalse);
+        expect(provider.wifiTransportFor(id), isNull);
+      }
+      await provider.refresh(_DevicesApi([]));
+      expect(provider.savedDevices.single.serial, id);
+      expect(provider.savedDevices.single.isConnected, isFalse);
+      expect(provider.capabilitiesFor(id), isEmpty);
     });
 
     test(
@@ -339,9 +366,9 @@ void main() {
         () async {
       final db = AppDatabase.forTesting(NativeDatabase.memory());
       final provider = DeviceProvider(db: db);
-      final dio = _CaptureDio();
+      final capture = _CaptureAdapter();
       final api = ApiClient('http://localhost:9876',
-          dio: dio, deviceProvider: provider);
+          dio: capture.createDio(), deviceProvider: provider);
 
       addTearDown(() async {
         provider.dispose();
@@ -363,17 +390,17 @@ void main() {
 
       await api.getDeviceStatus('R5CT70AHPDR');
 
-      expect(dio.lastPath, '/api/device-status');
-      expect(dio.lastQueryParameters?['serial'], 'R5CT70AHPDR');
+      expect(capture.lastPath, '/api/device-status');
+      expect(capture.lastQueryParameters?['serial'], 'R5CT70AHPDR');
     });
 
     test('throws local offline exception instead of using stale saved address',
         () async {
       final db = AppDatabase.forTesting(NativeDatabase.memory());
       final provider = DeviceProvider(db: db);
-      final dio = _CaptureDio();
+      final capture = _CaptureAdapter();
       final api = ApiClient('http://localhost:9876',
-          dio: dio, deviceProvider: provider);
+          dio: capture.createDio(), deviceProvider: provider);
 
       addTearDown(() async {
         provider.dispose();
@@ -390,11 +417,12 @@ void main() {
       );
       await Future<void>.delayed(Duration.zero);
 
-      expect(
-        () => api.getDeviceStatus('R5CT70AHPDR'),
-        throwsA(isA<DeviceOfflineException>()),
+      await expectLater(
+        api.getDeviceStatus('R5CT70AHPDR'),
+        throwsA(isA<DioException>().having(
+            (error) => error.error, 'error', isA<DeviceOfflineException>())),
       );
-      expect(dio.lastPath, isNull);
+      expect(capture.lastPath, isNull);
     });
 
     test(
@@ -409,9 +437,9 @@ void main() {
       // new adb-serial — screens never see the churn.
       final db = AppDatabase.forTesting(NativeDatabase.memory());
       final provider = DeviceProvider(db: db);
-      final dio = _CaptureDio();
+      final capture = _CaptureAdapter();
       final api = ApiClient('http://localhost:9876',
-          dio: dio, deviceProvider: provider);
+          dio: capture.createDio(), deviceProvider: provider);
 
       addTearDown(() async {
         provider.dispose();
@@ -427,7 +455,7 @@ void main() {
         ),
       ]));
       await api.getDeviceStatus('R5CT70AHPDR');
-      expect(dio.lastQueryParameters?['serial'], '192.168.1.5:42187');
+      expect(capture.lastQueryParameters?['serial'], '192.168.1.5:42187');
 
       // Second poll: device reconnect on a new port. Frontend keeps
       // handing the same stable identity to the API; backend now
@@ -440,7 +468,7 @@ void main() {
         ),
       ]));
       await api.getDeviceStatus('R5CT70AHPDR');
-      expect(dio.lastQueryParameters?['serial'], '192.168.1.5:55555');
+      expect(capture.lastQueryParameters?['serial'], '192.168.1.5:55555');
     });
   });
 }
@@ -457,34 +485,28 @@ class _DevicesApi extends ApiClient {
   Future<List<Device>> getDevices() async => result;
 }
 
-class _CaptureDio extends DioForNative {
+class _CaptureAdapter implements HttpClientAdapter {
   String? lastPath;
   Map<String, dynamic>? lastQueryParameters;
 
-  _CaptureDio() : super(BaseOptions(baseUrl: 'http://localhost:9876'));
+  Dio createDio() => Dio(BaseOptions(baseUrl: 'http://localhost:9876'))
+    ..httpClientAdapter = this;
 
   @override
-  Future<Response<T>> get<T>(
-    String path, {
-    Object? data,
-    Map<String, dynamic>? queryParameters,
-    Options? options,
-    CancelToken? cancelToken,
-    ProgressCallback? onReceiveProgress,
-  }) async {
-    lastPath = path;
-    lastQueryParameters = Map<String, dynamic>.from(queryParameters ?? {});
-    return Response<T>(
-      requestOptions: RequestOptions(path: path),
-      statusCode: 200,
-      data: {
-        'ok': true,
-        'data': {
-          'status': {
-            'topProcesses': [],
-          },
-        },
-      } as T,
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    lastPath = options.path;
+    lastQueryParameters = Map<String, dynamic>.of(options.queryParameters);
+    return ResponseBody.fromString(
+      '{"ok":true,"data":{"status":{"topProcesses":[]}}}',
+      200,
+      headers: {Headers.contentTypeHeader: [Headers.jsonContentType]},
     );
   }
+
+  @override
+  void close({bool force = false}) {}
 }
