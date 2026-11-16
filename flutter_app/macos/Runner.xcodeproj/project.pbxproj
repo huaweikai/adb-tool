@@ -334,6 +334,7 @@
 		};
 		AABB00010000000000ADBTOOL01 /* Copy adb-tool */ = {
 			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
 			files = (
 			);

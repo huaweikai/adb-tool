@@ -130,17 +130,8 @@ build_go_backend() {
     warn "adb-tool 签名失败，Flutter 首次构建可能会拒绝；如果出现 codesign 报错，重跑一次"
   fi
 
-  # ALSO copy into Flutter's Debug .app bundle so `flutter run --debug`
-  # actually launches the freshly built binary.
-  #
-  # Why: server_launcher.findServerBinary() looks for the backend first at
-  # $executableDir/adb-tool, which is
-  # <app>.app/Contents/MacOS/adb-tool. macos/Runner/adb-tool is the *source*
-  # location that Flutter's build pipeline normally copies into the bundle —
-  # but only when Flutter itself detects the source has changed. After a bare
-  # `go build -o` the bundle copy goes stale silently, and the running app
-  # keeps launching the old backend → debugging log lines / fixes that you
-  # know are in the source don't show up.
+  # Also refresh an existing Debug bundle for --build-only. When Xcode builds
+  # the Flutter target, its Copy adb-tool phase synchronizes Runner/adb-tool.
   #
   # We re-sign because macOS will reject a non-adhoc-signed binary from being
   # loaded as a child process of the codesigned .app.
