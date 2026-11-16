@@ -24,6 +24,9 @@ type Server struct {
 	webFS    fs.FS
 	upgrader websocket.Upgrader
 
+	deviceDiscovery    deviceDiscovery
+	screenshotCapturer screenshotCapturer
+
 	clipboardApk []byte
 
 	recordMu        sync.Mutex
@@ -70,6 +73,9 @@ func New(adbPath string, webFS fs.FS, clipboardApk []byte, scrcpyFS embed.FS) *S
 	adb.DiagnoseStartup()
 
 	s := &Server{
+		deviceDiscovery:    adb,
+		screenshotCapturer: adb,
+
 		adb:           adb,
 		webFS:         webFS,
 		clipboardApk:  clipboardApk,

@@ -1,3 +1,20 @@
+enum DeviceCapability {
+  deviceStatus,
+  deviceInfo,
+  liveLogs,
+  files,
+  apps,
+  clipboard,
+  viewHierarchy,
+  adbCommands,
+  testSession,
+  screenMirror,
+  screenshot;
+
+  // Default for older backends and Android rows saved while offline.
+  static const androidDefaults = {...DeviceCapability.values};
+}
+
 /// One row from `GET /api/devices`. Carries two distinct identifiers
 /// because adb identifies devices by transient address (ip:port for
 /// wireless, transport-id for USB) while the rest of the app —
@@ -22,6 +39,8 @@ class Device {
   final String model;
   final String brand;
   final String sdk;
+  final String platform;
+  final Set<DeviceCapability> capabilities;
 
   const Device({
     required this.serial,
@@ -30,9 +49,16 @@ class Device {
     this.model = '',
     this.brand = '',
     this.sdk = '',
-  });
+    this.platform = 'android',
+    Set<DeviceCapability>? capabilities,
+  }) : capabilities = capabilities ??
+            (platform == 'android'
+                ? DeviceCapability.androidDefaults
+                : const {});
 
   factory Device.fromJson(Map<String, dynamic> json) {
+    final platform = json['platform'] as String? ?? 'android';
+    final advertised = json['capabilities'];
     return Device(
       serial: json['serial'] ?? '',
       hardwareSerial: json['hardwareSerial'] ?? '',
@@ -40,6 +66,11 @@ class Device {
       model: json['model'] ?? '',
       brand: json['brand'] ?? '',
       sdk: json['sdk'] ?? '',
+      platform: platform,
+      capabilities: advertised is List
+          ? Set.unmodifiable(DeviceCapability.values
+              .where((capability) => advertised.contains(capability.name)))
+          : null,
     );
   }
 

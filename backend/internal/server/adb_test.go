@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -108,6 +109,7 @@ exit 0
 
 func TestDevicesSkipsPropsForDisconnectedStates(t *testing.T) {
 	adbPath := writeFakeAdb(t, `#!/bin/sh
+printf '%s\n' "$*" >> "$ADB_FAKE_LOG"
 if [ "$1" = "devices" ]; then
   printf 'List of devices attached\n'
   printf 'offline-serial\toffline product:test model:Offline device:test\n'
@@ -135,6 +137,11 @@ exit 1
 	}
 	if len(devices) != 3 {
 		t.Fatalf("expected 3 devices, got %d", len(devices))
+	}
+	for _, device := range devices {
+		if device.Platform != "android" || !slices.Contains(device.Capabilities, capabilityScreenshot) {
+			t.Fatalf("missing Android capability metadata: %+v", device)
+		}
 	}
 	if devices[0].Model != "" || devices[1].Model != "" {
 		t.Fatalf("disconnected devices should not load props: %+v", devices[:2])

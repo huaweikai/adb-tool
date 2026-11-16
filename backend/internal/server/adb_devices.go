@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -27,6 +28,13 @@ const (
 	//                                     reconnects.
 	devicePropsShellCmd = "getprop ro.product.model; getprop ro.product.brand; getprop ro.build.version.sdk; getprop ro.serialno"
 )
+
+var adbCapabilities = []DeviceCapability{
+	capabilityDeviceStatus, capabilityDeviceInfo, capabilityLiveLogs,
+	capabilityFiles, capabilityApps, capabilityClipboard, capabilityViewHierarchy,
+	capabilityAdbCommands, capabilityTestSession, capabilityScreenMirror,
+	capabilityScreenshot,
+}
 
 func (m *AdbManager) Devices() ([]Device, error) {
 	return m.DevicesContext(context.Background())
@@ -52,6 +60,10 @@ func (m *AdbManager) DevicesContext(ctx context.Context) ([]Device, error) {
 
 	devices := parseDeviceLines(out)
 	m.enrichDevicesProps(devices)
+	for i := range devices {
+		devices[i].Platform = "android"
+		devices[i].Capabilities = slices.Clone(adbCapabilities)
+	}
 	return devices, nil
 }
 

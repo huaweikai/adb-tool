@@ -12,7 +12,7 @@ func (s *Server) handleScreenshot(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, "serial required")
 		return
 	}
-	data, err := s.adb.Screenshot(serial)
+	data, err := s.screenshotCapturer.CaptureScreenshot(r.Context(), serial)
 	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return

@@ -111,7 +111,11 @@ func (m *AdbManager) runRawContextInner(ctx context.Context, logErrors bool, arg
 }
 
 func (m *AdbManager) runOut(args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultAdbCommandTimeout)
+	return m.runOutContext(context.Background(), args...)
+}
+
+func (m *AdbManager) runOutContext(ctx context.Context, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultAdbCommandTimeout)
 	defer cancel()
 
 	start := time.Now()

@@ -69,6 +69,8 @@ HTTP 状态码含义：
 - `model`：设备型号。
 - `brand`：设备品牌。
 - `sdk`：Android SDK 版本。
+- `platform`：设备平台，当前为 `android`。
+- `capabilities`：设备后端支持的功能名列表。Android 当前声明 `deviceStatus`、`deviceInfo`、`liveLogs`、`files`、`apps`、`clipboard`、`viewHierarchy`、`adbCommands`、`testSession`、`screenMirror`、`screenshot`。连接状态由 `state` 单独表示。
 
 `GET /api/adb-path`
 

@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../db/database.dart';
 import '../db/dao/saved_devices_dao.dart';
 import '../services/drop_target.dart';
+import '../models/device.dart';
 import '../models/file_item.dart';
 import '../services/api_client.dart';
 import '../i18n.dart';
@@ -986,6 +987,10 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
   Widget _buildPathBar() {
     final theme = Theme.of(context);
     final parts = _currentPath.split('/').where((p) => p.isNotEmpty).toList();
+    final canScreenshot = context.select<DeviceProvider, bool>(
+      (devices) =>
+          devices.capabilitiesFor(serial).contains(DeviceCapability.screenshot),
+    );
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
@@ -1064,27 +1069,31 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
           ),
           const SizedBox(width: 4),
           isTransferring ? const SizedBox(width: 80) : buildRecordingButton(),
-          const SizedBox(width: 4),
-          FilledButton.tonal(
-            onPressed: screenshotting || isTransferring ? null : takeScreenshot,
-            style: FilledButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              textStyle: const TextStyle(fontSize: 12),
+          if (canScreenshot) ...[
+            const SizedBox(width: 4),
+            FilledButton.tonal(
+              onPressed:
+                  screenshotting || isTransferring ? null : takeScreenshot,
+              style: FilledButton.styleFrom(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                textStyle: const TextStyle(fontSize: 12),
+              ),
+              child: screenshotting
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.camera_alt, size: 16),
+                        const SizedBox(width: 4),
+                        Text(tr('screenshot')),
+                      ],
+                    ),
             ),
-            child: screenshotting
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2))
-                : Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.camera_alt, size: 16),
-                      const SizedBox(width: 4),
-                      Text(tr('screenshot')),
-                    ],
-                  ),
-          ),
+          ],
           const SizedBox(width: 4),
           FilledButton.tonal(
             onPressed: isTransferring ? null : _uploadFile,

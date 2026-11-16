@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../db/database.dart';
+import '../models/device.dart';
 import '../services/api_client.dart';
 import '../services/device_stream.dart';
 import '../providers/theme_provider.dart';
@@ -35,16 +36,23 @@ import 'emulator_settings_screen.dart';
 import 'settings_screen.dart';
 
 enum NavItem {
-  status,
-  logcat,
-  files,
-  apps,
-  info,
-  clipboard,
-  hierarchy,
-  command,
-  session,
-  mirror,
+  status(DeviceCapability.deviceStatus),
+  logcat(DeviceCapability.liveLogs),
+  files(DeviceCapability.files),
+  apps(DeviceCapability.apps),
+  info(DeviceCapability.deviceInfo),
+  clipboard(DeviceCapability.clipboard),
+  hierarchy(DeviceCapability.viewHierarchy),
+  command(DeviceCapability.adbCommands),
+  session(DeviceCapability.testSession),
+  mirror(DeviceCapability.screenMirror);
+
+  const NavItem(this.capability);
+
+  final DeviceCapability capability;
+
+  static Iterable<NavItem> availableTo(Set<DeviceCapability> capabilities) =>
+      values.where((item) => capabilities.contains(item.capability));
 }
 
 const _navConfig = {
@@ -261,7 +269,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       } else {
         _expandedSerials.add(serial);
         if (_screens.isEmpty) {
-          _navigateTo(serial, NavItem.status);
+          final firstPage = _defaultPageFor(serial);
+          if (firstPage != null) _navigateTo(serial, firstPage);
         }
       }
     });
@@ -270,8 +279,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   static const int _maxCachedScreens = 20;
 
+  NavItem? _defaultPageFor(String serial) {
+    final capabilities = context.read<DeviceProvider>().capabilitiesFor(serial);
+    return NavItem.availableTo(capabilities).firstOrNull;
+  }
+
   void _navigateTo(String serial, NavItem item) {
-    context.read<DeviceProvider>().select(serial);
+    final devices = context.read<DeviceProvider>();
+    if (!devices.capabilitiesFor(serial).contains(item.capability)) return;
+    devices.select(serial);
     final key = '${serial}_${item.name}';
     if (!_screens.containsKey(key)) {
       Widget screen;
@@ -414,7 +430,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     // Find the NavItem
     final navItem =
         NavItem.values.where((item) => item.name == itemName).firstOrNull;
-    if (navItem == null) return;
+    final capabilities = context.read<DeviceProvider>().capabilitiesFor(serial);
+    final supportedItems = NavItem.availableTo(capabilities);
+    final restoredItem =
+        supportedItems.contains(navItem) ? navItem : supportedItems.firstOrNull;
+    if (restoredItem == null) return;
 
     // Expand the device in sidebar
     if (!_expandedSerials.contains(serial)) {
@@ -424,7 +444,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
 
     // Navigate to the page
-    _navigateTo(serial, navItem);
+    _navigateTo(serial, restoredItem);
   }
 
   @override
@@ -492,12 +512,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   void _openCommandPalette() {
-    final devices = context.read<DeviceProvider>().savedDevices;
+    final devices = context.read<DeviceProvider>();
     final list = <PaletteItem>[];
 
     // Per-device function pages
-    for (final device in devices) {
-      for (final item in NavItem.values) {
+    for (final device in devices.savedDevices) {
+      for (final item
+          in NavItem.availableTo(devices.capabilitiesFor(device.serial))) {
         final icon = _navConfig[item]!.icon;
         list.add(PaletteItem(
           title: navLabel(item),
@@ -850,11 +871,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   // _persistState (previously each helper triggered its own — two DB writes
   // per tap, plus a brief inconsistent intermediate frame).
   void _collapsedDeviceTap(String serial) {
-    if (_expandedSerials.isEmpty) {
-      // First device ever: expand + auto-navigate to status so the user
-      // immediately has something on screen (matches old _toggleExpand).
+    final firstPage = _expandedSerials.isEmpty ? _defaultPageFor(serial) : null;
+    if (firstPage != null) {
       setState(() => _sidebarCollapsed = false);
-      _navigateTo(serial, NavItem.status);
+      _navigateTo(serial, firstPage);
       return;
     }
     setState(() {
@@ -1452,6 +1472,7 @@ class _DeviceTreeArea extends StatelessWidget {
 
   Widget _buildDeviceNode(
       BuildContext context, SavedDevice d, ThemeData theme) {
+    final devices = context.read<DeviceProvider>();
     final isExpanded = expandedSerials.contains(d.serial);
     final hasActiveScreen = activeDeviceSerials.contains(d.serial);
     final isConnected = d.isConnected;
@@ -1461,7 +1482,7 @@ class _DeviceTreeArea extends StatelessWidget {
     // disconnect button on the serial string itself (e.g. `contains(':')`)
     // — the stable identity never contains ':' once the row is
     // upgraded past v9 migration, so the button would vanish.
-    final hasWifi = context.read<DeviceProvider>().hasWifiTransport(d.serial);
+    final hasWifi = devices.hasWifiTransport(d.serial);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1549,7 +1570,7 @@ class _DeviceTreeArea extends StatelessWidget {
           ),
         ),
         if (isExpanded)
-          ...NavItem.values
+          ...NavItem.availableTo(devices.capabilitiesFor(d.serial))
               .where((item) => item != NavItem.info)
               .map((item) => _buildFunctionItem(context, d, item, theme)),
       ],

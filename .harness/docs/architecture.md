@@ -105,7 +105,8 @@
 | scrcpy | `backend/internal/server/adb_scrcpy.go` + `scrcpy_binary.go` + `scrcpy_options.go` + `adb_scrcpy_{darwin,windows}.go` |
 | 剪贴板 | `backend/internal/server/adb_clipboard.go` |
 | 通用 adb exec | `backend/internal/server/adb_exec.go` |
-| 公共类型 | `backend/internal/server/adb_types.go` |
+| 设备接口与能力 | `backend/internal/server/device_backend.go` |
+| ADB 日志、文件和包类型 | `backend/internal/server/adb_types.go` |
 | 路由 handler | `backend/internal/server/handlers_{devices,files,packages,screen,scrcpy,logcat,clipboard,wireless,emulator,meta}.go` |
 | 模拟器后端 | `handlers_emulator.go` + `main.go` 的 `srv.InitEmulator()` |
 | 中间件 / 日志中间件 | `logging_middleware.go` |

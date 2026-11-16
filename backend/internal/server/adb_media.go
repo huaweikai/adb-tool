@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -18,8 +19,8 @@ const recordedVideoPath = "/sdcard/adb-tool-record.mp4"
 // "too short" UX.
 const minViableVideoSize = 1 * 1024
 
-func (m *AdbManager) Screenshot(serial string) ([]byte, error) {
-	return m.runOut("-s", serial, "exec-out", "screencap", "-p")
+func (m *AdbManager) CaptureScreenshot(ctx context.Context, serial string) ([]byte, error) {
+	return m.runOutContext(ctx, "-s", serial, "exec-out", "screencap", "-p")
 }
 
 func (m *AdbManager) StartScreenRecord(serial string) error {

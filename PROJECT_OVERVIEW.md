@@ -64,7 +64,8 @@
 │       ├── log_stream.go               # WebSocket /ws/logs
 │       ├── session_logcat.go           # 会话绑定 logcat
 │       ├── adb.go / adb_binary.go      # ADB 二进制查找、提取、chmod
-│       ├── adb_types.go                # Device / FileItem / 公共结构体
+│       ├── device_backend.go           # 设备发现、截图接口及设备能力模型
+│       ├── adb_types.go                # ADB 日志、文件和包结构体
 │       ├── adb_devices.go              # 设备列表 (adb devices -l)
 │       ├── adb_status.go               # 设备状态 (getprop / 实时指标)
 │       ├── adb_files.go                # 文件操作 (ls/cat/pull/push)
@@ -444,7 +445,8 @@ export ANDROID_HOME="$HOME/Library/Android/sdk"
 - `adb_scrcpy.go` / `scrcpy_binary.go` / `scrcpy_options.go` — `StartScrcpy()` / `StopScrcpy()` / `ScrcpyStatus()` / `ScrcpyShortcut()`，提取内置 scrcpy 并转换用户配置为命令行参数
 - `adb_clipboard.go` — `InstallClipboardHelper()` / `SendClipboard()` / `IsClipboardHelperInstalled()` / `UninstallClipboardHelper()`
 - `adb_exec.go` — `Shell()` 通用 shell 命令 / `ExecAdb()` 透传任意 ADB 命令
-- `adb_types.go` — Device / FileItem / 公共结构体定义
+- `device_backend.go` — 设备发现和截图接口，定义设备与能力字段。参见 [Android 与 iOS 设备接入方案](docs/DEVICE_BACKEND_PLAN.md)。
+- `adb_types.go` — ADB 日志、文件和包结构体。
 
 每个 `adb_xxx.go` 配套 `adb_xxx_test.go` 单元测试。
 

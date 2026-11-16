@@ -172,6 +172,20 @@ class DeviceProvider extends ChangeNotifier {
     return transports;
   }
 
+  Set<DeviceCapability> capabilitiesFor(String? stableSerial) {
+    if (stableSerial == null) return const {};
+    final device = transportsFor(stableSerial).firstOrNull ??
+        _onlineDevices
+            .where((d) => d.matchesIdentity(stableSerial))
+            .firstOrNull;
+    if (device != null) return device.capabilities;
+    // Persisted devices are Android. Record platform and last known
+    // capabilities before persisting devices from another backend.
+    return _savedDevices.any((d) => d.serial == stableSerial)
+        ? DeviceCapability.androidDefaults
+        : const {};
+  }
+
   List<DeviceTransportSummary> transportSummariesFor(String stableSerial) {
     return transportsFor(stableSerial)
         .map((d) => DeviceTransportSummary(

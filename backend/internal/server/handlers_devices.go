@@ -11,7 +11,7 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	Log.Add("handle devices start", "", nil, 0)
 
-	devices, err := s.adb.DevicesContext(r.Context())
+	devices, err := s.deviceDiscovery.DevicesContext(r.Context())
 	if err != nil {
 		Log.Add("handle devices error", err.Error(), err, time.Since(start))
 		writeAPIError(w, http.StatusInternalServerError, err.Error())

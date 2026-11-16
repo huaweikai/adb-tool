@@ -10,6 +10,7 @@ import 'package:provider/provider.dart';
 import '../../db/database.dart';
 import '../../db/dao/saved_devices_dao.dart';
 import '../../i18n.dart';
+import '../../models/device.dart';
 import '../../models/test_session.dart';
 import '../../providers/device_provider.dart';
 import '../../providers/locale_provider.dart';
@@ -155,8 +156,11 @@ class _TestSessionActiveContentState extends State<TestSessionActiveContent>
     final theme = Theme.of(context);
     // Watch device connection so every toolbar button rebuilds with the
     // correct enabled state when the device goes online/offline.
-    final isOnline = currentSerial != null &&
-        context.watch<DeviceProvider>().isDeviceConnected(currentSerial);
+    final devices = context.watch<DeviceProvider>();
+    final isOnline = devices.isDeviceConnected(currentSerial);
+    final canScreenshot = devices
+        .capabilitiesFor(currentSerial)
+        .contains(DeviceCapability.screenshot);
 
     if (session == null || session.id != widget.resumeSessionId) {
       return const Center(child: CircularProgressIndicator());
@@ -249,7 +253,8 @@ class _TestSessionActiveContentState extends State<TestSessionActiveContent>
                         ? startRecording
                         : null),
               // Screenshot
-              _buildScreenshotButton(theme, isOnline: isOnline),
+              if (canScreenshot)
+                _buildScreenshotButton(theme, isOnline: isOnline),
               // Logcat
               if (_logcatRunning)
                 _btn(
@@ -339,8 +344,7 @@ class _TestSessionActiveContentState extends State<TestSessionActiveContent>
             child: CircularProgressIndicator(strokeWidth: 2))
         : const Icon(Icons.camera_alt_outlined, size: 14);
     return FilledButton.tonalIcon(
-      // Screenshot requires a live adb shell — gate it on isOnline so
-      // the user can't kick off a capture that will obviously fail.
+      // Screenshot requires a live device connection.
       onPressed: (screenshotting || _busy || !isOnline) ? null : takeScreenshot,
       icon: icon,
       label: Text(tr('screenshot'), style: const TextStyle(fontSize: 11)),
