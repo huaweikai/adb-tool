@@ -112,7 +112,10 @@ class DeviceProvider extends ChangeNotifier {
   Future<void>? _refreshing;
   bool _streamDirty = false;
 
-  // ── WebSocket device stream ───────────────────────────────────────
+  // Last-known capabilities per stable identity from the current session,
+  // allowing an iOS device that temporarily goes offline to retain its
+  // sidebar entries instead of collapsing to empty until reconnected.
+  final Map<String, Set<DeviceCapability>> _lastKnownCapabilities = {};
   StreamSubscription<DeviceStreamEvent>? _streamSub;
 
   // ── Offline event stream ────────────────────────────────────────────
@@ -179,6 +182,8 @@ class DeviceProvider extends ChangeNotifier {
             .where((d) => d.matchesIdentity(stableSerial))
             .firstOrNull;
     if (device != null) return device.capabilities;
+    final cached = _lastKnownCapabilities[stableSerial];
+    if (cached != null) return cached;
     // Persisted devices are Android. Record platform and last known
     // capabilities before persisting devices from another backend.
     return !Device.isIosIdentity(stableSerial) &&
@@ -408,6 +413,7 @@ class DeviceProvider extends ChangeNotifier {
     }
 
     // Clear selection if this was the active device
+    _lastKnownCapabilities.remove(serial);
     if (_activeSerial == serial) {
       _activeSerial = null;
       try {
@@ -526,6 +532,11 @@ class DeviceProvider extends ChangeNotifier {
       };
 
       _onlineDevices = devices;
+      for (final d in devices) {
+        if (d.isOnline) {
+          _lastKnownCapabilities[stableIdentityFor(d)] = d.capabilities;
+        }
+      }
       _online = true;
       _lastSuccessfulRefresh = DateTime.now();
 

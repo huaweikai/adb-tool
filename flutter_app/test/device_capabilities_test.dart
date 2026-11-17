@@ -34,5 +34,19 @@ void main() {
 
     expect(device.capabilities, isEmpty);
     expect(NavItem.availableTo(device.capabilities), isEmpty);
+    expect(NavItem.sidebarPagesFor(device.capabilities), isEmpty);
+  });
+
+  test('sidebarPagesFor excludes deviceInfo while keeping iOS pages in order', () {
+    final capabilities = {
+      DeviceCapability.deviceInfo,
+      DeviceCapability.crashReports,
+      DeviceCapability.iosLiveLogs,
+    };
+
+    expect(
+      NavItem.sidebarPagesFor(capabilities),
+      [NavItem.crashReports, NavItem.iosLogs],
+    );
   });
 }

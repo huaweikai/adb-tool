@@ -169,6 +169,32 @@ void main() {
       expect(provider.capabilitiesFor(id), isEmpty);
     });
 
+    test('retains last-known capabilities when an iOS device goes offline',
+        () async {
+      const id = 'ios:PHONE-B';
+      await provider.refresh(_DevicesApi([
+        Device.fromJson({
+          'serial': id,
+          'hardwareSerial': id,
+          'state': 'device',
+          'platform': 'ios',
+          'transport': 'usb',
+          'capabilities': ['crashReports', 'iosLiveLogs'],
+        }),
+      ]));
+      expect(
+        provider.capabilitiesFor(id),
+        {DeviceCapability.crashReports, DeviceCapability.iosLiveLogs},
+      );
+
+      await provider.refresh(_DevicesApi([]));
+      expect(provider.savedDevices.single.isConnected, isFalse);
+      expect(
+        provider.capabilitiesFor(id),
+        {DeviceCapability.crashReports, DeviceCapability.iosLiveLogs},
+      );
+    });
+
     test(
         'groups USB and Wi-Fi transports under one stable identity and prefers USB',
         () async {

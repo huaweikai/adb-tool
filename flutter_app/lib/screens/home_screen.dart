@@ -61,6 +61,10 @@ enum NavItem {
 
   static Iterable<NavItem> availableTo(Set<DeviceCapability> capabilities) =>
       values.where((item) => capabilities.contains(item.capability));
+
+  static Iterable<NavItem> sidebarPagesFor(
+          Set<DeviceCapability> capabilities) =>
+      availableTo(capabilities).where((item) => item != NavItem.info);
 }
 
 const _navConfig = {
@@ -291,7 +295,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   NavItem? _defaultPageFor(String serial) {
     final capabilities = context.read<DeviceProvider>().capabilitiesFor(serial);
-    return NavItem.availableTo(capabilities).firstOrNull;
+    return NavItem.sidebarPagesFor(capabilities).firstOrNull ??
+        NavItem.availableTo(capabilities).firstOrNull;
   }
 
   void _navigateTo(String serial, NavItem item) {
@@ -424,11 +429,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
 
     // Parse device serial and nav item from _activeKey (format: "serial_itemName")
-    final parts = _activeKey!.split('_');
-    if (parts.length < 2) return;
+    final splitIndex = _activeKey!.lastIndexOf('_');
+    if (splitIndex <= 0 || splitIndex == _activeKey!.length - 1) return;
 
-    final serial = parts.sublist(0, parts.length - 1).join('_');
-    final itemName = parts.last;
+    final serial = _activeKey!.substring(0, splitIndex);
+    final itemName = _activeKey!.substring(splitIndex + 1);
 
     // Check if the device still exists in saved devices
     final deviceExists = savedDevices.any((d) => d.serial == serial);
@@ -517,11 +522,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   void _navigateShortcut(int index) {
-    final items = NavItem.values;
-    if (index < 1 || index > items.length) return;
     final activeSerials = _expandedSerials.toList();
     if (activeSerials.isEmpty) return;
     final serial = activeSerials.last;
+    final capabilities = context.read<DeviceProvider>().capabilitiesFor(serial);
+    final items = NavItem.sidebarPagesFor(capabilities).toList(growable: false);
+    if (index < 1 || index > items.length) return;
     _navigateTo(serial, items[index - 1]);
   }
 
@@ -1489,8 +1495,7 @@ class _DeviceTreeArea extends StatelessWidget {
     final hasActiveScreen = activeDeviceSerials.contains(d.serial);
     final isConnected = d.isConnected;
     final isIos = Device.isIosIdentity(d.serial);
-    final pages = NavItem.availableTo(devices.capabilitiesFor(d.serial))
-        .where((item) => item != NavItem.info);
+    final pages = NavItem.sidebarPagesFor(devices.capabilitiesFor(d.serial));
     final iosTransport = isIos
         ? devices.transportSummariesFor(d.serial).firstOrNull?.type
         : null;
