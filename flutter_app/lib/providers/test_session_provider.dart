@@ -408,6 +408,17 @@ class TestSessionProvider extends ChangeNotifier {
     return result;
   }
 
+  Future<void> finishRunningSessionForDevice(String serial) async {
+    final session = _currentHydrated;
+    if (session == null ||
+        session.id != _activeSessionId ||
+        session.deviceSerial != serial ||
+        session.status != TestSessionStatus.running) {
+      return;
+    }
+    await finishSession();
+  }
+
   Future<TestSession> finishSession() async {
     final id = _requireActiveId();
     final now = DateTime.now();
@@ -429,10 +440,11 @@ class TestSessionProvider extends ChangeNotifier {
     if (row != null) {
       await _exporter.writeReport(row, db: _db);
     }
-    // Don't rely on _currentHydrated — it may be null if initial hydration
-    // failed while _activeSessionId was already set. Re-hydrate directly.
-    _activeSessionId = null;
-    await _refreshCurrentHydrated();
+    // The user may have opened another session while the report was written.
+    if (_activeSessionId == id) {
+      _activeSessionId = null;
+      await _refreshCurrentHydrated();
+    }
     final result = await _hydrate(id);
     if (result == null) {
       throw StateError('Session not found after finish: $id');

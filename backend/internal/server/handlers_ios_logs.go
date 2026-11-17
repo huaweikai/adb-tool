@@ -3,49 +3,12 @@ package server
 import (
 	"bufio"
 	"context"
-	"io"
 	"net/http"
-	"os"
-	"os/exec"
-	"runtime"
-	"strconv"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/gorilla/websocket"
 )
-
-func streamIOSLogs(ctx context.Context, cli, udid string, output io.Writer) error {
-	// An interrupted one-file CLI may leave its extracted runtime behind.
-	temp, err := os.MkdirTemp("", "adb-tool-ios-logs-")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(temp)
-	cmd := exec.CommandContext(ctx, cli, "syslog", "live", "--udid", udid)
-	configureScrcpySysProc(cmd)
-	cmd.Stdout = output
-	cmd.Env = append(cmd.Environ(), "PYTHONIOENCODING=utf-8", "NO_COLOR=1",
-		"TEMP="+temp, "TMP="+temp, "TMPDIR="+temp)
-	cmd.Cancel = func() error {
-		if runtime.GOOS != "windows" {
-			return cmd.Process.Signal(syscall.SIGTERM)
-		}
-		// The bundled one-file executable has a bootloader and a child
-		// process. Stop both when the viewer disconnects.
-		stopCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
-		stop := exec.CommandContext(stopCtx, "taskkill.exe", "/PID", strconv.Itoa(cmd.Process.Pid), "/T", "/F")
-		configureScrcpySysProc(stop)
-		if err := stop.Run(); err != nil {
-			return cmd.Process.Kill()
-		}
-		return os.ErrProcessDone
-	}
-	cmd.WaitDelay = 5 * time.Second
-	return cmd.Run()
-}
 
 type iosLogSocket struct {
 	conn   *websocket.Conn

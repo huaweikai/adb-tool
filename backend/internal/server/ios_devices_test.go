@@ -45,6 +45,45 @@ func TestIOSDevicesStableAcrossWirelessAndUSB(t *testing.T) {
 	}
 }
 
+func TestIOSRefreshKeepsLastSnapshotUntilSuccessfulScan(t *testing.T) {
+	const serial = "ios:PHONE-A"
+	discovery := &iosDiscovery{devices: []Device{{Serial: serial}}}
+	for _, test := range []struct {
+		name   string
+		output string
+		err    error
+	}{
+		{name: "CLI failed", err: context.DeadlineExceeded},
+		{name: "invalid JSON", output: "incomplete output"},
+		{name: "missing list", output: "null"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			discovery.command = func(context.Context, ...string) ([]byte, error) {
+				return []byte(test.output), test.err
+			}
+			discovery.refresh(context.Background(), func(_, _ []string) {
+				t.Fatal("failed scan emitted a device change")
+			})
+			if rows := discovery.snapshot(); len(rows) != 1 || rows[0].Serial != serial {
+				t.Fatalf("failed scan discarded the known device: %v", rows)
+			}
+		})
+	}
+	discovery.command = func(context.Context, ...string) ([]byte, error) {
+		return []byte("[]"), nil
+	}
+	changed := false
+	discovery.refresh(context.Background(), func(added, removed []string) {
+		changed = true
+		if len(added) != 0 || !slices.Equal(removed, []string{serial}) {
+			t.Fatalf("successful scan reported unexpected change: +%v -%v", added, removed)
+		}
+	})
+	if !changed || len(discovery.snapshot()) != 0 {
+		t.Fatal("successful empty scan did not remove the device")
+	}
+}
+
 type fixedDeviceDiscovery struct {
 	devices []Device
 	err     error

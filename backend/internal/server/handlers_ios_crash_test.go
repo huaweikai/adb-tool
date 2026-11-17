@@ -14,13 +14,17 @@ import (
 func TestIOSCrashReportsListAndDownload(t *testing.T) {
 	const name = "Sample Report.ips"
 	const contents = "{\"raw\":true}\n"
+	devices, err := parseIOSDevices([]byte(`[{"Identifier":"phone-a","UniqueDeviceID":"PHONE-A","ConnectionType":"USB"}]`))
+	if err != nil || len(devices) != 1 {
+		t.Fatalf("discovery = %v, %v", devices, err)
+	}
 	server := &Server{ios: &iosDiscovery{
-		devices: []Device{{Serial: "ios:PHONE-A", Capabilities: []DeviceCapability{capabilityCrashReports}}},
+		devices: devices,
 		command: func(_ context.Context, args ...string) ([]byte, error) {
-			if slices.Equal(args, []string{"crash", "ls", "--udid", "PHONE-A"}) {
+			if slices.Equal(args, []string{"crash", "ls", "--udid", "phone-a"}) {
 				return []byte("/DiagnosticLogs\r\n/" + name + "\r\n/" + name + "\n/../escape.ips\n"), nil
 			}
-			if len(args) != 6 || !slices.Equal(args[:4], []string{"crash", "pull", "--udid", "PHONE-A"}) || args[5] != "/"+name {
+			if len(args) != 6 || !slices.Equal(args[:4], []string{"crash", "pull", "--udid", "phone-a"}) || args[5] != "/"+name {
 				t.Fatalf("unexpected command: %v", args)
 			}
 			return nil, os.WriteFile(filepath.Join(args[4], name), []byte(contents), 0600)

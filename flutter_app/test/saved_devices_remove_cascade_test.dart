@@ -7,6 +7,8 @@
 // cascades sessions out before deleting the device.
 import 'package:adb_tool/db/database.dart';
 import 'package:adb_tool/models/test_session.dart';
+import 'package:adb_tool/providers/device_provider.dart';
+import 'package:adb_tool/providers/test_session_provider.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -95,5 +97,49 @@ void main() {
       await db.savedDevicesDao.getSavedDeviceBySerial('plain-serial'),
       isNull,
     );
+  });
+
+  test('removing an offline iPhone preserves the active Android session',
+      () async {
+    const android = 'device-a';
+    const iphone = 'ios:PHONE-A';
+    const sessionId = 'android-session';
+    await db.savedDevicesDao.upsertSavedDevice(
+      serial: android,
+      model: 'Android phone',
+      brand: 'Google',
+      sdk: '35',
+      isConnected: true,
+    );
+    await db.savedDevicesDao.upsertSavedDevice(
+      serial: iphone,
+      model: 'iPhone',
+      brand: 'Apple',
+      sdk: '',
+      isConnected: false,
+    );
+    await db.testSessionsDao.insertSession(TestSessionsCompanion.insert(
+      id: sessionId,
+      name: 'Android smoke test',
+      type: 'manual',
+      status: TestSessionStatus.running,
+      startedAt: DateTime(2026),
+      deviceSerial: android,
+    ));
+
+    final devices = DeviceProvider(db: db);
+    final sessions = TestSessionProvider(db: db);
+    addTearDown(devices.dispose);
+    addTearDown(sessions.dispose);
+    await sessions.loadHistoricalSession(sessionId);
+    expect(sessions.hasRunningSession, isTrue);
+
+    await sessions.finishRunningSessionForDevice(iphone);
+    expect(await devices.removeDevice(iphone), isTrue);
+
+    expect(await db.savedDevicesDao.getSavedDeviceBySerial(iphone), isNull);
+    final remaining = await db.testSessionsDao.findSessionById(sessionId);
+    expect(remaining?.status, TestSessionStatus.running);
+    expect(sessions.currentSession?.id, sessionId);
   });
 }

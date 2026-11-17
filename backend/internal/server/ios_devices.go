@@ -1,11 +1,12 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -22,16 +23,20 @@ type iosDiscovery struct {
 	devices []Device
 }
 
-func newIOSDiscovery(ctx context.Context, cli string) *iosDiscovery {
-	return &iosDiscovery{ctx: ctx, command: func(ctx context.Context, args ...string) ([]byte, error) {
+func newIOSDiscovery(shutdownCtx context.Context, cli string) *iosDiscovery {
+	return &iosDiscovery{ctx: shutdownCtx, command: func(ctx context.Context, args ...string) ([]byte, error) {
 		ctx, cancel := context.WithTimeout(ctx, 25*time.Second)
 		defer cancel()
-		cmd := exec.CommandContext(ctx, cli, args...)
-		configureScrcpySysProc(cmd)
-		cmd.WaitDelay = time.Second
-		return cmd.Output()
+		if err := shutdownCtx.Err(); err != nil {
+			return nil, err
+		}
+		stop := context.AfterFunc(shutdownCtx, cancel)
+		defer stop()
+		var output bytes.Buffer
+		err := runIOSCLI(ctx, cli, &output, args...)
+		return output.Bytes(), err
 	}, logs: func(ctx context.Context, udid string, output io.Writer) error {
-		return streamIOSLogs(ctx, cli, udid, output)
+		return runIOSCLI(ctx, cli, output, "syslog", "live", "--udid", udid)
 	}}
 }
 
@@ -65,18 +70,7 @@ func (d *iosDiscovery) snapshot() []Device {
 
 func (d *iosDiscovery) run(ctx context.Context, onChange func(added, removed []string)) {
 	for ctx.Err() == nil {
-		output, err := d.command(ctx, "usbmux", "list")
-		var devices []Device
-		if err == nil {
-			devices, err = parseIOSDevices(output)
-		}
-		if ctx.Err() != nil {
-			return
-		}
-		if err != nil {
-			Log.Add("iOS device discovery", err.Error(), err, 0)
-		}
-		d.update(devices, onChange)
+		d.refresh(ctx, onChange)
 
 		timer := time.NewTimer(15 * time.Second)
 		select {
@@ -88,11 +82,27 @@ func (d *iosDiscovery) run(ctx context.Context, onChange func(added, removed []s
 	}
 }
 
+func (d *iosDiscovery) refresh(ctx context.Context, onChange func(added, removed []string)) {
+	output, err := d.command(ctx, "usbmux", "list")
+	var devices []Device
+	if err == nil {
+		devices, err = parseIOSDevices(output)
+	}
+	if ctx.Err() != nil {
+		return
+	}
+	if err != nil {
+		Log.Add("iOS device discovery", err.Error(), err, 0)
+		return
+	}
+	d.update(devices, onChange)
+}
+
 func (d *iosDiscovery) update(devices []Device, onChange func(added, removed []string)) {
 	d.mu.Lock()
 	previous := d.devices
 	if slices.EqualFunc(previous, devices, func(a, b Device) bool {
-		return a.Serial == b.Serial && a.Model == b.Model && a.Transport == b.Transport
+		return a.Serial == b.Serial && a.Model == b.Model && a.Transport == b.Transport && a.iosUDID == b.iosUDID
 	}) {
 		d.mu.Unlock()
 		return
@@ -127,6 +137,9 @@ func parseIOSDevices(output []byte) ([]Device, error) {
 	if err := json.Unmarshal(output, &records); err != nil {
 		return nil, err
 	}
+	if records == nil {
+		return nil, errors.New("expected an array in the iOS device list")
+	}
 	byID := make(map[string]Device, len(records))
 	for _, record := range records {
 		var transport string
@@ -138,14 +151,18 @@ func parseIOSDevices(output []byte) ([]Device, error) {
 		default:
 			continue
 		}
-		id := strings.ToUpper(strings.TrimSpace(record.UniqueDeviceID))
+		udid := strings.TrimSpace(record.Identifier)
+		id := strings.TrimSpace(record.UniqueDeviceID)
 		if id == "" {
-			id = strings.ToUpper(strings.TrimSpace(record.Identifier))
+			id = udid
 		}
 		if id == "" {
 			continue
 		}
-		serial := "ios:" + id
+		if udid == "" {
+			udid = id
+		}
+		serial := "ios:" + strings.ToUpper(id)
 		if existing, ok := byID[serial]; ok && existing.Transport == "usb" {
 			continue
 		}
@@ -157,6 +174,7 @@ func parseIOSDevices(output []byte) ([]Device, error) {
 			Serial: serial, HardwareSerial: serial, State: "device", Model: name,
 			Brand: "Apple", Platform: "ios", Transport: transport,
 			Capabilities: []DeviceCapability{capabilityCrashReports, capabilityIOSLiveLogs},
+			iosUDID:      udid,
 		}
 	}
 	devices := make([]Device, 0, len(byID))

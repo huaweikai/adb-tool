@@ -635,9 +635,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final sessionProvider = context.read<TestSessionProvider>();
     final deviceProvider = context.read<DeviceProvider>();
     try {
-      if (sessionProvider.hasRunningSession) {
-        await sessionProvider.finishSession();
-      }
+      await sessionProvider.finishRunningSessionForDevice(serial);
     } catch (_) {}
     final ok = await deviceProvider.removeDevice(serial);
     if (!mounted) return;

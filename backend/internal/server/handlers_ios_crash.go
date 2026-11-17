@@ -39,8 +39,8 @@ func (s *Server) iosTarget(w http.ResponseWriter, r *http.Request, capability De
 		return ""
 	}
 	for _, device := range s.ios.snapshot() {
-		if device.Serial == serial && slices.Contains(device.Capabilities, capability) {
-			return strings.TrimPrefix(device.Serial, "ios:")
+		if device.Serial == serial && device.iosUDID != "" && slices.Contains(device.Capabilities, capability) {
+			return device.iosUDID
 		}
 	}
 	writeAPIError(w, http.StatusNotFound, "iOS device is unavailable")

@@ -18,7 +18,7 @@ func TestIOSLogStreamSendsRawBytesAndStopsOnDisconnect(t *testing.T) {
 	server := &Server{ios: &iosDiscovery{
 		ctx: context.Background(),
 		devices: []Device{{
-			Serial: "ios:PHONE-A", Capabilities: []DeviceCapability{capabilityIOSLiveLogs},
+			Serial: "ios:PHONE-A", iosUDID: "phone-a", Capabilities: []DeviceCapability{capabilityIOSLiveLogs},
 		}},
 		logs: func(ctx context.Context, udid string, output io.Writer) error {
 			if _, err := io.WriteString(output, logLine); err != nil {
@@ -45,7 +45,7 @@ func TestIOSLogStreamSendsRawBytesAndStopsOnDisconnect(t *testing.T) {
 	_ = socket.Close()
 	select {
 	case udid := <-stopped:
-		if udid != "PHONE-A" {
+		if udid != "phone-a" {
 			t.Fatalf("streamed unexpected device %q", udid)
 		}
 	case <-time.After(3 * time.Second):

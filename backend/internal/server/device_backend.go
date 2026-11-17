@@ -23,6 +23,7 @@ type Device struct {
 	Platform       string             `json:"platform"`
 	Transport      string             `json:"transport,omitempty"`
 	Capabilities   []DeviceCapability `json:"capabilities"`
+	iosUDID        string             // The original usbmux identifier for CLI commands.
 }
 
 type DeviceCapability string
