@@ -179,19 +179,27 @@ void main() {
           'state': 'device',
           'platform': 'ios',
           'transport': 'usb',
-          'capabilities': ['crashReports', 'iosLiveLogs'],
+          'capabilities': ['crashReports', 'testSession', 'screenshot'],
         }),
       ]));
       expect(
         provider.capabilitiesFor(id),
-        {DeviceCapability.crashReports, DeviceCapability.iosLiveLogs},
+        {
+          DeviceCapability.crashReports,
+          DeviceCapability.testSession,
+          DeviceCapability.screenshot,
+        },
       );
 
       await provider.refresh(_DevicesApi([]));
       expect(provider.savedDevices.single.isConnected, isFalse);
       expect(
         provider.capabilitiesFor(id),
-        {DeviceCapability.crashReports, DeviceCapability.iosLiveLogs},
+        {
+          DeviceCapability.crashReports,
+          DeviceCapability.testSession,
+          DeviceCapability.screenshot,
+        },
       );
     });
 

@@ -158,9 +158,12 @@ class _TestSessionActiveContentState extends State<TestSessionActiveContent>
     // correct enabled state when the device goes online/offline.
     final devices = context.watch<DeviceProvider>();
     final isOnline = devices.isDeviceConnected(currentSerial);
-    final canScreenshot = devices
-        .capabilitiesFor(currentSerial)
-        .contains(DeviceCapability.screenshot);
+    final capabilities = devices.capabilitiesFor(currentSerial);
+    final canScreenshot = capabilities.contains(DeviceCapability.screenshot);
+    final canLiveLogs = capabilities.contains(DeviceCapability.liveLogs);
+    final isIos =
+        currentSerial != null && Device.isIosIdentity(currentSerial);
+    final canRecord = !isIos;
 
     if (session == null || session.id != widget.resumeSessionId) {
       return const Center(child: CircularProgressIndicator());
@@ -233,43 +236,47 @@ class _TestSessionActiveContentState extends State<TestSessionActiveContent>
               ),
               const SizedBox(width: 8),
               // Record
-              if (isOtherOwnerRecording())
-                _btn(null, Icons.fiber_manual_record,
-                    tr('recordInProgressOther'), null, grey: true)
-              else if (isOurSaving)
-                _btn(null, null, tr('recordSaving'), null, spinner: true)
-              else if (isOurRecording)
-                _btn(
-                    theme.colorScheme.error,
-                    Icons.stop,
-                    fmtDuration(elapsedSeconds),
-                    isOnline ? stopRecording : null)
-              else
-                _btn(
-                    null,
-                    Icons.fiber_manual_record,
-                    tr('record'),
-                    (currentSerial != null && !_busy && isOnline)
-                        ? startRecording
-                        : null),
+              if (canRecord) ...[
+                if (isOtherOwnerRecording())
+                  _btn(null, Icons.fiber_manual_record,
+                      tr('recordInProgressOther'), null, grey: true)
+                else if (isOurSaving)
+                  _btn(null, null, tr('recordSaving'), null, spinner: true)
+                else if (isOurRecording)
+                  _btn(
+                      theme.colorScheme.error,
+                      Icons.stop,
+                      fmtDuration(elapsedSeconds),
+                      isOnline ? stopRecording : null)
+                else
+                  _btn(
+                      null,
+                      Icons.fiber_manual_record,
+                      tr('record'),
+                      (currentSerial != null && !_busy && isOnline)
+                          ? startRecording
+                          : null),
+              ],
               // Screenshot
               if (canScreenshot)
                 _buildScreenshotButton(theme, isOnline: isOnline),
               // Logcat
-              if (_logcatRunning)
-                _btn(
-                    theme.colorScheme.primary,
-                    Icons.stop,
-                    fmtDuration(_logcatSeconds),
-                    (_busy || !isOnline) ? null : _stopLogcat)
-              else
-                _btn(
-                    null,
-                    Icons.list_alt,
-                    tr('logcat'),
-                    (currentSerial != null && !_busy && isOnline)
-                        ? _startLogcat
-                        : null),
+              if (canLiveLogs) ...[
+                if (_logcatRunning)
+                  _btn(
+                      theme.colorScheme.primary,
+                      Icons.stop,
+                      fmtDuration(_logcatSeconds),
+                      (_busy || !isOnline) ? null : _stopLogcat)
+                else
+                  _btn(
+                      null,
+                      Icons.list_alt,
+                      tr('logcat'),
+                      (currentSerial != null && !_busy && isOnline)
+                          ? _startLogcat
+                          : null),
+              ],
               // Issue
               _btn(null, Icons.bug_report_outlined, tr('markIssue'),
                   (!_busy && isOnline) ? _showIssueDialog : null),
@@ -554,7 +561,9 @@ class _TestSessionActiveContentState extends State<TestSessionActiveContent>
 
   Future<({String content, bool captured})> _loadRecentLogcatSnapshot() async {
     final deviceSerial = serial;
-    if (deviceSerial == null) return (content: '', captured: false);
+    if (deviceSerial == null || Device.isIosIdentity(deviceSerial)) {
+      return (content: '', captured: false);
+    }
     try {
       final content = await apiClient.getRecentLogcat(deviceSerial, lines: 500);
       return (content: content, captured: content.isNotEmpty);

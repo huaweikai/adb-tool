@@ -51,7 +51,18 @@ func findIOSCLI() string {
 		if runtime.GOOS == "windows" {
 			name += ".exe"
 		}
-		path = filepath.Join(filepath.Dir(executable), name)
+		execDir := filepath.Dir(executable)
+		candidates := []string{
+			filepath.Join(execDir, name),
+			filepath.Join(execDir, "..", "..", "dist", "ios-tools", name),
+			filepath.Join(execDir, "..", "..", "..", "dist", "ios-tools", name),
+		}
+		for _, c := range candidates {
+			if info, err := os.Stat(c); err == nil && info.Mode().IsRegular() {
+				return c
+			}
+		}
+		return ""
 	}
 	if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
 		return path
@@ -173,8 +184,12 @@ func parseIOSDevices(output []byte) ([]Device, error) {
 		byID[serial] = Device{
 			Serial: serial, HardwareSerial: serial, State: "device", Model: name,
 			Brand: "Apple", Platform: "ios", Transport: transport,
-			Capabilities: []DeviceCapability{capabilityCrashReports, capabilityIOSLiveLogs},
-			iosUDID:      udid,
+			Capabilities: []DeviceCapability{
+				capabilityCrashReports,
+				capabilityTestSession,
+				capabilityScreenshot,
+			},
+			iosUDID: udid,
 		}
 	}
 	devices := make([]Device, 0, len(byID))
@@ -183,4 +198,41 @@ func parseIOSDevices(output []byte) ([]Device, error) {
 	}
 	slices.SortFunc(devices, func(a, b Device) int { return strings.Compare(a.Serial, b.Serial) })
 	return devices, nil
+}
+
+func (d *iosDiscovery) CaptureScreenshot(ctx context.Context, serial string) ([]byte, error) {
+	if d == nil {
+		return nil, errors.New("iOS device is unavailable")
+	}
+	var udid string
+	for _, device := range d.snapshot() {
+		if device.Serial == serial && device.iosUDID != "" && slices.Contains(device.Capabilities, capabilityScreenshot) {
+			udid = device.iosUDID
+			break
+		}
+	}
+	if udid == "" {
+		return nil, errors.New("iOS device is unavailable")
+	}
+	dir, err := os.MkdirTemp("", "adb-tool-ios-shot-")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(dir)
+	target := filepath.Join(dir, "screenshot.png")
+	if _, err := d.command(ctx, "developer", "dvt", "screenshot", "--udid", udid, target); err != nil {
+		// Fall back to legacy developer screenshot command if dvt fails.
+		if _, fallbackErr := d.command(ctx, "developer", "screenshot", "--udid", udid, target); fallbackErr != nil {
+			Log.Add("iOS screenshot", err.Error(), err, 0)
+			return nil, err
+		}
+	}
+	data, err := os.ReadFile(target)
+	if err != nil {
+		return nil, err
+	}
+	if len(data) == 0 {
+		return nil, errors.New("empty screenshot captured")
+	}
+	return data, nil
 }

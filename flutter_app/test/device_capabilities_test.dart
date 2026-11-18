@@ -41,12 +41,13 @@ void main() {
     final capabilities = {
       DeviceCapability.deviceInfo,
       DeviceCapability.crashReports,
-      DeviceCapability.iosLiveLogs,
+      DeviceCapability.testSession,
+      DeviceCapability.screenshot,
     };
 
     expect(
       NavItem.sidebarPagesFor(capabilities),
-      [NavItem.crashReports, NavItem.iosLogs],
+      [NavItem.session, NavItem.crashReports],
     );
   });
 }

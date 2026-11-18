@@ -30,9 +30,15 @@ NOTICE_PREFIXES = ("licen", "copying", "notice")
 
 
 def read_url(url):
+    import ssl
+    ctx = ssl.create_default_context()
+    for cafile in ("/etc/ssl/cert.pem", "/opt/homebrew/share/ca-certificates/cacert.pem"):
+        if os.path.isfile(cafile):
+            ctx.load_verify_locations(cafile=cafile)
+            break
     for attempt in range(5):
         try:
-            with urlopen(url, timeout=30) as response:
+            with urlopen(url, timeout=30, context=ctx) as response:
                 return response.read()
         except (URLError, TimeoutError) as error:
             permanent_error = (
@@ -60,11 +66,29 @@ def download_source(name, version):
     return f"sources/{source['filename']}", data
 
 
-def create_source_archive(python, destination):
+def create_source_archive(python, destination, existing_archive=None):
     info = json.loads(subprocess.check_output(
         [python, "-m", "pip", "inspect", "--local"],
         env=os.environ | {"PYTHONIOENCODING": "utf-8"},
     ))
+    existing_sources = {}
+    if existing_archive and Path(existing_archive).is_file():
+        try:
+            with zipfile.ZipFile(existing_archive, "r") as old_zf:
+                for member in old_zf.namelist():
+                    if member.startswith("sources/"):
+                        existing_sources[member] = old_zf.read(member)
+        except Exception:
+            pass
+
+    def get_or_download(name, version):
+        prefix = f"sources/{name.replace('-', '_')}-{version}."
+        alt_prefix = f"sources/{name}-{version}."
+        for k, v in existing_sources.items():
+            if k.startswith(prefix) or k.startswith(alt_prefix):
+                return k, v
+        return download_source(name, version)
+
     with (
         ThreadPoolExecutor(max_workers=4) as downloads,
         zipfile.ZipFile(destination, "w", zipfile.ZIP_DEFLATED) as archive,
@@ -84,7 +108,7 @@ def create_source_archive(python, destination):
                 ]
             )
             if SOURCE_LICENSE.search(license_info):
-                sources.append(downloads.submit(download_source, name, version))
+                sources.append(downloads.submit(get_or_download, name, version))
 
             dist_info = Path(installed["metadata_location"])
             if dist_info.is_dir():
@@ -139,7 +163,7 @@ def build(output):
             subprocess.run([binary, *args, "--help"], check=True, stdout=subprocess.DEVNULL, timeout=30)
 
         sources = work / "pymobiledevice3-source.zip"
-        create_source_archive(python, sources)
+        create_source_archive(python, sources, output / sources.name)
         output.mkdir(parents=True, exist_ok=True)
         shutil.copy2(binary, output / binary.name)
         shutil.copy2(sources, output / sources.name)

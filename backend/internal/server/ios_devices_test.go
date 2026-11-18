@@ -6,9 +6,14 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"slices"
 	"testing"
 )
+
+func osWriteTestFile(path string, data []byte) error {
+	return os.WriteFile(path, data, 0600)
+}
 
 func TestIOSDevicesStableAcrossWirelessAndUSB(t *testing.T) {
 	dual, err := parseIOSDevices([]byte(`[
@@ -82,6 +87,60 @@ func TestIOSRefreshKeepsLastSnapshotUntilSuccessfulScan(t *testing.T) {
 	if !changed || len(discovery.snapshot()) != 0 {
 		t.Fatal("successful empty scan did not remove the device")
 	}
+}
+
+func TestIOSScreenshotUsesDVTAndFallback(t *testing.T) {
+	const png = "\x89PNG\r\n\x1a\n"
+	devices, err := parseIOSDevices([]byte(`[{"Identifier":"phone-a","UniqueDeviceID":"PHONE-A","ConnectionType":"USB"}]`))
+	if err != nil || len(devices) != 1 {
+		t.Fatalf("discovery = %v, %v", devices, err)
+	}
+	if !slices.Equal(devices[0].Capabilities, []DeviceCapability{
+		capabilityCrashReports,
+		capabilityTestSession,
+		capabilityScreenshot,
+	}) {
+		t.Fatalf("unexpected capabilities: %v", devices[0].Capabilities)
+	}
+
+	t.Run("dvt screenshot succeeds", func(t *testing.T) {
+		server := &Server{ios: &iosDiscovery{
+			devices: devices,
+			command: func(_ context.Context, args ...string) ([]byte, error) {
+				if len(args) != 6 || !slices.Equal(args[:5], []string{"developer", "dvt", "screenshot", "--udid", "phone-a"}) {
+					t.Fatalf("unexpected command: %v", args)
+				}
+				return nil, osWriteTestFile(args[5], []byte(png))
+			},
+		}}
+		response := httptest.NewRecorder()
+		server.handleScreenshot(response, httptest.NewRequest(http.MethodGet, "/api/screenshot?serial=ios:PHONE-A", nil))
+		if response.Code != http.StatusOK || response.Header().Get("Content-Type") != "image/png" || response.Body.String() != png {
+			t.Fatalf("unexpected response: %d %s", response.Code, response.Body.String())
+		}
+	})
+
+	t.Run("legacy developer screenshot fallback succeeds", func(t *testing.T) {
+		calls := 0
+		server := &Server{ios: &iosDiscovery{
+			devices: devices,
+			command: func(_ context.Context, args ...string) ([]byte, error) {
+				calls++
+				if calls == 1 {
+					return nil, errors.New("dvt unavailable")
+				}
+				if len(args) != 5 || !slices.Equal(args[:4], []string{"developer", "screenshot", "--udid", "phone-a"}) {
+					t.Fatalf("unexpected fallback command: %v", args)
+				}
+				return nil, osWriteTestFile(args[4], []byte(png))
+			},
+		}}
+		response := httptest.NewRecorder()
+		server.handleScreenshot(response, httptest.NewRequest(http.MethodGet, "/api/screenshot?serial=ios:PHONE-A", nil))
+		if response.Code != http.StatusOK || response.Body.String() != png {
+			t.Fatalf("unexpected fallback response: %d %s", response.Code, response.Body.String())
+		}
+	})
 }
 
 type fixedDeviceDiscovery struct {

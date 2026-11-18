@@ -146,6 +146,15 @@ build_go_backend() {
     printf '\033[1;32m✓ 已同步到 Flutter Debug bundle（%s）\033[0m\n' "$bundle_binary"
   fi
 
+  local ios_cli="$ROOT/dist/ios-tools/pymobiledevice3"
+  local bundle_ios_cli="$ROOT/flutter_app/build/macos/Build/Products/Debug/ADB Tool.app/Contents/MacOS/pymobiledevice3"
+  if [[ -f "$ios_cli" && -d "$(dirname "$bundle_ios_cli")" ]]; then
+    cp "$ios_cli" "$bundle_ios_cli"
+    chmod +x "$bundle_ios_cli"
+    codesign --force --sign - "$bundle_ios_cli" 2>/dev/null || true
+    printf '\033[1;32m✓ 已同步 pymobiledevice3 到 Flutter Debug bundle\033[0m\n'
+  fi
+
   ok "后端已编译并签名"
 }
 

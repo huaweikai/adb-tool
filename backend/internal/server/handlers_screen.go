@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -12,7 +13,19 @@ func (s *Server) handleScreenshot(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, "serial required")
 		return
 	}
-	data, err := s.screenshotCapturer.CaptureScreenshot(r.Context(), serial)
+	var (
+		data []byte
+		err  error
+	)
+	if strings.HasPrefix(serial, "ios:") {
+		if serial == "ios:" {
+			writeAPIError(w, http.StatusBadRequest, "iOS device ID required")
+			return
+		}
+		data, err = s.ios.CaptureScreenshot(r.Context(), serial)
+	} else {
+		data, err = s.screenshotCapturer.CaptureScreenshot(r.Context(), serial)
+	}
 	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
