@@ -13,6 +13,11 @@ func (s *Server) handleClipboardCheck(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, "serial required")
 		return
 	}
+	if strings.HasPrefix(serial, "ios:") {
+		// iOS uses CoreDevice pasteboardservice directly without a helper APK.
+		writeJSON(w, map[string]interface{}{"installed": true})
+		return
+	}
 	installed := s.adb.IsClipboardHelperInstalled(serial)
 	writeJSON(w, map[string]interface{}{"installed": installed})
 }
@@ -26,6 +31,10 @@ func (s *Server) handleClipboardInstall(w http.ResponseWriter, r *http.Request) 
 	serial := r.URL.Query().Get("serial")
 	if serial == "" {
 		writeAPIError(w, http.StatusBadRequest, "serial required")
+		return
+	}
+	if strings.HasPrefix(serial, "ios:") {
+		writeJSON(w, map[string]string{"status": "ok"})
 		return
 	}
 	if err := s.adb.ensureHelperInstalled(serial, s.clipboardApk); err != nil {
@@ -59,7 +68,13 @@ func (s *Server) handleClipboardSend(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, "text required")
 		return
 	}
-	if err := s.adb.SendClipboard(serial, text); err != nil {
+	var err error
+	if strings.HasPrefix(serial, "ios:") {
+		err = s.ios.SendClipboard(r.Context(), serial, text)
+	} else {
+		err = s.adb.SendClipboard(serial, text)
+	}
+	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -75,6 +90,10 @@ func (s *Server) handleClipboardUninstall(w http.ResponseWriter, r *http.Request
 	serial := r.URL.Query().Get("serial")
 	if serial == "" {
 		writeAPIError(w, http.StatusBadRequest, "serial required")
+		return
+	}
+	if strings.HasPrefix(serial, "ios:") {
+		writeJSON(w, map[string]string{"status": "ok"})
 		return
 	}
 	if err := s.adb.UninstallClipboardHelper(serial); err != nil {

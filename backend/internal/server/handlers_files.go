@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -18,7 +19,15 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, "serial and path required")
 		return
 	}
-	entries, err := s.adb.ListFiles(serial, path)
+	var (
+		entries []FileEntry
+		err     error
+	)
+	if strings.HasPrefix(serial, "ios:") {
+		entries, err = s.ios.ListFiles(r.Context(), serial, path)
+	} else {
+		entries, err = s.adb.ListFiles(serial, path)
+	}
 	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -37,7 +46,15 @@ func (s *Server) handleFileContent(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, "serial and path required")
 		return
 	}
-	content, err := s.adb.ReadFile(serial, path)
+	var (
+		content string
+		err     error
+	)
+	if strings.HasPrefix(serial, "ios:") {
+		content, err = s.ios.ReadFile(r.Context(), serial, path)
+	} else {
+		content, err = s.adb.ReadFile(serial, path)
+	}
 	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -54,12 +71,18 @@ func (s *Server) handlePullFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tmpPath := filepath.Join(os.TempDir(), "adb-tool-pull-"+time.Now().Format("20060102150405.000000000"))
-	if err := s.adb.PullFileToPathContext(r.Context(), serial, path, tmpPath); err != nil {
+	var pullErr error
+	if strings.HasPrefix(serial, "ios:") {
+		pullErr = s.ios.PullFileToPath(r.Context(), serial, path, tmpPath)
+	} else {
+		pullErr = s.adb.PullFileToPathContext(r.Context(), serial, path, tmpPath)
+	}
+	if pullErr != nil {
 		if r.Context().Err() != nil {
 			writeAPIError(w, 499, "操作已取消")
 			return
 		}
-		writeAPIError(w, http.StatusInternalServerError, err.Error())
+		writeAPIError(w, http.StatusInternalServerError, pullErr.Error())
 		return
 	}
 	localStat, localErr := os.Stat(tmpPath)
@@ -195,13 +218,19 @@ func (s *Server) handlePullDirectoryToPath(w http.ResponseWriter, r *http.Reques
 		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if err := s.adb.PullFileToPathContext(r.Context(), req.Serial, req.RemotePath, tmpPull); err != nil {
+	var pullDirErr error
+	if strings.HasPrefix(req.Serial, "ios:") {
+		pullDirErr = s.ios.PullFileToPath(r.Context(), req.Serial, req.RemotePath, tmpPull)
+	} else {
+		pullDirErr = s.adb.PullFileToPathContext(r.Context(), req.Serial, req.RemotePath, tmpPull)
+	}
+	if pullDirErr != nil {
 		os.RemoveAll(filepath.Dir(tmpPull))
 		if r.Context().Err() != nil {
 			writeAPIError(w, 499, "操作已取消")
 			return
 		}
-		writeAPIError(w, http.StatusInternalServerError, err.Error())
+		writeAPIError(w, http.StatusInternalServerError, pullDirErr.Error())
 		return
 	}
 	if err := os.RemoveAll(localTarget); err != nil {
@@ -251,12 +280,18 @@ func (s *Server) handlePushFile(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if err := s.adb.PushFileFromPathContext(r.Context(), serial, tmpFile, path); err != nil {
+	var pushErr error
+	if strings.HasPrefix(serial, "ios:") {
+		pushErr = s.ios.PushFileFromPath(r.Context(), serial, tmpFile, path)
+	} else {
+		pushErr = s.adb.PushFileFromPathContext(r.Context(), serial, tmpFile, path)
+	}
+	if pushErr != nil {
 		if r.Context().Err() != nil {
 			writeAPIError(w, 499, "操作已取消")
 			return
 		}
-		writeAPIError(w, http.StatusInternalServerError, err.Error())
+		writeAPIError(w, http.StatusInternalServerError, pushErr.Error())
 		return
 	}
 	writeJSON(w, map[string]string{"status": "ok"})
@@ -275,7 +310,13 @@ func (s *Server) handleFileDelete(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, "serial and path required")
 		return
 	}
-	if err := s.adb.DeleteFile(serial, path, recursive); err != nil {
+	var err error
+	if strings.HasPrefix(serial, "ios:") {
+		err = s.ios.DeleteFile(r.Context(), serial, path)
+	} else {
+		err = s.adb.DeleteFile(serial, path, recursive)
+	}
+	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -295,7 +336,13 @@ func (s *Server) handleFileRename(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, "serial, from and to required")
 		return
 	}
-	if err := s.adb.RenameFile(serial, from, to); err != nil {
+	var err error
+	if strings.HasPrefix(serial, "ios:") {
+		err = s.ios.RenameFile(r.Context(), serial, from, to)
+	} else {
+		err = s.adb.RenameFile(serial, from, to)
+	}
+	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -314,7 +361,13 @@ func (s *Server) handleFileMkdir(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, "serial and path required")
 		return
 	}
-	if err := s.adb.MakeDir(serial, path); err != nil {
+	var err error
+	if strings.HasPrefix(serial, "ios:") {
+		err = s.ios.MakeDir(r.Context(), serial, path)
+	} else {
+		err = s.adb.MakeDir(serial, path)
+	}
+	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -333,7 +386,13 @@ func (s *Server) handleFileTouch(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, "serial and path required")
 		return
 	}
-	if err := s.adb.TouchFile(serial, path); err != nil {
+	var err error
+	if strings.HasPrefix(serial, "ios:") {
+		err = s.ios.TouchFile(r.Context(), serial, path)
+	} else {
+		err = s.adb.TouchFile(serial, path)
+	}
+	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -348,7 +407,15 @@ func (s *Server) handleFileStat(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, "serial and path required")
 		return
 	}
-	stat, err := s.adb.FileStat(serial, path)
+	var (
+		stat FileStat
+		err  error
+	)
+	if strings.HasPrefix(serial, "ios:") {
+		stat, err = s.ios.FileStat(r.Context(), serial, path)
+	} else {
+		stat, err = s.adb.FileStat(serial, path)
+	}
 	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return

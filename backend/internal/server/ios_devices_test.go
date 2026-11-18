@@ -8,11 +8,32 @@ import (
 	"net/http/httptest"
 	"os"
 	"slices"
+	"strings"
 	"testing"
 )
 
 func osWriteTestFile(path string, data []byte) error {
 	return os.WriteFile(path, data, 0600)
+}
+
+func TestIOSScreenRecordingUnavailableUntilNativeCapture(t *testing.T) {
+	for _, action := range []string{"start", "stop", "status"} {
+		t.Run(action, func(t *testing.T) {
+			server := &Server{recordingSerial: "android-recording"}
+			res := httptest.NewRecorder()
+			server.handleScreenRecord(res, httptest.NewRequest(http.MethodGet,
+				"/api/screen-record?serial=ios:PHONE-A&action="+action, nil))
+			if res.Code != http.StatusNotImplemented || server.recordingSerial != "android-recording" {
+				t.Fatalf("unsupported recording changed state: %d, %q", res.Code, server.recordingSerial)
+			}
+		})
+	}
+	res := httptest.NewRecorder()
+	(&Server{}).handleScreenRecordVideo(res, httptest.NewRequest(http.MethodGet,
+		"/api/screen-record/video?serial=ios:PHONE-A", nil))
+	if res.Code != http.StatusNotImplemented {
+		t.Fatalf("unsupported video download returned %d", res.Code)
+	}
 }
 
 func TestIOSDevicesStableAcrossWirelessAndUSB(t *testing.T) {
@@ -96,9 +117,15 @@ func TestIOSScreenshotUsesDVTAndFallback(t *testing.T) {
 		t.Fatalf("discovery = %v, %v", devices, err)
 	}
 	if !slices.Equal(devices[0].Capabilities, []DeviceCapability{
-		capabilityCrashReports,
+		capabilityDeviceStatus,
+		capabilityDeviceInfo,
+		capabilityFiles,
+		capabilityApps,
+		capabilityClipboard,
 		capabilityTestSession,
 		capabilityScreenshot,
+		capabilityCrashReports,
+		capabilityIOSLiveLogs,
 	}) {
 		t.Fatalf("unexpected capabilities: %v", devices[0].Capabilities)
 	}
@@ -184,4 +211,72 @@ func TestDeviceListCombinesPlatforms(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestIOSHandlersStatusFilesAppsClipboard(t *testing.T) {
+	devices, err := parseIOSDevices([]byte(`[{"Identifier":"phone-a","UniqueDeviceID":"PHONE-A","ConnectionType":"USB"}]`))
+	if err != nil || len(devices) != 1 {
+		t.Fatalf("discovery = %v, %v", devices, err)
+	}
+	server := &Server{ios: &iosDiscovery{
+		devices: devices,
+		command: func(_ context.Context, args ...string) ([]byte, error) {
+			switch {
+			case slices.Equal(args, []string{"adb-tool-ios", "status", "--udid", "phone-a"}):
+				return []byte(`{"batteryLevel":"88","batteryStatus":"Charging","storageTotal":"128.0 GB"}`), nil
+			case slices.Equal(args, []string{"adb-tool-ios", "props", "--udid", "phone-a"}):
+				return []byte(`{"ProductType":"iPhone17,2","ProductVersion":"27.3"}`), nil
+			case slices.Equal(args, []string{"adb-tool-ios", "apps-list", "--udid", "phone-a"}):
+				return []byte(`[{"packageName":"com.example.demo","sourceDir":"Demo (1.0)"}]`), nil
+			case slices.Equal(args, []string{"adb-tool-ios", "afc-ls", "--udid", "phone-a", "/"}):
+				return []byte(`[{"name":"DCIM","path":"/DCIM","isDir":true,"permissions":"drwxr-xr-x"}]`), nil
+			case slices.Equal(args, []string{"adb-tool-ios", "clipboard-set", "--udid", "phone-a", "hello ios"}):
+				return nil, nil
+			default:
+				t.Fatalf("unexpected iOS CLI args: %v", args)
+				return nil, nil
+			}
+		},
+	}}
+
+	t.Run("device status", func(t *testing.T) {
+		res := httptest.NewRecorder()
+		server.handleDeviceStatus(res, httptest.NewRequest(http.MethodGet, "/api/device-status?serial=ios:PHONE-A", nil))
+		if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), `"batteryLevel":"88"`) {
+			t.Fatalf("unexpected status response: %d %s", res.Code, res.Body.String())
+		}
+	})
+
+	t.Run("device detail", func(t *testing.T) {
+		res := httptest.NewRecorder()
+		server.handleDeviceDetail(res, httptest.NewRequest(http.MethodGet, "/api/device-detail?serial=ios:PHONE-A", nil))
+		if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), `"ProductType":"iPhone17,2"`) {
+			t.Fatalf("unexpected detail response: %d %s", res.Code, res.Body.String())
+		}
+	})
+
+	t.Run("packages list", func(t *testing.T) {
+		res := httptest.NewRecorder()
+		server.handlePackages(res, httptest.NewRequest(http.MethodGet, "/api/packages?serial=ios:PHONE-A", nil))
+		if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), `"packageName":"com.example.demo"`) {
+			t.Fatalf("unexpected packages response: %d %s", res.Code, res.Body.String())
+		}
+	})
+
+	t.Run("files list", func(t *testing.T) {
+		res := httptest.NewRecorder()
+		server.handleFiles(res, httptest.NewRequest(http.MethodGet, "/api/files?serial=ios:PHONE-A&path=/", nil))
+		if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), `"name":"DCIM"`) {
+			t.Fatalf("unexpected files response: %d %s", res.Code, res.Body.String())
+		}
+	})
+
+	t.Run("clipboard send", func(t *testing.T) {
+		res := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/clipboard/send?serial=ios:PHONE-A", strings.NewReader(`{"text":"hello ios"}`))
+		server.handleClipboardSend(res, req)
+		if res.Code != http.StatusOK {
+			t.Fatalf("unexpected clipboard response: %d %s", res.Code, res.Body.String())
+		}
+	})
 }

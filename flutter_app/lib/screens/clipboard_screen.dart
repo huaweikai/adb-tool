@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../mixins/device_reconnect_mixin.dart';
 import '../db/database.dart';
+import '../models/device.dart';
 import '../services/api_client.dart';
 import '../i18n.dart';
 import '../providers/locale_provider.dart';
@@ -419,7 +420,9 @@ class _ClipboardScreenState extends State<ClipboardScreen>
             ),
           ),
           const SizedBox(width: 8),
-          if (_helperInstalled)
+          if (_helperInstalled &&
+              !(_selectedSerial != null &&
+                  Device.isIosIdentity(_selectedSerial!)))
             OutlinedButton.icon(
               onPressed: (_uninstalling || !isOnline) ? null : _uninstallHelper,
               icon: _uninstalling

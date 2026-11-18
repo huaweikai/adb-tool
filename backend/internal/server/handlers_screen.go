@@ -41,6 +41,10 @@ func (s *Server) handleScreenshot(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleScreenRecord(w http.ResponseWriter, r *http.Request) {
 	serial := r.URL.Query().Get("serial")
 	action := r.URL.Query().Get("action")
+	if strings.HasPrefix(serial, "ios:") {
+		writeAPIError(w, http.StatusNotImplemented, "iOS screen recording is not available yet")
+		return
+	}
 
 	switch action {
 	case "start":
@@ -141,6 +145,10 @@ func (s *Server) handleScreenRecord(w http.ResponseWriter, r *http.Request) {
 // handleScreenRecordVideo returns the most recently recorded screen video and cleans it up.
 func (s *Server) handleScreenRecordVideo(w http.ResponseWriter, r *http.Request) {
 	serial := r.URL.Query().Get("serial")
+	if strings.HasPrefix(serial, "ios:") {
+		writeAPIError(w, http.StatusNotImplemented, "iOS screen recording is not available yet")
+		return
+	}
 	if serial == "" {
 		writeAPIError(w, http.StatusBadRequest, "serial required")
 		return

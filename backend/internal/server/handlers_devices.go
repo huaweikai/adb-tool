@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -115,7 +116,15 @@ func (s *Server) handleDeviceDetail(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, "serial required")
 		return
 	}
-	props, err := s.adb.DeviceDetail(serial)
+	var (
+		props map[string]string
+		err   error
+	)
+	if strings.HasPrefix(serial, "ios:") {
+		props, err = s.ios.DeviceDetail(r.Context(), serial)
+	} else {
+		props, err = s.adb.DeviceDetail(serial)
+	}
 	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -133,7 +142,15 @@ func (s *Server) handleDeviceStatus(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, "serial required")
 		return
 	}
-	status, err := s.adb.DeviceStatus(r.Context(), serial)
+	var (
+		status *DeviceStatus
+		err    error
+	)
+	if strings.HasPrefix(serial, "ios:") {
+		status, err = s.ios.DeviceStatus(r.Context(), serial)
+	} else {
+		status, err = s.adb.DeviceStatus(r.Context(), serial)
+	}
 	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return

@@ -161,9 +161,8 @@ class _TestSessionActiveContentState extends State<TestSessionActiveContent>
     final capabilities = devices.capabilitiesFor(currentSerial);
     final canScreenshot = capabilities.contains(DeviceCapability.screenshot);
     final canLiveLogs = capabilities.contains(DeviceCapability.liveLogs);
-    final isIos =
-        currentSerial != null && Device.isIosIdentity(currentSerial);
-    final canRecord = !isIos;
+    final canRecord = canScreenshot &&
+        currentSerial != null && !Device.isIosIdentity(currentSerial);
 
     if (session == null || session.id != widget.resumeSessionId) {
       return const Center(child: CircularProgressIndicator());
@@ -253,7 +252,7 @@ class _TestSessionActiveContentState extends State<TestSessionActiveContent>
                       null,
                       Icons.fiber_manual_record,
                       tr('record'),
-                      (currentSerial != null && !_busy && isOnline)
+                      (!_busy && isOnline)
                           ? startRecording
                           : null),
               ],

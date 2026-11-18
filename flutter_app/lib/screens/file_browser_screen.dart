@@ -82,6 +82,11 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
     ('/data/local/tmp', 'tmp'),
   ];
 
+  static const _iosQuickPaths = [
+    ('/', 'storage'),
+    ('/Apps', 'sandbox'),
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -987,9 +992,11 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
   Widget _buildPathBar() {
     final theme = Theme.of(context);
     final parts = _currentPath.split('/').where((p) => p.isNotEmpty).toList();
+    final currentSerial = _selectedSerial;
     final canScreenshot = context.select<DeviceProvider, bool>(
-      (devices) =>
-          devices.capabilitiesFor(serial).contains(DeviceCapability.screenshot),
+      (devices) => devices
+          .capabilitiesFor(currentSerial)
+          .contains(DeviceCapability.screenshot),
     );
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -1012,7 +1019,11 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
               tooltip: tr('parentDir'),
             ),
           const SizedBox(width: 4),
-          for (final qp in _quickPaths) _quickBtn(qp.$1, tr(qp.$2)),
+          for (final qp in (_selectedSerial != null &&
+                  Device.isIosIdentity(_selectedSerial!))
+              ? _iosQuickPaths
+              : _quickPaths)
+            _quickBtn(qp.$1, tr(qp.$2)),
           ...() {
             final configPaths =
                 context.read<TestConfigProvider>().currentApp?.filePaths ?? [];
@@ -1068,7 +1079,8 @@ class _FileBrowserScreenState extends State<FileBrowserScreen>
             tooltip: _gridMode ? tr('listMode') : tr('gridMode'),
           ),
           const SizedBox(width: 4),
-          isTransferring ? const SizedBox(width: 80) : buildRecordingButton(),
+          if (currentSerial != null && !Device.isIosIdentity(currentSerial))
+            isTransferring ? const SizedBox(width: 80) : buildRecordingButton(),
           if (canScreenshot) ...[
             const SizedBox(width: 4),
             FilledButton.tonal(

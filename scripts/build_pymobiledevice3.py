@@ -145,6 +145,7 @@ def build(output):
                 python, "-m", "PyInstaller", "--onefile", "--noupx",
                 "--name", "pymobiledevice3",
                 "--collect-all", "pymobiledevice3",
+                "--collect-data", "pykdebugparser",
                 "--recursive-copy-metadata", "pymobiledevice3",
                 "--distpath", work / "dist",
                 "--workpath", work / "build",

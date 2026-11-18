@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -24,6 +23,7 @@ type iosDiscovery struct {
 }
 
 func newIOSDiscovery(shutdownCtx context.Context, cli string) *iosDiscovery {
+	daemon := newIOSDaemon(shutdownCtx, cli)
 	return &iosDiscovery{ctx: shutdownCtx, command: func(ctx context.Context, args ...string) ([]byte, error) {
 		ctx, cancel := context.WithTimeout(ctx, 25*time.Second)
 		defer cancel()
@@ -32,9 +32,7 @@ func newIOSDiscovery(shutdownCtx context.Context, cli string) *iosDiscovery {
 		}
 		stop := context.AfterFunc(shutdownCtx, cancel)
 		defer stop()
-		var output bytes.Buffer
-		err := runIOSCLI(ctx, cli, &output, args...)
-		return output.Bytes(), err
+		return daemon.Call(ctx, args...)
 	}, logs: func(ctx context.Context, udid string, output io.Writer) error {
 		return runIOSCLI(ctx, cli, output, "syslog", "live", "--udid", udid)
 	}}
@@ -185,9 +183,15 @@ func parseIOSDevices(output []byte) ([]Device, error) {
 			Serial: serial, HardwareSerial: serial, State: "device", Model: name,
 			Brand: "Apple", Platform: "ios", Transport: transport,
 			Capabilities: []DeviceCapability{
-				capabilityCrashReports,
+				capabilityDeviceStatus,
+				capabilityDeviceInfo,
+				capabilityFiles,
+				capabilityApps,
+				capabilityClipboard,
 				capabilityTestSession,
 				capabilityScreenshot,
+				capabilityCrashReports,
+				capabilityIOSLiveLogs,
 			},
 			iosUDID: udid,
 		}
@@ -200,19 +204,22 @@ func parseIOSDevices(output []byte) ([]Device, error) {
 	return devices, nil
 }
 
-func (d *iosDiscovery) CaptureScreenshot(ctx context.Context, serial string) ([]byte, error) {
+func (d *iosDiscovery) udidFor(serial string, capability DeviceCapability) (string, error) {
 	if d == nil {
-		return nil, errors.New("iOS device is unavailable")
+		return "", errors.New("iOS device is unavailable")
 	}
-	var udid string
 	for _, device := range d.snapshot() {
-		if device.Serial == serial && device.iosUDID != "" && slices.Contains(device.Capabilities, capabilityScreenshot) {
-			udid = device.iosUDID
-			break
+		if device.Serial == serial && device.iosUDID != "" && slices.Contains(device.Capabilities, capability) {
+			return device.iosUDID, nil
 		}
 	}
-	if udid == "" {
-		return nil, errors.New("iOS device is unavailable")
+	return "", errors.New("iOS device is unavailable")
+}
+
+func (d *iosDiscovery) CaptureScreenshot(ctx context.Context, serial string) ([]byte, error) {
+	udid, err := d.udidFor(serial, capabilityScreenshot)
+	if err != nil {
+		return nil, err
 	}
 	dir, err := os.MkdirTemp("", "adb-tool-ios-shot-")
 	if err != nil {
@@ -235,4 +242,180 @@ func (d *iosDiscovery) CaptureScreenshot(ctx context.Context, serial string) ([]
 		return nil, errors.New("empty screenshot captured")
 	}
 	return data, nil
+}
+
+func (d *iosDiscovery) DeviceStatus(ctx context.Context, serial string) (*DeviceStatus, error) {
+	udid, err := d.udidFor(serial, capabilityDeviceStatus)
+	if err != nil {
+		return nil, err
+	}
+	out, err := d.command(ctx, "adb-tool-ios", "status", "--udid", udid)
+	if err != nil {
+		return nil, err
+	}
+	var status DeviceStatus
+	if err := json.Unmarshal(out, &status); err != nil {
+		return nil, err
+	}
+	if status.TopProcesses == nil {
+		status.TopProcesses = []ProcessStatus{}
+	}
+	return &status, nil
+}
+
+func (d *iosDiscovery) DeviceDetail(ctx context.Context, serial string) (map[string]string, error) {
+	udid, err := d.udidFor(serial, capabilityDeviceInfo)
+	if err != nil {
+		return nil, err
+	}
+	out, err := d.command(ctx, "adb-tool-ios", "props", "--udid", udid)
+	if err != nil {
+		return nil, err
+	}
+	var props map[string]string
+	if err := json.Unmarshal(out, &props); err != nil {
+		return nil, err
+	}
+	return props, nil
+}
+
+func (d *iosDiscovery) InstalledPackages(ctx context.Context, serial string) ([]PackageInfo, error) {
+	udid, err := d.udidFor(serial, capabilityApps)
+	if err != nil {
+		return nil, err
+	}
+	out, err := d.command(ctx, "adb-tool-ios", "apps-list", "--udid", udid)
+	if err != nil {
+		return nil, err
+	}
+	var pkgs []PackageInfo
+	if err := json.Unmarshal(out, &pkgs); err != nil {
+		return nil, err
+	}
+	return pkgs, nil
+}
+
+func (d *iosDiscovery) UninstallPackage(ctx context.Context, serial, bundleID string) error {
+	udid, err := d.udidFor(serial, capabilityApps)
+	if err != nil {
+		return err
+	}
+	_, err = d.command(ctx, "adb-tool-ios", "apps-uninstall", "--udid", udid, bundleID)
+	return err
+}
+
+func (d *iosDiscovery) InstallPackage(ctx context.Context, serial, localPath string) (string, error) {
+	udid, err := d.udidFor(serial, capabilityApps)
+	if err != nil {
+		return "", err
+	}
+	out, err := d.command(ctx, "adb-tool-ios", "apps-install", "--udid", udid, localPath)
+	return string(out), err
+}
+
+func (d *iosDiscovery) SendClipboard(ctx context.Context, serial, text string) error {
+	udid, err := d.udidFor(serial, capabilityClipboard)
+	if err != nil {
+		return err
+	}
+	_, err = d.command(ctx, "adb-tool-ios", "clipboard-set", "--udid", udid, text)
+	return err
+}
+
+func (d *iosDiscovery) ListFiles(ctx context.Context, serial, path string) ([]FileEntry, error) {
+	udid, err := d.udidFor(serial, capabilityFiles)
+	if err != nil {
+		return nil, err
+	}
+	out, err := d.command(ctx, "adb-tool-ios", "afc-ls", "--udid", udid, path)
+	if err != nil {
+		return nil, err
+	}
+	var entries []FileEntry
+	if err := json.Unmarshal(out, &entries); err != nil {
+		return nil, err
+	}
+	return entries, nil
+}
+
+func (d *iosDiscovery) FileStat(ctx context.Context, serial, path string) (FileStat, error) {
+	udid, err := d.udidFor(serial, capabilityFiles)
+	if err != nil {
+		return FileStat{}, err
+	}
+	out, err := d.command(ctx, "adb-tool-ios", "afc-stat", "--udid", udid, path)
+	if err != nil {
+		return FileStat{}, err
+	}
+	var st FileStat
+	if err := json.Unmarshal(out, &st); err != nil {
+		return FileStat{}, err
+	}
+	return st, nil
+}
+
+func (d *iosDiscovery) ReadFile(ctx context.Context, serial, path string) (string, error) {
+	udid, err := d.udidFor(serial, capabilityFiles)
+	if err != nil {
+		return "", err
+	}
+	out, err := d.command(ctx, "adb-tool-ios", "afc-cat", "--udid", udid, path)
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
+}
+
+func (d *iosDiscovery) PullFileToPath(ctx context.Context, serial, remotePath, localPath string) error {
+	udid, err := d.udidFor(serial, capabilityFiles)
+	if err != nil {
+		return err
+	}
+	_, err = d.command(ctx, "adb-tool-ios", "afc-pull", "--udid", udid, remotePath, localPath)
+	return err
+}
+
+func (d *iosDiscovery) PushFileFromPath(ctx context.Context, serial, localPath, remotePath string) error {
+	udid, err := d.udidFor(serial, capabilityFiles)
+	if err != nil {
+		return err
+	}
+	_, err = d.command(ctx, "adb-tool-ios", "afc-push", "--udid", udid, localPath, remotePath)
+	return err
+}
+
+func (d *iosDiscovery) DeleteFile(ctx context.Context, serial, path string) error {
+	udid, err := d.udidFor(serial, capabilityFiles)
+	if err != nil {
+		return err
+	}
+	_, err = d.command(ctx, "adb-tool-ios", "afc-rm", "--udid", udid, path)
+	return err
+}
+
+func (d *iosDiscovery) RenameFile(ctx context.Context, serial, from, to string) error {
+	udid, err := d.udidFor(serial, capabilityFiles)
+	if err != nil {
+		return err
+	}
+	_, err = d.command(ctx, "adb-tool-ios", "afc-mv", "--udid", udid, from, to)
+	return err
+}
+
+func (d *iosDiscovery) MakeDir(ctx context.Context, serial, path string) error {
+	udid, err := d.udidFor(serial, capabilityFiles)
+	if err != nil {
+		return err
+	}
+	_, err = d.command(ctx, "adb-tool-ios", "afc-mkdir", "--udid", udid, path)
+	return err
+}
+
+func (d *iosDiscovery) TouchFile(ctx context.Context, serial, path string) error {
+	udid, err := d.udidFor(serial, capabilityFiles)
+	if err != nil {
+		return err
+	}
+	_, err = d.command(ctx, "adb-tool-ios", "afc-touch", "--udid", udid, path)
+	return err
 }

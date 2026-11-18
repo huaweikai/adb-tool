@@ -37,7 +37,8 @@ void main() {
     expect(NavItem.sidebarPagesFor(device.capabilities), isEmpty);
   });
 
-  test('sidebarPagesFor excludes deviceInfo while keeping iOS pages in order', () {
+  test('sidebarPagesFor excludes deviceInfo while keeping iOS pages in order',
+      () {
     final capabilities = {
       DeviceCapability.deviceInfo,
       DeviceCapability.crashReports,
@@ -48,6 +49,33 @@ void main() {
     expect(
       NavItem.sidebarPagesFor(capabilities),
       [NavItem.session, NavItem.crashReports],
+    );
+  });
+
+  test('full iOS capability set preserves live logs alongside new pages', () {
+    final capabilities = {
+      DeviceCapability.deviceStatus,
+      DeviceCapability.deviceInfo,
+      DeviceCapability.files,
+      DeviceCapability.apps,
+      DeviceCapability.clipboard,
+      DeviceCapability.testSession,
+      DeviceCapability.screenshot,
+      DeviceCapability.crashReports,
+      DeviceCapability.iosLiveLogs,
+    };
+
+    expect(
+      NavItem.sidebarPagesFor(capabilities),
+      [
+        NavItem.status,
+        NavItem.files,
+        NavItem.apps,
+        NavItem.clipboard,
+        NavItem.session,
+        NavItem.crashReports,
+        NavItem.iosLogs,
+      ],
     );
   });
 }

@@ -14,7 +14,15 @@ func (s *Server) handlePackages(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, "serial required")
 		return
 	}
-	pkgs, err := s.adb.InstalledPackages(serial)
+	var (
+		pkgs []PackageInfo
+		err  error
+	)
+	if strings.HasPrefix(serial, "ios:") {
+		pkgs, err = s.ios.InstalledPackages(r.Context(), serial)
+	} else {
+		pkgs, err = s.adb.InstalledPackages(serial)
+	}
 	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -37,14 +45,20 @@ func (s *Server) handleUninstallPackage(w http.ResponseWriter, r *http.Request) 
 		writeAPIError(w, http.StatusBadRequest, "serial and package required")
 		return
 	}
-	if err := s.adb.UninstallPackage(serial, packageName); err != nil {
+	var err error
+	if strings.HasPrefix(serial, "ios:") {
+		err = s.ios.UninstallPackage(r.Context(), serial, packageName)
+	} else {
+		err = s.adb.UninstallPackage(serial, packageName)
+	}
+	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, map[string]string{"status": "ok"})
 }
 
-// handleInstallPackage installs an APK from the request body.
+// handleInstallPackage installs an APK or IPA from the request body.
 func (s *Server) handleInstallPackage(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		writeAPIError(w, http.StatusMethodNotAllowed, "POST required")
@@ -57,7 +71,11 @@ func (s *Server) handleInstallPackage(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 
-	tmpFile, err := os.CreateTemp("", "adb-tool-install-*.apk")
+	ext := ".apk"
+	if strings.HasPrefix(serial, "ios:") {
+		ext = ".ipa"
+	}
+	tmpFile, err := os.CreateTemp("", "adb-tool-install-*"+ext)
 	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -76,13 +94,21 @@ func (s *Server) handleInstallPackage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	output, err := s.adb.InstallPackageContext(r.Context(), serial, tmpFile.Name())
+	var output string
+	if strings.HasPrefix(serial, "ios:") {
+		output, err = s.ios.InstallPackage(r.Context(), serial, tmpFile.Name())
+	} else {
+		output, err = s.adb.InstallPackageContext(r.Context(), serial, tmpFile.Name())
+	}
 	if err != nil {
 		if r.Context().Err() != nil {
 			writeAPIError(w, 499, "操作已取消")
 			return
 		}
 		msg := parseInstallError(output)
+		if strings.HasPrefix(serial, "ios:") && output == "" {
+			msg = "安装失败: " + err.Error()
+		}
 		writeAPIErrorData(w, http.StatusBadRequest, msg, map[string]string{"raw": output})
 		return
 	}

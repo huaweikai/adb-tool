@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/drop_target.dart';
 import '../models/app_package.dart';
+import '../models/device.dart';
 import '../services/api_client.dart';
 import '../i18n.dart';
 import '../widgets/loading_view.dart';
@@ -36,7 +37,6 @@ class _AppManagerScreenState extends State<AppManagerScreen>
   TransferCancelToken? _installCancelToken;
   String? _error;
   bool _refreshingIcons = false;
-  Set<String> _iconPackages = {};
   List<Map<String, dynamic>> _iconEntries = [];
 
   bool get _installing => _installState != null;
@@ -55,10 +55,6 @@ class _AppManagerScreenState extends State<AppManagerScreen>
       final rows = await db.appIconsDao.getAll();
       if (!mounted) return;
       _iconEntries = rows;
-      _iconPackages = rows
-          .map((r) => r['package']?.toString() ?? '')
-          .where((n) => n.isNotEmpty)
-          .toSet();
     } catch (_) {}
   }
 
@@ -126,12 +122,7 @@ class _AppManagerScreenState extends State<AppManagerScreen>
       }
       if (!mounted) return;
       _iconEntries = await db.appIconsDao.getAll();
-      final iconPackages = _iconEntries
-          .map((e) => e['package']?.toString() ?? '')
-          .where((n) => n.isNotEmpty)
-          .toSet();
       setState(() {
-        _iconPackages = iconPackages;
         _refreshingIcons = false;
       });
       if (!mounted) return;
@@ -302,8 +293,10 @@ class _AppManagerScreenState extends State<AppManagerScreen>
     if (deviceSerial == null) return;
     final api = context.read<ApiClient>();
     if (mounted) setState(() => _dragOver = false);
+    final isIos = Device.isIosIdentity(deviceSerial);
     for (final file in details.files) {
-      if (!file.name.toLowerCase().endsWith('.apk')) continue;
+      final lower = file.name.toLowerCase();
+      if (isIos ? !lower.endsWith('.ipa') : !lower.endsWith('.apk')) continue;
       final totalBytes = await file.length();
       final cancelToken = TransferCancelToken();
       try {
@@ -531,27 +524,29 @@ class _AppManagerScreenState extends State<AppManagerScreen>
             ),
           ),
           const SizedBox(width: 8),
-          FilledButton.tonal(
-            onPressed: (_refreshingIcons || _installing) ? null : _refreshIcons,
-            style: FilledButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              textStyle: const TextStyle(fontSize: 12),
+          if (!(_selectedSerial != null &&
+              Device.isIosIdentity(_selectedSerial!)))
+            FilledButton.tonal(
+              onPressed: (_refreshingIcons || _installing) ? null : _refreshIcons,
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                textStyle: const TextStyle(fontSize: 12),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _refreshingIcons
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.photo_library, size: 16),
+                  const SizedBox(width: 4),
+                  Text(tr('refreshIcons')),
+                ],
+              ),
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _refreshingIcons
-                    ? const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.photo_library, size: 16),
-                const SizedBox(width: 4),
-                Text(tr('refreshIcons')),
-              ],
-            ),
-          ),
         ],
       ),
     );
@@ -571,6 +566,8 @@ class _AppManagerScreenState extends State<AppManagerScreen>
 
   Widget _buildPackageRow(BuildContext context, AppPackage pkg) {
     final theme = Theme.of(context);
+    final isIos =
+        _selectedSerial != null && Device.isIosIdentity(_selectedSerial!);
     final iconEntry = _iconEntries.cast<Map<String, dynamic>?>().firstWhere(
           (e) => e?['package'] == pkg.packageName,
           orElse: () => null,
@@ -586,7 +583,7 @@ class _AppManagerScreenState extends State<AppManagerScreen>
                 ? ClipRRect(
                     borderRadius: BorderRadius.circular(10),
                     child: Image.network(
-                      'http://localhost:9876${iconEntry!['icon_url']}',
+                      'http://localhost:9876${iconEntry['icon_url']}',
                       width: 36,
                       height: 36,
                       fit: BoxFit.cover,
@@ -624,28 +621,30 @@ class _AppManagerScreenState extends State<AppManagerScreen>
                 if (v == 'uninstall') _uninstallPackage(pkg);
               },
               itemBuilder: (ctx) => [
-                PopupMenuItem(
-                    value: 'forceStop',
-                    child: Row(
-                      children: [
-                        const Icon(Icons.stop_circle_outlined,
-                            size: 18, color: Colors.orange),
-                        const SizedBox(width: 8),
-                        Text(tr('forceStop'),
-                            style: const TextStyle(color: Colors.orange))
-                      ],
-                    )),
-                PopupMenuItem(
-                    value: 'clearData',
-                    child: Row(
-                      children: [
-                        const Icon(Icons.cleaning_services_outlined,
-                            size: 18, color: Colors.orange),
-                        const SizedBox(width: 8),
-                        Text(tr('clearData'),
-                            style: const TextStyle(color: Colors.orange))
-                      ],
-                    )),
+                if (!isIos)
+                  PopupMenuItem(
+                      value: 'forceStop',
+                      child: Row(
+                        children: [
+                          const Icon(Icons.stop_circle_outlined,
+                              size: 18, color: Colors.orange),
+                          const SizedBox(width: 8),
+                          Text(tr('forceStop'),
+                              style: const TextStyle(color: Colors.orange))
+                        ],
+                      )),
+                if (!isIos)
+                  PopupMenuItem(
+                      value: 'clearData',
+                      child: Row(
+                        children: [
+                          const Icon(Icons.cleaning_services_outlined,
+                              size: 18, color: Colors.orange),
+                          const SizedBox(width: 8),
+                          Text(tr('clearData'),
+                              style: const TextStyle(color: Colors.orange))
+                        ],
+                      )),
                 PopupMenuItem(
                     value: 'uninstall',
                     child: Row(
@@ -666,6 +665,8 @@ class _AppManagerScreenState extends State<AppManagerScreen>
   }
 
   void _showPackageDetail(BuildContext context, AppPackage pkg) {
+    final isIos =
+        _selectedSerial != null && Device.isIosIdentity(_selectedSerial!);
     showModalBottomSheet(
       context: context,
       builder: (ctx) => Padding(
@@ -679,32 +680,34 @@ class _AppManagerScreenState extends State<AppManagerScreen>
             _detailRow(tr('packageName'), pkg.packageName),
             _detailRow(tr('path'), pkg.sourceDir),
             const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.tonalIcon(
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  _forceStopApp(pkg);
-                },
-                icon: const Icon(Icons.stop_circle_outlined, size: 18),
-                label: Text(tr('forceStop')),
-                style: FilledButton.styleFrom(foregroundColor: Colors.orange),
+            if (!isIos) ...[
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.tonalIcon(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    _forceStopApp(pkg);
+                  },
+                  icon: const Icon(Icons.stop_circle_outlined, size: 18),
+                  label: Text(tr('forceStop')),
+                  style: FilledButton.styleFrom(foregroundColor: Colors.orange),
+                ),
               ),
-            ),
-            const SizedBox(height: 10),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.tonalIcon(
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  _clearAppData(pkg);
-                },
-                icon: const Icon(Icons.cleaning_services_outlined, size: 18),
-                label: Text(tr('clearData')),
-                style: FilledButton.styleFrom(foregroundColor: Colors.orange),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.tonalIcon(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    _clearAppData(pkg);
+                  },
+                  icon: const Icon(Icons.cleaning_services_outlined, size: 18),
+                  label: Text(tr('clearData')),
+                  style: FilledButton.styleFrom(foregroundColor: Colors.orange),
+                ),
               ),
-            ),
-            const SizedBox(height: 10),
+              const SizedBox(height: 10),
+            ],
             SizedBox(
               width: double.infinity,
               child: FilledButton.tonalIcon(

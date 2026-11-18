@@ -15,6 +15,7 @@
 
 import 'dart:io';
 
+import '../models/device.dart';
 import '../providers/recording_settings_provider.dart';
 import '../providers/scrcpy_record_state_provider.dart';
 import '../services/api_client.dart';
@@ -33,6 +34,10 @@ abstract class RecordingStrategy {
     required ScreenCaptureService capture,
     required ScrcpyRecordStateProvider recordState,
   }) {
+    if (Device.isIosIdentity(serial)) {
+      throw UnsupportedError(
+          'iOS native screen recording is not available yet');
+    }
     switch (method) {
       case ScreenRecordMethod.adb:
         return AdbRecordingStrategy(serial, api);
@@ -88,7 +93,9 @@ class AdbRecordingStrategy extends RecordingStrategy {
     } catch (_) {}
     final path = _outputPath;
     if (path != null) {
-      try { await File(path).delete(); } catch (_) {}
+      try {
+        await File(path).delete();
+      } catch (_) {}
     }
     _outputPath = null;
   }
