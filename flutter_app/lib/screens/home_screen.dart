@@ -24,6 +24,7 @@ import '../widgets/recording_fab.dart';
 import 'device_status_screen.dart';
 import 'ios_crash_reports_screen.dart';
 import 'ios_logs_screen.dart';
+import 'ios_pcap_screen.dart';
 import 'logcat_screen.dart';
 import 'file_browser_screen.dart';
 import 'app_manager_screen.dart';
@@ -53,7 +54,8 @@ enum NavItem {
   session(DeviceCapability.testSession),
   mirror(DeviceCapability.screenMirror),
   crashReports(DeviceCapability.crashReports),
-  iosLogs(DeviceCapability.iosLiveLogs);
+  iosLogs(DeviceCapability.iosLiveLogs),
+  iosPcap(DeviceCapability.iosPcap);
 
   const NavItem(this.capability);
 
@@ -80,6 +82,7 @@ const _navConfig = {
   NavItem.command: _NavConfig(Icons.terminal, 'command'),
   NavItem.session: _NavConfig(Icons.assignment_outlined, 'testSession'),
   NavItem.mirror: _NavConfig(Icons.cast, 'screenMirror'),
+  NavItem.iosPcap: _NavConfig(Icons.network_check_outlined, 'iosPcap'),
 };
 
 class _NavConfig {
@@ -331,6 +334,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           screen = const IosCrashReportsScreen();
         case NavItem.iosLogs:
           screen = const IosLogsScreen();
+        case NavItem.iosPcap:
+          screen = const IosPcapScreen();
       }
       _screens[key] = _CachedScreen(
         key: ValueKey(key),

@@ -140,18 +140,27 @@ def build(output):
             ],
             check=True,
         )
+        pyinstaller_args = [
+            python, "-m", "PyInstaller", "--onefile", "--noupx",
+            "--name", "pymobiledevice3",
+            "--collect-all", "pymobiledevice3",
+            "--collect-all", "pytun_pmd3",
+            "--collect-data", "pykdebugparser",
+            "--recursive-copy-metadata", "pymobiledevice3",
+            "--distpath", work / "dist",
+            "--workpath", work / "build",
+            "--specpath", work,
+        ]
+        if windows:
+            wintun_dir = subprocess.check_output(
+                [python, "-c", "import pathlib, pytun_pmd3; print(pathlib.Path(pytun_pmd3.__file__).parent / 'wintun')"],
+                text=True,
+            ).strip()
+            if os.path.isdir(wintun_dir):
+                pyinstaller_args.extend(["--add-data", f"{wintun_dir};pytun_pmd3/wintun"])
+        pyinstaller_args.append(SCRIPTS / "pymobiledevice3_cli.py")
         subprocess.run(
-            [
-                python, "-m", "PyInstaller", "--onefile", "--noupx",
-                "--name", "pymobiledevice3",
-                "--collect-all", "pymobiledevice3",
-                "--collect-data", "pykdebugparser",
-                "--recursive-copy-metadata", "pymobiledevice3",
-                "--distpath", work / "dist",
-                "--workpath", work / "build",
-                "--specpath", work,
-                SCRIPTS / "pymobiledevice3_cli.py",
-            ],
+            pyinstaller_args,
             check=True,
             env=os.environ | {"PYINSTALLER_CONFIG_DIR": str(work / "pyinstaller-cache")},
         )

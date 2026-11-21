@@ -192,6 +192,7 @@ func parseIOSDevices(output []byte) ([]Device, error) {
 				capabilityScreenshot,
 				capabilityCrashReports,
 				capabilityIOSLiveLogs,
+				capabilityIOSPcap,
 			},
 			iosUDID: udid,
 		}
@@ -418,4 +419,37 @@ func (d *iosDiscovery) TouchFile(ctx context.Context, serial, path string) error
 	}
 	_, err = d.command(ctx, "adb-tool-ios", "afc-touch", "--udid", udid, path)
 	return err
+}
+
+func (d *iosDiscovery) StartPcap(ctx context.Context, serial, outPath, process, iface string) ([]byte, error) {
+	udid, err := d.udidFor(serial, capabilityIOSPcap)
+	if err != nil {
+		return nil, err
+	}
+	args := []string{"adb-tool-ios", "pcap-start", "--udid", udid, outPath}
+	if process != "" {
+		args = append(args, process)
+	} else if iface != "" {
+		args = append(args, "")
+	}
+	if iface != "" {
+		args = append(args, iface)
+	}
+	return d.command(ctx, args...)
+}
+
+func (d *iosDiscovery) PcapStatus(ctx context.Context, serial string) ([]byte, error) {
+	udid, err := d.udidFor(serial, capabilityIOSPcap)
+	if err != nil {
+		return nil, err
+	}
+	return d.command(ctx, "adb-tool-ios", "pcap-status", "--udid", udid)
+}
+
+func (d *iosDiscovery) StopPcap(ctx context.Context, serial string) ([]byte, error) {
+	udid, err := d.udidFor(serial, capabilityIOSPcap)
+	if err != nil {
+		return nil, err
+	}
+	return d.command(ctx, "adb-tool-ios", "pcap-stop", "--udid", udid)
 }

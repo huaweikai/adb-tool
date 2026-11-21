@@ -27,6 +27,39 @@ class CrashDispatchTests(unittest.TestCase):
         pull.assert_awaited_once_with("phone", "/tmp/out", "/app.ips")
 
 
+class PcapDispatchTests(unittest.TestCase):
+    def test_daemon_dispatch_pcap_start(self):
+        start = AsyncMock()
+        with patch.object(cli, "_fast_pcap_start", start):
+            asyncio.run(cli._dispatch_daemon_cmd(
+                ["adb-tool-ios", "pcap-start", "--udid", "phone-1", "/tmp/cap.pcapng", "Safari", "en0"]
+            ))
+        start.assert_awaited_once_with("phone-1", "/tmp/cap.pcapng", process="Safari", interface="en0")
+
+    def test_daemon_dispatch_pcap_status(self):
+        status = AsyncMock()
+        with patch.object(cli, "_fast_pcap_status", status):
+            asyncio.run(cli._dispatch_daemon_cmd(
+                ["adb-tool-ios", "pcap-status", "--udid", "phone-1"]
+            ))
+        status.assert_awaited_once_with("phone-1")
+
+    def test_daemon_dispatch_pcap_stop(self):
+        stop = AsyncMock()
+        with patch.object(cli, "_fast_pcap_stop", stop):
+            asyncio.run(cli._dispatch_daemon_cmd(
+                ["adb-tool-ios", "pcap-stop", "--udid", "phone-1"]
+            ))
+        stop.assert_awaited_once_with("phone-1")
+
+    def test_one_shot_pcap_start(self):
+        start = AsyncMock()
+        args = ["cli", "adb-tool-ios", "pcap-start", "--udid", "phone-1", "/tmp/cap.pcapng"]
+        with patch.object(cli, "_fast_pcap_start", start), patch.object(sys, "argv", args):
+            self.assertTrue(cli._fast_path())
+        start.assert_awaited_once_with("phone-1", "/tmp/cap.pcapng", process=None, interface=None)
+
+
 class AfcTransferTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.lockdown = types.SimpleNamespace(close=AsyncMock())

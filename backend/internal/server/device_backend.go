@@ -42,4 +42,5 @@ const (
 	capabilityScreenshot    DeviceCapability = "screenshot"
 	capabilityCrashReports  DeviceCapability = "crashReports"
 	capabilityIOSLiveLogs   DeviceCapability = "iosLiveLogs"
+	capabilityIOSPcap       DeviceCapability = "iosPcap"
 )

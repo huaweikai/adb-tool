@@ -8,6 +8,7 @@ from pathlib import Path
 import posixpath
 import shutil
 import tempfile
+import time
 import sys
 from typing import Any, Optional
 
@@ -15,6 +16,8 @@ from typing import Any, Optional
 _rsd_cache: dict[str, Any] = {}
 _rsd_locks: dict[str, asyncio.Lock] = {}
 _prewarm_tasks: dict[str, asyncio.Task] = {}
+_pcap_sessions: dict[str, dict[str, Any]] = {}
+_pcap_locks: dict[str, asyncio.Lock] = {}
 
 
 async def _resolve_rsd(udid: str):
@@ -43,13 +46,25 @@ async def _resolve_rsd(udid: str):
 async def _get_cached_rsd(udid: str, force_new: bool = False):
     lock = _rsd_locks.setdefault(udid, asyncio.Lock())
     async with lock:
-        if force_new and udid in _rsd_cache:
-            old = _rsd_cache.pop(udid, None)
-            if old is not None:
-                try:
-                    await old.close()
-                except Exception:
-                    pass
+        if force_new:
+            try:
+                from pymobiledevice3.remote import userspace_tunnel
+
+                if userspace_tunnel._cli_tunnel is not None:
+                    try:
+                        await userspace_tunnel._cli_tunnel.aclose()
+                    except Exception:
+                        pass
+                    userspace_tunnel._cli_tunnel = None
+            except Exception:
+                pass
+            if udid in _rsd_cache:
+                old = _rsd_cache.pop(udid, None)
+                if old is not None:
+                    try:
+                        await old.close()
+                    except Exception:
+                        pass
         if udid in _rsd_cache:
             return _rsd_cache[udid]
         rsd = await _resolve_rsd(udid)
@@ -527,6 +542,300 @@ async def _fast_afc_op(udid: str, op: str, args: list[str]) -> None:
         await lockdown.close()
 
 
+async def _fast_pcap_start(
+    udid: str,
+    out_file: str,
+    process: Optional[str] = None,
+    interface: Optional[str] = None,
+) -> None:
+    from pymobiledevice3 import usbmux
+    from pymobiledevice3.lockdown import create_using_usbmux
+    from pymobiledevice3.services.pcapd import PcapdService
+
+    lock = _pcap_locks.setdefault(udid, asyncio.Lock())
+    async with lock:
+        session = _pcap_sessions.get(udid)
+        if session and not session.get("stopped") and session.get("task") and not session["task"].done():
+            f_path = session.get("file_path", out_file)
+            f_size = os.path.getsize(f_path) if f_path and os.path.exists(f_path) else 0
+            start_t = session.get("start_time", time.time())
+            print(
+                json.dumps(
+                    {
+                        "status": "capturing",
+                        "active": True,
+                        "filePath": f_path,
+                        "packets": session.get("packets_count", 0),
+                        "bytes": f_size,
+                        "startTime": session.get("start_iso", ""),
+                        "duration": round(time.time() - start_t, 1),
+                        "process": session.get("process"),
+                        "interface": session.get("interface"),
+                    },
+                    ensure_ascii=False,
+                )
+            )
+            return
+
+        out_path = Path(out_file).resolve()
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # 1. Verify that the device is actually connected via USB
+        devices = await usbmux.list_devices()
+        usb_device = next((d for d in devices if d.matches_udid(udid) and d.is_usb), None)
+        if not usb_device:
+            raise RuntimeError(
+                "未检测到设备通过 USB 数据线连接。iOS 原生网络抓包受 Apple 安全策略限制，仅支持 USB 物理直连，请插紧数据线并解锁屏幕信任电脑。"
+            )
+
+        # 2. Connect strictly over USB
+        lockdown = await create_using_usbmux(serial=udid, connection_type="USB")
+        major = 0
+        try:
+            major = int(str(lockdown.product_version or "0").split(".")[0] or "0")
+        except ValueError:
+            major = 0
+
+        provider = None
+        lockdown_to_close = None
+        svc = None
+
+        if major < 17:
+            provider = lockdown
+            lockdown_to_close = lockdown
+            svc = PcapdService(lockdown=provider)
+        else:
+            # On iOS 17+, attempt direct lockdown service first, then fallback to USB RSD tunnel
+            try:
+                candidate = PcapdService(lockdown=lockdown)
+                await candidate.connect()
+                provider = lockdown
+                lockdown_to_close = lockdown
+                svc = candidate
+            except Exception:
+                await lockdown.close()
+                lockdown_to_close = None
+
+                # Reset any cached userspace tunnel so it is guaranteed to establish a USB tunnel
+                try:
+                    from pymobiledevice3.remote import userspace_tunnel
+
+                    if userspace_tunnel._cli_tunnel is not None:
+                        try:
+                            await userspace_tunnel._cli_tunnel.aclose()
+                        except Exception:
+                            pass
+                        userspace_tunnel._cli_tunnel = None
+                except Exception:
+                    pass
+
+                provider = await _get_cached_rsd(udid, force_new=True)
+                svc = PcapdService(lockdown=provider)
+                try:
+                    await svc.connect()
+                except Exception as exc:
+                    err_str = str(exc)
+                    if "USB only" in err_str or "ServiceProhibited" in err_str:
+                        raise RuntimeError(
+                            "iOS 系统拒绝启动网络抓包（Apple 安全限制：com.apple.pcapd 仅支持物理 USB 直连）。"
+                            "请拔下 USB 数据线重新插紧，确保手机屏幕处于解锁状态并在提示时点击『信任此电脑』。"
+                        ) from exc
+                    raise
+
+        out_handle = open(out_path, "wb")
+        now_ts = time.time()
+        now_iso = datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()
+
+        session = {
+            "file_path": str(out_path),
+            "file_handle": out_handle,
+            "start_time": now_ts,
+            "start_iso": now_iso,
+            "packets_count": 0,
+            "process": process,
+            "interface": interface,
+            "error": None,
+            "stopped": False,
+            "service": svc,
+            "lockdown_to_close": lockdown_to_close,
+        }
+
+        async def _pcap_worker() -> None:
+            async def _counting_gen(gen):
+                async for packet in gen:
+                    session["packets_count"] += 1
+                    yield packet
+
+            try:
+                raw_gen = svc.watch(
+                    packets_count=-1,
+                    process=session["process"],
+                    interface_name=session["interface"],
+                )
+                await svc.write_to_pcap(out_handle, _counting_gen(raw_gen))
+            except asyncio.CancelledError:
+                pass
+            except Exception as exc:
+                session["error"] = str(exc)
+            finally:
+                session["stopped"] = True
+                if "end_time" not in session:
+                    session["end_time"] = time.time()
+                try:
+                    out_handle.flush()
+                    out_handle.close()
+                except Exception:
+                    pass
+                try:
+                    await svc.close()
+                except Exception:
+                    pass
+                if session.get("lockdown_to_close"):
+                    try:
+                        await session["lockdown_to_close"].close()
+                    except Exception:
+                        pass
+
+        session["task"] = asyncio.create_task(_pcap_worker())
+        _pcap_sessions[udid] = session
+
+        print(
+            json.dumps(
+                {
+                    "status": "capturing",
+                    "active": True,
+                    "filePath": str(out_path),
+                    "packets": 0,
+                    "bytes": 0,
+                    "startTime": now_iso,
+                    "duration": 0.0,
+                    "process": process,
+                    "interface": interface,
+                },
+                ensure_ascii=False,
+            )
+        )
+
+
+async def _fast_pcap_status(udid: str) -> None:
+    session = _pcap_sessions.get(udid)
+    if not session:
+        print(
+            json.dumps(
+                {
+                    "status": "idle",
+                    "active": False,
+                    "filePath": "",
+                    "packets": 0,
+                    "bytes": 0,
+                    "duration": 0.0,
+                    "startTime": "",
+                    "process": None,
+                    "interface": None,
+                    "error": None,
+                },
+                ensure_ascii=False,
+            )
+        )
+        return
+
+    active = not session.get("stopped", False) and session.get("task") is not None and not session["task"].done()
+    f_path = session.get("file_path", "")
+    f_size = 0
+    if f_path and os.path.exists(f_path):
+        try:
+            f_size = os.path.getsize(f_path)
+        except Exception:
+            pass
+
+    start_t = session.get("start_time", time.time())
+    if active:
+        duration = max(0.0, time.time() - start_t)
+    else:
+        end_t = session.get("end_time", start_t)
+        duration = max(0.0, end_t - start_t)
+
+    print(
+        json.dumps(
+            {
+                "status": "capturing" if active else "stopped",
+                "active": active,
+                "filePath": f_path,
+                "packets": session.get("packets_count", 0),
+                "bytes": f_size,
+                "startTime": session.get("start_iso", ""),
+                "duration": round(duration, 1),
+                "process": session.get("process"),
+                "interface": session.get("interface"),
+                "error": session.get("error"),
+            },
+            ensure_ascii=False,
+        )
+    )
+
+
+async def _fast_pcap_stop(udid: str) -> None:
+    lock = _pcap_locks.setdefault(udid, asyncio.Lock())
+    async with lock:
+        session = _pcap_sessions.get(udid)
+        if not session:
+            print(
+                json.dumps(
+                    {
+                        "status": "idle",
+                        "active": False,
+                        "filePath": "",
+                        "packets": 0,
+                        "bytes": 0,
+                        "duration": 0.0,
+                    },
+                    ensure_ascii=False,
+                )
+            )
+            return
+
+        if not session.get("stopped"):
+            session["stopped"] = True
+            session["end_time"] = time.time()
+            task = session.get("task")
+            if task and not task.done():
+                task.cancel()
+                try:
+                    await asyncio.wait_for(asyncio.shield(task), timeout=2.0)
+                except Exception:
+                    pass
+
+        f_path = session.get("file_path", "")
+        f_size = 0
+        if f_path and os.path.exists(f_path):
+            try:
+                f_size = os.path.getsize(f_path)
+            except Exception:
+                pass
+
+        start_t = session.get("start_time", time.time())
+        end_t = session.get("end_time", time.time())
+        duration = max(0.0, end_t - start_t)
+
+        print(
+            json.dumps(
+                {
+                    "status": "stopped",
+                    "active": False,
+                    "filePath": f_path,
+                    "packets": session.get("packets_count", 0),
+                    "bytes": f_size,
+                    "startTime": session.get("start_iso", ""),
+                    "duration": round(duration, 1),
+                    "process": session.get("process"),
+                    "interface": session.get("interface"),
+                    "error": session.get("error"),
+                },
+                ensure_ascii=False,
+            )
+        )
+
+
 async def _dispatch_daemon_cmd(cmd: list[str]) -> None:
     if cmd == ["usbmux", "list"]:
         await _fast_usbmux_list(prewarm=True)
@@ -568,6 +877,18 @@ async def _dispatch_daemon_cmd(cmd: list[str]) -> None:
             return
         if op.startswith("afc-") and len(rest) >= 1:
             await _fast_afc_op(udid, op[len("afc-") :], rest)
+            return
+        if op == "pcap-start" and len(rest) >= 1:
+            out_file = rest[0]
+            proc = rest[1] if len(rest) > 1 and rest[1] else None
+            iface = rest[2] if len(rest) > 2 and rest[2] else None
+            await _fast_pcap_start(udid, out_file, process=proc, interface=iface)
+            return
+        if op == "pcap-status":
+            await _fast_pcap_status(udid)
+            return
+        if op == "pcap-stop":
+            await _fast_pcap_stop(udid)
             return
     raise RuntimeError(f"unsupported daemon command: {cmd}")
 
@@ -646,6 +967,18 @@ def _fast_path() -> bool:
             return True
         if op.startswith("afc-") and len(rest) >= 1:
             asyncio.run(_fast_afc_op(udid, op[len("afc-") :], rest))
+            return True
+        if op == "pcap-start" and len(rest) >= 1:
+            out_file = rest[0]
+            proc = rest[1] if len(rest) > 1 and rest[1] else None
+            iface = rest[2] if len(rest) > 2 and rest[2] else None
+            asyncio.run(_fast_pcap_start(udid, out_file, process=proc, interface=iface))
+            return True
+        if op == "pcap-status":
+            asyncio.run(_fast_pcap_status(udid))
+            return True
+        if op == "pcap-stop":
+            asyncio.run(_fast_pcap_stop(udid))
             return True
     return False
 

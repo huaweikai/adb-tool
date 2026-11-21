@@ -10,8 +10,10 @@ void main() {
     expect(device.capabilities, contains(DeviceCapability.screenshot));
     expect(
         NavItem.availableTo(device.capabilities),
-        NavItem.values.where(
-            (item) => item != NavItem.crashReports && item != NavItem.iosLogs));
+        NavItem.values.where((item) =>
+            item != NavItem.crashReports &&
+            item != NavItem.iosLogs &&
+            item != NavItem.iosPcap));
   });
 
   test('explicit capability list limits navigation and ignores unknown names',
@@ -63,6 +65,7 @@ void main() {
       DeviceCapability.screenshot,
       DeviceCapability.crashReports,
       DeviceCapability.iosLiveLogs,
+      DeviceCapability.iosPcap,
     };
 
     expect(
@@ -75,6 +78,7 @@ void main() {
         NavItem.session,
         NavItem.crashReports,
         NavItem.iosLogs,
+        NavItem.iosPcap,
       ],
     );
   });

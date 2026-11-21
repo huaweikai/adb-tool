@@ -2,6 +2,7 @@
 part of 'package:adb_tool/i18n.dart';
 
 const _locSidebarZh = <String, String>{
+  'iosPcap': '网络抓包',
   'iosCrashReports': '崩溃报告',
   'iosCrashReportsOffline': 'iPhone 当前离线',
   'iosCrashReportsLoadFailed': '无法读取崩溃报告',
@@ -134,6 +135,7 @@ const _locSidebarZh = <String, String>{
 };
 
 const _locSidebarEn = <String, String>{
+  'iosPcap': 'Packet Capture',
   'iosCrashReports': 'Crash reports',
   'iosCrashReportsOffline': 'iPhone is offline',
   'iosCrashReportsLoadFailed': 'Could not list crash reports',

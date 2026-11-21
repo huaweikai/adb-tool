@@ -40,3 +40,7 @@ flutter_app/ADBToolData/
 # Project-local code-review-graph runtime and Codex configuration
 /.code-review-graph/
 /.codex/config.toml
+
+# Python cache
+__pycache__/
+*.py[cod]

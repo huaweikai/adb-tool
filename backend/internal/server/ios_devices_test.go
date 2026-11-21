@@ -126,6 +126,7 @@ func TestIOSScreenshotUsesDVTAndFallback(t *testing.T) {
 		capabilityScreenshot,
 		capabilityCrashReports,
 		capabilityIOSLiveLogs,
+		capabilityIOSPcap,
 	}) {
 		t.Fatalf("unexpected capabilities: %v", devices[0].Capabilities)
 	}

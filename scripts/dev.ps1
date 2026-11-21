@@ -1,4 +1,4 @@
-# scripts/dev.ps1 - Windows development-mode one-shot launcher
+﻿# scripts/dev.ps1 - Windows development-mode one-shot launcher
 #
 # Mirrors scripts/dev.sh (macOS). Optimized for daily dev loop:
 #   - Incremental builds (Gradle / Go / Flutter all reuse prior artifacts)
@@ -8,12 +8,15 @@
 # Flow:
 #   1. Build Android helper App (release APK) -> backend/clipboard-helper.apk
 #   2. Build Go backend -> flutter_app/windows/runner/Resources/runtime.exe
-#   3. Launch Flutter (debug, foreground, Ctrl+C to exit)
+#   3. Build/sync iOS tools (pymobiledevice3.exe, auto-rebuild if outdated)
+#   4. Launch Flutter (debug, foreground, Ctrl+C to exit)
 #
 # Usage:
-#   scripts\dev.ps1                        # all three steps, then flutter run
+#   scripts\dev.ps1                        # all steps, then flutter run
 #   scripts\dev.ps1 -SkipApk              # skip APK build (Android code unchanged)
 #   scripts\dev.ps1 -SkipBackend          # skip Go build (Go code unchanged)
+#   scripts\dev.ps1 -BuildIosTools        # force rebuild pymobiledevice3.exe
+#   scripts\dev.ps1 -SkipIosTools         # skip checking/building pymobiledevice3.exe
 #   scripts\dev.ps1 -Device windows       # target Flutter device
 #   scripts\dev.ps1 -BuildOnly            # build only, do not launch Flutter
 #   scripts\dev.ps1 -BackendOnly          # only build Go backend (sets -SkipApk -BuildOnly)
@@ -28,10 +31,13 @@
 param(
   [switch]$SkipApk,
   [switch]$SkipBackend,
+  [switch]$BuildIosTools,
+  [switch]$SkipIosTools,
   [switch]$BuildOnly,
   [switch]$BackendOnly,
   [string]$Device = '',
-  [string]$AndroidHome = ''
+  [string]$AndroidHome = '',
+  [string]$PythonExecutable = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -169,9 +175,97 @@ function Build-GoBackend {
   Sync-BackendToFlutterBuild
 }
 
+function Test-PackagingPython([string]$Executable) {
+  if (-not (Get-Command $Executable -CommandType Application -ErrorAction SilentlyContinue)) {
+    return $false
+  }
+  $version = & $Executable --version 2>$null
+  return ($LASTEXITCODE -eq 0 -and $version -match '^Python 3\.12\.')
+}
+
+function Resolve-Python312 {
+  if ($PythonExecutable -and (Test-PackagingPython $PythonExecutable)) {
+    return $PythonExecutable
+  }
+  foreach ($candidate in 'python3.12.exe', 'python.exe') {
+    if (Test-PackagingPython $candidate) {
+      return $candidate
+    }
+  }
+  if (Get-Command uv -CommandType Application -ErrorAction SilentlyContinue) {
+    $uvPy = uv --no-cache python find --managed-python 3.12 2>$null
+    if ($uvPy -and (Test-PackagingPython $uvPy)) {
+      return $uvPy
+    }
+    $uvPyGeneral = uv python find 3.12 2>$null
+    if ($uvPyGeneral -and (Test-PackagingPython $uvPyGeneral)) {
+      return $uvPyGeneral
+    }
+  }
+  return $null
+}
+
+function Build-IosCli([string]$PythonExe) {
+  $iosToolsDir = Join-Path $Root 'dist\ios-tools'
+  if (-not (Test-Path $iosToolsDir)) {
+    New-Item -ItemType Directory -Force -Path $iosToolsDir | Out-Null
+  }
+  Step "[*] Building pymobiledevice3.exe -> $iosToolsDir..."
+  & $PythonExe "$Root/scripts/build_pymobiledevice3.py" $iosToolsDir
+  if ($LASTEXITCODE -ne 0) {
+    Die "Failed to build pymobiledevice3.exe"
+  }
+  Ok "pymobiledevice3.exe compiled successfully"
+}
+
+function Check-And-Build-IosTools {
+  if ($SkipIosTools) { return }
+
+  $iosCli = Join-Path $Root 'dist\ios-tools\pymobiledevice3.exe'
+  $srcCli = Join-Path $Root 'scripts\pymobiledevice3_cli.py'
+  $srcBuilder = Join-Path $Root 'scripts\build_pymobiledevice3.py'
+
+  $needsBuild = $false
+  $reason = ''
+
+  if ($BuildIosTools) {
+    $needsBuild = $true
+    $reason = 'Manual flag -BuildIosTools specified'
+  } elseif (-not (Test-Path -LiteralPath $iosCli)) {
+    $needsBuild = $true
+    $reason = 'pymobiledevice3.exe not found'
+  } else {
+    $exeTime = (Get-Item -LiteralPath $iosCli).LastWriteTime
+    if ((Test-Path -LiteralPath $srcCli) -and (Get-Item -LiteralPath $srcCli).LastWriteTime -gt $exeTime) {
+      $needsBuild = $true
+      $reason = "scripts/pymobiledevice3_cli.py is newer than pymobiledevice3.exe"
+    } elseif ((Test-Path -LiteralPath $srcBuilder) -and (Get-Item -LiteralPath $srcBuilder).LastWriteTime -gt $exeTime) {
+      $needsBuild = $true
+      $reason = "scripts/build_pymobiledevice3.py is newer than pymobiledevice3.exe"
+    }
+  }
+
+  if (-not $needsBuild) {
+    return
+  }
+
+  $py = Resolve-Python312
+  if (-not $py) {
+    if ($BuildIosTools) {
+      Die "Python 3.12 is required to build pymobiledevice3.exe. Install it with 'uv python install 3.12' or pass -PythonExecutable."
+    } else {
+      Warn "pymobiledevice3.exe needs rebuild ($reason), but Python 3.12 was not found. Skipping build. (Install via 'uv python install 3.12')"
+      return
+    }
+  }
+
+  Step "[*] $reason, rebuilding iOS CLI..."
+  Build-IosCli $py
+  Sync-BackendToFlutterBuild
+}
+
 function Sync-BackendToFlutterBuild {
   $src = Join-Path $Root 'flutter_app\windows\runner\Resources\runtime.exe'
-  if (-not (Test-Path $src)) { return }
   $iosCli = Join-Path $Root 'dist\ios-tools\pymobiledevice3.exe'
 
   $buildRoot = Join-Path $Root 'flutter_app\build\windows\x64\runner'
@@ -180,15 +274,21 @@ function Sync-BackendToFlutterBuild {
   foreach ($mode in @('Debug', 'Profile', 'Release')) {
     $dst = Join-Path $buildRoot $mode
     if (Test-Path $dst) {
-      try {
-        Copy-Item -Path $src -Destination (Join-Path $dst 'runtime.exe') -Force -ErrorAction Stop
-        Write-Host "  synced runtime.exe -> $dst" -ForegroundColor DarkGray
-        if (Test-Path -LiteralPath $iosCli) {
+      if (Test-Path $src) {
+        try {
+          Copy-Item -Path $src -Destination (Join-Path $dst 'runtime.exe') -Force -ErrorAction Stop
+          Write-Host "  synced runtime.exe -> $dst" -ForegroundColor DarkGray
+        } catch {
+          Write-Host "  could not sync runtime.exe to $dst (binary may be in use): $_" -ForegroundColor Yellow
+        }
+      }
+      if (Test-Path -LiteralPath $iosCli) {
+        try {
           Copy-Item -LiteralPath $iosCli -Destination $dst -Force -ErrorAction Stop
           Write-Host "  synced pymobiledevice3.exe -> $dst" -ForegroundColor DarkGray
+        } catch {
+          Write-Host "  could not sync pymobiledevice3.exe to $dst (binary may be in use): $_" -ForegroundColor Yellow
         }
-      } catch {
-        Write-Host "  could not sync to $dst (binary may be in use): $_" -ForegroundColor Yellow
       }
     }
   }
@@ -208,6 +308,7 @@ function Stop-RuntimeBackend {
 }
 
 # Main flow
+Check-And-Build-IosTools
 if (-not $SkipApk)     { Build-AndroidApk }
 if (-not $SkipBackend) { Build-GoBackend }
 
