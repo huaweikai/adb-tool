@@ -38,6 +38,7 @@ import 'api/emulator_image_api.dart';
 import 'api/cleanup_api.dart';
 import 'api/view_hierarchy_api.dart';
 import 'api/ios_pcap_api.dart';
+import 'api/network_proxy_api.dart';
 
 export 'api/device_api.dart' show DeviceApi;
 export 'api/file_api.dart' show FileApi;
@@ -74,6 +75,8 @@ export 'api/cleanup_api.dart'
     show CleanupApi, CacheCleanupResult, CacheCleanupEntry;
 export 'api/view_hierarchy_api.dart' show ViewHierarchyApi;
 export 'api/ios_pcap_api.dart' show IosPcapApi, IosPcapStatus;
+export 'api/network_proxy_api.dart'
+    show NetworkProxyApi, ProxyServerStatus, ProxyStatus;
 
 // ===== Public value types shared across domains =====
 
@@ -405,4 +408,5 @@ class ApiClient = ApiBase
         EmulatorImageApi,
         CleanupApi,
         ViewHierarchyApi,
-        IosPcapApi;
+        IosPcapApi,
+        NetworkProxyApi;

@@ -41,6 +41,7 @@ import 'screen_mirror_screen.dart';
 import 'view_hierarchy_screen.dart';
 import 'emulator_settings_screen.dart';
 import 'settings_screen.dart';
+import 'network_proxy_screen.dart';
 
 enum NavItem {
   status(DeviceCapability.deviceStatus),
@@ -55,7 +56,8 @@ enum NavItem {
   mirror(DeviceCapability.screenMirror),
   crashReports(DeviceCapability.crashReports),
   iosLogs(DeviceCapability.iosLiveLogs),
-  iosPcap(DeviceCapability.iosPcap);
+  iosPcap(DeviceCapability.iosPcap),
+  networkProxy(DeviceCapability.networkProxy);
 
   const NavItem(this.capability);
 
@@ -66,7 +68,10 @@ enum NavItem {
 
   static Iterable<NavItem> sidebarPagesFor(
           Set<DeviceCapability> capabilities) =>
-      availableTo(capabilities).where((item) => item != NavItem.info);
+      availableTo(capabilities).where((item) =>
+          item != NavItem.info &&
+          item != NavItem.iosPcap &&
+          item != NavItem.networkProxy);
 }
 
 const _navConfig = {
@@ -83,6 +88,7 @@ const _navConfig = {
   NavItem.session: _NavConfig(Icons.assignment_outlined, 'testSession'),
   NavItem.mirror: _NavConfig(Icons.cast, 'screenMirror'),
   NavItem.iosPcap: _NavConfig(Icons.network_check_outlined, 'iosPcap'),
+  NavItem.networkProxy: _NavConfig(Icons.wifi_tethering, 'networkProxy.title'),
 };
 
 class _NavConfig {
@@ -95,6 +101,7 @@ const _backendLogKey = '_backend_logs';
 const _testConfigKey = '_test_config';
 const _emulatorKey = '_emulator_settings';
 const _settingsKey = '_settings';
+const _networkProxyKey = '_network_proxy';
 
 /// Digit keys for keyboard navigation (Cmd/Ctrl+1~9).
 const _navDigitKeys = <LogicalKeyboardKey>[
@@ -336,6 +343,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           screen = const IosLogsScreen();
         case NavItem.iosPcap:
           screen = const IosPcapScreen();
+        case NavItem.networkProxy:
+          screen = const NetworkProxyScreen();
       }
       _screens[key] = _CachedScreen(
         key: ValueKey(key),
@@ -364,8 +373,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       if (removed >= toRemove) break;
       if (k == _activeKey ||
           k == _backendLogKey ||
+          k == _testConfigKey ||
           k == _emulatorKey ||
-          k == _settingsKey) continue;
+          k == _settingsKey ||
+          k == _networkProxyKey) {
+        continue;
+      }
       _screens.remove(k);
       removed++;
     }
@@ -411,6 +424,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     setState(() => _activeKey = _settingsKey);
   }
 
+  void _openNetworkProxy() {
+    if (!_screens.containsKey(_networkProxyKey)) {
+      _screens[_networkProxyKey] = const _CachedScreen(
+        serial: null,
+        child: NetworkProxyScreen(),
+      );
+    }
+    setState(() => _activeKey = _networkProxyKey);
+  }
+
   /// Restore the active page from saved _activeKey
   void _restoreActivePage(List<SavedDevice> savedDevices) {
     if (_activeKey == null) return;
@@ -430,6 +453,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
     if (_activeKey == _settingsKey) {
       _openSettings();
+      return;
+    }
+    if (_activeKey == _networkProxyKey) {
+      _openNetworkProxy();
       return;
     }
 
@@ -858,6 +885,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           // Global entries as icon-only
           _buildCollapsedGlobalEntry(
             theme,
+            icon: Icons.wifi_tethering,
+            tooltip: tr('networkProxy.title'),
+            isActive: _activeKey == _networkProxyKey,
+            onTap: () => _expandAndOpen(_openNetworkProxy),
+          ),
+          _buildCollapsedGlobalEntry(
+            theme,
             icon: Icons.tune,
             tooltip: tr('testConfigCenter'),
             isActive: _activeKey == _testConfigKey,
@@ -1077,6 +1111,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           _buildSectionHeader(
             theme,
             title: tr('tools'),
+          ),
+          _buildGlobalEntry(
+            theme,
+            keyName: _networkProxyKey,
+            icon: Icons.wifi_tethering,
+            label: tr('networkProxy.title'),
+            badge: 'MITM',
+            onTap: _openNetworkProxy,
           ),
           _buildGlobalEntry(
             theme,

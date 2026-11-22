@@ -35,6 +35,7 @@ part 'i18n/settings.dart';
 part 'i18n/emulator.dart';
 part 'i18n/view_hierarchy.dart';
 part 'i18n/ios_pcap.dart';
+part 'i18n/network_proxy.dart';
 
 String _lang = 'zh';
 
@@ -57,6 +58,7 @@ const _loc = <String, Map<String, String>>{
     ..._locEmulatorZh,
     ..._locViewHierarchyZh,
     ..._locIosPcapZh,
+    ..._locNetworkProxyZh,
   },
   'en': {
     ..._locCommonEn,
@@ -76,6 +78,7 @@ const _loc = <String, Map<String, String>>{
     ..._locEmulatorEn,
     ..._locViewHierarchyEn,
     ..._locIosPcapEn,
+    ..._locNetworkProxyEn,
   },
 };
 

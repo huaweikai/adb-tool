@@ -193,6 +193,7 @@ func parseIOSDevices(output []byte) ([]Device, error) {
 				capabilityCrashReports,
 				capabilityIOSLiveLogs,
 				capabilityIOSPcap,
+				capabilityNetworkProxy,
 			},
 			iosUDID: udid,
 		}

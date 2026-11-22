@@ -12,7 +12,8 @@ enum DeviceCapability {
   screenshot,
   crashReports,
   iosLiveLogs,
-  iosPcap;
+  iosPcap,
+  networkProxy;
 
   // Default for older backends and Android rows saved while offline.
   static const androidDefaults = {
@@ -27,6 +28,7 @@ enum DeviceCapability {
     testSession,
     screenMirror,
     screenshot,
+    networkProxy,
   };
 }
 

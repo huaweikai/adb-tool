@@ -33,7 +33,7 @@ var adbCapabilities = []DeviceCapability{
 	capabilityDeviceStatus, capabilityDeviceInfo, capabilityLiveLogs,
 	capabilityFiles, capabilityApps, capabilityClipboard, capabilityViewHierarchy,
 	capabilityAdbCommands, capabilityTestSession, capabilityScreenMirror,
-	capabilityScreenshot,
+	capabilityScreenshot, capabilityNetworkProxy,
 }
 
 func (m *AdbManager) Devices() ([]Device, error) {

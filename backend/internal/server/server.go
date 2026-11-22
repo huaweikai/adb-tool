@@ -17,12 +17,15 @@ import (
 	"github.com/gorilla/websocket"
 
 	"adb-tool/backend/internal/emulator"
+	"adb-tool/backend/internal/proxy"
 )
 
 type Server struct {
 	adb      *AdbManager
 	webFS    fs.FS
 	upgrader websocket.Upgrader
+
+	proxyServer *proxy.Server
 
 	deviceDiscovery    deviceDiscovery
 	screenshotCapturer screenshotCapturer
@@ -100,6 +103,19 @@ func New(adbPath string, webFS fs.FS, clipboardApk []byte, scrcpyFS embed.FS) *S
 
 	streamCtx, streamCancel := context.WithCancel(context.Background())
 	s.streamCancel = streamCancel
+
+	// Initialize the MITM proxy engine
+	home, _ := os.UserHomeDir()
+	proxyStorageDir := filepath.Join(home, ".adb-tool", "proxy")
+	if proxySrv, err := proxy.NewServer(proxy.Config{
+		Port:       8899,
+		StorageDir: proxyStorageDir,
+		MaxHistory: 1000,
+	}); err == nil {
+		s.proxyServer = proxySrv
+	} else {
+		Log.Add("proxy init error", "", err, 0)
+	}
 
 	go eventStream.Run(streamCtx)
 	if cli := findIOSCLI(); cli != "" {
@@ -258,6 +274,9 @@ func (s *Server) Close() {
 			close(s.imageValidator)
 			s.imageValidator = nil
 		}
+		if s.proxyServer != nil {
+			_ = s.proxyServer.Stop()
+		}
 	})
 }
 
@@ -327,6 +346,21 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/ios/pcap/status", s.handleIOSPcapStatus)
 	mux.HandleFunc("GET /api/ios/pcap/download", s.handleIOSPcapDownload)
 	mux.HandleFunc("POST /api/ios/pcap/wireshark", s.handleIOSPcapWireshark)
+
+	// Network Proxy & Mock
+	mux.HandleFunc("POST /api/proxy/start", s.handleProxyStart)
+	mux.HandleFunc("POST /api/proxy/stop", s.handleProxyStop)
+	mux.HandleFunc("GET /api/proxy/status", s.handleProxyStatus)
+	mux.HandleFunc("GET /api/proxy/sessions", s.handleProxySessions)
+	mux.HandleFunc("GET /api/proxy/session/detail", s.handleProxySessionDetail)
+	mux.HandleFunc("POST /api/proxy/sessions/clear", s.handleProxySessionsClear)
+	mux.HandleFunc("/api/proxy/rules", s.handleProxyRules)
+	mux.HandleFunc("GET /api/proxy/ca.crt", s.handleProxyCACert)
+	mux.HandleFunc("/ws/proxy/sessions", s.handleProxyWs)
+	mux.HandleFunc("POST /api/proxy/adb/set", s.handleProxyAdbSet)
+	mux.HandleFunc("POST /api/proxy/adb/clear", s.handleProxyAdbClear)
+	mux.HandleFunc("GET /api/proxy/adb/status", s.handleProxyAdbStatus)
+
 	mux.HandleFunc("/ws/devices", s.handleDeviceWS)
 	mux.HandleFunc("/api/clear", s.handleClear)
 	mux.HandleFunc("/api/info", s.handleDeviceInfo)

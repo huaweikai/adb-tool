@@ -43,4 +43,5 @@ const (
 	capabilityCrashReports  DeviceCapability = "crashReports"
 	capabilityIOSLiveLogs   DeviceCapability = "iosLiveLogs"
 	capabilityIOSPcap       DeviceCapability = "iosPcap"
+	capabilityNetworkProxy  DeviceCapability = "networkProxy"
 )
